@@ -65,7 +65,9 @@ struct DrivingAssists {
 ///
 /// Car space has x to the right, y up and z forward, with its origin on the
 /// ground below the middle of the wheelbase, as the car models and
-/// maxdata.xml use. World space has y up.
+/// maxdata.xml use. World space is the game's: x east, y up, z north. Both
+/// are left-handed, so a positive rotation about y (as glm computes it)
+/// turns +z towards +x: clockwise seen from above, a right turn.
 class CarPhysics {
 public:
     static constexpr int kWheels = 4;
@@ -140,6 +142,14 @@ public:
 
     /// Adds an impulse at a world point, for collisions.
     void applyImpulse(const glm::vec3& impulse, const glm::vec3& worldPoint);
+    /// Resolves the body touching a static surface at `point` with surface
+    /// normal `normal` (pointing out of the surface) and penetration
+    /// `depth`: an impulse that stops the approach, with Coulomb friction
+    /// up to `friction` times the normal impulse, and a partial push out of
+    /// the surface. Returns the normal impulse applied (N·s), for damage and
+    /// sound.
+    float resolveContact(const glm::vec3& point, const glm::vec3& normal, float depth, float restitution,
+        float friction);
     /// Moves the car without changing its motion, to resolve penetration.
     void translate(const glm::vec3& offset) { m_cgPosition += offset; }
     /// Sets the car upright and still where it is.

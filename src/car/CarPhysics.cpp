@@ -152,7 +152,7 @@ glm::mat3 CarPhysics::worldInverseInertia() const
 
 void CarPhysics::reset(const glm::vec3& position, float heading, const GroundQuery& ground)
 {
-    m_orientation = glm::angleAxis(-heading, glm::vec3(0.0F, 1.0F, 0.0F));
+    m_orientation = glm::angleAxis(heading, glm::vec3(0.0F, 1.0F, 0.0F));
     glm::vec3 origin = position;
     GroundHit hit;
     if (ground.raycast(position + glm::vec3(0.0F, 50.0F, 0.0F), glm::vec3(0.0F, -1.0F, 0.0F), 200.0F, hit)) {
@@ -193,6 +193,43 @@ void CarPhysics::applyImpulse(const glm::vec3& impulse, const glm::vec3& worldPo
 {
     m_velocity += impulse / m_mass;
     m_angularVelocity += worldInverseInertia() * glm::cross(worldPoint - m_cgPosition, impulse);
+}
+
+float CarPhysics::resolveContact(
+    const glm::vec3& point, const glm::vec3& normal, float depth, float restitution, float friction)
+{
+    const glm::vec3 r = point - m_cgPosition;
+    const glm::mat3 inverseInertia = worldInverseInertia();
+    const auto effectiveMass = [&](const glm::vec3& direction) {
+        const glm::vec3 angular = glm::cross(inverseInertia * glm::cross(r, direction), r);
+        return 1.0F / (1.0F / m_mass + glm::dot(direction, angular));
+    };
+    const glm::vec3 velocity = worldPointVelocity(point);
+    const float approach = glm::dot(velocity, normal);
+    float normalImpulse = 0.0F;
+    if (approach < 0.0F) {
+        // Slow contacts do not bounce, so a car resting against a wall stays
+        // there instead of jittering.
+        const float bounce = approach < -2.0F ? restitution : 0.0F;
+        normalImpulse = -(1.0F + bounce) * approach * effectiveMass(normal);
+        applyImpulse(normal * normalImpulse, point);
+
+        const glm::vec3 after = worldPointVelocity(point);
+        glm::vec3 tangent = after - normal * glm::dot(after, normal);
+        const float slide = glm::length(tangent);
+        if (slide > 1e-4F) {
+            tangent /= slide;
+            const float frictionImpulse = std::min(slide * effectiveMass(tangent), friction * normalImpulse);
+            applyImpulse(-tangent * frictionImpulse, point);
+        }
+    }
+    // Remove most of the overlap directly; the rest goes next step, which
+    // avoids the car popping out of deep contacts.
+    constexpr float kSlop = 0.005F;
+    if (depth > kSlop) {
+        m_cgPosition += normal * ((depth - kSlop) * 0.6F);
+    }
+    return normalImpulse;
 }
 
 void CarPhysics::update(float dt, const CarControls& controls, const GroundQuery& ground)
@@ -501,7 +538,7 @@ void CarPhysics::prepareTyres(float dt)
         }
         c.active = true;
         const glm::vec3 normal = wheel.ground.normal;
-        const glm::quat steer = glm::angleAxis(-wheel.steerAngle, carUp);
+        const glm::quat steer = glm::angleAxis(wheel.steerAngle, carUp);
         glm::vec3 heading = m_orientation * (steer * glm::vec3(0.0F, 0.0F, 1.0F));
         heading = glm::normalize(heading - normal * glm::dot(heading, normal));
         c.heading = heading;
@@ -784,7 +821,7 @@ void CarPhysics::step(const CarControls& input, const GroundQuery& ground)
         const float speed = forwardSpeed();
         if (speed > 8.0F) {
             const float expected = speed * std::tan(m_steerAngle) / m_spec.wheelbase;
-            const float actual = -glm::dot(m_angularVelocity, up());
+            const float actual = glm::dot(m_angularVelocity, up());
             const float excess = std::abs(actual) - std::abs(expected) - 0.25F;
             if (excess > 0.0F) {
                 throttle *= std::max(0.2F, 1.0F - excess * 1.5F);
