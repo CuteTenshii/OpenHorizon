@@ -195,6 +195,13 @@ void CarPhysics::applyImpulse(const glm::vec3& impulse, const glm::vec3& worldPo
     m_angularVelocity += worldInverseInertia() * glm::cross(worldPoint - m_cgPosition, impulse);
 }
 
+float CarPhysics::impulseResponse(const glm::vec3& worldPoint, const glm::vec3& direction) const
+{
+    const glm::vec3 r = worldPoint - m_cgPosition;
+    const glm::vec3 angular = glm::cross(worldInverseInertia() * glm::cross(r, direction), r);
+    return 1.0F / m_mass + glm::dot(direction, angular);
+}
+
 float CarPhysics::resolveContact(
     const glm::vec3& point, const glm::vec3& normal, float depth, float restitution, float friction)
 {

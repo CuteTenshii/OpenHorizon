@@ -26,6 +26,8 @@ void printUsage()
         "  --at X,Z           start at world coordinates instead\n"
         "  --heading DEG      start heading, clockwise from north\n"
         "  --time HH:MM       time of day to start at (default 16:00)\n"
+        "  --race ID          start a race at once, by its event id (e.g. FR02)\n"
+        "  --autopilot        let the AI drive the player's car in races\n"
         "  --manual           manual gearbox (E/Q or B/X to shift)\n"
         "  --demo-drive       drive with full throttle and a gentle weave, for testing\n"
         "  --width W --height H --fullscreen\n"
@@ -92,6 +94,10 @@ int main(int argc, char** argv)
                 return 2;
             }
             options.startTime = static_cast<float>(hours * 3600 + minutes * 60);
+        } else if (arg == "--race") {
+            options.race = value();
+        } else if (arg == "--autopilot") {
+            options.autopilot = true;
         } else if (arg == "--manual") {
             options.manualGearbox = true;
         } else if (arg == "--demo-drive") {

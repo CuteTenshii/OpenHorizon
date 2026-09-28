@@ -22,6 +22,8 @@ target_link_libraries(fh1vfs PRIVATE fh1base)
 add_library(fh1data STATIC
     data/Database.cpp
     data/Database.h
+    data/StringTable.cpp
+    data/StringTable.h
     car/CarPhysics.cpp
     car/CarPhysics.h
     car/CarSpec.cpp
@@ -53,10 +55,16 @@ find_package(Freetype REQUIRED)
 pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
 
 add_library(fh1engine STATIC
+    game/AiDriver.cpp
+    game/AiDriver.h
     game/Game.cpp
     game/Game.h
     game/GameObjects.cpp
     game/GameObjects.h
+    game/Race.cpp
+    game/Race.h
+    game/RaceData.cpp
+    game/RaceData.h
     game/TimeOfDay.cpp
     game/TimeOfDay.h
     physics/WorldCollision.cpp

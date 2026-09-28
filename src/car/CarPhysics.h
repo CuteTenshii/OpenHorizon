@@ -158,6 +158,10 @@ public:
     void setState(const glm::vec3& position, const glm::quat& orientation, const glm::vec3& velocity,
         const glm::vec3& angularVelocity);
 
+    /// How much a unit impulse along `direction` at `worldPoint` changes the
+    /// point's velocity along it: 1/m plus the rotational term. Two-body
+    /// contacts divide by the sum of both bodies' responses.
+    float impulseResponse(const glm::vec3& worldPoint, const glm::vec3& direction) const;
     float mass() const { return m_mass; }
     /// Centre of mass in car space.
     const glm::vec3& centreOfMass() const { return m_cgLocal; }

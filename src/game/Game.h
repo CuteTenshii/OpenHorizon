@@ -4,7 +4,11 @@
 #include "car/CarPhysics.h"
 #include "car/CarSpec.h"
 #include "data/Database.h"
+#include "data/StringTable.h"
+#include "game/AiDriver.h"
 #include "game/GameObjects.h"
+#include "game/Race.h"
+#include "game/RaceData.h"
 #include "game/TimeOfDay.h"
 #include "physics/WorldCollision.h"
 #include "platform/Window.h"
@@ -43,9 +47,14 @@ struct GameOptions {
     bool demoDrive = false;
     /// Start time in seconds after midnight; the game's own 16:00 otherwise.
     std::optional<float> startTime;
+    /// Starts this race (Events.HorizonEventID) straight away.
+    std::string race;
+    /// Lets the AI drive the player's car in a race, for testing.
+    bool autopilot = false;
 };
 
-/// Free roam: the track's world streamed around a car the player drives.
+/// Free roam and races: the track's world streamed around the player's car,
+/// with AI opponents when a race runs.
 class Game {
 public:
     enum class CameraMode { Chase, Far, Hood, Free };
@@ -64,16 +73,41 @@ private:
         glm::vec3 centre;
         float radius;
     };
+    /// One car in the world: the player's or an AI opponent's.
+    struct Vehicle {
+        std::unique_ptr<CarSpec> spec;
+        std::unique_ptr<CarPhysics> physics;
+        std::vector<BodySphere> spheres;
+        std::unique_ptr<AiDriver> ai;
+        CarControls controls;
+        glm::vec4 colour{1.0F};
+        std::string name;
+    };
 
     void loadWorld();
-    void spawnCar();
-    CarControls readControls(float dt);
-    void stepPhysics(float dt, const CarControls& controls);
-    void collideBody();
+    std::unique_ptr<Vehicle> makeVehicle(int carId, const glm::vec4& colour) const;
+    void spawnPlayer();
+    void placeVehicle(Vehicle& vehicle, const glm::vec3& position, float heading);
+    Vehicle& player() { return *m_vehicles.front(); }
+    const Vehicle& player() const { return *m_vehicles.front(); }
+
+    CarControls readPlayerControls(float dt);
+    void stepPhysics(float dt);
+    void collideWithWorld(Vehicle& vehicle);
+    void collideVehicles();
+
+    void startRace(const RaceEvent& event);
+    void endRace();
+    void updateRace(float dt);
+
+    void updateMenu();
     void updateCamera(float dt);
     render::FrameParams frameParams() const;
-    void drawCar();
+    void drawVehicles();
+    void drawDrivingLine();
     void drawHud(float dt);
+    void drawRaceHud();
+    void drawMenu();
     void drawLoading(const std::string& message);
     bool saveScreenshot(const std::filesystem::path& path);
 
@@ -81,6 +115,7 @@ private:
     GameOptions m_options;
     Vfs m_vfs;
     std::unique_ptr<Database> m_database;
+    std::unique_ptr<Localisation> m_strings;
     std::unique_ptr<JobPool> m_jobs;
     std::optional<world::TrackWorld> m_world;
     std::optional<GameObjects> m_objects;
@@ -91,15 +126,22 @@ private:
     std::unique_ptr<render::Overlay> m_overlay;
     std::unique_ptr<physics::WorldCollision> m_collision;
 
-    CarSpec m_spec;
-    std::unique_ptr<CarPhysics> m_car;
-    std::vector<BodySphere> m_bodySpheres;
+    std::vector<std::unique_ptr<Vehicle>> m_vehicles;
     std::vector<physics::SphereContact> m_contacts;
-    bool m_carPlaced = false;
+    bool m_playerPlaced = false;
     glm::vec3 m_spawnPosition{0.0F};
     float m_spawnHeading = 0.0F;
-    float m_physicsAccumulator = 0.0F;
     float m_spawnWait = 0.0F;
+    float m_physicsAccumulator = 0.0F;
+
+    std::vector<RaceEvent> m_events;
+    std::unique_ptr<Race> m_race;
+    /// Speed profile of the race line for the player's car, which colours
+    /// the driving line.
+    std::unique_ptr<AiDriver> m_lineGuide;
+    float m_resultsTime = 0.0F;
+    bool m_menuOpen = false;
+    int m_menuSelection = 0;
 
     CameraMode m_cameraMode = CameraMode::Chase;
     render::Camera m_camera;
