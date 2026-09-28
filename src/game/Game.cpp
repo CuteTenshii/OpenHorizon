@@ -123,7 +123,8 @@ Game::~Game()
     m_jobs.reset();
 }
 
-std::unique_ptr<Game::Vehicle> Game::makeVehicle(int carId, const glm::vec4& colour, int colourSequence) const
+std::unique_ptr<Game::Vehicle> Game::makeVehicle(
+    int carId, const glm::vec4& colour, int colourSequence, std::optional<carmodel::CarModel> model) const
 {
     auto vehicle = std::make_unique<Vehicle>();
     vehicle->spec = std::make_unique<CarSpec>(loadCarSpec(*m_database, carId, &m_vfs));
@@ -147,8 +148,10 @@ std::unique_ptr<Game::Vehicle> Game::makeVehicle(int carId, const glm::vec4& col
         vehicle->model = cached->second;
     } else {
         try {
-            const carmodel::CarModel model = carmodel::CarModel::load(m_vfs, m_database.get(), spec.mediaName);
-            vehicle->model = std::make_shared<render::CarRenderer>(model);
+            if (!model) {
+                model = carmodel::CarModel::load(m_vfs, m_database.get(), spec.mediaName);
+            }
+            vehicle->model = std::make_shared<render::CarRenderer>(*model);
         } catch (const std::exception& e) {
             logWarning("car model {}: {}", spec.mediaName, e.what());
         }
@@ -475,19 +478,24 @@ void Game::updateDebris(float dt)
     }
 }
 
-void Game::attachEngineSound(Vehicle& vehicle, bool spatial) const
+audio::EngineSoundOptions Game::engineSoundOptions(bool spatial)
 {
-    if (!m_audio) {
-        return;
-    }
     audio::EngineSoundOptions options;
     options.spatial = spatial;
     // Opponents' gear changes and skids would crowd the mix; the player's
     // own carry the feedback.
     options.transmission = !spatial;
+    return options;
+}
+
+void Game::attachEngineSound(Vehicle& vehicle, bool spatial) const
+{
+    if (!m_audio) {
+        return;
+    }
     try {
-        vehicle.engine
-            = std::make_unique<audio::EngineSound>(*m_audio, m_audioLibrary, vehicle.spec->mediaName, options);
+        vehicle.engine = std::make_unique<audio::EngineSound>(
+            *m_audio, m_audioLibrary, vehicle.spec->mediaName, engineSoundOptions(spatial));
     } catch (const std::exception& e) {
         logWarning("audio: {}: {}", vehicle.spec->mediaName, e.what());
     }
@@ -846,37 +854,91 @@ bool Game::spawnTraffic(
             }
             carId = choices[std::uniform_int_distribution<std::size_t>(0, choices.size() - 1)(m_random)];
         }
-        try {
-            const int colour = std::uniform_int_distribution<int>(1, 6)(m_random);
-            std::unique_ptr<Vehicle> vehicle = makeVehicle(carId, {0.7F, 0.7F, 0.7F, 1.0F}, colour);
-            vehicle->role = role;
-            vehicle->line = &line;
-            vehicle->physics->assists().speedSensitiveSteering = false;
-            // Keep right of the line, as the roads are driven in Colorado.
-            const float lane = role == Vehicle::Role::Traffic ? 2.0F : 1.2F;
-            vehicle->ai = std::make_unique<AiDriver>(line, *vehicle->spec, role == Vehicle::Role::Traffic ? 40 : 65, lane);
-            vehicle->ai->setLineIndex(index);
-            float speed = density.speedMph * kMphToMs;
-            if (speed <= 0.0F) {
-                speed = kFestivalDriverSpeed;
-            }
-            vehicle->ai->setMaxSpeed(speed);
-            const glm::vec3 side = glm::normalize(glm::cross(glm::vec3(0.0F, 1.0F, 0.0F), direction));
-            placeVehicle(*vehicle, point + side * lane, std::atan2(direction.x, direction.z));
-            // Already moving, as cars on a road are when they come into view.
-            vehicle->physics->setState(vehicle->physics->position(), vehicle->physics->orientation(),
-                direction * speed * 0.8F, glm::vec3(0.0F));
-            attachEngineSound(*vehicle, true);
-            logDebug("traffic: {} {} at {:.0f} m, {:.0f} km/h", role == Vehicle::Role::Traffic ? "car" : "festival driver",
-                vehicle->name, distance, speed * 3.6F);
-            m_vehicles.push_back(std::move(vehicle));
-            return true;
-        } catch (const std::exception& e) {
-            logWarning("traffic: car {}: {}", carId, e.what());
+        auto spawn = std::make_shared<TrafficSpawn>();
+        spawn->role = role;
+        spawn->carId = carId;
+        spawn->colourSequence = std::uniform_int_distribution<int>(1, 6)(m_random);
+        spawn->line = &line;
+        spawn->lineIndex = index;
+        // Keep right of the line, as the roads are driven in Colorado.
+        spawn->lane = role == Vehicle::Role::Traffic ? 2.0F : 1.2F;
+        spawn->skill = role == Vehicle::Role::Traffic ? 40 : 65;
+        spawn->speed = density.speedMph > 0.0F ? density.speedMph * kMphToMs : kFestivalDriverSpeed;
+        const std::optional<Row> media
+            = m_database->queryOne("SELECT MediaName FROM Data_Car WHERE Id = ?", {std::to_string(carId)});
+        if (!media) {
+            logWarning("traffic: car {} is not in Data_Car", carId);
             return false;
         }
+        const std::string mediaName = media->text("MediaName");
+        const bool needModel = !m_modelCache.contains(carId);
+        audio::AudioDevice* device = m_audio.get();
+        m_pendingSpawn = spawn;
+        m_jobs->submit(-1000.0F,
+            [spawn, mediaName, needModel, device, library = m_audioLibrary, vfs = &m_vfs, db = m_database.get()] {
+            // Either part may fail on its own; the car then comes without
+            // it, as the synchronous path did.
+            if (needModel) {
+                try {
+                    spawn->model = carmodel::CarModel::load(*vfs, db, mediaName);
+                } catch (const std::exception& e) {
+                    logWarning("car model {}: {}", mediaName, e.what());
+                }
+            }
+            if (device) {
+                try {
+                    spawn->engine = std::make_unique<audio::EngineSound>(
+                        *device, library, mediaName, engineSoundOptions(true));
+                } catch (const std::exception& e) {
+                    logWarning("audio: {}: {}", mediaName, e.what());
+                }
+            }
+            spawn->ready = true;
+        });
+        logDebug("traffic: loading car {} for {:.0f} m out", mediaName, distance);
+        return true;
     }
     return false;
+}
+
+void Game::finishTrafficSpawn()
+{
+    if (!m_pendingSpawn || !m_pendingSpawn->ready) {
+        return;
+    }
+    const std::shared_ptr<TrafficSpawn> spawn = std::move(m_pendingSpawn);
+    const RacingLine& line = *spawn->line;
+    const glm::vec3 point = line.positionAt(spawn->lineIndex);
+    const glm::vec3 direction = line.directionAt(spawn->lineIndex);
+    const glm::vec3 side = glm::normalize(glm::cross(glm::vec3(0.0F, 1.0F, 0.0F), direction));
+    const glm::vec3 position = point + side * spawn->lane;
+    // The spot was free when the car was chosen; loading took a moment.
+    const bool crowded = std::any_of(m_vehicles.begin(), m_vehicles.end(),
+        [&](const auto& v) { return glm::length(v->physics->position() - position) < 25.0F; });
+    if (crowded) {
+        return;
+    }
+    try {
+        std::unique_ptr<Vehicle> vehicle
+            = makeVehicle(spawn->carId, {0.7F, 0.7F, 0.7F, 1.0F}, spawn->colourSequence, std::move(spawn->model));
+        vehicle->role = spawn->role;
+        vehicle->line = &line;
+        vehicle->physics->assists().speedSensitiveSteering = false;
+        vehicle->ai = std::make_unique<AiDriver>(line, *vehicle->spec, spawn->skill, spawn->lane);
+        vehicle->ai->setLineIndex(spawn->lineIndex);
+        vehicle->ai->setMaxSpeed(spawn->speed);
+        placeVehicle(*vehicle, position, std::atan2(direction.x, direction.z));
+        // Already moving, as cars on a road are when they come into view.
+        vehicle->physics->setState(vehicle->physics->position(), vehicle->physics->orientation(),
+            direction * spawn->speed * 0.8F, glm::vec3(0.0F));
+        vehicle->engine = std::move(spawn->engine);
+        logDebug("traffic: {} {} at {:.0f} m, {:.0f} km/h",
+            spawn->role == Vehicle::Role::Traffic ? "car" : "festival driver", vehicle->name,
+            glm::length(position - player().physics->position()), spawn->speed * 3.6F);
+        m_vehicles.push_back(std::move(vehicle));
+    } catch (const std::exception& e) {
+        logWarning("traffic: car {}: {}", spawn->carId, e.what());
+    }
 }
 
 void Game::updateTraffic(float dt)
@@ -884,6 +946,7 @@ void Game::updateTraffic(float dt)
     if (!m_trafficConfig || m_trafficLines.empty() || !m_playerPlaced) {
         return;
     }
+    finishTrafficSpawn();
     const TrafficConfig::Settings* settings = m_trafficConfig->find(m_race ? "race" : "freeroam");
     if (!settings) {
         return;
@@ -913,7 +976,7 @@ void Game::updateTraffic(float dt)
     m_vehicles.erase(std::remove_if(m_vehicles.begin() + 1, m_vehicles.end(), tooFar), m_vehicles.end());
 
     m_trafficTimer -= dt;
-    if (m_trafficTimer > 0.0F) {
+    if (m_trafficTimer > 0.0F || m_pendingSpawn) {
         return;
     }
     m_trafficTimer = 0.5F;

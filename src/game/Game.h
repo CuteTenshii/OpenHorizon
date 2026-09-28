@@ -6,6 +6,7 @@
 #include "base/JobPool.h"
 #include "car/CarPhysics.h"
 #include "car/CarSpec.h"
+#include "carmodel/CarModel.h"
 #include "data/Database.h"
 #include "data/StringTable.h"
 #include "game/AiDriver.h"
@@ -28,6 +29,7 @@
 
 #include <glm/glm.hpp>
 
+#include <atomic>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -111,7 +113,10 @@ private:
     /// Where free roam starts: the CPlaceCar of the free-roam flow's
     /// "place_car_post_credits" state, if the file has it.
     std::optional<std::pair<glm::vec3, float>> freeRoamStart() const;
-    std::unique_ptr<Vehicle> makeVehicle(int carId, const glm::vec4& colour, int colourSequence = 1) const;
+    /// `model` is the car's decoded model when it was loaded elsewhere; it is
+    /// read here otherwise, unless the cache already has it.
+    std::unique_ptr<Vehicle> makeVehicle(int carId, const glm::vec4& colour, int colourSequence = 1,
+        std::optional<carmodel::CarModel> model = std::nullopt) const;
     void spawnPlayer();
     void placeVehicle(Vehicle& vehicle, const glm::vec3& position, float heading);
     Vehicle& player() { return *m_vehicles.front(); }
@@ -125,6 +130,7 @@ private:
     void collideSmashables(Vehicle& vehicle);
     void updateDebris(float dt);
     void attachEngineSound(Vehicle& vehicle, bool spatial) const;
+    static audio::EngineSoundOptions engineSoundOptions(bool spatial);
     void updateAudio(float dt);
 
     void startRace(const RaceEvent& event);
@@ -132,6 +138,8 @@ private:
     void updateRace(float dt);
     void loadTraffic();
     void updateTraffic(float dt);
+    /// Puts the car whose model and sound finished loading on the road.
+    void finishTrafficSpawn();
     bool spawnTraffic(Vehicle::Role role, const TrafficConfig::Settings& settings,
         const TrafficConfig::Density& density);
     void updateAiDrivers(float dt);
@@ -186,6 +194,25 @@ private:
     float m_spawnHeading = 0.0F;
     float m_spawnWait = 0.0F;
     float m_physicsAccumulator = 0.0F;
+
+    /// A traffic car chosen and placed on the main thread, whose model and
+    /// engine sound load on a worker: decoding them took up to 0.4 s, which
+    /// froze the game every time a car appeared.
+    struct TrafficSpawn {
+        Vehicle::Role role = Vehicle::Role::Traffic;
+        int carId = 0;
+        int colourSequence = 1;
+        const RacingLine* line = nullptr;
+        float lineIndex = 0.0F;
+        float lane = 0.0F;
+        float speed = 0.0F;
+        int skill = 0;
+        std::optional<carmodel::CarModel> model;
+        std::unique_ptr<audio::EngineSound> engine;
+        std::atomic<bool> ready{false};
+    };
+    // After the audio device, so a pending engine sound goes first.
+    std::shared_ptr<TrafficSpawn> m_pendingSpawn;
 
     std::optional<TrafficConfig> m_trafficConfig;
     /// Every racing line in both directions: the roads traffic drives.
