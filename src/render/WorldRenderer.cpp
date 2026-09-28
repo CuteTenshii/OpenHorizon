@@ -394,14 +394,14 @@ bool WorldRenderer::texturesReady(const world::TileMesh& mesh) const
     return true;
 }
 
-const Texture& WorldRenderer::textureOr(std::uint32_t id, const Texture& fallback)
+const Texture* WorldRenderer::textureOr(std::uint32_t id, const Texture* fallback)
 {
     const auto it = m_textures.find(id);
     if (it == m_textures.end() || !it->second.ready) {
         return fallback;
     }
     it->second.lastUsed = m_frame;
-    return it->second.texture;
+    return &it->second.texture;
 }
 
 void WorldRenderer::evictTextures()
@@ -601,12 +601,12 @@ void WorldRenderer::drawBatches(const GpuMesh& mesh, bool waterPass)
             continue;
         }
         using Layer = world::TileMesh::Layer;
-        const Texture& fallback = water ? m_flatNormal : m_white;
-        textureOr(batch.texture, fallback).bind(0);
-        textureOr(batch.layers[Layer::LayerB], textureOr(batch.texture, fallback)).bind(1);
-        textureOr(batch.layers[Layer::LayerC], textureOr(batch.texture, fallback)).bind(2);
-        textureOr(batch.layers[Layer::SplatMap], m_white).bind(3);
-        textureOr(batch.layers[Layer::OcclusionMap], m_white).bind(4);
+        const Texture* base = textureOr(batch.texture, water ? &m_flatNormal : &m_white);
+        base->bind(0);
+        textureOr(batch.layers[Layer::LayerB], base)->bind(1);
+        textureOr(batch.layers[Layer::LayerC], base)->bind(2);
+        textureOr(batch.layers[Layer::SplatMap], &m_white)->bind(3);
+        textureOr(batch.layers[Layer::OcclusionMap], &m_white)->bind(4);
         m_shader.set("uShading", shadingCode(batch.shading));
         m_shader.set("uScaleA", glm::vec2(batch.layerScales[0], batch.layerScales[1]));
         m_shader.set("uScaleB", glm::vec2(batch.layerScales[2], batch.layerScales[3]));

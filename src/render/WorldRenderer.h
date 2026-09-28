@@ -217,7 +217,8 @@ private:
     static void destroy(GpuMesh& mesh);
     void requestTexture(std::uint32_t id, float priority);
     bool texturesReady(const world::TileMesh& mesh) const;
-    const Texture& textureOr(std::uint32_t id, const Texture& fallback);
+    /// The loaded texture, or `fallback` while it is not ready.
+    const Texture* textureOr(std::uint32_t id, const Texture* fallback);
     void evictTextures();
 
     const world::TrackWorld& m_world;
