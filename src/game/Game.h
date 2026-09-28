@@ -9,6 +9,7 @@
 #include "game/GameObjects.h"
 #include "game/Race.h"
 #include "game/RaceData.h"
+#include "game/Smashables.h"
 #include "game/TimeOfDay.h"
 #include "physics/WorldCollision.h"
 #include "platform/Window.h"
@@ -24,6 +25,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace fh {
@@ -95,6 +97,8 @@ private:
     void stepPhysics(float dt);
     void collideWithWorld(Vehicle& vehicle);
     void collideVehicles();
+    void collideSmashables(Vehicle& vehicle);
+    void updateDebris(float dt);
 
     void startRace(const RaceEvent& event);
     void endRace();
@@ -129,6 +133,13 @@ private:
     std::unique_ptr<physics::WorldCollision> m_collision;
 
     std::vector<std::unique_ptr<Vehicle>> m_vehicles;
+    std::optional<Smashables> m_smashables;
+    /// Renderer handle of each loose smashable, by body index.
+    std::unordered_map<std::size_t, int> m_debrisHandles;
+    /// World chunks the renderer leaves out: those of loose smashables.
+    std::vector<bool> m_hiddenChunks;
+    bool m_hiddenChanged = false;
+    float m_debrisAccumulator = 0.0F;
     std::vector<physics::SphereContact> m_contacts;
     bool m_playerPlaced = false;
     glm::vec3 m_spawnPosition{0.0F};

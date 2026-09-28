@@ -13,6 +13,10 @@ namespace {
 
 constexpr float kTileSize = 500.0F;
 constexpr float kCellSize = 8.0F;
+/// surfaceTypes.xml categories of movable things: GenCollObj (loose car
+/// parts, brake markers) and Smashable.
+constexpr std::uint8_t kLooseObjectCategory = 8;
+constexpr std::uint8_t kSmashableCategory = 12;
 /// Scattered copies at least this tall are trees and get a trunk.
 constexpr float kTreeHeight = 4.0F;
 /// Tiles are dropped once the focus is this much farther than the load
@@ -253,7 +257,7 @@ void WorldCollision::update(const glm::vec3& focus, float radius)
         std::vector<Trunk> trunks;
         for (std::uint32_t chunk : m_grid.chunksAt(tiles[i], 0.0F)) {
             const world::WorldChunk& c = m_world.index.chunks()[chunk];
-            if (c.backdrop) {
+            if (c.backdrop || (chunk < m_excluded.size() && m_excluded[chunk])) {
                 continue;
             }
             if (!c.scattered) {
@@ -478,7 +482,14 @@ void WorldCollision::sphereContacts(const glm::vec3& centre, float radius, std::
     const std::size_t first = out.size();
     bool meshCovers = false;
     if (m_fiz) {
+        const collision::SurfaceTable& surfaces = m_fiz->surfaces();
         for (const collision::SphereContact& c : m_fiz->sphereContacts(centre, radius, m_filter)) {
+            // Loose objects and smashables in the mesh are knocked over,
+            // not driven into.
+            const collision::SurfaceType* type = surfaces.find(c.surface);
+            if (type && (type->category == kLooseObjectCategory || type->category == kSmashableCategory)) {
+                continue;
+            }
             out.push_back({c.point, c.normal, c.depth, c.surface});
         }
         // Inside the drivable area the collision mesh is the ground; the

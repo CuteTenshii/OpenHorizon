@@ -65,6 +65,8 @@ add_library(fh1engine STATIC
     game/Race.h
     game/RaceData.cpp
     game/RaceData.h
+    game/Smashables.cpp
+    game/Smashables.h
     game/TimeOfDay.cpp
     game/TimeOfDay.h
     physics/WorldCollision.cpp

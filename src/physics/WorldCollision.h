@@ -61,6 +61,9 @@ public:
     void update(const glm::vec3& focus, float radius = 350.0F);
     /// True once the tile under `point` has been built.
     bool readyAt(const glm::vec3& point) const;
+    /// Chunks (flags indexed like the world index's chunks) that are not
+    /// static, such as breakable props; call before the first update().
+    void setExcludedChunks(std::vector<bool> excluded) { m_excluded = std::move(excluded); }
     /// The race route being driven, whose barriers are then solid; -1 in
     /// free roam.
     void setActiveRoute(int route) { m_filter.activeRoute = route; }
@@ -125,6 +128,7 @@ private:
     std::unique_ptr<collision::TrackCollision> m_fiz;
     collision::QueryFilter m_filter;
     std::future<std::size_t> m_fizLoading;
+    std::vector<bool> m_excluded;
 };
 
 } // namespace fh::physics

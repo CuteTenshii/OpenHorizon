@@ -63,6 +63,18 @@ public:
     void update(const glm::vec3& camera);
     void draw(const FrameParams& frame);
 
+    /// Leaves out the chunks `hidden` marks (indexed like the world index's
+    /// chunks); tiles holding changed chunks are rebuilt, keeping their old
+    /// version on screen until the new one is ready.
+    void setHiddenChunks(const std::vector<bool>& hidden);
+    /// Starts drawing `chunks` as one movable object, built in the
+    /// background; returns its handle.
+    int addDynamic(std::vector<std::uint32_t> chunks);
+    /// Moves a dynamic object: `transform` maps its chunks from where the
+    /// world index places them to where they are now.
+    void setDynamicTransform(int handle, const glm::mat4& transform);
+    void removeDynamic(int handle);
+
     /// Tiles farther than this are not drawn, in metres.
     void setDrawDistance(float metres) { m_drawDistance = metres; }
     const Stats& stats() const { return m_stats; }
@@ -105,7 +117,17 @@ private:
         std::uint64_t lastUsed = 0;
     };
 
+    struct Dynamic {
+        std::shared_ptr<GpuMesh> mesh;
+        glm::mat4 transform{1.0F};
+    };
+    struct BuiltDynamic {
+        int handle = 0;
+        std::unique_ptr<world::TileMesh> mesh;
+    };
+
     std::shared_ptr<GpuMesh> upload(const world::TileMesh& mesh);
+    void drawBatches(const GpuMesh& mesh, bool waterPass);
     static void destroy(GpuMesh& mesh);
     void requestTexture(std::uint32_t id, float priority);
     bool texturesReady(const world::TileMesh& mesh) const;
@@ -120,10 +142,13 @@ private:
 
     std::mutex m_resultMutex;
     std::deque<BuiltTile> m_builtTiles;
+    std::deque<BuiltDynamic> m_builtDynamics;
     std::deque<LoadedTexture> m_loadedTextures;
     std::vector<std::uint32_t> m_failedTextures;
     std::shared_ptr<std::atomic<bool>> m_alive;
 
+    std::unordered_map<int, Dynamic> m_dynamics;
+    int m_nextDynamic = 1;
     Shader m_shader;
     Texture m_white;
     Texture m_flatNormal;

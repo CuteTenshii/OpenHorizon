@@ -163,6 +163,13 @@ void Game::loadWorld()
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     m_worldRenderer = std::make_unique<render::WorldRenderer>(*m_world, *m_jobs);
     m_collision = std::make_unique<physics::WorldCollision>(*m_world, *m_jobs, m_vfs, m_options.track);
+    try {
+        m_smashables = Smashables::load(m_vfs, m_options.track, m_world->index);
+        m_collision->setExcludedChunks(m_smashables->chunkMask());
+    } catch (const std::exception& e) {
+        logWarning("smashables: {}", e.what());
+    }
+    m_hiddenChunks.assign(m_world->index.chunks().size(), false);
 
     m_objects = GameObjects::load(m_vfs, m_options.track);
     m_timeOfDay.emplace(TimeOfDayCurves::load(m_vfs, m_options.track));
@@ -301,6 +308,7 @@ void Game::stepPhysics(float dt)
         for (std::size_t i = 0; i < m_vehicles.size(); ++i) {
             m_vehicles[i]->physics->step(controls[i], *m_collision);
             collideWithWorld(*m_vehicles[i]);
+            collideSmashables(*m_vehicles[i]);
             // A gear request is one press, not one per step.
             controls[i].shiftUp = false;
             controls[i].shiftDown = false;
@@ -322,8 +330,57 @@ void Game::collideWithWorld(Vehicle& vehicle)
         const std::size_t count = std::min<std::size_t>(m_contacts.size(), 3);
         for (std::size_t i = 0; i < count; ++i) {
             const physics::SphereContact& contact = m_contacts[i];
-            vehicle.physics->resolveContact(contact.point, contact.normal, contact.depth, 0.2F, 0.4F);
+            const float impulse
+                = vehicle.physics->resolveContact(contact.point, contact.normal, contact.depth, 0.2F, 0.4F);
+            if (impulse > vehicle.physics->mass() * 3.0F) {
+                logDebug("impact {:.0f} N·s at {:.1f} {:.1f} {:.1f}, surface {}, normal {:.2f} {:.2f} {:.2f}", impulse,
+                    contact.point.x, contact.point.y, contact.point.z, contact.surface, contact.normal.x,
+                    contact.normal.y, contact.normal.z);
+            }
         }
+    }
+}
+
+void Game::collideSmashables(Vehicle& vehicle)
+{
+    if (!m_smashables) {
+        return;
+    }
+    const glm::mat4 transform = vehicle.physics->transform();
+    std::vector<glm::vec4> spheres;
+    spheres.reserve(vehicle.spheres.size());
+    for (const BodySphere& sphere : vehicle.spheres) {
+        spheres.emplace_back(glm::vec3(transform * glm::vec4(sphere.centre, 1.0F)), sphere.radius);
+    }
+    for (std::size_t index : m_smashables->collideCar(*vehicle.physics, spheres)) {
+        const Smashables::Body& body = m_smashables->bodies()[index];
+        logDebug("smashed {} ({:.0f} kg) at {:.1f} m/s", body.type, body.mass, vehicle.physics->speed());
+        for (std::uint32_t chunk : body.chunks) {
+            m_hiddenChunks[chunk] = true;
+        }
+        m_hiddenChanged = true;
+        m_debrisHandles[index] = m_worldRenderer->addDynamic(body.finestChunks);
+    }
+}
+
+void Game::updateDebris(float dt)
+{
+    if (!m_smashables) {
+        return;
+    }
+    // Debris needs less precision than the cars; 120 Hz keeps it stable.
+    constexpr float kStep = 1.0F / 120.0F;
+    m_debrisAccumulator = std::min(m_debrisAccumulator + dt, 0.1F);
+    while (m_debrisAccumulator >= kStep) {
+        m_smashables->step(kStep, *m_collision);
+        m_debrisAccumulator -= kStep;
+    }
+    for (const auto& [index, handle] : m_debrisHandles) {
+        m_worldRenderer->setDynamicTransform(handle, m_smashables->bodies()[index].displacement());
+    }
+    if (m_hiddenChanged) {
+        m_worldRenderer->setHiddenChunks(m_hiddenChunks);
+        m_hiddenChanged = false;
     }
 }
 
@@ -1084,6 +1141,7 @@ int Game::run()
                                             : readPlayerControls(dt);
             updateRace(dt);
             stepPhysics(dt);
+            updateDebris(dt);
             if (m_options.demoDrive && secondTicked(m_time, dt)) {
                 const CarPhysics& car = *player().physics;
                 const GroundHit& ground = car.wheels()[0].ground;

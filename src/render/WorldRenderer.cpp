@@ -26,6 +26,8 @@ layout(location = 2) in vec2 aTexcoord0;
 layout(location = 3) in vec2 aTexcoord1;
 layout(location = 4) in vec4 aColour;
 uniform mat4 uViewProjection;
+// Identity for the static world; places moving objects (knocked-over props).
+uniform mat4 uModel;
 out vec3 vPosition;
 out vec3 vNormal;
 out vec2 vTexcoord0;
@@ -33,12 +35,13 @@ out vec2 vTexcoord1;
 out vec4 vColour;
 void main()
 {
-    vPosition = aPosition;
-    vNormal = aNormal;
+    vec4 world = uModel * vec4(aPosition, 1.0);
+    vPosition = world.xyz;
+    vNormal = mat3(uModel) * aNormal;
     vTexcoord0 = aTexcoord0;
     vTexcoord1 = aTexcoord1;
     vColour = aColour;
-    gl_Position = uViewProjection * vec4(aPosition, 1.0);
+    gl_Position = uViewProjection * world;
 }
 )";
 
@@ -309,6 +312,46 @@ void WorldRenderer::evictTextures()
     m_stats.textureBytes = total;
 }
 
+void WorldRenderer::setHiddenChunks(const std::vector<bool>& hidden)
+{
+    for (std::size_t tile : m_grid.update(world::EventPropFilter{}, hidden)) {
+        // Rebuilt at the current distance on the next update; the old mesh
+        // stays on screen meanwhile.
+        m_tiles[tile].requestedState = -1;
+        m_tiles[tile].pending.reset();
+        m_tiles[tile].pendingState = -1;
+    }
+}
+
+int WorldRenderer::addDynamic(std::vector<std::uint32_t> chunks)
+{
+    const int handle = m_nextDynamic++;
+    m_dynamics.emplace(handle, Dynamic{});
+    m_jobs.submit(-2000.0F, [this, handle, chunks = std::move(chunks), alive = m_alive] {
+        if (!alive->load()) {
+            return;
+        }
+        auto mesh = std::make_unique<world::TileMesh>(world::buildTileMesh(
+            *m_world.archive, m_world.index, chunks, m_world.textures ? &*m_world.textures : nullptr));
+        const std::lock_guard lock(m_resultMutex);
+        m_builtDynamics.push_back({handle, std::move(mesh)});
+    });
+    return handle;
+}
+
+void WorldRenderer::setDynamicTransform(int handle, const glm::mat4& transform)
+{
+    const auto it = m_dynamics.find(handle);
+    if (it != m_dynamics.end()) {
+        it->second.transform = transform;
+    }
+}
+
+void WorldRenderer::removeDynamic(int handle)
+{
+    m_dynamics.erase(handle);
+}
+
 void WorldRenderer::update(const glm::vec3& camera)
 {
     ++m_frame;
@@ -328,6 +371,18 @@ void WorldRenderer::update(const glm::vec3& camera)
             m_loadedTextures.pop_front();
         }
         failed.swap(m_failedTextures);
+        for (BuiltDynamic& dynamic : m_builtDynamics) {
+            const auto it = m_dynamics.find(dynamic.handle);
+            if (it != m_dynamics.end() && !dynamic.mesh->indices.empty()) {
+                it->second.mesh = upload(*dynamic.mesh);
+                for (const world::TileMesh::Batch& batch : dynamic.mesh->batches) {
+                    for (std::uint32_t id : batch.textures()) {
+                        requestTexture(id, 0.0F);
+                    }
+                }
+            }
+        }
+        m_builtDynamics.clear();
     }
     for (std::uint32_t id : failed) {
         m_textures[id].failed = true;
@@ -414,6 +469,37 @@ void WorldRenderer::update(const glm::vec3& camera)
         std::count_if(m_textures.begin(), m_textures.end(), [](const auto& entry) { return entry.second.ready; }));
 }
 
+void WorldRenderer::drawBatches(const GpuMesh& mesh, bool waterPass)
+{
+    for (const world::TileMesh::Batch& batch : mesh.batches) {
+        const bool water = batch.shading == world::TileMesh::Shading::Water;
+        if (water != waterPass || batch.indexCount == 0) {
+            continue;
+        }
+        if (batch.backdrop && batch.chunk != world::TileMesh::kMergedChunks
+            && !m_world.index.chunks()[batch.chunk].visibleFrom(m_cameraZone)) {
+            continue;
+        }
+        using Layer = world::TileMesh::Layer;
+        const Texture& fallback = water ? m_flatNormal : m_white;
+        textureOr(batch.texture, fallback).bind(0);
+        textureOr(batch.layers[Layer::LayerB], textureOr(batch.texture, fallback)).bind(1);
+        textureOr(batch.layers[Layer::LayerC], textureOr(batch.texture, fallback)).bind(2);
+        textureOr(batch.layers[Layer::SplatMap], m_white).bind(3);
+        textureOr(batch.layers[Layer::OcclusionMap], m_white).bind(4);
+        m_shader.set("uShading", shadingCode(batch.shading));
+        m_shader.set("uScaleA", glm::vec2(batch.layerScales[0], batch.layerScales[1]));
+        m_shader.set("uScaleB", glm::vec2(batch.layerScales[2], batch.layerScales[3]));
+        m_shader.set("uScaleC", glm::vec2(batch.layerScales[4], batch.layerScales[5]));
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT,
+            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t)));
+        if (!waterPass) {
+            ++m_stats.batches;
+            m_stats.triangles += batch.indexCount / 3;
+        }
+    }
+}
+
 void WorldRenderer::draw(const FrameParams& frame)
 {
     m_stats.tilesDrawn = 0;
@@ -422,6 +508,7 @@ void WorldRenderer::draw(const FrameParams& frame)
 
     m_shader.use();
     m_shader.set("uViewProjection", frame.projection * frame.view);
+    m_shader.set("uModel", glm::mat4(1.0F));
     m_shader.set("uCamera", frame.cameraPosition);
     m_shader.set("uSunDirection", frame.sunDirection);
     m_shader.set("uSunColour", frame.sunColour);
@@ -475,34 +562,18 @@ void WorldRenderer::draw(const FrameParams& frame)
             if (!waterPass) {
                 ++m_stats.tilesDrawn;
             }
-            for (const world::TileMesh::Batch& batch : state.mesh->batches) {
-                const bool water = batch.shading == world::TileMesh::Shading::Water;
-                if (water != waterPass || batch.indexCount == 0) {
-                    continue;
-                }
-                if (batch.backdrop && batch.chunk != world::TileMesh::kMergedChunks
-                    && !m_world.index.chunks()[batch.chunk].visibleFrom(m_cameraZone)) {
-                    continue;
-                }
-                using Layer = world::TileMesh::Layer;
-                const Texture& fallback = water ? m_flatNormal : m_white;
-                textureOr(batch.texture, fallback).bind(0);
-                textureOr(batch.layers[Layer::LayerB], textureOr(batch.texture, fallback)).bind(1);
-                textureOr(batch.layers[Layer::LayerC], textureOr(batch.texture, fallback)).bind(2);
-                textureOr(batch.layers[Layer::SplatMap], m_white).bind(3);
-                textureOr(batch.layers[Layer::OcclusionMap], m_white).bind(4);
-                m_shader.set("uShading", shadingCode(batch.shading));
-                m_shader.set("uScaleA", glm::vec2(batch.layerScales[0], batch.layerScales[1]));
-                m_shader.set("uScaleB", glm::vec2(batch.layerScales[2], batch.layerScales[3]));
-                m_shader.set("uScaleC", glm::vec2(batch.layerScales[4], batch.layerScales[5]));
-                glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT,
-                    reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t)));
-                if (!waterPass) {
-                    ++m_stats.batches;
-                    m_stats.triangles += batch.indexCount / 3;
-                }
-            }
+            drawBatches(*state.mesh, waterPass);
         }
+        m_shader.set("uModel", glm::mat4(1.0F));
+        for (const auto& [handle, dynamic] : m_dynamics) {
+            if (!dynamic.mesh) {
+                continue;
+            }
+            m_shader.set("uModel", dynamic.transform);
+            glBindVertexArray(dynamic.mesh->vao);
+            drawBatches(*dynamic.mesh, waterPass);
+        }
+        m_shader.set("uModel", glm::mat4(1.0F));
         if (waterPass) {
             glDisable(GL_BLEND);
             glDepthMask(GL_TRUE);
