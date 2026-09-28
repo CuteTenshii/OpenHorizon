@@ -10,3 +10,10 @@ target_compile_options(tst_collision PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_collision PRIVATE fh1collision)
 # As with tst_world, the Colorado test runs only when FH1_GAME_DIR is set.
 add_test(NAME tst_collision COMMAND tst_collision)
+
+add_executable(tst_audio TestHarness.h tst_audio.cpp)
+target_compile_options(tst_audio PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_audio PRIVATE fh1audio)
+# The disc tests inside (decoding every sample, parsing every project and
+# engine tuning) run only when FH1_GAME_DIR names an extracted disc.
+add_test(NAME tst_audio COMMAND tst_audio)
