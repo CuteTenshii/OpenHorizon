@@ -57,6 +57,8 @@ add_library(fh1engine STATIC
     game/Game.h
     game/GameObjects.cpp
     game/GameObjects.h
+    game/TimeOfDay.cpp
+    game/TimeOfDay.h
     physics/WorldCollision.cpp
     physics/WorldCollision.h
     render/FrameRenderer.cpp

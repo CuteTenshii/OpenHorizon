@@ -27,7 +27,9 @@ struct FrameParams {
     /// Direction light travels from the sun, normalised.
     glm::vec3 sunDirection{0.3F, -0.8F, 0.4F};
     glm::vec3 sunColour{1.0F};
-    glm::vec3 skyColour{0.5F, 0.65F, 0.9F};
+    /// Sky overhead and at the horizon, from the time-of-day curves.
+    glm::vec3 skyColour{0.05F, 0.15F, 0.4F};
+    glm::vec3 horizonColour{0.7F, 0.85F, 0.95F};
     glm::vec3 groundColour{0.35F, 0.3F, 0.25F};
     glm::vec3 fogColour{0.7F, 0.78F, 0.88F};
     float fogDensity = 0.00012F;

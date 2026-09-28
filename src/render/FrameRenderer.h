@@ -26,6 +26,22 @@ struct Camera {
     glm::mat4 projection(float aspect) const;
 };
 
+/// The tone curve and exposure for turning the HDR frame into display
+/// colours. The curve parameters are those of the game's filmicTone
+/// element; the defaults are the curve's usual published values.
+struct ToneSettings {
+    float shoulderStrength = 0.22F;
+    float linearStrength = 0.3F;
+    float linearAngle = 0.1F;
+    float toeStrength = 0.2F;
+    float toeNumerator = 0.01F;
+    float toeDenominator = 0.3F;
+    float white = 11.2F;
+    /// Multiplies the automatic exposure.
+    float exposureBias = 1.0F;
+    float vignettePower = 3.0F;
+};
+
 /// Owns the offscreen HDR target and the passes around the scene: clearing
 /// to reversed depth, the sky, and tonemapping to the window.
 class FrameRenderer {
@@ -40,9 +56,10 @@ public:
     void begin(int width, int height);
     /// Draws the sky behind everything drawn so far.
     void sky(const FrameParams& frame);
-    /// Tonemaps the HDR target onto the window's framebuffer and leaves the
-    /// window bound for overlays.
-    void finish(float exposure);
+    /// Tonemaps the HDR target onto the window's framebuffer, with exposure
+    /// adapted to the frame's average brightness, and leaves the window
+    /// bound for overlays.
+    void finish(const ToneSettings& tone);
 
 private:
     void resize(int width, int height);
@@ -53,6 +70,7 @@ private:
     GLuint m_emptyVao = 0;
     int m_width = 0;
     int m_height = 0;
+    int m_levels = 1;
     Shader m_skyShader;
     Shader m_tonemapShader;
 };

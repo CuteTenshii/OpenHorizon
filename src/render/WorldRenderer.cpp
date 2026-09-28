@@ -62,6 +62,7 @@ uniform vec3 uCamera;
 uniform vec3 uSunDirection;
 uniform vec3 uSunColour;
 uniform vec3 uSkyColour;
+uniform vec3 uHorizonColour;
 uniform vec3 uGroundColour;
 uniform vec3 uFogColour;
 uniform float uFogDensity;
@@ -112,7 +113,7 @@ void main()
         vec3 n2 = texture(uDiffuse, vTexcoord0 * 7.0 - flow.yx).xyz * 2.0 - 1.0;
         vec3 surfaceNormal = normalize(vec3((n1.x + n2.x) * 0.1, 1.0, (n1.y + n2.y) * 0.1));
         float fresnel = 0.02 + 0.98 * pow(1.0 - clamp(dot(toEye, surfaceNormal), 0.0, 1.0), 5.0);
-        vec3 colour = mix(vec3(0.02, 0.07, 0.08), uSkyColour, fresnel);
+        vec3 colour = mix(vec3(0.02, 0.07, 0.08), uHorizonColour, fresnel);
         float glint = pow(max(dot(reflect(-toEye, surfaceNormal), toSun), 0.0), 200.0);
         colour += uSunColour * glint * 4.0;
         fragColour = vec4(applyFog(colour, distance), mix(0.7, 1.0, fresnel));
@@ -132,7 +133,10 @@ void main()
         albedo = groundColour();
     }
     float sun = max(dot(normal, toSun), 0.0);
-    vec3 ambient = mix(uGroundColour, uSkyColour, 0.5 + 0.5 * normal.y);
+    // Light from the whole sky dome: the zenith and the brighter horizon
+    // above, bounce from the ground below.
+    vec3 skyLight = (uSkyColour + uHorizonColour) * 0.5;
+    vec3 ambient = mix(uGroundColour, skyLight, 0.5 + 0.5 * normal.y);
     vec3 colour = albedo * (ambient * 0.9 + uSunColour * sun);
     fragColour = vec4(applyFog(colour, distance), 1.0);
 }
@@ -422,6 +426,7 @@ void WorldRenderer::draw(const FrameParams& frame)
     m_shader.set("uSunDirection", frame.sunDirection);
     m_shader.set("uSunColour", frame.sunColour);
     m_shader.set("uSkyColour", frame.skyColour);
+    m_shader.set("uHorizonColour", frame.horizonColour);
     m_shader.set("uGroundColour", frame.groundColour);
     m_shader.set("uFogColour", frame.fogColour);
     m_shader.set("uFogDensity", frame.fogDensity);

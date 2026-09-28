@@ -5,6 +5,7 @@
 #include "car/CarSpec.h"
 #include "data/Database.h"
 #include "game/GameObjects.h"
+#include "game/TimeOfDay.h"
 #include "physics/WorldCollision.h"
 #include "platform/Window.h"
 #include "render/FrameRenderer.h"
@@ -40,6 +41,8 @@ struct GameOptions {
     /// Holds full throttle with a slight steer, for checking the driving
     /// without a player.
     bool demoDrive = false;
+    /// Start time in seconds after midnight; the game's own 16:00 otherwise.
+    std::optional<float> startTime;
 };
 
 /// Free roam: the track's world streamed around a car the player drives.
@@ -81,6 +84,8 @@ private:
     std::unique_ptr<JobPool> m_jobs;
     std::optional<world::TrackWorld> m_world;
     std::optional<GameObjects> m_objects;
+    std::optional<TimeOfDay> m_timeOfDay;
+    render::ToneSettings m_tone;
     std::unique_ptr<render::FrameRenderer> m_frame;
     std::unique_ptr<render::WorldRenderer> m_worldRenderer;
     std::unique_ptr<render::Overlay> m_overlay;

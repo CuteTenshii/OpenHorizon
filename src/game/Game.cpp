@@ -118,6 +118,22 @@ void Game::loadWorld()
     m_collision = std::make_unique<physics::WorldCollision>(*m_world, *m_jobs);
 
     m_objects = GameObjects::load(m_vfs, m_options.track);
+    m_timeOfDay.emplace(TimeOfDayCurves::load(m_vfs, m_options.track));
+    if (m_options.startTime) {
+        m_timeOfDay->setSeconds(*m_options.startTime);
+    }
+    const PostEffectSettings post = PostEffectSettings::load(m_vfs, m_options.track);
+    m_tone.shoulderStrength = post.shoulderStrength;
+    m_tone.linearStrength = post.linearStrength;
+    m_tone.linearAngle = post.linearAngle;
+    m_tone.toeStrength = post.toeStrength;
+    m_tone.toeNumerator = post.toeNumerator;
+    m_tone.toeDenominator = post.toeDenominator;
+    // The game's white point of 1 assumes its own exposure scheme, which is
+    // not decoded yet; with the automatic exposure here a white point of 1
+    // clips every highlight, so the curve's usual value stands in.
+    m_tone.white = std::max(post.white, 6.0F);
+    m_tone.vignettePower = post.vignettePower;
     if (m_options.spawnAt) {
         m_spawnPosition = glm::vec3(m_options.spawnAt->x, 0.0F, m_options.spawnAt->y);
         m_spawnHeading = m_options.spawnHeading.value_or(0.0F);
@@ -297,13 +313,17 @@ render::FrameParams Game::frameParams() const
     frame.view = m_camera.view();
     frame.projection = m_camera.projection(aspect);
     frame.cameraPosition = m_camera.position;
-    // Late afternoon, the time of day the game's free roam opens at (16:00).
-    frame.sunDirection = glm::normalize(glm::vec3(-0.45F, -0.55F, 0.7F));
-    frame.sunColour = glm::vec3(3.2F, 2.9F, 2.5F);
-    frame.skyColour = glm::vec3(0.55F, 0.72F, 1.0F);
-    frame.groundColour = glm::vec3(0.32F, 0.28F, 0.22F);
-    frame.fogColour = glm::vec3(0.72F, 0.8F, 0.9F);
-    frame.fogDensity = 0.00009F;
+    const TimeOfDay& tod = *m_timeOfDay;
+    frame.sunDirection = tod.sunDirection();
+    // The curves are display-referred colours; the renderer's sun needs to
+    // outshine the sky several times over for sunlit and shaded surfaces to
+    // separate as they do in the game.
+    frame.sunColour = tod.sunColour() * 4.0F;
+    frame.skyColour = tod.skyTopColour();
+    frame.horizonColour = tod.skyBottomColour() * 0.5F;
+    frame.groundColour = tod.skyBottomColour() * 0.08F;
+    frame.fogColour = glm::mix(tod.skyBottomColour() * 0.5F, tod.hazeColour() * 2.0F, 0.5F);
+    frame.fogDensity = 0.00004F + 0.00012F * tod.hazeIntensity();
     frame.time = m_time;
     return frame;
 }
@@ -376,7 +396,8 @@ void Game::drawHud(float dt)
         const auto& stats = m_worldRenderer->stats();
         const glm::vec3 p = m_carPlaced ? m_car->position() : m_camera.position;
         const std::vector<std::string> lines = {
-            std::format("{:.0f} fps", m_fps),
+            std::format("{:.0f} fps   {:02d}:{:02d}", m_fps, static_cast<int>(m_timeOfDay->seconds() / 3600.0F),
+                static_cast<int>(m_timeOfDay->seconds() / 60.0F) % 60),
             std::format("X {:.1f}  Y {:.1f}  Z {:.1f}", p.x, p.y, p.z),
             std::format("tiles {}  triangles {}k  batches {}", stats.tilesDrawn, stats.triangles / 1000, stats.batches),
             std::format("textures {} ({} MB)  jobs {}", stats.texturesLoaded, stats.textureBytes >> 20,
@@ -438,6 +459,7 @@ int Game::run()
         last = now;
         m_time += dt;
         const InputState& in = m_window.input();
+        m_timeOfDay->advance(dt);
 
         if (in.pressed(Key::Escape)) {
             if (m_window.mouseCaptured()) {
@@ -511,7 +533,7 @@ int Game::run()
         m_frame->sky(frame);
         drawCar();
         m_overlay->flush(frame.projection * frame.view, m_window.width(), m_window.height());
-        m_frame->finish(1.0F);
+        m_frame->finish(m_tone);
         drawHud(dt);
         m_overlay->flush(glm::mat4(1.0F), m_window.width(), m_window.height());
 

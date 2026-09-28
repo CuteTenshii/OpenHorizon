@@ -26,6 +26,7 @@ uniform mat4 uInverseViewProjection;
 uniform vec3 uSunDirection;
 uniform vec3 uSunColour;
 uniform vec3 uSkyColour;
+uniform vec3 uHorizonColour;
 uniform vec3 uFogColour;
 layout(location = 0) out vec4 fragColour;
 void main()
@@ -33,12 +34,16 @@ void main()
     vec4 far = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, 0.0, 1.0);
     vec4 near = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
     vec3 direction = normalize(far.xyz / far.w - near.xyz / near.w);
-    float height = clamp(direction.y, -0.2, 1.0);
-    // Deep blue overhead fading into the haze at the horizon.
-    vec3 zenith = uSkyColour * vec3(0.55, 0.7, 1.0);
-    vec3 colour = mix(uFogColour, zenith, pow(max(height, 0.0), 0.45));
+    float height = clamp(direction.y, 0.0, 1.0);
+    // The game's atmosphere: the bottom colour at the horizon rising into
+    // the top colour, with haze hugging the horizon.
+    vec3 colour = mix(uHorizonColour, uSkyColour, pow(height, 0.5));
+    colour = mix(colour, uFogColour, exp(-height * 12.0) * 0.6);
+    if (direction.y < 0.0) {
+        colour = uFogColour;
+    }
     float sun = max(dot(direction, -uSunDirection), 0.0);
-    colour += uSunColour * (pow(sun, 1200.0) * 40.0 + pow(sun, 12.0) * 0.25);
+    colour += uSunColour * (smoothstep(0.9995, 0.9998, sun) * 60.0 + pow(sun, 16.0) * 0.4);
     fragColour = vec4(colour, 1.0);
 }
 )";
@@ -46,18 +51,34 @@ void main()
 const char* const kTonemapFragment = R"(#version 450 core
 in vec2 vUv;
 layout(binding = 0) uniform sampler2D uScene;
-uniform float uExposure;
+uniform float uAverageLevel;
+uniform float uExposureBias;
+uniform float uA;
+uniform float uB;
+uniform float uC;
+uniform float uD;
+uniform float uE;
+uniform float uF;
+uniform float uWhite;
+uniform float uVignettePower;
 layout(location = 0) out vec4 fragColour;
-// ACES filmic curve (Narkowicz's fit), then sRGB encoding by the
-// framebuffer.
-vec3 aces(vec3 x)
+// The filmic curve whose six parameters the game's TimeOfDay.xml gives.
+vec3 filmic(vec3 x)
 {
-    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+    return ((x * (uA * x + uC * uB) + uD * uE) / (x * (uA * x + uB) + uD * uF)) - uE / uF;
 }
 void main()
 {
-    vec3 hdr = texture(uScene, vUv).rgb * uExposure;
-    fragColour = vec4(aces(hdr), 1.0);
+    // Exposure keyed to the frame's average brightness, from the top of the
+    // HDR target's mip chain.
+    vec3 average = textureLod(uScene, vec2(0.5), uAverageLevel).rgb;
+    float luminance = max(dot(average, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
+    float exposure = clamp(0.18 / luminance, 0.05, 20.0) * uExposureBias;
+    vec3 hdr = texture(uScene, vUv).rgb * exposure;
+    vec3 mapped = filmic(hdr) / filmic(vec3(uWhite));
+    vec2 centred = vUv - 0.5;
+    float vignette = 1.0 - pow(length(centred) * 1.2, uVignettePower) * 0.35;
+    fragColour = vec4(clamp(mapped * vignette, 0.0, 1.0), 1.0);
 }
 )";
 
@@ -111,8 +132,9 @@ void FrameRenderer::resize(int width, int height)
         glDeleteTextures(1, &m_depth);
     }
     glCreateTextures(GL_TEXTURE_2D, 1, &m_colour);
-    glTextureStorage2D(m_colour, 1, GL_RGBA16F, width, height);
-    glTextureParameteri(m_colour, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    m_levels = 1 + static_cast<int>(std::floor(std::log2(static_cast<float>(std::max(width, height)))));
+    glTextureStorage2D(m_colour, m_levels, GL_RGBA16F, width, height);
+    glTextureParameteri(m_colour, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTextureParameteri(m_colour, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glCreateTextures(GL_TEXTURE_2D, 1, &m_depth);
     glTextureStorage2D(m_depth, 1, GL_DEPTH_COMPONENT32F, width, height);
@@ -150,6 +172,7 @@ void FrameRenderer::sky(const FrameParams& frame)
     m_skyShader.set("uSunDirection", frame.sunDirection);
     m_skyShader.set("uSunColour", frame.sunColour);
     m_skyShader.set("uSkyColour", frame.skyColour);
+    m_skyShader.set("uHorizonColour", frame.horizonColour);
     m_skyShader.set("uFogColour", frame.fogColour);
     // Only where nothing was drawn: depth still at the cleared 0.
     glDepthFunc(GL_EQUAL);
@@ -162,15 +185,25 @@ void FrameRenderer::sky(const FrameParams& frame)
     glEnable(GL_CULL_FACE);
 }
 
-void FrameRenderer::finish(float exposure)
+void FrameRenderer::finish(const ToneSettings& tone)
 {
+    glGenerateTextureMipmap(m_colour);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, m_width, m_height);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glEnable(GL_FRAMEBUFFER_SRGB);
     m_tonemapShader.use();
-    m_tonemapShader.set("uExposure", exposure);
+    m_tonemapShader.set("uAverageLevel", static_cast<float>(m_levels - 1));
+    m_tonemapShader.set("uExposureBias", tone.exposureBias);
+    m_tonemapShader.set("uA", tone.shoulderStrength);
+    m_tonemapShader.set("uB", tone.linearStrength);
+    m_tonemapShader.set("uC", tone.linearAngle);
+    m_tonemapShader.set("uD", tone.toeStrength);
+    m_tonemapShader.set("uE", tone.toeNumerator);
+    m_tonemapShader.set("uF", tone.toeDenominator);
+    m_tonemapShader.set("uWhite", tone.white);
+    m_tonemapShader.set("uVignettePower", tone.vignettePower);
     glBindTextureUnit(0, m_colour);
     glBindVertexArray(m_emptyVao);
     glDrawArrays(GL_TRIANGLES, 0, 3);

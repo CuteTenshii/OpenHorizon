@@ -25,6 +25,7 @@ void printUsage()
         "  --spawn ID         start at a GameObjs.xml GameplayID (default FESTIVAL_FIRST)\n"
         "  --at X,Z           start at world coordinates instead\n"
         "  --heading DEG      start heading, clockwise from north\n"
+        "  --time HH:MM       time of day to start at (default 16:00)\n"
         "  --manual           manual gearbox (E/Q or B/X to shift)\n"
         "  --demo-drive       drive with full throttle and a gentle weave, for testing\n"
         "  --width W --height H --fullscreen\n"
@@ -83,6 +84,14 @@ int main(int argc, char** argv)
             options.spawnAt = glm::vec2(x, z);
         } else if (arg == "--heading") {
             options.spawnHeading = std::strtof(value().c_str(), nullptr) * 3.14159265F / 180.0F;
+        } else if (arg == "--time") {
+            int hours = 0;
+            int minutes = 0;
+            if (std::sscanf(value().c_str(), "%d:%d", &hours, &minutes) < 1) {
+                std::fprintf(stderr, "--time expects HH:MM\n");
+                return 2;
+            }
+            options.startTime = static_cast<float>(hours * 3600 + minutes * 60);
         } else if (arg == "--manual") {
             options.manualGearbox = true;
         } else if (arg == "--demo-drive") {
