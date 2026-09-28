@@ -14,3 +14,26 @@ target_link_libraries(fh1base PUBLIC lzx::lzx pugixml::pugixml Threads::Threads)
 add_executable(fh1vfs ../tools/fh1vfs.cpp)
 target_compile_options(fh1vfs PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(fh1vfs PRIVATE fh1base)
+
+add_library(fh1data STATIC
+    data/Database.cpp
+    data/Database.h
+    car/CarSpec.cpp
+    car/CarSpec.h
+)
+target_compile_options(fh1data PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(fh1data PUBLIC fh1base SQLite3::SQLite3)
+
+add_library(fh1platform STATIC
+    platform/Input.h
+    platform/Window.cpp
+    platform/Window.h
+    render/Gl.cpp
+    render/Gl.h
+)
+target_compile_options(fh1platform PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(fh1platform PUBLIC fh1base SDL3::SDL3 OpenGL::GL)
+
+add_executable(fh1carspec ../tools/fh1carspec.cpp)
+target_compile_options(fh1carspec PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(fh1carspec PRIVATE fh1data)
