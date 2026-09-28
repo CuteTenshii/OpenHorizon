@@ -415,14 +415,10 @@ int Game::stepPhysics(float dt)
 void Game::collideWithWorld(Vehicle& vehicle)
 {
     const glm::mat4 transform = vehicle.physics->transform();
-    // From roof height, so a car on a bridge or under a roof finds the
-    // surface it stands on.
-    const bool meshCovers = m_collision->meshCovers(
-        vehicle.physics->position() + glm::vec3(0.0F, vehicle.spec->boundsMax[1], 0.0F));
     for (const BodySphere& sphere : vehicle.spheres) {
         const glm::vec3 centre = glm::vec3(transform * glm::vec4(sphere.centre, 1.0F));
         m_contacts.clear();
-        m_collision->sphereContacts(centre, sphere.radius, meshCovers, m_contacts);
+        m_collision->sphereContacts(centre, sphere.radius, m_contacts);
         // The deepest few are enough; a sphere against a wall touches many
         // coplanar triangles.
         const std::size_t count = std::min<std::size_t>(m_contacts.size(), 3);

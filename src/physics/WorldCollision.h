@@ -72,14 +72,6 @@ public:
     bool raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, GroundHit& hit) const override;
     /// Appends the surfaces a sphere overlaps, deepest first.
     void sphereContacts(const glm::vec3& centre, float radius, std::vector<SphereContact>& out) const;
-    /// The same with meshCovers() already answered for the sphere's spot.
-    /// The answer holds for a whole car, and asking once per car instead of
-    /// once per body sphere saves a raycast per sphere per physics step.
-    void sphereContacts(const glm::vec3& centre, float radius, bool meshCovers, std::vector<SphereContact>& out) const;
-    /// Whether the collision mesh is the ground below `point`. Inside the
-    /// drivable area it is, and the render geometry only adds the props
-    /// standing on it.
-    bool meshCovers(const glm::vec3& point) const;
     /// Height of the ground below (or above, within 500 m) a point, if any.
     std::optional<float> groundHeight(float x, float z, float fromY = 2000.0F) const;
 
