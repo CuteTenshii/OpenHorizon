@@ -90,7 +90,7 @@ public:
     /// Loads the radio's data and starts its stream voice, silent until
     /// startFreeRoam(). Throws DataError if the radio's files are missing or
     /// malformed.
-    Radio(const Vfs& vfs, audio::AudioDevice& device, Options options);
+    Radio(const Vfs& vfs, audio::AudioDevice& device, const Options& options);
     ~Radio();
     Radio(const Radio&) = delete;
     Radio& operator=(const Radio&) = delete;

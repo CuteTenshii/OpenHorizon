@@ -325,7 +325,7 @@ private:
     std::shared_ptr<Impl> m_impl;
 };
 
-Radio::Radio(const Vfs& vfs, audio::AudioDevice& device, Options options)
+Radio::Radio(const Vfs& vfs, audio::AudioDevice& device, const Options& options)
     : m_assets(RadioAssets::load(vfs, options.voiceLanguage))
     , m_mixer(device.mixer())
 {

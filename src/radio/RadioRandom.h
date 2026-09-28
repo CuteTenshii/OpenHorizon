@@ -50,7 +50,9 @@ public:
     {
         const auto span = static_cast<float>(high - low);
         const float value = std::fma(static_cast<float>(next()) * kInverseMax, span, static_cast<float>(low));
-        return static_cast<int>(value + 0.5F);
+        // The game rounds this way, not to nearest-even; lround would change
+        // which integers come out.
+        return static_cast<int>(value + 0.5F); // NOLINT(bugprone-incorrect-roundings)
     }
 
 private:

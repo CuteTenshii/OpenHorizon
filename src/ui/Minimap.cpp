@@ -229,10 +229,12 @@ NavFile NavFile::parse(ByteView data, const std::string& source)
         return std::string(start, length);
     };
     std::vector<std::string> keys;
+    keys.reserve(keyOffsets.size());
     for (const std::uint32_t offset : keyOffsets) {
         keys.push_back(text(keyText, offset));
     }
     std::vector<std::string> values;
+    values.reserve(valueOffsets.size());
     for (const std::uint32_t offset : valueOffsets) {
         values.push_back(text(valueText, offset));
     }

@@ -63,7 +63,7 @@ public:
         if (it == m_tables.end()) {
             std::optional<StringTable> loaded;
             for (const std::string& language : {m_language, std::string("en")}) {
-                const std::string path = "media/stringtables/" + language + "/" + key + ".str";
+                const std::string path = std::format("media/stringtables/{}/{}.str", language, key);
                 if (const std::optional<Bytes> data = m_vfs.read(path)) {
                     try {
                         loaded = StringTable::parse(*data, path);
