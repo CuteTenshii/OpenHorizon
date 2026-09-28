@@ -183,6 +183,12 @@ void Game::loadWorld()
     m_tone.vignettePower = post.vignettePower;
 
     m_events = loadRaceEvents(*m_database, *m_strings, m_options.track);
+    for (std::size_t i = 0; i < m_events.size(); ++i) {
+        if (const GameObject* object = m_objects->find(m_events[i].horizonId)) {
+            m_eventStarts.push_back({i, object->position});
+        }
+    }
+    logInfo("races: {} of {} can be started from free roam", m_eventStarts.size(), m_events.size());
 
     if (m_options.spawnAt) {
         m_spawnPosition = glm::vec3(m_options.spawnAt->x, 0.0F, m_options.spawnAt->y);
@@ -527,6 +533,72 @@ void Game::updateMenu()
     }
 }
 
+void Game::updateEventStarts()
+{
+    m_nearbyStart.reset();
+    if (m_race || !m_playerPlaced || m_menuOpen) {
+        return;
+    }
+    // As in the game, a race is offered while the car sits in its start
+    // circle; it starts on the confirm button.
+    constexpr float kStartRadius = 12.0F;
+    const CarPhysics& car = *player().physics;
+    const glm::vec3 position = car.position();
+    for (std::size_t i = 0; i < m_eventStarts.size(); ++i) {
+        const glm::vec3 offset = m_eventStarts[i].position - position;
+        if (glm::length(glm::vec2(offset.x, offset.z)) < kStartRadius && std::abs(offset.y) < 6.0F) {
+            m_nearbyStart = i;
+            break;
+        }
+    }
+    const InputState& in = m_window.input();
+    if (m_nearbyStart && car.speed() < 4.0F && (in.pressed(Key::Enter) || in.pressed(Button::A))) {
+        startRace(m_events[m_eventStarts[*m_nearbyStart].event]);
+    }
+}
+
+void Game::drawEventStarts(const glm::mat4& viewProjection)
+{
+    m_labels.clear();
+    if (m_race || !m_playerPlaced) {
+        return;
+    }
+    constexpr float kBeaconDistance = 1500.0F;
+    constexpr float kLabelDistance = 250.0F;
+    const glm::vec3 eye = m_camera.position;
+    const float width = static_cast<float>(m_window.width());
+    const float height = static_cast<float>(m_window.height());
+    for (std::size_t i = 0; i < m_eventStarts.size(); ++i) {
+        const glm::vec3 base = m_eventStarts[i].position;
+        const float distance = glm::length(base - eye);
+        if (distance > kBeaconDistance) {
+            continue;
+        }
+        // A tall beam marks the start from afar and a ring on the ground
+        // marks where to stop.
+        const bool here = m_nearbyStart == i;
+        const glm::vec4 colour = here ? glm::vec4(1.0F, 0.55F, 0.2F, 1.0F) : glm::vec4(1.0F, 0.8F, 0.35F, 0.9F);
+        for (float dx : {-0.4F, 0.0F, 0.4F}) {
+            m_overlay->line(base + glm::vec3(dx, 0.0F, 0.0F), base + glm::vec3(dx, 60.0F, 0.0F), colour);
+        }
+        m_overlay->circle(base + glm::vec3(0.0F, 0.2F, 0.0F), {1.0F, 0.0F, 0.0F}, {0.0F, 0.0F, 1.0F}, 12.0F, colour, 48);
+        if (distance > kLabelDistance) {
+            continue;
+        }
+        const glm::vec4 clip = viewProjection * glm::vec4(base + glm::vec3(0.0F, 4.0F, 0.0F), 1.0F);
+        if (clip.w <= 0.1F) {
+            continue;
+        }
+        const glm::vec2 ndc = glm::vec2(clip) / clip.w;
+        if (std::abs(ndc.x) > 1.1F || std::abs(ndc.y) > 1.1F) {
+            continue;
+        }
+        const RaceEvent& event = m_events[m_eventStarts[i].event];
+        m_labels.push_back({{(ndc.x * 0.5F + 0.5F) * width, (0.5F - ndc.y * 0.5F) * height}, event.name,
+            std::clamp(1.0F - (distance - 150.0F) / 100.0F, 0.0F, 1.0F)});
+    }
+}
+
 void Game::updateCamera(float dt)
 {
     const InputState& in = m_window.input();
@@ -849,6 +921,30 @@ void Game::drawHud(float dt)
     }
     drawRaceHud();
 
+    for (const ScreenLabel& label : m_labels) {
+        const float labelWidth = m_overlay->textWidth(label.text, 0.75F);
+        const glm::vec2 at = label.position - glm::vec2(labelWidth * 0.5F, m_overlay->lineHeight(0.75F));
+        m_overlay->rect(at.x - 10.0F, at.y - 4.0F, labelWidth + 20.0F, m_overlay->lineHeight(0.75F) + 8.0F,
+            {kHudPanel.r, kHudPanel.g, kHudPanel.b, kHudPanel.a * label.alpha});
+        m_overlay->text(at.x, at.y, label.text, {kHudText.r, kHudText.g, kHudText.b, label.alpha}, 0.75F);
+    }
+    if (m_nearbyStart) {
+        const RaceEvent& event = m_events[m_eventStarts[*m_nearbyStart].event];
+        const std::string title = event.name;
+        const std::string detail = std::format("{}  ·  {} lap{}  ·  {:.1f} km", event.type, event.laps,
+            event.laps == 1 ? "" : "s", event.lengthMetres / 1000.0F);
+        const std::string action = player().physics->speed() < 4.0F ? "Enter or A to start" : "Stop to start the race";
+        const float panelW = std::max({m_overlay->textWidth(title, 1.0F), m_overlay->textWidth(detail, 0.7F),
+                                 m_overlay->textWidth(action, 0.7F)})
+            + 48.0F;
+        const float x0 = (w - panelW) * 0.5F;
+        const float y0 = h * 0.62F;
+        m_overlay->rect(x0, y0, panelW, 118.0F, kHudPanel);
+        m_overlay->text(x0 + 24.0F, y0 + 12.0F, title, kHudText, 1.0F);
+        m_overlay->text(x0 + 24.0F, y0 + 52.0F, detail, kHudDim, 0.7F);
+        m_overlay->text(x0 + 24.0F, y0 + 82.0F, action, kHudAccent, 0.7F);
+    }
+
     if (m_showDebug) {
         const auto& stats = m_worldRenderer->stats();
         const glm::vec3 p = m_playerPlaced ? player().physics->position() : m_camera.position;
@@ -966,6 +1062,7 @@ int Game::run()
             }
         }
         updateMenu();
+        updateEventStarts();
 
         const glm::vec3 focus = m_playerPlaced ? player().physics->position() : m_spawnPosition;
         m_collision->update(focus);
@@ -1014,6 +1111,7 @@ int Game::run()
         m_worldRenderer->draw(frame);
         m_frame->sky(frame);
         drawVehicles();
+        drawEventStarts(frame.projection * frame.view);
         drawDrivingLine();
         m_overlay->flush(frame.projection * frame.view, m_window.width(), m_window.height());
         m_frame->finish(m_tone);

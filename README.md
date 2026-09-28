@@ -1,0 +1,92 @@
+# fh1-native-x64
+
+A native Linux reimplementation of Forza Horizon (Xbox 360, 2012), written in C++20 from scratch. It reads the game's own files from your copy of the disc at runtime. It does not recompile or emulate the Xbox 360 executable: the engine, the car simulation and the game rules are new code, built from the game's data and from studying how the original uses it.
+
+The repository contains no game data.
+
+## What works
+
+| Area | State |
+|------|-------|
+| Files | The disc's 524 archives mount as the game mounts them (`media/zipmanifest.xml`), with case-insensitive `game:\` paths; LZX archives through [lzx](https://git.tenshii.moe/Tenshii/lzx). |
+| World | Colorado streams in 500 m tiles with level of detail by distance, drawn with the game's own textures (through [xds](https://git.tenshii.moe/Tenshii/xds)): terrain with its splat-blended layers, roads, towns, props and about 128,600 procedural trees, bushes and rocks. |
+| Lighting | Sun, sky and haze follow the track's time-of-day curves (`TimeOfDayA.xml`), on a clock that starts at 16:00 and runs 48 times real time, as free roam does. The filmic tone curve uses the game's parameters. |
+| Cars | All 176 drivable cars load their physics from `gamedb.slt`: torque curves, gearboxes, clutches, differentials, tyre compounds and their friction curves, springs, dampers, anti-roll bars and aerodynamics. |
+| Driving | A 360 Hz vehicle simulation. Against the performance figures the game itself recorded for every car, the median error is 2.2% for cornering grip, 3.2% for the quarter mile, 4.4% for braking and 5.5% for top speed (see `fh1cartest`). ABS, traction control, stability control and the automatic gearbox are available. |
+| Collision | The ground comes from the finest render geometry near the car, trees have trunks, and cars collide with the world and each other. |
+| Races | The 118 races of Colorado from the game database, with their real names, routes, grids, opponents and AI skill. AI drivers follow the game's racing lines. Countdown, positions, laps, a driving line coloured by braking need, and results. |
+
+## Not done yet
+
+- Car models: cars are drawn as outlines until the `.carbin` format is decoded.
+- Sound: engine and world audio (FMOD banks with XMA samples).
+- The game's collision meshes (`.fiz`), which carry a surface type per triangle; until then every surface grips like tarmac.
+- Menus and HUD from the game's own UI files (`.bgf`, `.bsg`, `.fbf`); a plain race list and HUD stand in.
+- Traffic, the career and its progression, festival and showcase events, barn finds, speed traps, upgrades and tuning, photo mode, saving, and online play.
+
+## Build
+
+Requires CMake 3.21 or newer, a C++20 compiler (GCC 13 or Clang 17), and the development packages of SDL3, OpenGL, glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavutil, libswresample) and zlib. The first configure downloads lzx and xds; `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` and `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>` build against local checkouts instead.
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build
+ctest --test-dir build
+FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build   # also the checks against real data
+```
+
+## Run
+
+```sh
+./build/src/fh1 --game /path/to/extracted/disc
+```
+
+The folder is the disc root (holding `default.xex` and `media`) or the `media` folder itself. It is remembered in `~/.config/fh1-native/settings.ini`, so later starts need no options. `fh1 --help` lists the rest: `--car ALF_8C_08` picks the car by its media name, `--race FR02` starts a race at once, `--time 20:00` sets the time of day, `--manual` gives a manual gearbox.
+
+### Controls
+
+| Action | Keyboard | Xbox pad |
+|--------|----------|----------|
+| Throttle, brake | W, S (or arrows) | Right, left trigger |
+| Steer | A, D (or arrows) | Left stick |
+| Handbrake | Space | A |
+| Shift up, down (manual) | E, Q | B, X |
+| Race list | M | Start |
+| Camera | C | Y or right stick click |
+| Free camera | F, then mouse and WASD, Q and E | |
+| Reset the car | R | |
+| Debug statistics | Tab | Back |
+| Fullscreen | F11 | |
+| Leave a race, quit | Escape | |
+
+## Tools
+
+| Tool | Does |
+|------|------|
+| `fh1vfs DISC list FOLDER`, `cat PATH`, `extract PATH FILE` | The game's file system as the engine sees it. |
+| `fh1carspec DISC CAR` or `all` | The physics specification read for a car. |
+| `fh1cartest DISC CAR` or `all` | Runs cars through the game's performance tests and compares with its recorded results. |
+| `fh1world DISC TRACK` | Loads a track's world index, tile meshes and textures, and reports counts and timings. |
+
+## Layout
+
+| Folder | Contents |
+|--------|----------|
+| `src/base` | Logging, big-endian reading, the job pool, settings. |
+| `src/vfs` | The game's file system over the disc and its archives. |
+| `src/data` | The game database and string tables. |
+| `src/world` | Track world formats: render models, zones, placements, procedural sets, textures, tile meshes. |
+| `src/car` | Car specifications from the database, and the vehicle simulation. |
+| `src/physics` | Collision with the world. |
+| `src/render` | OpenGL 4.5 renderer: world, sky, tonemapping, overlays. |
+| `src/game` | Free roam, races, AI drivers, time of day. |
+| `src/platform` | Window, OpenGL context and input (SDL3). |
+| `tools`, `tests` | Command-line tools and tests. |
+
+## Coordinates
+
+The game's world is left-handed: x east, y up, z north. Car space is x right, y up, z forward, with the origin on the ground below the middle of the wheelbase, as the car files use. The renderer mirrors z in its view matrix so OpenGL shows the world the right way round.
+
+## License
+
+MIT for the code in this repository. Forza Horizon and its data belong to their owners; you need your own copy of the game.

@@ -101,9 +101,11 @@ private:
     void updateRace(float dt);
 
     void updateMenu();
+    void updateEventStarts();
     void updateCamera(float dt);
     render::FrameParams frameParams() const;
     void drawVehicles();
+    void drawEventStarts(const glm::mat4& viewProjection);
     void drawDrivingLine();
     void drawHud(float dt);
     void drawRaceHud();
@@ -135,6 +137,22 @@ private:
     float m_physicsAccumulator = 0.0F;
 
     std::vector<RaceEvent> m_events;
+    /// Where each race can be started in free roam: the gameplay object
+    /// named by its HorizonEventID, as an index into m_events.
+    struct EventStart {
+        std::size_t event = 0;
+        glm::vec3 position{0.0F};
+    };
+    std::vector<EventStart> m_eventStarts;
+    /// The start the player is standing in, if any.
+    std::optional<std::size_t> m_nearbyStart;
+    /// Names of the starts in view this frame, at their screen positions.
+    struct ScreenLabel {
+        glm::vec2 position{0.0F};
+        std::string text;
+        float alpha = 1.0F;
+    };
+    std::vector<ScreenLabel> m_labels;
     std::unique_ptr<Race> m_race;
     /// Speed profile of the race line for the player's car, which colours
     /// the driving line.
