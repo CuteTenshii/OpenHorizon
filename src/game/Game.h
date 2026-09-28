@@ -137,7 +137,6 @@ private:
     /// value when the road ahead is clear.
     float gapAhead(const Vehicle& vehicle) const;
 
-    void updateMenu();
     void updateEventStarts();
     void updateCamera(float dt);
     render::FrameParams frameParams() const;
@@ -148,7 +147,6 @@ private:
     void drawDrivingLine();
     void drawHud(float dt);
     void drawRaceHud();
-    void drawMenu();
     void drawLoading(const std::string& message);
     bool saveScreenshot(const std::filesystem::path& path);
 
@@ -217,8 +215,6 @@ private:
     /// the driving line.
     std::unique_ptr<AiDriver> m_lineGuide;
     float m_resultsTime = 0.0F;
-    bool m_menuOpen = false;
-    int m_menuSelection = 0;
 
     CameraMode m_cameraMode = CameraMode::Chase;
     render::Camera m_camera;

@@ -21,7 +21,7 @@ The repository contains no game data.
 - Car models: cars are drawn as outlines until the `.carbin` format is decoded.
 - Sound: engine and world audio (FMOD banks with XMA samples).
 - The game's collision meshes (`.fiz`), which carry a surface type per triangle; until then every surface grips like tarmac.
-- Menus and HUD from the game's own UI files (`.bgf`, `.bsg`, `.fbf`); a plain race list and HUD stand in.
+- Menus and HUD from the game's own UI files (`.bgf`, `.bsg`, `.fbf`); a plain HUD stands in.
 - Traffic, the career and its progression, festival and showcase events, barn finds, speed traps, upgrades and tuning, photo mode, saving, and online play.
 
 ## Build
@@ -51,7 +51,6 @@ The folder is the disc root (holding `default.xex` and `media`) or the `media` f
 | Steer | A, D (or arrows) | Left stick |
 | Handbrake | Space | A |
 | Shift up, down (manual) | E, Q | B, X |
-| Race list | M | Start |
 | Camera | C | Y or right stick click |
 | Free camera | F, then mouse and WASD, Q and E | |
 | Reset the car | R | |

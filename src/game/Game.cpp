@@ -348,10 +348,6 @@ CarControls Game::readPlayerControls(float dt)
 {
     const InputState& in = m_window.input();
     CarControls controls;
-    if (m_menuOpen) {
-        controls.brake = 1.0F;
-        return controls;
-    }
     float keyThrottle = (in.held(Key::W) || in.held(Key::Up)) ? 1.0F : 0.0F;
     float keyBrake = (in.held(Key::S) || in.held(Key::Down)) ? 1.0F : 0.0F;
     float keySteer = 0.0F;
@@ -941,35 +937,10 @@ void Game::updateTraffic(float dt)
     }
 }
 
-void Game::updateMenu()
-{
-    const InputState& in = m_window.input();
-    if (in.pressed(Key::M) || in.pressed(Button::Start)) {
-        m_menuOpen = !m_menuOpen;
-    }
-    if (!m_menuOpen || m_events.empty()) {
-        return;
-    }
-    const int count = static_cast<int>(m_events.size());
-    if (in.pressed(Key::Down) || in.pressed(Key::S) || in.pressed(Button::DpadDown)) {
-        m_menuSelection = (m_menuSelection + 1) % count;
-    }
-    if (in.pressed(Key::Up) || in.pressed(Key::W) || in.pressed(Button::DpadUp)) {
-        m_menuSelection = (m_menuSelection + count - 1) % count;
-    }
-    if (in.pressed(Key::Enter) || in.pressed(Button::A)) {
-        m_menuOpen = false;
-        startRace(m_events[static_cast<std::size_t>(m_menuSelection)]);
-    }
-    if (in.pressed(Button::B)) {
-        m_menuOpen = false;
-    }
-}
-
 void Game::updateEventStarts()
 {
     m_nearbyStart.reset();
-    if (m_race || !m_playerPlaced || m_menuOpen) {
+    if (m_race || !m_playerPlaced) {
         return;
     }
     // As in the game, a race is offered while the car sits in its start
@@ -1361,39 +1332,6 @@ void Game::drawRaceHud()
     }
 }
 
-void Game::drawMenu()
-{
-    if (!m_menuOpen) {
-        return;
-    }
-    const auto w = static_cast<float>(m_window.width());
-    const auto h = static_cast<float>(m_window.height());
-    const float rowHeight = m_overlay->lineHeight(0.72F) + 4.0F;
-    const int visible = std::max(4, static_cast<int>((h * 0.7F) / rowHeight));
-    const int count = static_cast<int>(m_events.size());
-    const int first = std::clamp(m_menuSelection - visible / 2, 0, std::max(count - visible, 0));
-    const float panelW = std::min(w - 48.0F, 900.0F);
-    const float x0 = (w - panelW) * 0.5F;
-    const float y0 = h * 0.12F;
-    const std::string hint = "Enter to start, M to close";
-    m_overlay->rect(x0, y0, panelW, rowHeight * static_cast<float>(std::min(visible, count)) + 72.0F, kHudPanel);
-    m_overlay->text(x0 + 20.0F, y0 + 12.0F, "Races", kHudText, 1.0F);
-    m_overlay->text(x0 + panelW - 20.0F - m_overlay->textWidth(hint, 0.65F), y0 + 20.0F, hint, kHudDim, 0.65F);
-    float y = y0 + 56.0F;
-    for (int i = first; i < std::min(first + visible, count); ++i) {
-        const RaceEvent& event = m_events[static_cast<std::size_t>(i)];
-        const bool selected = i == m_menuSelection;
-        if (selected) {
-            m_overlay->rect(x0 + 8.0F, y - 2.0F, panelW - 16.0F, rowHeight, {1.0F, 1.0F, 1.0F, 0.08F});
-        }
-        m_overlay->text(x0 + 20.0F, y, event.name, selected ? kHudAccent : kHudText, 0.72F);
-        const std::string detail = std::format("{}  ·  {} lap{}  ·  {:.1f} km", event.type, event.laps,
-            event.laps == 1 ? "" : "s", event.lengthMetres / 1000.0F);
-        m_overlay->text(x0 + panelW * 0.5F, y, detail, kHudDim, 0.72F);
-        y += rowHeight;
-    }
-}
-
 void Game::drawHud(float dt)
 {
     const auto w = static_cast<float>(m_window.width());
@@ -1485,7 +1423,6 @@ void Game::drawHud(float dt)
             kHudPanel);
         m_overlay->text((w - width) * 0.5F, h * 0.5F, message, kHudText);
     }
-    drawMenu();
 }
 
 bool Game::saveScreenshot(const std::filesystem::path& path)
@@ -1528,9 +1465,7 @@ int Game::run()
         m_timeOfDay->advance(dt);
 
         if (in.pressed(Key::Escape)) {
-            if (m_menuOpen) {
-                m_menuOpen = false;
-            } else if (m_window.mouseCaptured()) {
+            if (m_window.mouseCaptured()) {
                 m_window.setMouseCaptured(false);
             } else if (m_race) {
                 endRace();
@@ -1573,7 +1508,6 @@ int Game::run()
                 player().physics->recover(*m_collision);
             }
         }
-        updateMenu();
         updateEventStarts();
 
         const glm::vec3 focus = m_playerPlaced ? player().physics->position() : m_spawnPosition;
