@@ -1377,7 +1377,10 @@ TEST(discEngineSoundPlays)
     AudioDevice device{AudioDevice::Offline{}};
     EngineSound engine(device, vfs, "ALF_8C_08");
     CHECK_NEAR(engine.tuning().engine.redlineRpm, 7500.0, 1e-3);
-    CHECK(device.mixer().activeVoiceCount() > 40);
+    // Loops take a mixer voice only while their crossfade makes them audible,
+    // so a car that is not yet running holds none of the mixer's 256.
+    const std::size_t silentVoices = device.mixer().activeVoiceCount();
+    CHECK(silentVoices < 8);
 
     const auto run = [&](float seconds, float rpm, float throttle) {
         double energy = 0.0;
@@ -1394,6 +1397,9 @@ TEST(discEngineSoundPlays)
         return std::pair{std::sqrt(energy / static_cast<double>(count)), peak};
     };
     const auto [idleRms, idlePeak] = run(1.0F, 900.0F, 0.0F);
+    const std::size_t idleVoices = device.mixer().activeVoiceCount();
+    CHECK(idleVoices > silentVoices);
+    CHECK(idleVoices < 40);
     const auto [highRms, highPeak] = run(1.0F, 6000.0F, 1.0F);
     CHECK(idleRms > 0.01);
     CHECK(highRms > 0.03);
