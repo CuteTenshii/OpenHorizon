@@ -52,6 +52,7 @@ int main(int argc, char** argv)
     window.vsync = settings.getBool("vsync", true);
     options.car = settings.get("car", options.car);
     options.manualGearbox = settings.getBool("manual", false);
+    options.metric = settings.getBool("metric", true);
 
     std::filesystem::path logPath = fh::defaultLogPath();
     std::string gameDir = settings.get("game", "");

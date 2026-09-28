@@ -18,12 +18,14 @@
 #include "game/TimeOfDay.h"
 #include "game/TrafficConfig.h"
 #include "physics/WorldCollision.h"
+#include "radio/Radio.h"
 #include "platform/Window.h"
 #include "render/CarRenderer.h"
 #include "render/FrameRenderer.h"
 #include "render/FrameStats.h"
 #include "render/Overlay.h"
 #include "render/WorldRenderer.h"
+#include "ui/Hud.h"
 #include "vfs/Vfs.h"
 #include "world/TrackWorld.h"
 
@@ -63,6 +65,8 @@ struct GameOptions {
     std::string race;
     /// Lets the AI drive the player's car in a race, for testing.
     bool autopilot = false;
+    /// Kilometres rather than miles per hour on the speedometer.
+    bool metric = true;
 };
 
 /// Free roam and races: the track's world streamed around the player's car,
@@ -156,6 +160,8 @@ private:
     void drawEventStarts(const glm::mat4& viewProjection);
     void drawDrivingLine();
     void drawHud(float dt);
+    ui::HudState hudState(float dt) const;
+    void updateRadio(float dt);
     void drawRaceHud();
     void drawLoading(const std::string& message);
     bool saveScreenshot(const std::filesystem::path& path);
@@ -174,12 +180,16 @@ private:
     std::unique_ptr<render::FrameStats> m_frameStats;
     std::unique_ptr<render::WorldRenderer> m_worldRenderer;
     std::unique_ptr<render::Overlay> m_overlay;
+    /// The game's own HUD scene; the plain overlay HUD stands in without it.
+    std::unique_ptr<ui::Hud> m_hud;
     std::unique_ptr<physics::WorldCollision> m_collision;
 
     // Declared before the vehicles so it outlives their engine sounds, whose
     // destructors release mixer buses.
     std::unique_ptr<audio::AudioDevice> m_audio;
     std::shared_ptr<audio::AudioLibrary> m_audioLibrary;
+    /// The festival radio; missing without sound or when its files are.
+    std::unique_ptr<radio::Radio> m_radio;
     std::vector<std::unique_ptr<Vehicle>> m_vehicles;
     std::optional<Smashables> m_smashables;
     /// Renderer handle of each loose smashable, by body index.

@@ -78,6 +78,11 @@ Game::Game(Window& window, const GameOptions& options)
     m_frame = std::make_unique<render::FrameRenderer>();
     m_frameStats = std::make_unique<render::FrameStats>();
     m_overlay = std::make_unique<render::Overlay>("sans-serif:bold", 26);
+    try {
+        m_hud = std::make_unique<ui::Hud>(m_vfs, m_options.track);
+    } catch (const std::exception& e) {
+        logWarning("hud: {}; using the plain one", e.what());
+    }
 
     try {
         m_audio = std::make_unique<audio::AudioDevice>();
@@ -85,6 +90,17 @@ Game::Game(Window& window, const GameOptions& options)
     } catch (const std::exception& e) {
         logWarning("audio: no sound ({})", e.what());
         m_audio.reset();
+    }
+    if (m_audio) {
+        try {
+            radio::Radio::Options radioOptions;
+            // The game seeds its radio from a runtime value that was not
+            // traced; any seed gives the game's sequencing.
+            radioOptions.seed = std::random_device{}();
+            m_radio = std::make_unique<radio::Radio>(m_vfs, *m_audio, radioOptions);
+        } catch (const std::exception& e) {
+            logWarning("radio: {}", e.what());
+        }
     }
 
     const int carId = carIdByMediaName(*m_database, options.car);
@@ -327,6 +343,9 @@ void Game::placeVehicle(Vehicle& vehicle, const glm::vec3& position, float headi
 void Game::spawnPlayer()
 {
     placeVehicle(player(), m_spawnPosition, m_spawnHeading);
+    if (m_radio && !m_playerPlaced) {
+        m_radio->startFreeRoam();
+    }
     m_playerPlaced = true;
     m_chaseVelocity = glm::vec3(0.0F);
     logInfo("car placed at height {:.1f}", player().physics->position().y);
@@ -492,6 +511,27 @@ void Game::attachEngineSound(Vehicle& vehicle, bool spatial) const
             *m_audio, m_audioLibrary, vehicle.spec->mediaName, engineSoundOptions(spatial));
     } catch (const std::exception& e) {
         logWarning("audio: {}: {}", vehicle.spec->mediaName, e.what());
+    }
+}
+
+void Game::updateRadio(float dt)
+{
+    if (!m_radio) {
+        return;
+    }
+    const InputState& in = m_window.input();
+    // "To change radio stations press left and right on the d-pad", as the
+    // game's loading tip says; Page Up and Down stand in on a keyboard.
+    if (in.pressed(Button::DpadRight) || in.pressed(Key::PageDown)) {
+        m_radio->nextStation();
+    }
+    if (in.pressed(Button::DpadLeft) || in.pressed(Key::PageUp)) {
+        m_radio->previousStation();
+    }
+    m_radio->update(dt);
+    if (const std::optional<radio::RadioNowPlaying> shown = m_radio->takeHudRequest()) {
+        logInfo("radio: {}{}", shown->stationName,
+            shown->title.empty() ? std::string() : std::format(": {} by {}", shown->title, shown->artist));
     }
 }
 
@@ -1448,13 +1488,74 @@ void Game::drawRaceHud()
     }
 }
 
+ui::HudState Game::hudState(float dt) const
+{
+    ui::HudState state;
+    state.dt = dt;
+    state.metric = m_options.metric;
+    if (!m_playerPlaced) {
+        return state;
+    }
+    const CarPhysics& car = *player().physics;
+    const CarSpec& spec = *player().spec;
+    state.speedKmh = std::abs(car.forwardSpeed()) * kMsToKmh;
+    state.speedMph = state.speedKmh / 1.609344F;
+    state.gear = car.gear();
+    state.rpm = car.engineRpm();
+    state.redlineRpm = spec.redlineRpm;
+    state.maxRpm = std::max(spec.torqueCurveMaxRpm, spec.redlineRpm);
+    const DrivingAssists& assists = player().physics->assists();
+    state.absOn = assists.abs;
+    state.stmOn = assists.stabilityControl;
+    state.tcsOn = assists.tractionControl;
+    const glm::vec3 position = car.position();
+    const glm::vec3 forward = car.forward();
+    state.playerMapPosition = {position.x, position.z};
+    state.playerHeading = std::atan2(forward.x, forward.z);
+    state.speedMetresPerSecond = car.speed();
+
+    if (m_race && m_race->player()) {
+        const Race::Racer& own = *m_race->player();
+        state.inRace = true;
+        state.position = m_race->place(own);
+        state.racers = static_cast<int>(m_race->racers().size());
+        state.lap = m_race->lap(own);
+        state.laps = m_race->line().loop ? m_race->event().laps : 1;
+        if (m_race->phase() == Race::Phase::Countdown) {
+            state.countdownElapsed = Race::kCountdownSeconds - m_race->countdown();
+        } else {
+            state.raceTime = own.finished ? own.finishTime : m_race->elapsed();
+            // The scene shows GO! once the countdown passes three seconds;
+            // keep it past that point for the first moment of the race.
+            if (m_race->elapsed() < 0.5F) {
+                state.countdownElapsed = Race::kCountdownSeconds + m_race->elapsed();
+            }
+        }
+        for (const Race::Racer* racer : m_race->standings()) {
+            if (racer->player) {
+                state.playerStanding = static_cast<int>(state.standings.size());
+            }
+            state.standings.push_back(m_vehicles[racer->vehicle]->name);
+        }
+    }
+    if (m_nearbyStart) {
+        const RaceEvent& event = m_events[m_eventStarts[*m_nearbyStart].event];
+        state.prompt = event.name;
+        state.promptDetail = car.speed() < 4.0F ? "Enter or A to start" : "Stop to start the race";
+    }
+    return state;
+}
+
 void Game::drawHud(float dt)
 {
     const auto w = static_cast<float>(m_window.width());
     const auto h = static_cast<float>(m_window.height());
     m_fps = m_fps * 0.95F + (dt > 0.0F ? 1.0F / dt : 0.0F) * 0.05F;
 
-    if (m_playerPlaced) {
+    if (m_hud) {
+        m_hud->draw(hudState(dt), m_window.width(), m_window.height());
+    }
+    if (m_playerPlaced && !m_hud) {
         const CarPhysics& car = *player().physics;
         const float speed = std::abs(car.forwardSpeed()) * kMsToKmh;
         const int gear = car.gear();
@@ -1483,7 +1584,9 @@ void Game::drawHud(float dt)
         m_overlay->rect(barX, barY, barW * fraction, 12.0F, rpm > redline * 0.9F ? kHudAccent : kHudText);
         m_overlay->text(barX, barY - 26.0F, std::format("{:.0f} rpm", rpm), kHudDim, 0.7F);
     }
-    drawRaceHud();
+    if (!m_hud) {
+        drawRaceHud();
+    }
 
     for (const ScreenLabel& label : m_labels) {
         const float labelWidth = m_overlay->textWidth(label.text, 0.75F);
@@ -1492,7 +1595,7 @@ void Game::drawHud(float dt)
             {kHudPanel.r, kHudPanel.g, kHudPanel.b, kHudPanel.a * label.alpha});
         m_overlay->text(at.x, at.y, label.text, {kHudText.r, kHudText.g, kHudText.b, label.alpha}, 0.75F);
     }
-    if (m_nearbyStart) {
+    if (m_nearbyStart && !m_hud) {
         const RaceEvent& event = m_events[m_eventStarts[*m_nearbyStart].event];
         const std::string title = event.name;
         const std::string detail = std::format("{}  ·  {} lap{}  ·  {:.1f} km", event.type, event.laps,
@@ -1654,6 +1757,7 @@ int Game::run()
             m_frameStats->mark(Part::Physics);
             updateDebris(dt);
             updateAudio(dt);
+            updateRadio(dt);
             if (m_options.demoDrive && secondTicked(m_time, dt)) {
                 const CarPhysics& car = *player().physics;
                 const GroundHit& ground = car.wheels()[0].ground;

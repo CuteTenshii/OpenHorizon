@@ -79,6 +79,8 @@ constexpr KeyBinding kKeys[] = {
     {Key::Enter, SDL_SCANCODE_RETURN},
     {Key::Escape, SDL_SCANCODE_ESCAPE},
     {Key::Tab, SDL_SCANCODE_TAB},
+    {Key::PageUp, SDL_SCANCODE_PAGEUP},
+    {Key::PageDown, SDL_SCANCODE_PAGEDOWN},
     {Key::F1, SDL_SCANCODE_F1},
     {Key::F2, SDL_SCANCODE_F2},
     {Key::F3, SDL_SCANCODE_F3},

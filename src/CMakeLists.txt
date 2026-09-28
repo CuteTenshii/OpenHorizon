@@ -91,7 +91,7 @@ add_library(fh1engine STATIC
     render/WorldRenderer.h
 )
 target_compile_options(fh1engine PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1engine PUBLIC fh1platform fh1data fh1world fh1collision fh1audio fh1carmodel xds::xds Freetype::Freetype PkgConfig::FONTCONFIG)
+target_link_libraries(fh1engine PUBLIC fh1platform fh1data fh1world fh1collision fh1audio fh1carmodel fh1ui fh1radio xds::xds Freetype::Freetype PkgConfig::FONTCONFIG)
 
 add_executable(fh1 app/main.cpp)
 target_compile_options(fh1 PRIVATE ${FH1N_WARNINGS})

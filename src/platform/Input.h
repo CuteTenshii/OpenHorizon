@@ -61,6 +61,8 @@ enum class Key : std::uint8_t {
     Enter,
     Escape,
     Tab,
+    PageUp,
+    PageDown,
     F1,
     F2,
     F3,
