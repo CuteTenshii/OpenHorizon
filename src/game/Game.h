@@ -14,6 +14,7 @@
 #include "game/RaceData.h"
 #include "game/Smashables.h"
 #include "game/TimeOfDay.h"
+#include "game/TrafficConfig.h"
 #include "physics/WorldCollision.h"
 #include "platform/Window.h"
 #include "render/CarRenderer.h"
@@ -28,6 +29,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -89,7 +91,11 @@ private:
         std::unique_ptr<audio::EngineSound> engine;
         /// The car's own model; missing when it could not be loaded, and
         /// the car is then drawn as an outline.
-        std::unique_ptr<render::CarRenderer> model;
+        std::shared_ptr<render::CarRenderer> model;
+        /// Who drives it, which decides its AI's targets and when it goes.
+        enum class Role { Player, Racer, Traffic, Festival } role = Role::Racer;
+        /// The line an AI follows, for putting it back when it is stuck.
+        const RacingLine* line = nullptr;
         int lastGear = 1;
         CarControls controls;
         glm::vec4 colour{1.0F};
@@ -118,6 +124,14 @@ private:
     void startRace(const RaceEvent& event);
     void endRace();
     void updateRace(float dt);
+    void loadTraffic();
+    void updateTraffic(float dt);
+    bool spawnTraffic(Vehicle::Role role, const TrafficConfig::Settings& settings,
+        const TrafficConfig::Density& density);
+    void updateAiDrivers(float dt);
+    /// Distance to the nearest vehicle ahead in the same lane, or a large
+    /// value when the road ahead is clear.
+    float gapAhead(const Vehicle& vehicle) const;
 
     void updateMenu();
     void updateEventStarts();
@@ -168,6 +182,15 @@ private:
     float m_spawnWait = 0.0F;
     float m_physicsAccumulator = 0.0F;
 
+    std::optional<TrafficConfig> m_trafficConfig;
+    /// Every racing line in both directions: the roads traffic drives.
+    std::vector<std::unique_ptr<RacingLine>> m_trafficLines;
+    /// Cars of the festival drivers who roam the map (FreeRoamDrivers).
+    std::vector<int> m_festivalCars;
+    float m_trafficTimer = 0.0F;
+    std::mt19937 m_random{20121023};
+    /// Car models by car id, shared by every car of the same model.
+    mutable std::unordered_map<int, std::shared_ptr<render::CarRenderer>> m_modelCache;
     std::vector<RaceEvent> m_events;
     /// Where each race can be started in free roam: the gameplay object
     /// named by its HorizonEventID, as an index into m_events.

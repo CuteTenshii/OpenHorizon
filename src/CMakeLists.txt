@@ -69,6 +69,8 @@ add_library(fh1engine STATIC
     game/Smashables.h
     game/TimeOfDay.cpp
     game/TimeOfDay.h
+    game/TrafficConfig.cpp
+    game/TrafficConfig.h
     physics/WorldCollision.cpp
     physics/WorldCollision.h
     render/CarRenderer.cpp

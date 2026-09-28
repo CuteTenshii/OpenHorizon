@@ -93,6 +93,8 @@ struct RacingLine {
     static std::optional<RacingLine> load(const Vfs& vfs, std::string_view track, int routeId);
     /// A line through the given points, for routes without a racing line.
     static RacingLine through(const std::vector<glm::vec3>& points, bool loop);
+    /// The same line driven the other way.
+    RacingLine reversed() const;
 
     /// The point on the line nearest to `position`, searched within
     /// `window` points of `hint` (or everywhere when hint is negative), as

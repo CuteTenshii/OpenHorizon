@@ -208,6 +208,15 @@ RacingLine RacingLine::through(const std::vector<glm::vec3>& points, bool loop)
     return line;
 }
 
+RacingLine RacingLine::reversed() const
+{
+    RacingLine line;
+    line.loop = loop;
+    line.points.assign(points.rbegin(), points.rend());
+    finishLine(line);
+    return line;
+}
+
 float RacingLine::project(const glm::vec3& position, float hint, int window) const
 {
     const auto count = static_cast<int>(points.size());

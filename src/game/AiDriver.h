@@ -20,6 +20,9 @@ public:
     /// Controls for this frame. `speedScale` lets the race hold drivers back
     /// during the countdown (0) or ease them (below 1).
     CarControls update(const CarPhysics& car, float dt, float speedScale = 1.0F);
+    /// Caps the speed (m/s) the driver aims for, for traffic that keeps to
+    /// road speeds; unlimited by default.
+    void setMaxSpeed(float speed) { m_maxSpeed = speed; }
 
     /// Where the driver is on the line, as a fractional point index that
     /// keeps counting up past the end of a loop.
@@ -42,6 +45,7 @@ private:
     float m_laneOffset = 0.0F;
     float m_skill = 0.7F;
     float m_targetSpeed = 0.0F;
+    float m_maxSpeed = 1000.0F;
     float m_stuckTime = 0.0F;
     float m_reverseTime = 0.0F;
 };

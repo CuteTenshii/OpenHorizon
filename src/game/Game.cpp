@@ -30,6 +30,21 @@ const glm::vec4 kHudPanel{0.02F, 0.02F, 0.03F, 0.6F};
 /// and the player's row in the standings.
 const glm::vec4 kHudAccent{1.0F, 0.42F, 0.1F, 1.0F};
 const glm::vec4 kPlayerColour{0.95F, 0.3F, 0.15F, 1.0F};
+constexpr float kMphToMs = 0.44704F;
+/// Height the ground is searched from when a start point gives none.
+constexpr float kSearchFromHeight = 3000.0F;
+/// Road class traffic uses until the road network's segments, which name
+/// each road's class, are decoded: 5 is the A-road of aiopenworld.xml.
+constexpr int kTrafficRoadClass = 5;
+/// Spawn distance for classes that give none; the town classes give 240
+/// and 270 m, and open roads are assumed to use a little more.
+constexpr float kTrafficSpawnDistance = 300.0F;
+/// Festival drivers have no speed in the file; they drive like quick road
+/// users.
+constexpr float kFestivalDriverSpeed = 27.0F;
+/// Caps on cars kept at once, for the frame rate.
+constexpr int kMaxTrafficCars = 12;
+constexpr int kMaxFestivalCars = 4;
 
 float approach(float value, float target, float rate)
 {
@@ -83,6 +98,7 @@ Game::Game(Window& window, const GameOptions& options)
         throw DataError("no car named {} in the game database", options.car);
     }
     m_vehicles.push_back(makeVehicle(carId, kPlayerColour));
+    player().role = Vehicle::Role::Player;
     attachEngineSound(player(), false);
     player().physics->assists().automaticGearbox = !options.manualGearbox;
     logInfo("car: {} ({:.0f} kg, {:.0f} N·m)", player().name, player().spec->massKg,
@@ -118,11 +134,16 @@ std::unique_ptr<Game::Vehicle> Game::makeVehicle(int carId, const glm::vec4& col
         vehicle->paint = glm::vec3(linear(rgb >> 16), linear(rgb >> 8), linear(rgb));
         vehicle->metallic = paint->i("Metallic") != 0;
     }
-    try {
-        const carmodel::CarModel model = carmodel::CarModel::load(m_vfs, m_database.get(), spec.mediaName);
-        vehicle->model = std::make_unique<render::CarRenderer>(model);
-    } catch (const std::exception& e) {
-        logWarning("car model {}: {}", spec.mediaName, e.what());
+    if (const auto cached = m_modelCache.find(carId); cached != m_modelCache.end()) {
+        vehicle->model = cached->second;
+    } else {
+        try {
+            const carmodel::CarModel model = carmodel::CarModel::load(m_vfs, m_database.get(), spec.mediaName);
+            vehicle->model = std::make_shared<render::CarRenderer>(model);
+        } catch (const std::exception& e) {
+            logWarning("car model {}: {}", spec.mediaName, e.what());
+        }
+        m_modelCache.emplace(carId, vehicle->model);
     }
     const std::optional<Row> names = m_database->queryOne(
         "SELECT c.Year, m.DisplayName AS Make, c.DisplayName FROM Data_Car c "
@@ -218,6 +239,7 @@ void Game::loadWorld()
     m_tone.vignettePower = post.vignettePower;
 
     m_events = loadRaceEvents(*m_database, *m_strings, m_options.track);
+    loadTraffic();
     for (std::size_t i = 0; i < m_events.size(); ++i) {
         if (const GameObject* object = m_objects->find(m_events[i].horizonId)) {
             m_eventStarts.push_back({i, object->position});
@@ -226,7 +248,9 @@ void Game::loadWorld()
     logInfo("races: {} of {} can be started from free roam", m_eventStarts.size(), m_events.size());
 
     if (m_options.spawnAt) {
-        m_spawnPosition = glm::vec3(m_options.spawnAt->x, 0.0F, m_options.spawnAt->y);
+        // No height is given, so the ground is searched from well above the
+        // highest point of any track.
+        m_spawnPosition = glm::vec3(m_options.spawnAt->x, kSearchFromHeight, m_options.spawnAt->y);
         m_spawnHeading = m_options.spawnHeading.value_or(0.0F);
     } else if (const GameObject* object = m_objects->find(m_options.spawnObject)) {
         m_spawnPosition = object->position;
@@ -503,6 +527,8 @@ void Game::collideVehicles()
 void Game::startRace(const RaceEvent& event)
 {
     endRace();
+    // Racers take the slots after the player; traffic comes back later.
+    m_vehicles.resize(1);
     RaceRoute route;
     try {
         route = RaceRoute::load(m_vfs, m_options.track, event.routeId);
@@ -562,6 +588,8 @@ void Game::startRace(const RaceEvent& event)
             // not drive nose to tail.
             const float lane = (opponent % 2 == 0 ? -1.0F : 1.0F) * 1.2F;
             ai->ai = std::make_unique<AiDriver>(m_race->line(), *ai->spec, event.aiSkill, lane);
+            ai->role = Vehicle::Role::Racer;
+            ai->line = &m_race->line();
             attachEngineSound(*ai, true);
             placeVehicle(*ai, t.position, headingOf(t));
             m_vehicles.push_back(std::move(ai));
@@ -609,22 +637,6 @@ void Game::updateRace(float dt)
     }
     m_race->update(dt, positions);
 
-    // Opponents drive, and come back to the line when hopelessly stuck.
-    const float speedScale = m_race->started() ? 1.0F : 0.0F;
-    for (std::size_t i = 1; i < m_vehicles.size(); ++i) {
-        Vehicle& vehicle = *m_vehicles[i];
-        if (!vehicle.ai) {
-            continue;
-        }
-        vehicle.controls = vehicle.ai->update(*vehicle.physics, dt, speedScale);
-        if (vehicle.ai->needsRecovery()) {
-            const float index = vehicle.ai->lineIndex();
-            const glm::vec3 at = m_race->line().positionAt(index);
-            const glm::vec3 direction = m_race->line().directionAt(index);
-            placeVehicle(vehicle, at, std::atan2(direction.x, direction.z));
-            vehicle.ai->recovered();
-        }
-    }
     if (!m_race->started() && !player().ai) {
         // Held on the handbrake on the grid, since the foot brake at a
         // standstill selects reverse; revving is still allowed.
@@ -643,6 +655,255 @@ void Game::updateRace(float dt)
                 ordinal(m_race->player()->finishPlace));
             endRace();
         }
+    }
+}
+
+float Game::gapAhead(const Vehicle& vehicle) const
+{
+    const glm::vec3 position = vehicle.physics->position();
+    const glm::vec3 forward = vehicle.physics->forward();
+    float nearest = 1e9F;
+    for (const auto& other : m_vehicles) {
+        if (other.get() == &vehicle) {
+            continue;
+        }
+        const glm::vec3 offset = other->physics->position() - position;
+        const float ahead = glm::dot(offset, forward);
+        if (ahead <= 0.0F || ahead > 80.0F) {
+            continue;
+        }
+        const float lateral = glm::length(offset - forward * ahead);
+        if (lateral < 2.5F) {
+            nearest = std::min(nearest, ahead);
+        }
+    }
+    return nearest;
+}
+
+void Game::updateAiDrivers(float dt)
+{
+    for (std::size_t i = 1; i < m_vehicles.size(); ++i) {
+        Vehicle& vehicle = *m_vehicles[i];
+        if (!vehicle.ai) {
+            continue;
+        }
+        float scale = 1.0F;
+        if (vehicle.role == Vehicle::Role::Racer) {
+            scale = m_race && m_race->started() ? 1.0F : 0.0F;
+        }
+        // Keep a gap to the car ahead: road users a couple of seconds,
+        // racers only enough not to drive through it.
+        const float speed = std::max(vehicle.physics->forwardSpeed(), 3.0F);
+        const bool racing = vehicle.role == Vehicle::Role::Racer;
+        const float wanted = racing ? 4.0F + speed * 0.3F : 7.0F + speed * 1.5F;
+        scale *= std::clamp((gapAhead(vehicle) - 5.0F) / wanted, 0.0F, 1.0F);
+        vehicle.controls = vehicle.ai->update(*vehicle.physics, dt, scale);
+        if (vehicle.ai->needsRecovery() && vehicle.line) {
+            // Back onto the line where it got stuck.
+            const float index = vehicle.ai->lineIndex();
+            const glm::vec3 direction = vehicle.line->directionAt(index);
+            placeVehicle(vehicle, vehicle.line->positionAt(index), std::atan2(direction.x, direction.z));
+            vehicle.ai->recovered();
+        }
+    }
+}
+
+void Game::loadTraffic()
+{
+    try {
+        m_trafficConfig = TrafficConfig::load(m_vfs);
+    } catch (const std::exception& e) {
+        logWarning("traffic: {}", e.what());
+        return;
+    }
+    const std::string folder = std::format("media/aiopenworld/{}/ribbon_00", toLower(m_options.track));
+    for (const std::string& path : m_vfs.list(folder)) {
+        const std::size_t underscore = path.rfind('_');
+        if (!path.ends_with(".owt") || underscore == std::string::npos) {
+            continue;
+        }
+        const int route = std::atoi(path.c_str() + underscore + 1);
+        try {
+            if (std::optional<RacingLine> line = RacingLine::load(m_vfs, m_options.track, route)) {
+                m_trafficLines.push_back(std::make_unique<RacingLine>(line->reversed()));
+                m_trafficLines.push_back(std::make_unique<RacingLine>(std::move(*line)));
+            }
+        } catch (const std::exception& e) {
+            logWarning("traffic: route {}: {}", route, e.what());
+        }
+    }
+    for (const Row& row : m_database->query("SELECT CarId FROM FreeRoamDrivers")) {
+        m_festivalCars.push_back(row.i("CarId"));
+    }
+    logInfo("traffic: {} lanes, {} traffic cars, {} festival drivers", m_trafficLines.size(),
+        m_trafficConfig->find("freeroam") ? m_trafficConfig->find("freeroam")->cars.size() : 0, m_festivalCars.size());
+}
+
+bool Game::spawnTraffic(
+    Vehicle::Role role, const TrafficConfig::Settings& settings, const TrafficConfig::Density& density)
+{
+    const glm::vec3 centre = player().physics->position();
+    const float spawnIn = density.spawnInDistance.value_or(kTrafficSpawnDistance);
+    std::uniform_real_distribution<float> unit(0.0F, 1.0F);
+    // Every lane point in the spawn ring, so the pick below lands on a road
+    // that is actually there.
+    std::vector<std::pair<const RacingLine*, float>> candidates;
+    for (const auto& lane : m_trafficLines) {
+        for (std::size_t i = 0; i < lane->points.size(); i += 3) {
+            const glm::vec3& p = lane->points[i].position;
+            const float d = glm::length(glm::vec2(p.x - centre.x, p.z - centre.z));
+            if (d <= spawnIn && d >= spawnIn * 0.6F) {
+                candidates.emplace_back(lane.get(), static_cast<float>(i));
+            }
+        }
+    }
+    if (candidates.empty()) {
+        return false;
+    }
+    std::uniform_int_distribution<std::size_t> pick(0, candidates.size() - 1);
+    for (int attempt = 0; attempt < 20; ++attempt) {
+        const auto [linePtr, index] = candidates[pick(m_random)];
+        const RacingLine& line = *linePtr;
+        const glm::vec3 point = line.positionAt(index);
+        const float distance = glm::length(glm::vec2(point.x - centre.x, point.z - centre.z));
+        // Most cars appear driving away, so they are not met head on the
+        // moment they appear.
+        const glm::vec3 direction = line.directionAt(index);
+        const bool away = glm::dot(direction, point - centre) > 0.0F;
+        if (away != (unit(m_random) < density.spawnAwayChance)) {
+            continue;
+        }
+        // Out of view where possible, so cars do not pop into sight.
+        const glm::vec3 look = glm::normalize(m_camera.target - m_camera.position);
+        const glm::vec3 toPoint = glm::normalize(point - m_camera.position);
+        if (glm::dot(look, toPoint) > 0.5F && attempt < 15) {
+            continue;
+        }
+        const bool crowded = std::any_of(m_vehicles.begin(), m_vehicles.end(), [&](const auto& v) {
+            return glm::length(v->physics->position() - point) < 25.0F;
+        });
+        if (crowded || !m_collision->groundHeight(point.x, point.z, point.y + 20.0F)) {
+            continue;
+        }
+
+        int carId = 0;
+        if (role == Vehicle::Role::Festival) {
+            if (m_festivalCars.empty()) {
+                return false;
+            }
+            carId = m_festivalCars[std::uniform_int_distribution<std::size_t>(0, m_festivalCars.size() - 1)(m_random)];
+        } else {
+            std::vector<int> choices;
+            for (const TrafficConfig::Car& car : settings.cars) {
+                const auto active = std::count_if(m_vehicles.begin(), m_vehicles.end(), [&](const auto& v) {
+                    return v->role == Vehicle::Role::Traffic && v->spec->id == car.carId;
+                });
+                if (settings.allows(density, car.carId) && (car.maxActive == 0 || active < car.maxActive)) {
+                    choices.push_back(car.carId);
+                }
+            }
+            if (choices.empty()) {
+                return false;
+            }
+            carId = choices[std::uniform_int_distribution<std::size_t>(0, choices.size() - 1)(m_random)];
+        }
+        try {
+            const int colour = std::uniform_int_distribution<int>(1, 6)(m_random);
+            std::unique_ptr<Vehicle> vehicle = makeVehicle(carId, {0.7F, 0.7F, 0.7F, 1.0F}, colour);
+            vehicle->role = role;
+            vehicle->line = &line;
+            vehicle->physics->assists().speedSensitiveSteering = false;
+            // Keep right of the line, as the roads are driven in Colorado.
+            const float lane = role == Vehicle::Role::Traffic ? 2.0F : 1.2F;
+            vehicle->ai = std::make_unique<AiDriver>(line, *vehicle->spec, role == Vehicle::Role::Traffic ? 40 : 65, lane);
+            vehicle->ai->setLineIndex(index);
+            float speed = density.speedMph * kMphToMs;
+            if (speed <= 0.0F) {
+                speed = kFestivalDriverSpeed;
+            }
+            vehicle->ai->setMaxSpeed(speed);
+            const glm::vec3 side = glm::normalize(glm::cross(glm::vec3(0.0F, 1.0F, 0.0F), direction));
+            placeVehicle(*vehicle, point + side * lane, std::atan2(direction.x, direction.z));
+            // Already moving, as cars on a road are when they come into view.
+            vehicle->physics->setState(vehicle->physics->position(), vehicle->physics->orientation(),
+                direction * speed * 0.8F, glm::vec3(0.0F));
+            attachEngineSound(*vehicle, true);
+            logDebug("traffic: {} {} at {:.0f} m, {:.0f} km/h", role == Vehicle::Role::Traffic ? "car" : "festival driver",
+                vehicle->name, distance, speed * 3.6F);
+            m_vehicles.push_back(std::move(vehicle));
+            return true;
+        } catch (const std::exception& e) {
+            logWarning("traffic: car {}: {}", carId, e.what());
+            return false;
+        }
+    }
+    return false;
+}
+
+void Game::updateTraffic(float dt)
+{
+    if (!m_trafficConfig || m_trafficLines.empty() || !m_playerPlaced) {
+        return;
+    }
+    const TrafficConfig::Settings* settings = m_trafficConfig->find(m_race ? "race" : "freeroam");
+    if (!settings) {
+        return;
+    }
+    const auto densityOf = [](const std::map<int, TrafficConfig::Density>& list) {
+        const auto it = list.find(kTrafficRoadClass);
+        return it == list.end() ? TrafficConfig::Density{} : it->second;
+    };
+    const TrafficConfig::Density traffic = densityOf(settings->traffic);
+    const TrafficConfig::Density festival = densityOf(settings->festival);
+    const glm::vec3 centre = player().physics->position();
+
+    // Cars that fell far behind go.
+    const auto tooFar = [&](const std::unique_ptr<Vehicle>& v) {
+        if (v->role != Vehicle::Role::Traffic && v->role != Vehicle::Role::Festival) {
+            return false;
+        }
+        const TrafficConfig::Density& d = v->role == Vehicle::Role::Traffic ? traffic : festival;
+        const float out = d.spawnOutDistance.value_or(kTrafficSpawnDistance + 30.0F);
+        const float distance = glm::length(v->physics->position() - centre);
+        const bool gone = distance > out || v->physics->position().y < -600.0F;
+        if (gone) {
+            logDebug("traffic: {} left at {:.0f} m, y {:.0f}", v->name, distance, v->physics->position().y);
+        }
+        return gone;
+    };
+    m_vehicles.erase(std::remove_if(m_vehicles.begin() + 1, m_vehicles.end(), tooFar), m_vehicles.end());
+
+    m_trafficTimer -= dt;
+    if (m_trafficTimer > 0.0F) {
+        return;
+    }
+    m_trafficTimer = 0.5F;
+    // How many cars the density asks for: its middle value per 100 m of
+    // the lanes within reach, sampled every few points.
+    float laneMetres = 0.0F;
+    const float reach = traffic.spawnOutDistance.value_or(kTrafficSpawnDistance + 30.0F);
+    for (const auto& line : m_trafficLines) {
+        const std::size_t step = 5;
+        const float spacing = line->length / static_cast<float>(std::max<std::size_t>(line->points.size(), 1));
+        for (std::size_t i = 0; i < line->points.size(); i += step) {
+            const glm::vec3& p = line->points[i].position;
+            if (glm::length(glm::vec2(p.x - centre.x, p.z - centre.z)) < reach) {
+                laneMetres += spacing * static_cast<float>(step);
+            }
+        }
+    }
+    const auto target = [&](const TrafficConfig::Density& d, int initial, int cap) {
+        const float perHundred = 0.5F * (d.min + d.max);
+        return std::clamp(static_cast<int>(std::lround(perHundred * laneMetres / 100.0F)), laneMetres > 0.0F ? initial : 0, cap);
+    };
+    const auto count = [&](Vehicle::Role role) {
+        return static_cast<int>(std::count_if(
+            m_vehicles.begin(), m_vehicles.end(), [&](const auto& v) { return v->role == role; }));
+    };
+    if (count(Vehicle::Role::Traffic) < target(traffic, settings->initialTrafficCars, kMaxTrafficCars)) {
+        spawnTraffic(Vehicle::Role::Traffic, *settings, traffic);
+    } else if (count(Vehicle::Role::Festival) < target(festival, settings->initialFestivalCars, kMaxFestivalCars)) {
+        spawnTraffic(Vehicle::Role::Festival, *settings, festival);
     }
 }
 
@@ -1251,6 +1512,8 @@ int Game::run()
             player().controls = player().ai ? player().ai->update(*player().physics, dt, playerScale)
                                             : readPlayerControls(dt);
             updateRace(dt);
+            updateAiDrivers(dt);
+            updateTraffic(dt);
             stepPhysics(dt);
             updateDebris(dt);
             updateAudio(dt);

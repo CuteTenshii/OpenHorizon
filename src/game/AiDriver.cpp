@@ -135,7 +135,7 @@ CarControls AiDriver::update(const CarPhysics& car, float dt, float speedScale)
 
     // Speed: the profile a little ahead, since the car needs time to react.
     const float reactionIndex = m_line.advance(m_index, std::abs(speed) * 0.35F + 2.0F);
-    m_targetSpeed = std::min(speedLimitAt(m_index), speedLimitAt(reactionIndex)) * speedScale;
+    m_targetSpeed = std::min({speedLimitAt(m_index), speedLimitAt(reactionIndex), m_maxSpeed}) * speedScale;
     const float error = m_targetSpeed - speed;
     if (error > 0.0F) {
         controls.throttle = std::clamp(error * 0.4F + 0.3F, 0.0F, 1.0F);
