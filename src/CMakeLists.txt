@@ -2,6 +2,10 @@ add_library(fh1base STATIC
     base/Bytes.cpp
     base/Bytes.h
     base/Error.h
+    base/JobPool.cpp
+    base/JobPool.h
+    base/Settings.cpp
+    base/Settings.h
     base/Log.cpp
     base/Log.h
     vfs/Vfs.cpp
@@ -44,3 +48,31 @@ add_executable(fh1cartest ../tools/fh1cartest.cpp)
 target_compile_options(fh1cartest PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(fh1cartest PRIVATE fh1data)
 add_subdirectory(world)
+
+find_package(Freetype REQUIRED)
+pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
+
+add_library(fh1engine STATIC
+    game/Game.cpp
+    game/Game.h
+    game/GameObjects.cpp
+    game/GameObjects.h
+    physics/WorldCollision.cpp
+    physics/WorldCollision.h
+    render/FrameRenderer.cpp
+    render/FrameRenderer.h
+    render/Overlay.cpp
+    render/Overlay.h
+    render/Shader.cpp
+    render/Shader.h
+    render/Texture.cpp
+    render/Texture.h
+    render/WorldRenderer.cpp
+    render/WorldRenderer.h
+)
+target_compile_options(fh1engine PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(fh1engine PUBLIC fh1platform fh1data fh1world xds::xds Freetype::Freetype PkgConfig::FONTCONFIG)
+
+add_executable(fh1 app/main.cpp)
+target_compile_options(fh1 PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(fh1 PRIVATE fh1engine)
