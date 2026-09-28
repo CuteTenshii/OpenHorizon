@@ -484,8 +484,18 @@ void WorldCollision::trunkContacts(const glm::vec3& centre, float radius, std::v
 
 void WorldCollision::sphereContacts(const glm::vec3& centre, float radius, std::vector<SphereContact>& out) const
 {
+    sphereContacts(centre, radius, meshCovers(centre + glm::vec3(0.0F, radius, 0.0F)), out);
+}
+
+bool WorldCollision::meshCovers(const glm::vec3& point) const
+{
+    return m_fiz && m_fiz->groundBelow(point, 20.0F, m_filter).has_value();
+}
+
+void WorldCollision::sphereContacts(
+    const glm::vec3& centre, float radius, bool meshCovers, std::vector<SphereContact>& out) const
+{
     const std::size_t first = out.size();
-    bool meshCovers = false;
     if (m_fiz) {
         const collision::SurfaceTable& surfaces = m_fiz->surfaces();
         for (const collision::SphereContact& c : m_fiz->sphereContacts(centre, radius, m_filter)) {
@@ -497,9 +507,6 @@ void WorldCollision::sphereContacts(const glm::vec3& centre, float radius, std::
             }
             out.push_back({c.point, c.normal, c.depth, c.surface});
         }
-        // Inside the drivable area the collision mesh is the ground; the
-        // render geometry only adds the props standing on it.
-        meshCovers = m_fiz->groundBelow(centre + glm::vec3(0.0F, radius, 0.0F), 20.0F, m_filter).has_value();
     }
     renderContacts(centre, radius, meshCovers, out);
     trunkContacts(centre, radius, out);
