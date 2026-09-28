@@ -50,6 +50,7 @@ enum class Key : std::uint8_t {
     C,
     H,
     M,
+    V,
     Up,
     Down,
     Left,

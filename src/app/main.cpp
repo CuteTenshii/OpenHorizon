@@ -22,7 +22,7 @@ void printUsage()
         "                     or 'game = DIR' in %s\n"
         "  --car NAME         car media name, e.g. ALF_8C_08 (default)\n"
         "  --track NAME       track folder under media/tracks (default colorado)\n"
-        "  --spawn ID         start at a GameObjs.xml GameplayID (default FESTIVAL_FIRST)\n"
+        "  --spawn ID         start at a GameObjs.xml GameplayID instead of the free-roam start\n"
         "  --at X,Z           start at world coordinates instead\n"
         "  --heading DEG      start heading, clockwise from north\n"
         "  --time HH:MM       time of day to start at (default 16:00)\n"

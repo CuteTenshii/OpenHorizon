@@ -4,6 +4,7 @@
 #include "render/Gl.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <pugixml.hpp>
 #include <xds/xds.h>
 
 #include <algorithm>
@@ -99,6 +100,12 @@ Game::Game(Window& window, const GameOptions& options)
     }
     m_vehicles.push_back(makeVehicle(carId, kPlayerColour));
     player().role = Vehicle::Role::Player;
+    try {
+        m_cameraSettings = CameraSettings::load(m_vfs);
+        m_carCameras = CarCameras::load(*m_cameraSettings, *m_database, carId);
+    } catch (const std::exception& e) {
+        logWarning("camera: {}", e.what());
+    }
     attachEngineSound(player(), false);
     player().physics->assists().automaticGearbox = !options.manualGearbox;
     logInfo("car: {} ({:.0f} kg, {:.0f} N·m)", player().name, player().spec->massKg,
@@ -252,9 +259,13 @@ void Game::loadWorld()
         // highest point of any track.
         m_spawnPosition = glm::vec3(m_options.spawnAt->x, kSearchFromHeight, m_options.spawnAt->y);
         m_spawnHeading = m_options.spawnHeading.value_or(0.0F);
-    } else if (const GameObject* object = m_objects->find(m_options.spawnObject)) {
+    } else if (const GameObject* object
+               = m_options.spawnObject.empty() ? nullptr : m_objects->find(m_options.spawnObject)) {
         m_spawnPosition = object->position;
         m_spawnHeading = m_options.spawnHeading.value_or(object->heading());
+    } else if (const auto roamStart = freeRoamStart(); roamStart && m_options.spawnObject.empty()) {
+        m_spawnPosition = roamStart->first;
+        m_spawnHeading = m_options.spawnHeading.value_or(roamStart->second);
     } else {
         logWarning("spawn object {} not found; starting at the map centre", m_options.spawnObject);
         const world::Footprint footprint = m_world->index.footprint();
@@ -280,6 +291,29 @@ void Game::loadWorld()
         m_spawnHeading * 180.0F / kPi);
     m_camera.position = m_spawnPosition + glm::vec3(0.0F, 30.0F, 0.0F);
     m_camera.target = m_spawnPosition;
+}
+
+std::optional<std::pair<glm::vec3, float>> Game::freeRoamStart() const
+{
+    const std::optional<std::string> text = m_vfs.readText("media/gamemodes/game_free_roam_flow.xml");
+    if (!text) {
+        return std::nullopt;
+    }
+    pugi::xml_document doc;
+    if (!doc.load_buffer(text->data(), text->size())) {
+        return std::nullopt;
+    }
+    const pugi::xpath_node place
+        = doc.select_node("//State[@id='place_car_post_credits']/Behaviour[@id='CPlaceCar']");
+    if (!place) {
+        return std::nullopt;
+    }
+    const pugi::xml_node node = place.node();
+    const glm::vec3 position(
+        node.attribute("x").as_float(), node.attribute("y").as_float(), node.attribute("z").as_float());
+    // Degrees about the up axis, measured from north the way headings are
+    // here (checked against the road the start sits on).
+    return std::pair(position, glm::radians(node.attribute("rotation").as_float()));
 }
 
 void Game::placeVehicle(Vehicle& vehicle, const glm::vec3& position, float heading)
@@ -1001,27 +1035,32 @@ void Game::drawEventStarts(const glm::mat4& viewProjection)
 void Game::updateCamera(float dt)
 {
     const InputState& in = m_window.input();
+    const CameraSettings* ini = m_cameraSettings ? &*m_cameraSettings : nullptr;
+    const auto setting = [ini](std::string_view key, float fallback) { return ini ? ini->get(key, fallback) : fallback; };
     if (m_cameraMode == CameraMode::Free || !m_playerPlaced) {
         const float look = 0.0025F;
         if (m_window.mouseCaptured()) {
             m_freeYaw += in.mouseDx * look;
             m_freePitch = std::clamp(m_freePitch - in.mouseDy * look, -1.5F, 1.5F);
         }
-        m_freeYaw += in.axis(Axis::RightX) * dt * 2.0F;
-        m_freePitch = std::clamp(m_freePitch + in.axis(Axis::RightY) * dt * 1.5F, -1.5F, 1.5F);
+        m_freeYaw += in.axis(Axis::RightX) * dt * setting("FreeCam\\YawSpeed", 3.0F);
+        m_freePitch = std::clamp(
+            m_freePitch + in.axis(Axis::RightY) * dt * setting("FreeCam\\PitchSpeed", 1.5F), -1.5F, 1.5F);
         const glm::vec3 forward(std::sin(m_freeYaw) * std::cos(m_freePitch), std::sin(m_freePitch),
             std::cos(m_freeYaw) * std::cos(m_freePitch));
         const glm::vec3 right = glm::normalize(glm::vec3(std::cos(m_freeYaw), 0.0F, -std::sin(m_freeYaw)));
-        float speed = in.held(Key::Shift) ? 250.0F : 40.0F;
         glm::vec3 move(0.0F);
         if (m_cameraMode == CameraMode::Free) {
-            move += forward * ((in.held(Key::W) ? 1.0F : 0.0F) - (in.held(Key::S) ? 1.0F : 0.0F));
-            move += right * ((in.held(Key::D) ? 1.0F : 0.0F) - (in.held(Key::A) ? 1.0F : 0.0F));
-            move.y += (in.held(Key::E) ? 1.0F : 0.0F) - (in.held(Key::Q) ? 1.0F : 0.0F);
-            move += forward * in.axis(Axis::LeftY) + right * in.axis(Axis::LeftX);
-            speed *= 1.0F + in.axis(Axis::RightTrigger) * 5.0F;
+            const float boost = (in.held(Key::Shift) ? 4.0F : 1.0F) * (1.0F + in.axis(Axis::RightTrigger) * 4.0F);
+            const float forwardSpeed = setting("FreeCam\\MoveForwardBackwardSpeed", 75.0F) * boost;
+            const float sideSpeed = setting("FreeCam\\MoveLeftRightSpeed", 40.0F) * boost;
+            const float upSpeed = setting("FreeCam\\MoveUpDownSpeed", 20.0F) * boost;
+            const float ahead = (in.held(Key::W) ? 1.0F : 0.0F) - (in.held(Key::S) ? 1.0F : 0.0F) + in.axis(Axis::LeftY);
+            const float across = (in.held(Key::D) ? 1.0F : 0.0F) - (in.held(Key::A) ? 1.0F : 0.0F) + in.axis(Axis::LeftX);
+            const float rise = (in.held(Key::E) ? 1.0F : 0.0F) - (in.held(Key::Q) ? 1.0F : 0.0F);
+            move = forward * ahead * forwardSpeed + right * across * sideSpeed + glm::vec3(0.0F, rise * upSpeed, 0.0F);
         }
-        m_camera.position += move * speed * dt;
+        m_camera.position += move * dt;
         m_camera.target = m_camera.position + forward;
         m_camera.up = glm::vec3(0.0F, 1.0F, 0.0F);
         m_camera.fov = 1.05F;
@@ -1030,50 +1069,89 @@ void Game::updateCamera(float dt)
 
     const CarPhysics& car = *player().physics;
     const CarSpec& spec = *player().spec;
+    const glm::mat4 transform = car.transform();
     const glm::vec3 carPosition = car.position();
     const glm::vec3 forward = car.forward();
-    const glm::vec3 flatForward
-        = glm::normalize(glm::vec3(forward.x, 0.0F, forward.z) + glm::vec3(0.0F, 0.0F, 1e-4F));
-    const float length = spec.boundsMax[2] - spec.boundsMin[2];
-    if (m_cameraMode == CameraMode::Hood) {
-        const glm::mat4 transform = car.transform();
-        const glm::vec3 eye(0.0F, spec.boundsMax[1] * 0.92F, spec.boundsMax[2] * 0.25F);
+
+    // Looking around: the right stick, or the mouse while its right button
+    // is held, turns the view; letting go eases it back. Clicking the stick
+    // (or holding V) looks behind.
+    const bool lookBack = in.held(Button::RightStick) || in.held(Key::V);
+    float stickYaw = in.axis(Axis::RightX) * kPi * 0.75F;
+    float stickPitch = in.axis(Axis::RightY) * 0.5F;
+    if (in.mouseRight) {
+        m_window.setMouseCaptured(true);
+        m_lookYaw = std::clamp(m_lookYaw + in.mouseDx * 0.004F, -kPi, kPi);
+        m_lookPitch = std::clamp(m_lookPitch - in.mouseDy * 0.004F, -0.6F, 0.6F);
+    } else {
+        if (m_window.mouseCaptured() && m_cameraMode != CameraMode::Free) {
+            m_window.setMouseCaptured(false);
+        }
+        const float ease = std::min(1.0F, dt * 8.0F);
+        m_lookYaw += ((lookBack ? kPi : stickYaw) - m_lookYaw) * ease;
+        m_lookPitch += ((lookBack ? 0.0F : stickPitch) - m_lookPitch) * ease;
+    }
+    const float boundsCentreY = 0.5F * (spec.boundsMin[1] + spec.boundsMax[1]);
+    if (m_cameraMode == CameraMode::Hood || m_cameraMode == CameraMode::Bumper) {
+        const bool hood = m_cameraMode == CameraMode::Hood;
+        // Hood: the car's CameraOverrides height above the middle of its
+        // body (the base is inferred), a quarter of the way along the bonnet.
+        // Bumper: the ini's rest height above the ground at the front bumper.
+        const glm::vec3 eye = hood
+            ? glm::vec3(0.0F, boundsCentreY + m_carCameras.hoodHeight,
+                  spec.boundsMax[2] * 0.25F + m_carCameras.hoodZOffset)
+            : glm::vec3(0.0F, m_carCameras.bumperHeight, spec.boundsMax[2] + m_carCameras.bumperZOffset);
         m_camera.position = glm::vec3(transform * glm::vec4(eye, 1.0F));
-        m_camera.target = m_camera.position + forward * 10.0F;
+        const float pitch = glm::radians(hood ? m_carCameras.hoodPitchDegrees : 0.0F) - m_lookPitch;
+        const glm::vec3 local(std::sin(m_lookYaw) * std::cos(pitch), -std::sin(pitch), std::cos(m_lookYaw) * std::cos(pitch));
+        const glm::vec3 look = glm::vec3(transform * glm::vec4(local, 0.0F));
+        m_camera.target = m_camera.position + look * 10.0F;
         m_camera.up = car.up();
-        m_camera.fov = 1.15F;
+        m_camera.fov = glm::radians(hood ? m_carCameras.hoodFovDegrees : m_carCameras.bumperFovDegrees);
         return;
     }
-    const bool far = m_cameraMode == CameraMode::Far;
-    const float distance = length * (far ? 1.9F : 1.35F) + 1.0F;
-    const float height = spec.boundsMax[1] * (far ? 1.35F : 1.05F) + 0.4F;
-    // Look where the car is going when sliding, not only where it points.
-    glm::vec3 heading = flatForward;
+
+    const FollowCamera& cam = m_cameraMode == CameraMode::Far ? m_carCameras.far : m_carCameras.near;
+    // The yaw spring brings the camera round to where the car is heading
+    // (its velocity when it slides forward, else where it points), no
+    // faster than the ini's limit.
+    float targetYaw = std::atan2(forward.x, forward.z);
     const glm::vec3 velocity = car.velocity();
-    const glm::vec3 flatVelocity(velocity.x, 0.0F, velocity.z);
-    if (glm::length(flatVelocity) > 3.0F && glm::dot(flatVelocity, flatForward) > 0.0F) {
-        heading = glm::normalize(glm::mix(flatForward, glm::normalize(flatVelocity), 0.35F));
+    if (glm::length(glm::vec2(velocity.x, velocity.z)) > 3.0F && glm::dot(velocity, forward) > 0.0F) {
+        targetYaw = std::atan2(velocity.x, velocity.z);
     }
-    const glm::vec3 wanted = carPosition - heading * distance + glm::vec3(0.0F, height, 0.0F);
-    // A critically damped spring behind the car.
-    constexpr float kStiffness = 60.0F;
-    const float damping = 2.0F * std::sqrt(kStiffness);
-    const glm::vec3 offset = m_camera.position - wanted;
-    m_chaseVelocity += (-kStiffness * offset - damping * (m_chaseVelocity - velocity)) * dt;
-    m_camera.position += m_chaseVelocity * dt;
-    if (glm::length(m_camera.position - wanted) > distance * 3.0F) {
-        m_camera.position = wanted;
-        m_chaseVelocity = velocity;
+    float error = targetYaw - m_chaseYaw;
+    error = std::remainder(error, 2.0F * kPi);
+    m_chaseYawSpeed += (cam.yawSpringK * error - cam.yawSpringD * m_chaseYawSpeed) * dt;
+    m_chaseYawSpeed = std::clamp(m_chaseYawSpeed, -cam.yawMaxSpeed, cam.yawMaxSpeed);
+    // Well behind after a reset or a spin: snap rather than swing through.
+    if (std::abs(error) > 2.5F) {
+        m_chaseYaw = targetYaw;
+        m_chaseYawSpeed = 0.0F;
     }
-    // Keep the camera above the ground it passes over.
-    if (const std::optional<float> ground
-        = m_collision->groundHeight(m_camera.position.x, m_camera.position.z, m_camera.position.y + 5.0F)) {
-        m_camera.position.y = std::max(m_camera.position.y, *ground + 0.6F);
+    m_chaseYaw = std::remainder(m_chaseYaw + m_chaseYawSpeed * dt, 2.0F * kPi);
+
+    // The ini gives the height above the ground but not the distance
+    // behind, which the game derives from the car; a car length and a bit
+    // (more for the far camera) matches its framing.
+    const float length = spec.boundsMax[2] - spec.boundsMin[2];
+    const float radius = length * (m_cameraMode == CameraMode::Far ? 1.55F : 1.2F) + cam.radiusOffset;
+    const float orbit = m_chaseYaw + m_lookYaw;
+    const glm::vec3 behind(std::sin(orbit), 0.0F, std::cos(orbit));
+    glm::vec3 eye = carPosition - behind * radius;
+    const std::optional<float> ground = m_collision->groundHeight(eye.x, eye.z, carPosition.y + 10.0F);
+    const float wantedY = std::max(ground.value_or(carPosition.y), carPosition.y) + cam.height + cam.heightOffset;
+    float y = m_camera.position.y;
+    if (std::abs(y - wantedY) > 10.0F) {
+        y = wantedY;
+        m_chaseHeightSpeed = 0.0F;
     }
-    m_camera.target = carPosition + glm::vec3(0.0F, spec.boundsMax[1] * 0.7F, 0.0F) + heading * 1.5F;
+    m_chaseHeightSpeed += (cam.heightSpringK * (wantedY - y) - cam.heightSpringD * m_chaseHeightSpeed) * dt;
+    eye.y = y + m_chaseHeightSpeed * dt + m_lookPitch * radius * 0.5F;
+    m_camera.position = eye;
+    m_camera.target = carPosition + glm::vec3(0.0F, spec.boundsMax[1] * 0.7F + cam.targetYOffset, 0.0F);
     m_camera.up = glm::vec3(0.0F, 1.0F, 0.0F);
-    // Widen the view a little with speed.
-    m_camera.fov = 1.0F + std::min(car.speed() / 90.0F, 1.0F) * 0.15F;
+    m_camera.fov = glm::radians(cam.fovDegrees);
 }
 
 render::FrameParams Game::frameParams() const
@@ -1463,12 +1541,14 @@ int Game::run()
         if (in.pressed(Key::F11)) {
             m_window.toggleFullscreen();
         }
-        if (in.pressed(Key::Tab) || in.pressed(Button::Back)) {
+        if (in.pressed(Key::Tab) || in.pressed(Key::F3)) {
             m_showDebug = !m_showDebug;
         }
-        if (in.pressed(Key::C) || in.pressed(Button::RightStick) || in.pressed(Button::Y)) {
+        // Back changes the view, as on the 360.
+        if (in.pressed(Key::C) || in.pressed(Button::Back)) {
             m_cameraMode = m_cameraMode == CameraMode::Chase ? CameraMode::Far
-                : m_cameraMode == CameraMode::Far          ? CameraMode::Hood
+                : m_cameraMode == CameraMode::Far          ? CameraMode::Bumper
+                : m_cameraMode == CameraMode::Bumper       ? CameraMode::Hood
                                                            : CameraMode::Chase;
         }
         if (in.pressed(Key::F)) {

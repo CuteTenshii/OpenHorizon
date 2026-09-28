@@ -57,6 +57,8 @@ pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
 add_library(fh1engine STATIC
     game/AiDriver.cpp
     game/AiDriver.h
+    game/CameraSettings.cpp
+    game/CameraSettings.h
     game/Game.cpp
     game/Game.h
     game/GameObjects.cpp

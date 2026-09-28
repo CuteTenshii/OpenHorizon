@@ -68,6 +68,7 @@ constexpr KeyBinding kKeys[] = {
     {Key::C, SDL_SCANCODE_C},
     {Key::H, SDL_SCANCODE_H},
     {Key::M, SDL_SCANCODE_M},
+    {Key::V, SDL_SCANCODE_V},
     {Key::Up, SDL_SCANCODE_UP},
     {Key::Down, SDL_SCANCODE_DOWN},
     {Key::Left, SDL_SCANCODE_LEFT},

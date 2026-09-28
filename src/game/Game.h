@@ -9,6 +9,7 @@
 #include "data/Database.h"
 #include "data/StringTable.h"
 #include "game/AiDriver.h"
+#include "game/CameraSettings.h"
 #include "game/GameObjects.h"
 #include "game/Race.h"
 #include "game/RaceData.h"
@@ -43,7 +44,7 @@ struct GameOptions {
     std::string car = "ALF_8C_08";
     /// A gameplay object to start at (GameObjs.xml GameplayID), unless
     /// `spawnAt` is given.
-    std::string spawnObject = "FESTIVAL_FIRST";
+    std::string spawnObject;
     std::optional<glm::vec2> spawnAt;
     std::optional<float> spawnHeading;
     /// Stop after this many frames and, with `screenshot`, save the last one.
@@ -65,7 +66,7 @@ struct GameOptions {
 /// with AI opponents when a race runs.
 class Game {
 public:
-    enum class CameraMode { Chase, Far, Hood, Free };
+    enum class CameraMode { Chase, Far, Bumper, Hood, Free };
 
     Game(Window& window, const GameOptions& options);
     ~Game();
@@ -106,6 +107,9 @@ private:
     };
 
     void loadWorld();
+    /// Where free roam starts: the CPlaceCar of the free-roam flow's
+    /// "place_car_post_credits" state, if the file has it.
+    std::optional<std::pair<glm::vec3, float>> freeRoamStart() const;
     std::unique_ptr<Vehicle> makeVehicle(int carId, const glm::vec4& colour, int colourSequence = 1) const;
     void spawnPlayer();
     void placeVehicle(Vehicle& vehicle, const glm::vec3& position, float heading);
@@ -218,6 +222,17 @@ private:
 
     CameraMode m_cameraMode = CameraMode::Chase;
     render::Camera m_camera;
+    std::optional<CameraSettings> m_cameraSettings;
+    CarCameras m_carCameras;
+    /// The chase camera's heading around the car and its rate, and its
+    /// vertical speed, for the springs camerasettings.ini tunes.
+    float m_chaseYaw = 0.0F;
+    float m_chaseYawSpeed = 0.0F;
+    float m_chaseHeightSpeed = 0.0F;
+    /// Looking around from the driving cameras: offsets from where the
+    /// camera faces, eased back to zero when the stick is let go.
+    float m_lookYaw = 0.0F;
+    float m_lookPitch = 0.0F;
     glm::vec3 m_chaseVelocity{0.0F};
     float m_freeYaw = 0.0F;
     float m_freePitch = -0.2F;
