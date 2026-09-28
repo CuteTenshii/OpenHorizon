@@ -95,19 +95,19 @@ struct PostEffectSettings {
 /// The game clock and the lighting it gives.
 class TimeOfDay {
 public:
-    /// Free roam opens at 16:00 and the clock runs 48 game seconds per real
-    /// second (found in the game's time-of-day object).
+    /// Free roam opens at 16:00 (57600 s, set by the time-of-day object's
+    /// constructor at 0x8265F748).
     static constexpr float kStartSeconds = 16.0F * 3600.0F;
-    static constexpr float kSpeed = 48.0F;
 
     explicit TimeOfDay(TimeOfDayCurves curves);
 
-    void advance(float realSeconds) { setSeconds(m_seconds + realSeconds * m_speed); }
+    /// Runs the clock on by `realSeconds`. The game adds the `TimeSpeed`
+    /// curve times the frame time to its clock in seconds (0x8265A48C), so
+    /// days pass at 28 times real time, dusk at 24, and night at 220.
+    void advance(float realSeconds);
     void setSeconds(float seconds);
     float seconds() const { return m_seconds; }
     float minutes() const { return m_seconds / 60.0F; }
-    void setSpeed(float speed) { m_speed = speed; }
-    float speed() const { return m_speed; }
 
     /// Direction light travels from the sun (pointing down by day).
     glm::vec3 sunDirection() const;
@@ -124,7 +124,6 @@ private:
 
     TimeOfDayCurves m_curves;
     float m_seconds = kStartSeconds;
-    float m_speed = kSpeed;
 };
 
 } // namespace fh

@@ -214,13 +214,16 @@ vec3 fogColourTowards(vec3 view)
 vec3 skyColour(vec3 direction)
 {
     vec3 view = normalize(direction);
-    float t = clamp((view.y - uSkyClampBottom) / max(uSkyClampTop - uSkyClampBottom, 1e-4), 0.0, 1.0);
+    // The dome's per-vertex w, linear in elevation; the dome stops 6
+    // degrees below the horizon, where w reaches 0.
+    float w = max(degrees(asin(clamp(view.y, -1.0, 1.0))) / 90.0 + 1.0 / 15.0, 0.0);
+    float t = clamp((w - uSkyClampBottom) / max(uSkyClampTop - uSkyClampBottom, 1e-4), 0.0, 1.0);
     vec3 base = mix(uSkyBottom, uSkyTop, safePow(t, uSkyColourPower));
     float ellipse = clamp(1.0 + (uHazeEllipticalScale - 1.0) * view.y, 0.0, 1.0);
     float haze = uHazeIntensity * safePow(ellipse * max(dot(view, uHazeDirection), 0.0), uHazePower);
     vec3 sky = uSkyGain * clamp(mix(base, uHazeColour, haze), 0.0, 1.0);
     const float kSkyFogRing = 15000.0;
-    float band = fogExtinction(kSkyFogRing)
+    float band = min(uFogDensity * kSkyFogRing, 1.0)
         * (1.0 - smoothRamp(kSkyFogRing * view.y, uFogSkyHeightFadeStart, uFogSkyHeightFadeEnd));
     return mix(sky, fogColourTowards(view) * uSkyGain, band);
 }

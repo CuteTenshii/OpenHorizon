@@ -17,12 +17,8 @@ namespace {
 
 constexpr float kMinutesPerDay = 1440.0F;
 constexpr float kSecondsPerDay = 86400.0F;
-/// `FogDensity` is 0.03 by day and 0.08 at night, with `FogStartDistance`
-/// 300 to 825 m. How the game scales it into the shaders' base-2 exponent
-/// is not decoded. Fitted by eye: read per 100 m, the day fog reaches half
-/// strength around 4 km out and leaves the valley clear, and the mountains
-/// take on the blue distance haze of the game; per kilometre leaves them
-/// almost untouched and per metre fogs out everything past the start.
+/// The executable puts `FogDensity * 0.01` into the shaders' base-2
+/// extinction per metre (0x824297B4, the factor at 0x82000CCC).
 constexpr float kFogDensityPerMetre = 0.01F;
 /// The template the game falls back to outside every post-processing zone
 /// is not decoded; "NoFog" is used, and "LightFog", the other template
@@ -160,6 +156,11 @@ TimeOfDay::TimeOfDay(TimeOfDayCurves curves)
 {
 }
 
+void TimeOfDay::advance(float realSeconds)
+{
+    setSeconds(m_seconds + realSeconds * m_curves.sampleScalar("TimeSpeed", minutes()));
+}
+
 void TimeOfDay::setSeconds(float seconds)
 {
     m_seconds = std::fmod(seconds, kSecondsPerDay);
@@ -199,7 +200,8 @@ render::SceneLighting TimeOfDay::lighting() const
 
     l.skyTop = m_curves.sample("AtmosphereTopColour", t);
     l.skyBottom = m_curves.sample("AtmosphereBottomColour", t);
-    l.skyColourPower = m_curves.sampleScalar("AtmosphereColourPower", t);
+    // The sky object raises the power to at least 0.01 (0x82E34728).
+    l.skyColourPower = std::max(m_curves.sampleScalar("AtmosphereColourPower", t), 0.01F);
     l.skyClampTop = m_curves.sampleScalar("AtmosphereClampPower", t);
     l.skyClampBottom = m_curves.sampleScalar("AtmosphereBottomClampPower", t);
     l.skyGain = m_curves.sampleScalar("SkyGain", t);

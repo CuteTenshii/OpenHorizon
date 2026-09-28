@@ -32,20 +32,26 @@ namespace fh::render {
 ///   `h = hazeIntensity * (ellipse * max(dot(view, hazeDirection), 0)) ^ hazePower`
 ///   and `ellipse = clamp(1 + (hazeEllipticalScale - 1) * dot(view, T), 0, 1)`;
 ///   `t = clamp((w - clampBottom) / (clampTop - clampBottom), 0, 1)` for the
-///   dome vertex's w. Inferred rather than read: that w is the sine of the
-///   elevation and T the up vector, and which curve feeds each constant
-///   (matched by name).
+///   dome vertex's w. The executable builds the dome itself (0x82E34768):
+///   rows every 6 degrees of elevation from -6 to 84 with w = (row + 1) / 15,
+///   so w = elevation / 90 degrees + 1 / 15, and it raises the colour power
+///   to at least 0.01 (0x82E34728). Inferred rather than read: that T is the
+///   up vector, and which curve feeds each constant (matched by name).
 /// - Fog (the track effects' vertex shaders) blends towards
 ///   `mix(fogColour, fogScatterColour, scatter)` by
 ///   `(1 - 2 ^ (-density * max(distance - start, 0))) * (1 - amount * smoothstep(heightStart, heightEnd, y))`,
 ///   where `scatter = max(dot(view, toSun), 0) ^ scatterPower` times a ramp
-///   from `scatterStart` over `scatterRamp` metres.
+///   from `scatterStart` over `scatterRamp` metres. The executable fills the
+///   constants at 0x82429780: FogConsts = (start, 0, 0, FogDensity * 0.01),
+///   FogConsts2 = (heightStart, heightEnd, amount, scatterPower), and the
+///   scatter start and ramp in the w of the two fog colours.
 /// - Over the sky lies a band of the same fog colour times the sky gain
 ///   (`SkyFog_PS` with `SkyFog_VS`, which places the band on a sphere and
 ///   gives it the height `15000 * sin(elevation)`), faded out by
 ///   `1 - smoothstep(skyHeightFadeStart, skyHeightFadeEnd, height)`. Its
-///   opacity comes from a constant the executable derives from the fog
-///   density in a way not decoded; the fog of the terrain at 15 km stands in.
+///   opacity is `min(FogDensity * 0.01 * 15000, 1)` (0x8242B618). Inferred:
+///   that the band's `Gain` is the sky gain, and the band's elevation range,
+///   which comes from constants whose source was not found.
 struct SceneLighting {
     /// Direction light travels from the sun (or moon), normalised.
     glm::vec3 sunDirection{};
@@ -60,8 +66,9 @@ struct SceneLighting {
     glm::vec3 skyTop{};
     glm::vec3 skyBottom{};
     float skyColourPower = 0.0F;
-    /// Sine of the elevation where the sky has fully turned to the top
-    /// colour, and where it starts to leave the bottom colour.
+    /// The dome's w (elevation / 90 degrees + 1 / 15) where the sky has
+    /// fully turned to the top colour, and where it starts to leave the
+    /// bottom colour.
     float skyClampTop = 0.0F;
     float skyClampBottom = 0.0F;
     float skyGain = 0.0F;
