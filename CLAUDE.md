@@ -21,6 +21,9 @@ cmake --build build --target fh1         # just the game
 ctest --test-dir build                   # unit tests
 FH1_GAME_DIR=~/Documents/fh1/iso ctest --test-dir build        # also the checks against the real disc
 ctest --test-dir build -R tst_collision  # one test executable
+cmake --build build --target format      # clang-format every source (.clang-format)
+cmake --build build --target format-check
+cmake --build build --target tidy        # clang-tidy over the compilation database (.clang-tidy)
 ```
 
 `lzx` and `xds` come from their git repos via FetchContent, pinned by commit in the root `CMakeLists.txt`. To work against local checkouts use `-DFETCHCONTENT_SOURCE_DIR_LZX=../lzx` / `-DFETCHCONTENT_SOURCE_DIR_XDS=../xds`.

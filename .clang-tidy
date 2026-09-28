@@ -1,0 +1,50 @@
+# Checks that find bugs rather than enforce a style. The ones switched off
+# below only produced false positives on this codebase:
+# - throwing-static-initialization: the test harness registers tests from
+#   static constructors.
+# - unchecked-optional-access: members such as the time of day are optionals
+#   that are always set once the world has loaded, which the check cannot see.
+# - narrowing-conversions, implicit-widening-of-multiplication-result,
+#   integer-division: index and size arithmetic on file formats whose sizes
+#   are small by construction, converted on purpose.
+# - string-constructor: string_views of binary markers deliberately include
+#   their trailing NUL.
+# - unchecked-string-to-number-conversion: command-line numbers, where 0 on
+#   bad input is acceptable.
+# - float-loop-counter: rpm and steering sweeps in tools and tests.
+# - random-generator-seed: fixed seeds keep runs repeatable.
+# - concurrency-mt-unsafe: getenv and friends are only called at startup.
+# - performance-no-int-to-ptr: OpenGL takes buffer offsets as pointers.
+# - performance-enum-size: enums are not stored in bulk.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-throwing-static-initialization,
+  -bugprone-unchecked-optional-access,
+  -bugprone-narrowing-conversions,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-integer-division,
+  -bugprone-string-constructor,
+  -bugprone-unchecked-string-to-number-conversion,
+  -bugprone-float-loop-counter,
+  -bugprone-random-generator-seed,
+  clang-analyzer-*,
+  -clang-analyzer-security.FloatLoopCounter,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-virtual-class-destructor,
+  misc-redundant-expression,
+  misc-unused-using-decls,
+  modernize-use-override,
+  modernize-use-nullptr,
+  modernize-use-emplace,
+  modernize-make-unique,
+  modernize-make-shared,
+  performance-*,
+  -performance-no-int-to-ptr,
+  -performance-enum-size,
+  readability-container-size-empty,
+  readability-redundant-string-cstr,
+  readability-misleading-indentation,
+  readability-duplicate-include
+HeaderFilterRegex: '(src|tools|tests)/'

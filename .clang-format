@@ -1,0 +1,20 @@
+# Matches the style the code was written in, so formatting a file changes
+# little beyond real inconsistencies.
+BasedOnStyle: WebKit
+ColumnLimit: 120
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortLambdasOnASingleLine: All
+AlwaysBreakTemplateDeclarations: No
+BreakBeforeBinaryOperators: All
+BreakConstructorInitializers: BeforeComma
+Cpp11BracedListStyle: true
+FixNamespaceComments: true
+IncludeBlocks: Preserve
+InsertBraces: true
+LambdaBodyIndentation: OuterScope
+NamespaceIndentation: None
+PointerAlignment: Left
+QualifierAlignment: Leave
+SpaceAfterTemplateKeyword: true
+SpaceBeforeCpp11BracedList: false
+Standard: c++20
