@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 
 namespace {
@@ -33,8 +34,9 @@ void printUsage()
         "  --width W --height H --fullscreen\n"
         "  --frames N         quit after N frames\n"
         "  --screenshot FILE  with --frames, save the last frame as PNG\n"
-        "  --debug            verbose log and OpenGL debug output\n",
-        fh::Settings::defaultPath().string().c_str());
+        "  --debug            verbose log and OpenGL debug output\n"
+        "  --log FILE         write the full log there (default %s)\n",
+        fh::Settings::defaultPath().string().c_str(), fh::defaultLogPath().string().c_str());
 }
 
 } // namespace
@@ -51,6 +53,7 @@ int main(int argc, char** argv)
     options.car = settings.get("car", options.car);
     options.manualGearbox = settings.getBool("manual", false);
 
+    std::filesystem::path logPath = fh::defaultLogPath();
     std::string gameDir = settings.get("game", "");
     if (const char* env = std::getenv("FH1_GAME_DIR"); env && *env) {
         gameDir = env;
@@ -115,12 +118,15 @@ int main(int argc, char** argv)
         } else if (arg == "--debug") {
             fh::setLogLevel(fh::LogLevel::Debug);
             window.glDebug = true;
+        } else if (arg == "--log") {
+            logPath = value();
         } else {
             std::fprintf(stderr, "unknown option %s\n", arg.c_str());
             printUsage();
             return 2;
         }
     }
+    fh::openLogFile(logPath);
     if (gameDir.empty()) {
         std::fprintf(stderr, "No game folder given.\n\n");
         printUsage();

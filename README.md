@@ -43,6 +43,8 @@ FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build   # also the checks 
 
 The folder is the disc root (holding `default.xex` and `media`) or the `media` folder itself. It is remembered in `~/.config/fh1-native/settings.ini`, so later starts need no options. `fh1 --help` lists the rest: `--car ALF_8C_08` picks the car by its media name, `--race FR02` starts a race at once, `--time 20:00` sets the time of day, `--manual` gives a manual gearbox.
 
+Each run writes its full log, debug messages included, to `~/.local/state/fh1-native/fh1.log` (under `$XDG_STATE_HOME` when set), replacing the previous one; `--log FILE` writes it elsewhere. Attach it to bug reports.
+
 ### Controls
 
 | Action | Keyboard | Xbox pad |
