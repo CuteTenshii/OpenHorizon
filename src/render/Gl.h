@@ -37,6 +37,10 @@
     X(PFNGLPIXELSTOREIPROC, glPixelStorei)                                                                             \
     X(PFNGLREADPIXELSPROC, glReadPixels)                                                                               \
     X(PFNGLFINISHPROC, glFinish)                                                                                       \
+    X(PFNGLBEGINQUERYPROC, glBeginQuery)                                                                               \
+    X(PFNGLENDQUERYPROC, glEndQuery)                                                                                   \
+    X(PFNGLGETQUERYOBJECTIVPROC, glGetQueryObjectiv)                                                                   \
+    X(PFNGLGETQUERYOBJECTUI64VPROC, glGetQueryObjectui64v)                                                             \
     X(PFNGLDEBUGMESSAGECALLBACKPROC, glDebugMessageCallback)                                                           \
     X(PFNGLDEBUGMESSAGECONTROLPROC, glDebugMessageControl)                                                             \
     X(PFNGLCREATEBUFFERSPROC, glCreateBuffers)                                                                         \

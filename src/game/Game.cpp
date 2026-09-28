@@ -84,6 +84,7 @@ Game::Game(Window& window, const GameOptions& options)
     m_strings = std::make_unique<Localisation>(m_vfs, "en");
     m_jobs = std::make_unique<JobPool>();
     m_frame = std::make_unique<render::FrameRenderer>();
+    m_frameStats = std::make_unique<render::FrameStats>();
     m_overlay = std::make_unique<render::Overlay>("sans-serif:bold", 26);
 
     try {
@@ -378,10 +379,15 @@ CarControls Game::readPlayerControls(float dt)
     return controls;
 }
 
-void Game::stepPhysics(float dt)
+int Game::stepPhysics(float dt)
 {
+    int steps = 0;
     constexpr float kStep = 1.0F / CarPhysics::kStepRate;
-    m_physicsAccumulator = std::min(m_physicsAccumulator + dt, 0.1F);
+    // At most 1/30 s of simulation per frame. When the machine cannot keep
+    // up, each slow frame would otherwise owe more steps than the last and
+    // the frame rate collapses; dropping the backlog slows the game instead.
+    constexpr float kMaxSteps = CarPhysics::kStepRate / 30.0F;
+    m_physicsAccumulator = std::min(m_physicsAccumulator + dt, kMaxSteps * kStep);
     std::vector<CarControls> controls;
     controls.reserve(m_vehicles.size());
     for (const auto& vehicle : m_vehicles) {
@@ -398,7 +404,9 @@ void Game::stepPhysics(float dt)
         }
         collideVehicles();
         m_physicsAccumulator -= kStep;
+        ++steps;
     }
+    return steps;
 }
 
 void Game::collideWithWorld(Vehicle& vehicle)
@@ -1457,7 +1465,10 @@ bool Game::saveScreenshot(const std::filesystem::path& path)
 int Game::run()
 {
     auto last = std::chrono::steady_clock::now();
+    using Part = render::FrameStats::Part;
     while (m_window.pumpEvents()) {
+        m_frameStats->beginFrame();
+        int physicsSteps = 0;
         const auto now = std::chrono::steady_clock::now();
         const float dt = std::min(std::chrono::duration<float>(now - last).count(), 0.1F);
         last = now;
@@ -1512,7 +1523,9 @@ int Game::run()
         updateEventStarts();
 
         const glm::vec3 focus = m_playerPlaced ? player().physics->position() : m_spawnPosition;
+        m_frameStats->mark(Part::Simulation);
         m_collision->update(focus);
+        m_frameStats->mark(Part::Streaming);
         if (!m_playerPlaced && m_collision->readyAt(m_spawnPosition)) {
             // Wait for the ground itself, but not forever: a spawn point off
             // the map has none.
@@ -1529,7 +1542,9 @@ int Game::run()
             updateRace(dt);
             updateAiDrivers(dt);
             updateTraffic(dt);
-            stepPhysics(dt);
+            m_frameStats->mark(Part::Simulation);
+            physicsSteps = stepPhysics(dt);
+            m_frameStats->mark(Part::Physics);
             updateDebris(dt);
             updateAudio(dt);
             if (m_options.demoDrive && secondTicked(m_time, dt)) {
@@ -1557,12 +1572,16 @@ int Game::run()
             }
         }
         updateCamera(dt);
+        m_frameStats->mark(Part::Simulation);
         m_worldRenderer->update(m_camera.position);
+        m_frameStats->mark(Part::Streaming);
 
         const render::FrameParams frame = frameParams();
         m_frame->begin(m_window.width(), m_window.height());
         m_worldRenderer->draw(frame);
+        m_frameStats->mark(Part::DrawWorld);
         drawVehicles(frame);
+        m_frameStats->mark(Part::DrawCars);
         m_frame->sky(frame);
         drawVehicleGlass(frame);
         drawEventStarts(frame.projection * frame.view);
@@ -1571,16 +1590,20 @@ int Game::run()
         m_frame->finish(m_tone);
         drawHud(dt);
         m_overlay->flush(glm::mat4(1.0F), m_window.width(), m_window.height());
+        m_frameStats->mark(Part::DrawOther);
 
         ++m_frameCount;
-        if (m_options.frames && m_frameCount >= *m_options.frames) {
-            if (!m_options.screenshot.empty()) {
-                saveScreenshot(m_options.screenshot);
-            }
-            m_window.swapBuffers();
+        const bool finished = m_options.frames && m_frameCount >= *m_options.frames;
+        if (finished && !m_options.screenshot.empty()) {
+            saveScreenshot(m_options.screenshot);
+        }
+        m_frameStats->endGpuFrame();
+        m_window.swapBuffers();
+        m_frameStats->mark(Part::Present);
+        m_frameStats->endFrame(physicsSteps, m_vehicles.size());
+        if (finished) {
             break;
         }
-        m_window.swapBuffers();
     }
     return 0;
 }

@@ -20,6 +20,7 @@
 #include "platform/Window.h"
 #include "render/CarRenderer.h"
 #include "render/FrameRenderer.h"
+#include "render/FrameStats.h"
 #include "render/Overlay.h"
 #include "render/WorldRenderer.h"
 #include "vfs/Vfs.h"
@@ -117,7 +118,8 @@ private:
     const Vehicle& player() const { return *m_vehicles.front(); }
 
     CarControls readPlayerControls(float dt);
-    void stepPhysics(float dt);
+    /// Returns the number of fixed steps taken.
+    int stepPhysics(float dt);
     void collideWithWorld(Vehicle& vehicle);
     void collideVehicles();
     void collideSmashables(Vehicle& vehicle);
@@ -161,6 +163,7 @@ private:
     std::optional<TimeOfDay> m_timeOfDay;
     render::ToneSettings m_tone;
     std::unique_ptr<render::FrameRenderer> m_frame;
+    std::unique_ptr<render::FrameStats> m_frameStats;
     std::unique_ptr<render::WorldRenderer> m_worldRenderer;
     std::unique_ptr<render::Overlay> m_overlay;
     std::unique_ptr<physics::WorldCollision> m_collision;

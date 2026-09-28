@@ -79,6 +79,8 @@ add_library(fh1engine STATIC
     render/CarRenderer.h
     render/FrameRenderer.cpp
     render/FrameRenderer.h
+    render/FrameStats.cpp
+    render/FrameStats.h
     render/Overlay.cpp
     render/Overlay.h
     render/Shader.cpp
