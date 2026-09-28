@@ -26,7 +26,7 @@ The repository contains no game data.
 
 ## Build
 
-Requires CMake 3.21 or newer, a C++20 compiler (GCC 13 or Clang 17), and the development packages of SDL3, OpenGL, glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavutil, libswresample) and zlib. The first configure downloads lzx and xds; `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` and `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>` build against local checkouts instead.
+Requires CMake 3.21 or newer, a C++20 compiler (GCC 13 or Clang 17), and the development packages of SDL3, OpenGL, glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavutil, libswresample), zlib and shaderc (used only by the shader check tool and its test). The first configure downloads lzx and xds; `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` and `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>` build against local checkouts instead.
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo

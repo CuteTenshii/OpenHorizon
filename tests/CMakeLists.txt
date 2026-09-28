@@ -30,3 +30,9 @@ target_compile_options(tst_spectators PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_spectators PRIVATE fh1spectators)
 # The Colorado test inside runs only when FH1_GAME_DIR names an extracted disc.
 add_test(NAME tst_spectators COMMAND tst_spectators)
+
+add_executable(tst_xenos TestHarness.h tst_xenos.cpp)
+target_compile_options(tst_xenos PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_xenos PRIVATE fh1xenoscheck)
+# The test of every game shader runs only when FH1_GAME_DIR is set.
+add_test(NAME tst_xenos COMMAND tst_xenos)
