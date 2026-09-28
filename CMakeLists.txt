@@ -13,18 +13,26 @@ endif()
 
 option(FH1N_BUILD_TESTS "Build the unit tests" ON)
 
-# The archive and texture libraries live next to this project by default; any
-# checkout can be used instead.
-set(FH1N_LZX_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../lzx" CACHE PATH "Source directory of the lzx library")
-set(FH1N_XDS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xds" CACHE PATH "Source directory of the xds library")
-
+# Xbox 360 archive (LZX zip) and texture (xds) decoding. To build against a
+# local checkout instead, configure with -DFETCHCONTENT_SOURCE_DIR_LZX=<path>
+# or -DFETCHCONTENT_SOURCE_DIR_XDS=<path>.
+include(FetchContent)
 set(LZX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(LZX_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(XDS_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(XDS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(XDS_BUILD_QT_PLUGIN OFF CACHE BOOL "" FORCE)
-add_subdirectory(${FH1N_LZX_DIR} ${CMAKE_BINARY_DIR}/_deps/lzx EXCLUDE_FROM_ALL)
-add_subdirectory(${FH1N_XDS_DIR} ${CMAKE_BINARY_DIR}/_deps/xds EXCLUDE_FROM_ALL)
+FetchContent_Declare(lzx
+    GIT_REPOSITORY https://git.tenshii.moe/Tenshii/lzx.git
+    GIT_TAG 5e3b4cf83ac9b841ae782c40bb9d368c884ce7c5
+    EXCLUDE_FROM_ALL
+)
+FetchContent_Declare(xds
+    GIT_REPOSITORY https://git.tenshii.moe/Tenshii/xds.git
+    GIT_TAG 4b629ce25372b98e9aa0e5923d6352ba2dc904cf
+    EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(lzx xds)
 
 find_package(SDL3 REQUIRED CONFIG)
 find_package(OpenGL REQUIRED)
