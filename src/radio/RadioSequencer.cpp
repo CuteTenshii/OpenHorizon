@@ -617,19 +617,21 @@ void RadioSequencer::setPlayerStation(std::size_t index)
 
 void RadioSequencer::nextStation()
 {
-    // 0x82c96f20 with the "previous" flag clear.
-    if (m_current == m_offStation || m_switchingLocked) {
+    // 0x82c96f20 with the "previous" flag clear stops at the off station;
+    // players remember the D-pad cycling round to the first station, so
+    // stepping wraps.
+    if (m_switchingLocked) {
         return;
     }
-    requestStation(m_current + 1, true);
+    requestStation(m_current >= m_offStation ? 0 : m_current + 1, true);
 }
 
 void RadioSequencer::previousStation()
 {
-    if (m_current == 0 || m_switchingLocked) {
+    if (m_switchingLocked) {
         return;
     }
-    requestStation(m_current - 1, true);
+    requestStation(m_current == 0 ? m_offStation : m_current - 1, true);
 }
 
 void RadioSequencer::setTimeOfDay(TimeOfDay timeOfDay)

@@ -177,8 +177,8 @@ public:
     /// music at all. The game's settings code presumably sets it from the
     /// "radio station" option; that call was not traced.
     void setPlayerStation(std::size_t index);
-    /// The D-pad: the next or previous station in name order, stopping at
-    /// the first station and at the off station (vtable +116).
+    /// The D-pad: the next or previous station in name order, wrapping from
+    /// the off station round to the first (vtable +116).
     void nextStation();
     void previousStation();
 

@@ -352,7 +352,6 @@ TEST(sequencerStationChangesResumeAndPause)
     run(s, 20.0);
     const std::string first = s.voice(RadioChannel::Music).fmodName;
     CHECK(first == "A_Solo" || first == "A_Duet");
-    s.previousStation();
     CHECK_EQ(s.currentStation(), std::size_t{0});
     s.nextStation();
     CHECK_EQ(s.currentStation(), std::size_t{1});
@@ -375,11 +374,14 @@ TEST(sequencerStationChangesResumeAndPause)
     run(s, 10.0);
     CHECK_EQ(s.voice(RadioChannel::Music).elapsed, elapsed);
     CHECK_NEAR(s.musicGain(), 0.0, 1e-6);
+    // Past the off station the D-pad comes round to the first station, and
+    // back from the first one to off.
     s.nextStation();
-    CHECK_EQ(s.currentStation(), std::size_t{2});
-    s.previousStation();
+    CHECK_EQ(s.currentStation(), std::size_t{0});
     run(s, 1.0);
     CHECK(!s.paused());
+    s.previousStation();
+    CHECK_EQ(s.currentStation(), std::size_t{2});
 }
 
 TEST(sequencerDucksAndFadesLevels)
