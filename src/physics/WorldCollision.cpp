@@ -1,6 +1,7 @@
 #include "WorldCollision.h"
 
 #include "base/Log.h"
+#include "collision/SurfaceTable.h"
 
 #include <algorithm>
 #include <cmath>
@@ -84,12 +85,19 @@ glm::vec3 closestPoint(const glm::vec3& p, const glm::vec3& a, const glm::vec3& 
 
 } // namespace
 
-WorldCollision::WorldCollision(const world::TrackWorld& world, JobPool& jobs)
+WorldCollision::WorldCollision(const world::TrackWorld& world, JobPool& jobs, const Vfs& vfs, std::string_view track)
     : m_world(world)
     , m_jobs(jobs)
     , m_grid(world.index, kTileSize)
     , m_alive(std::make_shared<std::atomic<bool>>(true))
 {
+    try {
+        m_fiz = collision::TrackCollision::open(vfs, track);
+        logInfo("collision: {} mesh tiles, {} surface types", m_fiz->index().tiles().size(),
+            m_fiz->surfaces().surfaces().size());
+    } catch (const std::exception& e) {
+        logWarning("collision: no collision meshes for {} ({}); using render geometry", track, e.what());
+    }
 }
 
 WorldCollision::~WorldCollision()
@@ -210,6 +218,18 @@ std::shared_ptr<const WorldCollision::Tile> WorldCollision::buildTile(
 
 void WorldCollision::update(const glm::vec3& focus, float radius)
 {
+    if (m_fiz) {
+        // Collision mesh tiles are small and quick to parse; keep one batch
+        // loading at a time, and let far ones go.
+        if (!m_fizLoading.valid()
+            || m_fizLoading.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            if (m_fizLoading.valid()) {
+                m_fizLoading.get();
+            }
+            m_fiz->evictOutside(glm::vec2(focus.x, focus.z), radius + kDropMargin);
+            m_fizLoading = m_fiz->loadAroundAsync(glm::vec2(focus.x, focus.z), radius);
+        }
+    }
     {
         const std::lock_guard lock(m_resultMutex);
         for (auto& [index, tile] : m_results) {
@@ -331,9 +351,38 @@ template <typename Visit> void WorldCollision::forEachTriangleNear(glm::vec3 lo,
     }
 }
 
+void WorldCollision::fillSurface(int surface, GroundHit& hit) const
+{
+    hit.surface = surface;
+    hit.grip = 1.0F;
+    hit.drag = 0.0F;
+    if (!m_fiz || surface < 0) {
+        return;
+    }
+    const collision::SurfaceType* type = m_fiz->surfaces().find(static_cast<std::uint8_t>(surface));
+    if (!type || !type->hasParameters) {
+        return;
+    }
+    hit.grip = type->frictionScale;
+    // Loose surfaces resist a rolling tyre through their velocity-dependent
+    // friction; taking a fiftieth of its coefficient as rolling resistance
+    // gives sand (coefficient 5) a tenth of the load as drag. The scale is
+    // inferred, not taken from the game's code.
+    hit.drag = std::clamp(type->velocityFriction.longitudinalCoeff * 0.02F, 0.0F, 0.25F);
+}
+
 bool WorldCollision::raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
     GroundHit& hit) const
 {
+    if (m_fiz) {
+        if (const std::optional<collision::RayHit> fiz = m_fiz->raycast(origin, direction, maxDistance, m_filter)) {
+            hit.point = fiz->point;
+            hit.normal = fiz->normal;
+            hit.distance = fiz->distance;
+            fillSurface(fiz->surface, hit);
+            return true;
+        }
+    }
     const glm::vec3 end = origin + direction * maxDistance;
     float best = maxDistance;
     const Triangle* bestTriangle = nullptr;
@@ -351,17 +400,20 @@ bool WorldCollision::raycast(const glm::vec3& origin, const glm::vec3& direction
     // Faces are hit from either side; the normal points back at the ray.
     hit.normal = glm::dot(bestTriangle->normal, direction) > 0.0F ? -bestTriangle->normal : bestTriangle->normal;
     hit.distance = best;
-    hit.grip = 1.0F;
-    hit.surface = 0;
-    hit.drag = 0.0F;
+    fillSurface(-1, hit);
     return true;
 }
 
-void WorldCollision::sphereContacts(const glm::vec3& centre, float radius, std::vector<SphereContact>& out) const
+void WorldCollision::renderContacts(
+    const glm::vec3& centre, float radius, bool wallsOnly, std::vector<SphereContact>& out) const
 {
-    const std::size_t first = out.size();
     const glm::vec3 extent(radius);
     forEachTriangleNear(centre - extent, centre + extent, [&](const Triangle& t) {
+        // Ground-like faces are left to the collision mesh where it exists;
+        // the render ground there can sit a few centimetres off it.
+        if (wallsOnly && std::abs(t.normal.y) > 0.7F) {
+            return;
+        }
         const glm::vec3 p = closestPoint(centre, t.a, t.a + t.edge1, t.a + t.edge2);
         const glm::vec3 offset = centre - p;
         const float distance2 = glm::dot(offset, offset);
@@ -379,6 +431,10 @@ void WorldCollision::sphereContacts(const glm::vec3& centre, float radius, std::
         contact.depth = radius - distance;
         out.push_back(contact);
     });
+}
+
+void WorldCollision::trunkContacts(const glm::vec3& centre, float radius, std::vector<SphereContact>& out) const
+{
     const int x0 = static_cast<int>(std::floor((centre.x - radius) / kCellSize));
     const int x1 = static_cast<int>(std::floor((centre.x + radius) / kCellSize));
     const int z0 = static_cast<int>(std::floor((centre.z - radius) / kCellSize));
@@ -415,6 +471,22 @@ void WorldCollision::sphereContacts(const glm::vec3& centre, float radius, std::
             }
         }
     }
+}
+
+void WorldCollision::sphereContacts(const glm::vec3& centre, float radius, std::vector<SphereContact>& out) const
+{
+    const std::size_t first = out.size();
+    bool meshCovers = false;
+    if (m_fiz) {
+        for (const collision::SphereContact& c : m_fiz->sphereContacts(centre, radius, m_filter)) {
+            out.push_back({c.point, c.normal, c.depth, c.surface});
+        }
+        // Inside the drivable area the collision mesh is the ground; the
+        // render geometry only adds the props standing on it.
+        meshCovers = m_fiz->groundBelow(centre + glm::vec3(0.0F, radius, 0.0F), 20.0F, m_filter).has_value();
+    }
+    renderContacts(centre, radius, meshCovers, out);
+    trunkContacts(centre, radius, out);
     std::sort(out.begin() + static_cast<std::ptrdiff_t>(first), out.end(),
         [](const SphereContact& a, const SphereContact& b) { return a.depth > b.depth; });
 }

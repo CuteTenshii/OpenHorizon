@@ -162,7 +162,7 @@ void Game::loadWorld()
     logInfo("world: {} chunks indexed in {:.1f} s", m_world->index.chunks().size(),
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     m_worldRenderer = std::make_unique<render::WorldRenderer>(*m_world, *m_jobs);
-    m_collision = std::make_unique<physics::WorldCollision>(*m_world, *m_jobs);
+    m_collision = std::make_unique<physics::WorldCollision>(*m_world, *m_jobs, m_vfs, m_options.track);
 
     m_objects = GameObjects::load(m_vfs, m_options.track);
     m_timeOfDay.emplace(TimeOfDayCurves::load(m_vfs, m_options.track));
@@ -396,6 +396,8 @@ void Game::startRace(const RaceEvent& event)
         line = RacingLine::through(points, false);
     }
     m_race = std::make_unique<Race>(event, std::move(route), std::move(*line));
+    // The race's own barriers close off the side roads of its route.
+    m_collision->setActiveRoute(event.routeId);
     const RaceRoute& grid = m_race->route();
 
     // The player takes the grid slot the event names, the back of the grid
@@ -454,6 +456,7 @@ void Game::endRace()
         return;
     }
     m_vehicles.resize(1);
+    m_collision->setActiveRoute(-1);
     player().ai.reset();
     m_lineGuide.reset();
     m_race.reset();
@@ -1083,8 +1086,10 @@ int Game::run()
             stepPhysics(dt);
             if (m_options.demoDrive && secondTicked(m_time, dt)) {
                 const CarPhysics& car = *player().physics;
-                logInfo("demo: v {:.1f} m/s, rpm {:.0f}, gear {}, at {:.0f} {:.0f}", car.forwardSpeed(),
-                    car.engineRpm(), car.gear(), car.position().x, car.position().z);
+                const GroundHit& ground = car.wheels()[0].ground;
+                logInfo("demo: v {:.1f} m/s, rpm {:.0f}, gear {}, at {:.0f} {:.0f}, surface {} (grip {:.2f}, drag {:.3f})",
+                    car.forwardSpeed(), car.engineRpm(), car.gear(), car.position().x, car.position().z,
+                    ground.surface, ground.grip, ground.drag);
             }
             if (m_race && m_race->player() && secondTicked(m_time, dt)) {
                 const Race::Racer* own = m_race->player();

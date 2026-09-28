@@ -2,16 +2,22 @@
 
 #include "base/JobPool.h"
 #include "car/CarPhysics.h"
+#include "collision/TrackCollision.h"
 #include "world/TrackWorld.h"
 #include "world/WorldTiles.h"
 
 #include <glm/glm.hpp>
 
 #include <atomic>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+
+namespace fh {
+class Vfs;
+} // namespace fh
 
 namespace fh::physics {
 
@@ -21,24 +27,31 @@ struct SphereContact {
     /// Out of the surface, towards the sphere's centre.
     glm::vec3 normal{0.0F, 1.0F, 0.0F};
     float depth = 0.0F;
+    /// Surface type (surfaceTypes.xml), or -1 for render geometry.
+    int surface = -1;
 };
 
-/// The world's solid surfaces around a moving point, for the cars: triangles
-/// of the finest level of detail of the terrain, roads and placed props in
-/// the 500 m tiles near the focus, kept in a grid of small cells for ray and
-/// sphere queries. Tiles are built on worker threads as the focus moves and
-/// dropped once it is far away.
+/// The world's solid surfaces around a moving point, for the cars.
 ///
-/// The game has dedicated collision meshes (`.fiz` tiles in bin.zip) with a
-/// surface type per triangle; until those are decoded the render geometry
-/// stands in, which is why every surface grips like tarmac. Procedural
-/// copies (trees, bushes, rocks) are left out, since their render models
-/// include foliage a car would otherwise hit in mid-air; instead each tall
-/// copy (a tree) gets a vertical cylinder for its trunk, and low ones
-/// (bushes, scrub) stay drive-through.
+/// The track's own collision meshes (`.fiz` tiles, see collision::
+/// TrackCollision) come first: they carry a surface type per triangle, so
+/// grass, dirt and tarmac grip differently, and they hold the walls and
+/// invisible barriers that fence the drivable area. They cover only that
+/// area, and not the props standing in it, so the render geometry fills in:
+/// the finest level of detail of the terrain, roads and placed props in the
+/// 500 m tiles near the focus, built on worker threads into a grid of small
+/// cells. Inside the drivable area only its steep faces (walls, signs,
+/// buildings) count; outside it, all of it does.
+///
+/// Procedural copies (trees, bushes, rocks) are left out of the render
+/// geometry, since their models include foliage a car would otherwise hit in
+/// mid-air; instead each tall copy (a tree) gets a vertical cylinder for its
+/// trunk, and low ones (bushes, scrub) stay drive-through.
 class WorldCollision final : public GroundQuery {
 public:
-    WorldCollision(const world::TrackWorld& world, JobPool& jobs);
+    /// Opens the track's collision meshes too; without them (a track that
+    /// lacks its .col index) only render geometry is used.
+    WorldCollision(const world::TrackWorld& world, JobPool& jobs, const Vfs& vfs, std::string_view track);
     ~WorldCollision() override;
     WorldCollision(const WorldCollision&) = delete;
     WorldCollision& operator=(const WorldCollision&) = delete;
@@ -48,6 +61,10 @@ public:
     void update(const glm::vec3& focus, float radius = 350.0F);
     /// True once the tile under `point` has been built.
     bool readyAt(const glm::vec3& point) const;
+    /// The race route being driven, whose barriers are then solid; -1 in
+    /// free roam.
+    void setActiveRoute(int route) { m_filter.activeRoute = route; }
+    const collision::SurfaceTable* surfaces() const { return m_fiz ? &m_fiz->surfaces() : nullptr; }
 
     bool raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, GroundHit& hit) const override;
     /// Appends the surfaces a sphere overlaps, deepest first.
@@ -91,6 +108,9 @@ private:
         const world::TileMesh& mesh, glm::vec2 origin, std::vector<Trunk> trunks);
     static std::uint64_t trunkCellKey(int x, int z);
     template <typename Visit> void forEachTriangleNear(glm::vec3 lo, glm::vec3 hi, Visit&& visit) const;
+    void renderContacts(const glm::vec3& centre, float radius, bool wallsOnly, std::vector<SphereContact>& out) const;
+    void trunkContacts(const glm::vec3& centre, float radius, std::vector<SphereContact>& out) const;
+    void fillSurface(int surface, GroundHit& hit) const;
 
     const world::TrackWorld& m_world;
     JobPool& m_jobs;
@@ -101,6 +121,10 @@ private:
     std::mutex m_resultMutex;
     std::vector<std::pair<std::size_t, std::shared_ptr<const Tile>>> m_results;
     std::shared_ptr<std::atomic<bool>> m_alive;
+
+    std::unique_ptr<collision::TrackCollision> m_fiz;
+    collision::QueryFilter m_filter;
+    std::future<std::size_t> m_fizLoading;
 };
 
 } // namespace fh::physics
