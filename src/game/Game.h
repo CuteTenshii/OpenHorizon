@@ -1,5 +1,8 @@
 #pragma once
 
+#include "audio/AudioDevice.h"
+#include "audio/AudioLibrary.h"
+#include "audio/EngineSound.h"
 #include "base/JobPool.h"
 #include "car/CarPhysics.h"
 #include "car/CarSpec.h"
@@ -81,6 +84,9 @@ private:
         std::unique_ptr<CarPhysics> physics;
         std::vector<BodySphere> spheres;
         std::unique_ptr<AiDriver> ai;
+        /// The engine, exhaust and tyres as heard; missing without audio.
+        std::unique_ptr<audio::EngineSound> engine;
+        int lastGear = 1;
         CarControls controls;
         glm::vec4 colour{1.0F};
         std::string name;
@@ -99,6 +105,8 @@ private:
     void collideVehicles();
     void collideSmashables(Vehicle& vehicle);
     void updateDebris(float dt);
+    void attachEngineSound(Vehicle& vehicle, bool spatial) const;
+    void updateAudio(float dt);
 
     void startRace(const RaceEvent& event);
     void endRace();
@@ -132,6 +140,10 @@ private:
     std::unique_ptr<render::Overlay> m_overlay;
     std::unique_ptr<physics::WorldCollision> m_collision;
 
+    // Declared before the vehicles so it outlives their engine sounds, whose
+    // destructors release mixer buses.
+    std::unique_ptr<audio::AudioDevice> m_audio;
+    std::shared_ptr<audio::AudioLibrary> m_audioLibrary;
     std::vector<std::unique_ptr<Vehicle>> m_vehicles;
     std::optional<Smashables> m_smashables;
     /// Renderer handle of each loose smashable, by body index.

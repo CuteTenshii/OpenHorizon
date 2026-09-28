@@ -70,11 +70,20 @@ Game::Game(Window& window, const GameOptions& options)
     m_frame = std::make_unique<render::FrameRenderer>();
     m_overlay = std::make_unique<render::Overlay>("sans-serif:bold", 26);
 
+    try {
+        m_audio = std::make_unique<audio::AudioDevice>();
+        m_audioLibrary = std::make_shared<audio::AudioLibrary>(m_vfs);
+    } catch (const std::exception& e) {
+        logWarning("audio: no sound ({})", e.what());
+        m_audio.reset();
+    }
+
     const int carId = carIdByMediaName(*m_database, options.car);
     if (carId < 0) {
         throw DataError("no car named {} in the game database", options.car);
     }
     m_vehicles.push_back(makeVehicle(carId, kPlayerColour));
+    attachEngineSound(player(), false);
     player().physics->assists().automaticGearbox = !options.manualGearbox;
     logInfo("car: {} ({:.0f} kg, {:.0f} N·m)", player().name, player().spec->massKg,
         player().spec->reference.peakTorqueNm);
@@ -384,6 +393,53 @@ void Game::updateDebris(float dt)
     }
 }
 
+void Game::attachEngineSound(Vehicle& vehicle, bool spatial) const
+{
+    if (!m_audio) {
+        return;
+    }
+    audio::EngineSoundOptions options;
+    options.spatial = spatial;
+    // Opponents' gear changes and skids would crowd the mix; the player's
+    // own carry the feedback.
+    options.transmission = !spatial;
+    try {
+        vehicle.engine
+            = std::make_unique<audio::EngineSound>(*m_audio, m_audioLibrary, vehicle.spec->mediaName, options);
+    } catch (const std::exception& e) {
+        logWarning("audio: {}: {}", vehicle.spec->mediaName, e.what());
+    }
+}
+
+void Game::updateAudio(float dt)
+{
+    if (!m_audio) {
+        return;
+    }
+    const glm::vec3 forward = glm::normalize(m_camera.target - m_camera.position);
+    const glm::vec3 right = glm::normalize(glm::cross(m_camera.up, forward));
+    m_audio->mixer().setListener(m_camera.position, right);
+    for (const auto& vehicle : m_vehicles) {
+        if (!vehicle->engine) {
+            continue;
+        }
+        const CarPhysics& car = *vehicle->physics;
+        if (car.gear() != vehicle->lastGear) {
+            vehicle->engine->shiftGear(vehicle->lastGear, car.gear());
+            vehicle->lastGear = car.gear();
+        }
+        float slip = 0.0F;
+        for (const CarPhysics::WheelState& wheel : car.wheels()) {
+            if (wheel.onGround) {
+                slip = std::max(slip, wheel.slipMagnitude);
+            }
+        }
+        vehicle->engine->setTyreSlip(slip);
+        vehicle->engine->setTransform(car.position(), glm::mat3_cast(car.orientation()));
+        vehicle->engine->update(car.engineRpm(), car.throttleApplied(), car.speed(), dt);
+    }
+}
+
 void Game::collideVehicles()
 {
     for (std::size_t a = 0; a < m_vehicles.size(); ++a) {
@@ -485,6 +541,7 @@ void Game::startRace(const RaceEvent& event)
             // not drive nose to tail.
             const float lane = (opponent % 2 == 0 ? -1.0F : 1.0F) * 1.2F;
             ai->ai = std::make_unique<AiDriver>(m_race->line(), *ai->spec, event.aiSkill, lane);
+            attachEngineSound(*ai, true);
             placeVehicle(*ai, t.position, headingOf(t));
             m_vehicles.push_back(std::move(ai));
             m_race->addRacer(m_vehicles.size() - 1, false, t.position);
@@ -1142,6 +1199,7 @@ int Game::run()
             updateRace(dt);
             stepPhysics(dt);
             updateDebris(dt);
+            updateAudio(dt);
             if (m_options.demoDrive && secondTicked(m_time, dt)) {
                 const CarPhysics& car = *player().physics;
                 const GroundHit& ground = car.wheels()[0].ground;
