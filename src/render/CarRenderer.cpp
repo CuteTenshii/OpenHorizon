@@ -3,6 +3,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <string>
+
 namespace fh::render {
 
 namespace {
@@ -32,7 +34,7 @@ void main()
 }
 )";
 
-const char* const kFragmentSource = R"(#version 450 core
+const char* const kFragmentBody = R"(
 in vec3 vPosition;
 in vec3 vNormal;
 in vec2 vTexcoord0;
@@ -44,13 +46,6 @@ uniform vec4 uColour;
 uniform float uGlow;
 uniform float uMetallic;
 uniform vec3 uCamera;
-uniform vec3 uSunDirection;
-uniform vec3 uSunColour;
-uniform vec3 uSkyColour;
-uniform vec3 uHorizonColour;
-uniform vec3 uGroundColour;
-uniform vec3 uFogColour;
-uniform float uFogDensity;
 
 const int kPlain = 0;
 const int kPaint = 1;
@@ -61,11 +56,11 @@ const int kRubber = 5;
 const int kInterior = 6;
 const int kDecal = 7;
 
-// The sky the surface would mirror: horizon colour below, zenith above.
+// What the surface would mirror: the sky above the horizon, and below it
+// the ground, which shows the colour of the light it bounces up.
 vec3 skyReflection(vec3 direction)
 {
-    float up = clamp(direction.y, -0.2, 1.0);
-    return up < 0.0 ? uGroundColour * 2.0 : mix(uHorizonColour, uSkyColour, sqrt(up));
+    return direction.y < 0.0 ? uAmbientBottom : skyColour(direction);
 }
 
 void main()
@@ -84,7 +79,7 @@ void main()
         albedo = mix(uColour.rgb, texel.rgb, texel.a);
     }
     float diffuse = max(dot(normal, toSun), 0.0);
-    vec3 ambient = mix(uGroundColour, (uSkyColour + uHorizonColour) * 0.5, 0.5 + 0.5 * normal.y);
+    vec3 ambient = hemisphereAmbient(normal, uCarAmbientTop, uCarAmbientBottom);
     vec3 halfway = normalize(toSun + toEye);
     float fresnel = 0.04 + 0.96 * pow(1.0 - clamp(dot(normal, toEye), 0.0, 1.0), 5.0);
     vec3 reflection = skyReflection(reflect(-toEye, normal));
@@ -115,10 +110,14 @@ void main()
     } else {
         colour = albedo * (ambient * 0.9 + uSunColour * diffuse);
     }
-    float fog = 1.0 - exp(-length(uCamera - vPosition) * uFogDensity);
-    fragColour = vec4(mix(colour, uFogColour, clamp(fog, 0.0, 1.0)), alpha);
+    fragColour = vec4(applyFog(colour, vPosition, uCamera), alpha);
 }
 )";
+
+std::string carFragmentSource()
+{
+    return std::string("#version 450 core\n") + kSceneLightingGlsl + kFragmentBody;
+}
 
 GLint shadingCode(Shading shading)
 {
@@ -131,7 +130,7 @@ CarRenderer::CarRenderer(const carmodel::CarModel& model)
     : m_nodes(model.mesh.nodes)
     , m_batches(model.mesh.batches)
     , m_white(Texture::solid(255, 255, 255, 255))
-    , m_shader("car", kVertexSource, kFragmentSource)
+    , m_shader("car", kVertexSource, carFragmentSource())
 {
     const CarMesh& mesh = model.mesh;
     glCreateBuffers(1, &m_vbo);
@@ -191,13 +190,7 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
     m_shader.use();
     m_shader.set("uViewProjection", frame.projection * frame.view);
     m_shader.set("uCamera", frame.cameraPosition);
-    m_shader.set("uSunDirection", frame.sunDirection);
-    m_shader.set("uSunColour", frame.sunColour);
-    m_shader.set("uSkyColour", frame.skyColour);
-    m_shader.set("uHorizonColour", frame.horizonColour);
-    m_shader.set("uGroundColour", frame.groundColour);
-    m_shader.set("uFogColour", frame.fogColour);
-    m_shader.set("uFogDensity", frame.fogDensity);
+    setSceneLighting(m_shader, frame.lighting);
     if (translucent) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

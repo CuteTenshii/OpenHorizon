@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -11,16 +12,27 @@ namespace fh {
 
 class Vfs;
 
+namespace render {
+struct SceneLighting;
+}
+
 /// A track's lighting over the day, from `Ribbon_00/TimeOfDayA.xml`: named
 /// curves (`SunPos`, `SunColor`, `AtmosphereTopColour`, ...) of keys at
 /// minutes of the day, each with one to three values (`x`, `y`, `z`).
 /// Sampling interpolates linearly and wraps at midnight.
 ///
-/// What the curves mean was read from their values: `SunPos` is the
-/// direction towards the sun scaled to about 100 (high at noon, low in the
-/// evening); colours are linear RGB; `SunColorMult` and `SkyGain` scale the
-/// sun and the sky; `SwitchOnLights` and `StarFade` run from 0 by day to 1
-/// by night.
+/// The executable's curve table (built at 0x82660E80) reads every colour
+/// curve as three plain floats, with no gamma or scale, so colours are
+/// linear RGB in the units the shaders take them. `SunPos`, `SunObjectPos`
+/// and `HazeObjectPos` are points in a small editor space, each aimed at its
+/// own `...TargetPos` curve, like a targeted light; the direction is
+/// target minus position. `SunColorMult` and `SkyGain` scale the sun and the
+/// sky; `SwitchOnLights` and `StarFade` run from 0 by day to 1 by night.
+///
+/// Also read with the curves: the default fog template of the track's
+/// `media/dynamicpost/tracks/<track>/fog_templates.xml`, whose multipliers
+/// the game applies to the fog curves (seen at 0x8265AB2C) and which alone
+/// gives the distances over which the sun tints the fog.
 class TimeOfDayCurves {
 public:
     /// Reads the track's file. Throws DataError if it is missing or not a
@@ -33,12 +45,31 @@ public:
     glm::vec3 sample(std::string_view curve, float minutes) const;
     float sampleScalar(std::string_view curve, float minutes) const { return sample(curve, minutes).x; }
 
+    /// One `Template` of `fog_templates.xml`: multipliers for the fog
+    /// curves and the sun scatter distances in metres.
+    struct FogTemplate {
+        glm::vec3 colour{1.0F};
+        float density = 1.0F;
+        float startDistance = 1.0F;
+        glm::vec3 scatterColour{1.0F};
+        float scatterPower = 1.0F;
+        float heightFadeAmount = 1.0F;
+        float heightFadeStart = 1.0F;
+        float heightFadeEnd = 1.0F;
+        float scatterStartDistance = 0.0F;
+        float scatterRampDistance = 0.0F;
+    };
+    /// The template used away from any post-processing zone; nothing when
+    /// the track has no template file.
+    const std::optional<FogTemplate>& fogTemplate() const { return m_fogTemplate; }
+
 private:
     struct Key {
         float time = 0.0F;
         glm::vec3 value{0.0F};
     };
     std::unordered_map<std::string, std::vector<Key>> m_curves;
+    std::optional<FogTemplate> m_fogTemplate;
 };
 
 /// The post-processing settings of `Ribbon_00/TimeOfDay.xml` that the frame
@@ -80,16 +111,17 @@ public:
 
     /// Direction light travels from the sun (pointing down by day).
     glm::vec3 sunDirection() const;
-    glm::vec3 sunColour() const;
-    glm::vec3 skyTopColour() const;
-    glm::vec3 skyBottomColour() const;
-    glm::vec3 hazeColour() const;
-    float hazeIntensity() const;
+    /// Sun, ambient, sky and fog for the renderers at the current time.
+    render::SceneLighting lighting() const;
     /// 0 by day, 1 when the street lights are on.
     float lights() const;
     float stars() const;
 
 private:
+    /// Normalised direction from the curve `position` towards the curve
+    /// `target`.
+    glm::vec3 aim(std::string_view position, std::string_view target) const;
+
     TimeOfDayCurves m_curves;
     float m_seconds = kStartSeconds;
     float m_speed = kSpeed;

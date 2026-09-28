@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 namespace fh::render {
 
@@ -20,30 +21,21 @@ void main()
 }
 )";
 
-const char* const kSkyFragment = R"(#version 450 core
+const char* const kSkyFragmentBody = R"(
 in vec2 vUv;
 uniform mat4 uInverseViewProjection;
-uniform vec3 uSunDirection;
-uniform vec3 uSunColour;
-uniform vec3 uSkyColour;
-uniform vec3 uHorizonColour;
-uniform vec3 uFogColour;
 layout(location = 0) out vec4 fragColour;
 void main()
 {
     vec4 far = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, 0.0, 1.0);
     vec4 near = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
     vec3 direction = normalize(far.xyz / far.w - near.xyz / near.w);
-    float height = clamp(direction.y, 0.0, 1.0);
-    // The game's atmosphere: the bottom colour at the horizon rising into
-    // the top colour, with haze hugging the horizon.
-    vec3 colour = mix(uHorizonColour, uSkyColour, pow(height, 0.5));
-    colour = mix(colour, uFogColour, exp(-height * 12.0) * 0.6);
-    if (direction.y < 0.0) {
-        colour = uFogColour;
-    }
-    float sun = max(dot(direction, -uSunDirection), 0.0);
-    colour += uSunColour * (smoothstep(0.9995, 0.9998, sun) * 60.0 + pow(sun, 16.0) * 0.4);
+    vec3 colour = skyColour(direction);
+    // The game draws the sun and moon as a textured sprite that is not
+    // decoded yet; a small bright disc in its colour stands in, its size
+    // and brightness chosen to read as the light source, not from data.
+    float disc = smoothstep(0.9995, 0.9998, dot(direction, uSunDiscDirection));
+    colour += uSunDiscColour * disc * 60.0;
     fragColour = vec4(colour, 1.0);
 }
 )";
@@ -105,7 +97,7 @@ glm::mat4 Camera::projection(float aspect) const
 }
 
 FrameRenderer::FrameRenderer()
-    : m_skyShader("sky", kFullscreenVertex, kSkyFragment)
+    : m_skyShader("sky", kFullscreenVertex, std::string("#version 450 core\n") + kSceneLightingGlsl + kSkyFragmentBody)
     , m_tonemapShader("tonemap", kFullscreenVertex, kTonemapFragment)
 {
     glCreateVertexArrays(1, &m_emptyVao);
@@ -169,11 +161,7 @@ void FrameRenderer::sky(const FrameParams& frame)
 {
     m_skyShader.use();
     m_skyShader.set("uInverseViewProjection", glm::inverse(frame.projection * frame.view));
-    m_skyShader.set("uSunDirection", frame.sunDirection);
-    m_skyShader.set("uSunColour", frame.sunColour);
-    m_skyShader.set("uSkyColour", frame.skyColour);
-    m_skyShader.set("uHorizonColour", frame.horizonColour);
-    m_skyShader.set("uFogColour", frame.fogColour);
+    setSceneLighting(m_skyShader, frame.lighting);
     // Only where nothing was drawn: depth still at the cleared 0.
     glDepthFunc(GL_EQUAL);
     glDepthMask(GL_FALSE);

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 
 namespace fh::render {
 
@@ -45,7 +46,7 @@ void main()
 }
 )";
 
-const char* const kFragmentSource = R"(#version 450 core
+const char* const kFragmentBody = R"(
 in vec3 vPosition;
 in vec3 vNormal;
 in vec2 vTexcoord0;
@@ -62,13 +63,6 @@ uniform vec2 uScaleA;
 uniform vec2 uScaleB;
 uniform vec2 uScaleC;
 uniform vec3 uCamera;
-uniform vec3 uSunDirection;
-uniform vec3 uSunColour;
-uniform vec3 uSkyColour;
-uniform vec3 uHorizonColour;
-uniform vec3 uGroundColour;
-uniform vec3 uFogColour;
-uniform float uFogDensity;
 uniform float uTime;
 
 const int kPlain = 0;
@@ -95,12 +89,6 @@ vec3 groundColour()
     return blended * texture(uOcclusion, vTexcoord1).r;
 }
 
-vec3 applyFog(vec3 colour, float distance)
-{
-    float fog = 1.0 - exp(-distance * uFogDensity);
-    return mix(colour, uFogColour, clamp(fog, 0.0, 1.0));
-}
-
 void main()
 {
     vec3 toEye = uCamera - vPosition;
@@ -116,10 +104,11 @@ void main()
         vec3 n2 = texture(uDiffuse, vTexcoord0 * 7.0 - flow.yx).xyz * 2.0 - 1.0;
         vec3 surfaceNormal = normalize(vec3((n1.x + n2.x) * 0.1, 1.0, (n1.y + n2.y) * 0.1));
         float fresnel = 0.02 + 0.98 * pow(1.0 - clamp(dot(toEye, surfaceNormal), 0.0, 1.0), 5.0);
-        vec3 colour = mix(vec3(0.02, 0.07, 0.08), uHorizonColour, fresnel);
-        float glint = pow(max(dot(reflect(-toEye, surfaceNormal), toSun), 0.0), 200.0);
+        vec3 mirrored = reflect(-toEye, surfaceNormal);
+        vec3 colour = mix(vec3(0.02, 0.07, 0.08), skyColour(mirrored), fresnel);
+        float glint = pow(max(dot(mirrored, toSun), 0.0), 200.0);
         colour += uSunColour * glint * 4.0;
-        fragColour = vec4(applyFog(colour, distance), mix(0.7, 1.0, fresnel));
+        fragColour = vec4(applyFog(colour, vPosition, uCamera), mix(0.7, 1.0, fresnel));
         return;
     }
 
@@ -136,14 +125,16 @@ void main()
         albedo = groundColour();
     }
     float sun = max(dot(normal, toSun), 0.0);
-    // Light from the whole sky dome: the zenith and the brighter horizon
-    // above, bounce from the ground below.
-    vec3 skyLight = (uSkyColour + uHorizonColour) * 0.5;
-    vec3 ambient = mix(uGroundColour, skyLight, 0.5 + 0.5 * normal.y);
-    vec3 colour = albedo * (ambient * 0.9 + uSunColour * sun);
-    fragColour = vec4(applyFog(colour, distance), 1.0);
+    vec3 ambient = hemisphereAmbient(normal, uAmbientTop, uAmbientBottom);
+    vec3 colour = albedo * (ambient + uSunColour * sun);
+    fragColour = vec4(applyFog(colour, vPosition, uCamera), 1.0);
 }
 )";
+
+std::string worldFragmentSource()
+{
+    return std::string("#version 450 core\n") + kSceneLightingGlsl + kFragmentBody;
+}
 
 GLint shadingCode(world::TileMesh::Shading shading)
 {
@@ -162,12 +153,137 @@ GLint shadingCode(world::TileMesh::Shading shading)
 
 } // namespace
 
+const char* const kSceneLightingGlsl = R"(
+uniform vec3 uSunDirection;
+uniform vec3 uSunColour;
+uniform vec3 uAmbientTop;
+uniform vec3 uAmbientBottom;
+uniform vec3 uCarAmbientTop;
+uniform vec3 uCarAmbientBottom;
+uniform vec3 uSkyTop;
+uniform vec3 uSkyBottom;
+uniform float uSkyColourPower;
+uniform float uSkyClampTop;
+uniform float uSkyClampBottom;
+uniform float uSkyGain;
+uniform vec3 uHazeColour;
+uniform vec3 uHazeDirection;
+uniform float uHazeIntensity;
+uniform float uHazePower;
+uniform float uHazeEllipticalScale;
+uniform vec3 uSunDiscDirection;
+uniform vec3 uSunDiscColour;
+uniform vec3 uFogColour;
+uniform vec3 uFogScatterColour;
+uniform float uFogScatterPower;
+uniform float uFogDensity;
+uniform float uFogStart;
+uniform float uFogHeightFadeAmount;
+uniform float uFogHeightFadeStart;
+uniform float uFogHeightFadeEnd;
+uniform float uFogScatterStart;
+uniform float uFogScatterRamp;
+
+uniform float uFogSkyHeightFadeStart;
+uniform float uFogSkyHeightFadeEnd;
+
+float smoothRamp(float value, float start, float end)
+{
+    float x = clamp((value - start) / max(end - start, 1e-4), 0.0, 1.0);
+    return x * x * (3.0 - 2.0 * x);
+}
+
+// The game raises to powers through log and exp, which gives 0 for a zero
+// base whatever the power.
+float safePow(float base, float power)
+{
+    return base > 0.0 ? pow(base, power) : 0.0;
+}
+
+float fogExtinction(float distance)
+{
+    return 1.0 - exp2(-uFogDensity * max(distance - uFogStart, 0.0));
+}
+
+vec3 fogColourTowards(vec3 view)
+{
+    float scatter = safePow(max(dot(view, -uSunDirection), 0.0), uFogScatterPower);
+    return mix(uFogColour, uFogScatterColour, scatter);
+}
+
+vec3 skyColour(vec3 direction)
+{
+    vec3 view = normalize(direction);
+    float t = clamp((view.y - uSkyClampBottom) / max(uSkyClampTop - uSkyClampBottom, 1e-4), 0.0, 1.0);
+    vec3 base = mix(uSkyBottom, uSkyTop, safePow(t, uSkyColourPower));
+    float ellipse = clamp(1.0 + (uHazeEllipticalScale - 1.0) * view.y, 0.0, 1.0);
+    float haze = uHazeIntensity * safePow(ellipse * max(dot(view, uHazeDirection), 0.0), uHazePower);
+    vec3 sky = uSkyGain * clamp(mix(base, uHazeColour, haze), 0.0, 1.0);
+    const float kSkyFogRing = 15000.0;
+    float band = fogExtinction(kSkyFogRing)
+        * (1.0 - smoothRamp(kSkyFogRing * view.y, uFogSkyHeightFadeStart, uFogSkyHeightFadeEnd));
+    return mix(sky, fogColourTowards(view) * uSkyGain, band);
+}
+
+vec3 hemisphereAmbient(vec3 normal, vec3 top, vec3 bottom)
+{
+    return mix(bottom, top, 0.5 + 0.5 * normal.y);
+}
+
+vec3 applyFog(vec3 colour, vec3 position, vec3 camera)
+{
+    vec3 ray = position - camera;
+    float distance = length(ray);
+    vec3 view = ray / max(distance, 1e-4);
+    float amount = fogExtinction(distance)
+        * (1.0 - uFogHeightFadeAmount * smoothRamp(position.y, uFogHeightFadeStart, uFogHeightFadeEnd));
+    float scatter = safePow(max(dot(view, -uSunDirection), 0.0), uFogScatterPower)
+        * clamp((distance - uFogScatterStart) / max(uFogScatterRamp, 1e-4), 0.0, 1.0);
+    return mix(colour, mix(uFogColour, uFogScatterColour, scatter), amount);
+}
+)";
+
+void setSceneLighting(Shader& shader, const SceneLighting& lighting)
+{
+    shader.set("uSunDirection", lighting.sunDirection);
+    shader.set("uSunColour", lighting.sunColour);
+    shader.set("uAmbientTop", lighting.ambientTop);
+    shader.set("uAmbientBottom", lighting.ambientBottom);
+    shader.set("uCarAmbientTop", lighting.carAmbientTop);
+    shader.set("uCarAmbientBottom", lighting.carAmbientBottom);
+    shader.set("uSkyTop", lighting.skyTop);
+    shader.set("uSkyBottom", lighting.skyBottom);
+    shader.set("uSkyColourPower", lighting.skyColourPower);
+    shader.set("uSkyClampTop", lighting.skyClampTop);
+    shader.set("uSkyClampBottom", lighting.skyClampBottom);
+    shader.set("uSkyGain", lighting.skyGain);
+    shader.set("uHazeColour", lighting.hazeColour);
+    shader.set("uHazeDirection", lighting.hazeDirection);
+    shader.set("uHazeIntensity", lighting.hazeIntensity);
+    shader.set("uHazePower", lighting.hazePower);
+    shader.set("uHazeEllipticalScale", lighting.hazeEllipticalScale);
+    shader.set("uSunDiscDirection", lighting.sunDiscDirection);
+    shader.set("uSunDiscColour", lighting.sunDiscColour);
+    shader.set("uFogColour", lighting.fogColour);
+    shader.set("uFogScatterColour", lighting.fogScatterColour);
+    shader.set("uFogScatterPower", lighting.fogScatterPower);
+    shader.set("uFogDensity", lighting.fogDensity);
+    shader.set("uFogStart", lighting.fogStart);
+    shader.set("uFogHeightFadeAmount", lighting.fogHeightFadeAmount);
+    shader.set("uFogHeightFadeStart", lighting.fogHeightFadeStart);
+    shader.set("uFogHeightFadeEnd", lighting.fogHeightFadeEnd);
+    shader.set("uFogScatterStart", lighting.fogScatterStart);
+    shader.set("uFogScatterRamp", lighting.fogScatterRamp);
+    shader.set("uFogSkyHeightFadeStart", lighting.fogSkyHeightFadeStart);
+    shader.set("uFogSkyHeightFadeEnd", lighting.fogSkyHeightFadeEnd);
+}
+
 WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
     : m_world(world)
     , m_jobs(jobs)
     , m_grid(world.index, kTileSize)
     , m_alive(std::make_shared<std::atomic<bool>>(true))
-    , m_shader("world", kVertexSource, kFragmentSource)
+    , m_shader("world", kVertexSource, worldFragmentSource())
     , m_white(Texture::solid(200, 200, 200, 255))
     , m_flatNormal(Texture::solid(128, 128, 255, 255))
 {
@@ -511,13 +627,7 @@ void WorldRenderer::draw(const FrameParams& frame)
     m_shader.set("uViewProjection", frame.projection * frame.view);
     m_shader.set("uModel", glm::mat4(1.0F));
     m_shader.set("uCamera", frame.cameraPosition);
-    m_shader.set("uSunDirection", frame.sunDirection);
-    m_shader.set("uSunColour", frame.sunColour);
-    m_shader.set("uSkyColour", frame.skyColour);
-    m_shader.set("uHorizonColour", frame.horizonColour);
-    m_shader.set("uGroundColour", frame.groundColour);
-    m_shader.set("uFogColour", frame.fogColour);
-    m_shader.set("uFogDensity", frame.fogDensity);
+    setSceneLighting(m_shader, frame.lighting);
     m_shader.set("uTime", frame.time);
 
     const glm::mat4 viewProjection = frame.projection * frame.view;

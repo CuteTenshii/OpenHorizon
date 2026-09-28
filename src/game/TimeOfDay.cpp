@@ -2,6 +2,7 @@
 
 #include "base/Error.h"
 #include "base/Log.h"
+#include "render/WorldRenderer.h"
 #include "vfs/Vfs.h"
 
 #include <pugixml.hpp>
@@ -16,6 +17,17 @@ namespace {
 
 constexpr float kMinutesPerDay = 1440.0F;
 constexpr float kSecondsPerDay = 86400.0F;
+/// `FogDensity` is 0.03 by day and 0.08 at night, with `FogStartDistance`
+/// 300 to 825 m. How the game scales it into the shaders' base-2 exponent
+/// is not decoded. Fitted by eye: read per 100 m, the day fog reaches half
+/// strength around 4 km out and leaves the valley clear, and the mountains
+/// take on the blue distance haze of the game; per kilometre leaves them
+/// almost untouched and per metre fogs out everything past the start.
+constexpr float kFogDensityPerMetre = 0.01F;
+/// The template the game falls back to outside every post-processing zone
+/// is not decoded; "NoFog" is used, and "LightFog", the other template
+/// most zones use, holds the same values.
+constexpr const char* kDefaultFogTemplate = "NoFog";
 
 pugi::xml_document parseTrackFile(const Vfs& vfs, const std::string& path)
 {
@@ -55,6 +67,33 @@ TimeOfDayCurves TimeOfDayCurves::load(const Vfs& vfs, std::string_view track)
         curves.m_curves[curve.name()] = std::move(keys);
     }
     logInfo("time of day: {} curves from {}", curves.m_curves.size(), path);
+
+    const std::string fogPath = std::format("media/dynamicpost/tracks/{}/fog_templates.xml", track);
+    if (vfs.exists(fogPath)) {
+        const pugi::xml_document fogDoc = parseTrackFile(vfs, fogPath);
+        const pugi::xml_node node
+            = fogDoc.child("Templates").find_child_by_attribute("Template", "Name", kDefaultFogTemplate);
+        if (node) {
+            FogTemplate fog;
+            fog.colour = {node.attribute("ColorR").as_float(1.0F), node.attribute("ColorG").as_float(1.0F),
+                node.attribute("ColorB").as_float(1.0F)};
+            fog.density = node.attribute("Density").as_float(1.0F);
+            fog.startDistance = node.attribute("StartDistance").as_float(1.0F);
+            fog.scatterColour = {node.attribute("SunScatterColorR").as_float(1.0F),
+                node.attribute("SunScatterColorG").as_float(1.0F), node.attribute("SunScatterColorB").as_float(1.0F)};
+            fog.scatterPower = node.attribute("SunScatterPower").as_float(1.0F);
+            fog.heightFadeAmount = node.attribute("HeightFadeAmount").as_float(1.0F);
+            fog.heightFadeStart = node.attribute("HeightFadeStart").as_float(1.0F);
+            fog.heightFadeEnd = node.attribute("HeightFadeEnd").as_float(1.0F);
+            fog.scatterStartDistance = node.attribute("SunScatterStartDistance").as_float();
+            fog.scatterRampDistance = node.attribute("SunScatterRampupDistance").as_float();
+            curves.m_fogTemplate = fog;
+        } else {
+            logWarning("time of day: {} has no {} template", fogPath, kDefaultFogTemplate);
+        }
+    } else {
+        logWarning("time of day: no {}, the fog takes no colour from the sun", fogPath);
+    }
     return curves;
 }
 
@@ -129,39 +168,67 @@ void TimeOfDay::setSeconds(float seconds)
     }
 }
 
-glm::vec3 TimeOfDay::sunDirection() const
+glm::vec3 TimeOfDay::aim(std::string_view position, std::string_view target) const
 {
-    const glm::vec3 towardsSun = m_curves.sample("SunPos", minutes());
-    const float length = glm::length(towardsSun);
+    const glm::vec3 direction = m_curves.sample(target, minutes()) - m_curves.sample(position, minutes());
+    const float length = glm::length(direction);
     if (length < 1e-4F) {
         return glm::vec3(0.0F, -1.0F, 0.0F);
     }
-    return -towardsSun / length;
+    return direction / length;
 }
 
-glm::vec3 TimeOfDay::sunColour() const
+glm::vec3 TimeOfDay::sunDirection() const
 {
-    return m_curves.sample("SunColor", minutes()) * m_curves.sampleScalar("SunColorMult", minutes());
+    return aim("SunPos", "SunTargetPos");
 }
 
-glm::vec3 TimeOfDay::skyTopColour() const
+render::SceneLighting TimeOfDay::lighting() const
 {
-    return m_curves.sample("AtmosphereTopColour", minutes()) * m_curves.sampleScalar("SkyGain", minutes());
-}
+    const float t = minutes();
+    render::SceneLighting l;
+    l.sunDirection = sunDirection();
+    l.sunColour = m_curves.sample("SunColor", t) * m_curves.sampleScalar("SunColorMult", t);
+    // The hemisphere pair the track shaders call skyColor and groundColor;
+    // the executable samples these curves together with the sun's into the
+    // one lighting block it hands the renderer (0x8265A7CC).
+    l.ambientTop = m_curves.sample("HLTopColour", t);
+    l.ambientBottom = m_curves.sample("HLBottomColour", t);
+    l.carAmbientTop = m_curves.sample("CarHLColourTop", t);
+    l.carAmbientBottom = m_curves.sample("CarHLColourBottom", t);
 
-glm::vec3 TimeOfDay::skyBottomColour() const
-{
-    return m_curves.sample("AtmosphereBottomColour", minutes()) * m_curves.sampleScalar("SkyGain", minutes());
-}
+    l.skyTop = m_curves.sample("AtmosphereTopColour", t);
+    l.skyBottom = m_curves.sample("AtmosphereBottomColour", t);
+    l.skyColourPower = m_curves.sampleScalar("AtmosphereColourPower", t);
+    l.skyClampTop = m_curves.sampleScalar("AtmosphereClampPower", t);
+    l.skyClampBottom = m_curves.sampleScalar("AtmosphereBottomClampPower", t);
+    l.skyGain = m_curves.sampleScalar("SkyGain", t);
+    l.hazeColour = m_curves.sample("AtmosphereHazeColour", t);
+    l.hazeDirection = -aim("HazeObjectPos", "HazeObjectTargetPos");
+    l.hazeIntensity = m_curves.sampleScalar("AtmosphereHazeIntensity", t);
+    l.hazePower = m_curves.sampleScalar("AtmosphereHazePower", t);
+    l.hazeEllipticalScale = m_curves.sampleScalar("AtmosphereHazeEllipticalScale", t);
+    l.sunDiscDirection = -aim("SunObjectPos", "SunObjectTargetPos");
+    l.sunDiscColour = m_curves.sample("SunObjectColour", t) * m_curves.sampleScalar("SunObjectAlpha", t);
 
-glm::vec3 TimeOfDay::hazeColour() const
-{
-    return m_curves.sample("AtmosphereHazeColour", minutes());
-}
-
-float TimeOfDay::hazeIntensity() const
-{
-    return m_curves.sampleScalar("AtmosphereHazeIntensity", minutes());
+    const TimeOfDayCurves::FogTemplate fog = m_curves.fogTemplate().value_or(TimeOfDayCurves::FogTemplate{});
+    l.fogColour = m_curves.sample("FogColour", t) * fog.colour;
+    l.fogDensity = m_curves.sampleScalar("FogDensity", t) * fog.density * kFogDensityPerMetre;
+    l.fogStart = m_curves.sampleScalar("FogStartDistance", t) * fog.startDistance;
+    l.fogScatterPower = m_curves.sampleScalar("FogSunScatterPower", t) * fog.scatterPower;
+    l.fogHeightFadeAmount = m_curves.sampleScalar("FogHeightFadeAmount", t) * fog.heightFadeAmount;
+    l.fogHeightFadeStart = m_curves.sampleScalar("FogHeightFadeStart", t) * fog.heightFadeStart;
+    l.fogHeightFadeEnd = m_curves.sampleScalar("FogHeightFadeEnd", t) * fog.heightFadeEnd;
+    l.fogSkyHeightFadeStart = m_curves.sampleScalar("FogSkyHeightFadeStart", t) * fog.heightFadeStart;
+    l.fogSkyHeightFadeEnd = m_curves.sampleScalar("FogSkyHeightFadeEnd", t) * fog.heightFadeEnd;
+    if (m_curves.fogTemplate()) {
+        l.fogScatterColour = m_curves.sample("FogSunScatterColour", t) * fog.scatterColour;
+        l.fogScatterStart = fog.scatterStartDistance;
+        l.fogScatterRamp = fog.scatterRampDistance;
+    } else {
+        l.fogScatterColour = l.fogColour;
+    }
+    return l;
 }
 
 float TimeOfDay::lights() const

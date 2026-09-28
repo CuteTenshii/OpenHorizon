@@ -1209,17 +1209,7 @@ render::FrameParams Game::frameParams() const
     frame.view = m_camera.view();
     frame.projection = m_camera.projection(aspect);
     frame.cameraPosition = m_camera.position;
-    const TimeOfDay& tod = *m_timeOfDay;
-    frame.sunDirection = tod.sunDirection();
-    // The curves are display-referred colours; the renderer's sun needs to
-    // outshine the sky several times over for sunlit and shaded surfaces to
-    // separate as they do in the game.
-    frame.sunColour = tod.sunColour() * 4.0F;
-    frame.skyColour = tod.skyTopColour();
-    frame.horizonColour = tod.skyBottomColour() * 0.5F;
-    frame.groundColour = tod.skyBottomColour() * 0.08F;
-    frame.fogColour = glm::mix(tod.skyBottomColour() * 0.5F, tod.hazeColour() * 2.0F, 0.5F);
-    frame.fogDensity = 0.00004F + 0.00012F * tod.hazeIntensity();
+    frame.lighting = m_timeOfDay->lighting();
     frame.time = m_time;
     return frame;
 }
