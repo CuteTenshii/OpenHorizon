@@ -86,3 +86,4 @@ target_link_libraries(fh1engine PUBLIC fh1platform fh1data fh1world xds::xds Fre
 add_executable(fh1 app/main.cpp)
 target_compile_options(fh1 PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(fh1 PRIVATE fh1engine)
+add_subdirectory(collision)
