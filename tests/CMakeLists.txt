@@ -24,3 +24,9 @@ target_link_libraries(tst_carmodel PRIVATE fh1carmodel)
 # The disc test inside (loading real cars) runs only when FH1_GAME_DIR names
 # an extracted disc.
 add_test(NAME tst_carmodel COMMAND tst_carmodel)
+
+add_executable(tst_spectators TestHarness.h tst_spectators.cpp)
+target_compile_options(tst_spectators PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_spectators PRIVATE fh1spectators)
+# The Colorado test inside runs only when FH1_GAME_DIR names an extracted disc.
+add_test(NAME tst_spectators COMMAND tst_spectators)
