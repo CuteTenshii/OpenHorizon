@@ -24,6 +24,10 @@ public:
     void submit(float priority, std::function<void()> job);
     /// Drops every job not yet started.
     void clear();
+    /// Drops every job not yet started and returns once none is running, so
+    /// an object whose jobs capture it can be destroyed safely. Must not be
+    /// called from a job.
+    void clearAndWait();
     std::size_t pending() const;
     unsigned threadCount() const { return static_cast<unsigned>(m_threads.size()); }
 
@@ -47,6 +51,8 @@ private:
 
     mutable std::mutex m_mutex;
     std::condition_variable m_wake;
+    std::condition_variable m_idle;
+    unsigned m_running = 0;
     std::priority_queue<Entry> m_queue;
     std::uint64_t m_nextOrder = 0;
     bool m_stopping = false;

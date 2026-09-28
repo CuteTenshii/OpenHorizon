@@ -44,6 +44,13 @@ void JobPool::clear()
     m_queue = {};
 }
 
+void JobPool::clearAndWait()
+{
+    std::unique_lock lock(m_mutex);
+    m_queue = {};
+    m_idle.wait(lock, [this] { return m_running == 0; });
+}
+
 std::size_t JobPool::pending() const
 {
     const std::lock_guard lock(m_mutex);
@@ -62,8 +69,17 @@ void JobPool::run()
             }
             job = std::move(const_cast<Entry&>(m_queue.top()).job);
             m_queue.pop();
+            ++m_running;
         }
         job();
+        // Destroy the job's captures before reporting idle: they may hold
+        // the last reference to something its owner is tearing down.
+        job = nullptr;
+        {
+            const std::lock_guard lock(m_mutex);
+            --m_running;
+        }
+        m_idle.notify_all();
     }
 }
 

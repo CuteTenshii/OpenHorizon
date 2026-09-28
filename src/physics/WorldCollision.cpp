@@ -106,7 +106,12 @@ WorldCollision::WorldCollision(const world::TrackWorld& world, JobPool& jobs, co
 
 WorldCollision::~WorldCollision()
 {
+    // Tile jobs write into m_results; wait out any that are running.
     m_alive->store(false);
+    m_jobs.clearAndWait();
+    if (m_fizLoading.valid()) {
+        m_fizLoading.wait();
+    }
 }
 
 std::uint64_t WorldCollision::trunkCellKey(int x, int z)

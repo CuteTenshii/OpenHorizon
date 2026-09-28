@@ -115,7 +115,8 @@ Game::Game(Window& window, const GameOptions& options)
 
 Game::~Game()
 {
-    // Workers may still run jobs that reference the world; stop them first.
+    // Both wait out their running jobs on the pool, which must outlive them;
+    // the world the jobs read is a member destroyed after this body.
     m_worldRenderer.reset();
     m_collision.reset();
     m_jobs.reset();

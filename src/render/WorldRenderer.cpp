@@ -177,10 +177,11 @@ WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
 
 WorldRenderer::~WorldRenderer()
 {
-    // Workers may still hold jobs that capture this renderer; they check the
-    // flag and drop their results.
+    // Queued jobs capture this renderer and write their results into it;
+    // the flag makes any that still start return at once, and the wait
+    // covers those already running.
     m_alive->store(false);
-    m_jobs.clear();
+    m_jobs.clearAndWait();
     for (TileState& tile : m_tiles) {
         if (tile.mesh) {
             destroy(*tile.mesh);
