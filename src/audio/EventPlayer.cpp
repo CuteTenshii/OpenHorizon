@@ -16,7 +16,7 @@ EventInstance::EventInstance(Mixer& mixer, AudioLibrary& library, std::string pr
     , m_projectPath(std::move(projectPath))
     , m_project(std::move(project))
     , m_event(event)
-    , m_settings(std::move(settings))
+    , m_settings(settings)
     , m_random(m_settings.seed)
 {
     for (const FevParameter& parameter : m_event.parameters) {

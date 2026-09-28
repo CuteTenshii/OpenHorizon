@@ -640,6 +640,7 @@ void printCheck(const char* label, const CheckResult& r)
         static_cast<double>(kRoadSearch), r.nearRoad, percent(r.facingRoad, r.nearRoad),
         percent(r.facingAway, r.nearRoad), r.nearRoad > 0 ? r.facingDot / static_cast<double>(r.nearRoad) : 0.0);
     std::vector<std::pair<std::size_t, std::string>> surfaces;
+    surfaces.reserve(r.standingOn.size());
     for (const auto& [name, count] : r.standingOn) {
         surfaces.emplace_back(count, name);
     }

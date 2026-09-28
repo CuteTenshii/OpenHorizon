@@ -516,7 +516,7 @@ std::optional<CarBin> tryLoad(const Vfs& vfs, const std::string& path, CarBin::K
         model.files.push_back(path);
         return bin;
     } catch (const DataError& e) {
-        model.warnings.push_back(e.what());
+        model.warnings.emplace_back(e.what());
         return std::nullopt;
     }
 }

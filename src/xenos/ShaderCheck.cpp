@@ -183,6 +183,7 @@ CheckReport checkEffects(const Vfs& vfs, const std::vector<std::string>& paths, 
         }
     };
     std::vector<std::thread> pool;
+    pool.reserve(threads);
     for (unsigned t = 0; t < threads; ++t) {
         pool.emplace_back(worker);
     }

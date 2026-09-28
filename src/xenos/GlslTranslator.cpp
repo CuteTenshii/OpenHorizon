@@ -1175,15 +1175,15 @@ void Translator::emitTextureFetch(const FetchInstruction& fetch)
 
     const std::string bias = glslFloat(fetch.lodBias);
     std::string sample;
-    if (m_vertex) {
+    // Vertex shaders have no derivatives, so they always sample an explicit
+    // level, as pixel fetches without a computed level do.
+    if (m_vertex || (!fetch.useRegisterGradients && !fetch.useComputedLod)) {
         sample = std::format("textureLod({}, {}, {}{})", tex, coord, fetch.useRegisterLod ? "xe_lod + " : "", bias);
     } else if (fetch.useRegisterGradients) {
         const std::string swizzle = fetch.dimension == TextureDimension::D1 || fetch.dimension == TextureDimension::D2
             ? ".xy"
             : "";
         sample = std::format("textureGrad({0}, {1}, xe_gradH{2}, xe_gradV{2})", tex, coord, swizzle);
-    } else if (!fetch.useComputedLod) {
-        sample = std::format("textureLod({}, {}, {}{})", tex, coord, fetch.useRegisterLod ? "xe_lod + " : "", bias);
     } else if (fetch.useRegisterLod) {
         sample = std::format("texture({}, {}, xe_lod + {})", tex, coord, bias);
     } else if (fetch.lodBias != 0.0F) {

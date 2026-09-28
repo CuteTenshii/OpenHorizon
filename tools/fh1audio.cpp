@@ -213,6 +213,7 @@ int verifyBanks(const fh::Vfs& vfs, const std::string& folder)
     };
     std::vector<std::thread> threads;
     const unsigned count = std::max(1U, std::thread::hardware_concurrency());
+    threads.reserve(count);
     for (unsigned t = 0; t < count; ++t) {
         threads.emplace_back(work);
     }

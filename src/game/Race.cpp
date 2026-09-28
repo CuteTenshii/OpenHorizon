@@ -96,6 +96,7 @@ const Race::Racer* Race::player() const
 std::vector<const Race::Racer*> Race::standings() const
 {
     std::vector<const Racer*> order;
+    order.reserve(m_racers.size());
     for (const Racer& racer : m_racers) {
         order.push_back(&racer);
     }

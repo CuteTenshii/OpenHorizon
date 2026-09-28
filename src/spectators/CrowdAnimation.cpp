@@ -359,7 +359,7 @@ AnimationClip parseAnimation(ByteView data, const std::string& source)
                     if ((group.mask & present) == 0) {
                         continue;
                     }
-                    const auto type = static_cast<std::size_t>(group.group * kGroupSize + c);
+                    const auto type = static_cast<std::size_t>(group.group) * kGroupSize + static_cast<std::size_t>(c);
                     const unsigned bits = channels.bits[channel];
                     const auto stored = static_cast<std::int64_t>(bits > 0 ? bitsIn.read(bits) : 0U);
                     values[type] = static_cast<float>(stored + channels.initials[channel]) * codec.scales[type];

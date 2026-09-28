@@ -45,7 +45,8 @@ std::string Vfs::normalize(std::string_view path)
 {
     std::string_view rest = path;
     const std::size_t colon = rest.find(':');
-    if (colon != std::string_view::npos && colon < 16) {
+    // npos is never below 16, so this also covers "no colon".
+    if (colon < 16) {
         rest.remove_prefix(colon + 1);
     }
     std::string key;

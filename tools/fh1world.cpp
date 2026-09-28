@@ -102,7 +102,8 @@ int main(int argc, char** argv)
     }
     std::optional<std::pair<float, float>> at;
     if (argc == 5) {
-        if (std::string_view(argv[3]) != "--at" || !(at = parsePoint(argv[4]))) {
+        at = parsePoint(argv[4]);
+        if (std::string_view(argv[3]) != "--at" || !at) {
             return usage();
         }
     }
