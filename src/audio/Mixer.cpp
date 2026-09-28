@@ -95,29 +95,55 @@ VoiceId Mixer::play(std::shared_ptr<const PcmBuffer> buffer, const VoiceSettings
         logWarning("audio: not playing an empty buffer");
         return kNoVoice;
     }
+    Voice v;
+    v.settings = settings;
+    if (v.settings.loop && (buffer->loopEnd <= buffer->loopStart || buffer->loopEnd > buffer->frames())) {
+        v.settings.loop = false;
+    }
+    v.position = static_cast<double>(std::min(settings.startFrame, buffer->frames() - 1));
+    v.buffer = std::move(buffer);
     std::lock_guard lock(m_mutex);
+    return claimVoice(std::move(v));
+}
+
+VoiceId Mixer::playStream(std::shared_ptr<PcmStream> stream, const VoiceSettings& settings)
+{
+    if (!stream || (stream->channels() != 1 && stream->channels() != 2)) {
+        logWarning("audio: not playing a stream with {} channels", stream ? stream->channels() : 0);
+        return kNoVoice;
+    }
+    Voice v;
+    v.settings = settings;
+    v.settings.loop = false;
+    v.settings.pitch = 1.0F;
+    v.stream = std::move(stream);
+    std::lock_guard lock(m_mutex);
+    return claimVoice(std::move(v));
+}
+
+VoiceId Mixer::claimVoice(Voice&& voice)
+{
     for (std::size_t slot = 0; slot < m_voices.size(); ++slot) {
         Voice& v = m_voices[slot];
         if (v.active) {
             continue;
         }
         const std::uint32_t generation = v.generation + 1;
-        v = Voice{};
+        v = std::move(voice);
         v.generation = generation;
-        v.buffer = std::move(buffer);
-        v.settings = settings;
         if (v.settings.bus >= m_buses.size() || !m_buses[v.settings.bus].active) {
             v.settings.bus = kMasterBus;
         }
-        if (v.buffer->loopEnd <= v.buffer->loopStart || v.buffer->loopEnd > v.buffer->frames()) {
-            v.settings.loop = false;
-        }
-        v.position = static_cast<double>(std::min(settings.startFrame, v.buffer->frames() - 1));
         v.active = true;
         return (static_cast<VoiceId>(generation) << 32) | (slot + 1);
     }
     logWarning("audio: all {} voices are busy", kMaxVoices);
     return kNoVoice;
+}
+
+int Mixer::channelsOf(const Voice& voice) const
+{
+    return voice.stream ? voice.stream->channels() : voice.buffer->channels;
 }
 
 void Mixer::stop(VoiceId voice, float fadeSeconds)
@@ -135,6 +161,7 @@ void Mixer::stopAll()
     for (Voice& v : m_voices) {
         v.active = false;
         v.buffer.reset();
+        v.stream.reset();
     }
 }
 
@@ -150,7 +177,7 @@ void Mixer::setPitch(VoiceId voice, float pitch)
 {
     std::lock_guard lock(m_mutex);
     if (Voice* v = find(voice)) {
-        v->settings.pitch = std::clamp(pitch, 0.0F, 16.0F);
+        v->settings.pitch = v->stream ? 1.0F : std::clamp(pitch, 0.0F, 16.0F);
     }
 }
 
@@ -166,7 +193,7 @@ void Mixer::setLooping(VoiceId voice, bool loop)
 {
     std::lock_guard lock(m_mutex);
     if (Voice* v = find(voice)) {
-        v->settings.loop = loop && v->buffer->loopEnd > v->buffer->loopStart;
+        v->settings.loop = loop && v->buffer && v->buffer->loopEnd > v->buffer->loopStart;
     }
 }
 
@@ -220,6 +247,7 @@ void Mixer::destroyBus(BusId bus)
         if (v.active && v.settings.bus == bus) {
             v.active = false;
             v.buffer.reset();
+            v.stream.reset();
         }
     }
     m_buses[bus] = Bus{};
@@ -290,7 +318,7 @@ void Mixer::targetGains(const Voice& voice, float& left, float& right) const
         }
     }
     pan = std::clamp(pan, -1.0F, 1.0F);
-    if (voice.buffer->channels == 1) {
+    if (channelsOf(voice) == 1) {
         const float angle = (pan + 1.0F) * std::numbers::pi_v<float> / 4.0F;
         left = volume * std::cos(angle);
         right = volume * std::sin(angle);
@@ -300,8 +328,52 @@ void Mixer::targetGains(const Voice& voice, float& left, float& right) const
     }
 }
 
+void Mixer::mixStreamVoice(Voice& voice, float* bus, std::size_t frames)
+{
+    float targetLeft = 0.0F;
+    float targetRight = 0.0F;
+    targetGains(voice, targetLeft, targetRight);
+    if (voice.stopping) {
+        voice.fade = std::max(0.0F, voice.fade - voice.stopRate * static_cast<float>(frames));
+    }
+    targetLeft *= voice.fade;
+    targetRight *= voice.fade;
+    if (!voice.started) {
+        voice.gainLeft = targetLeft;
+        voice.gainRight = targetRight;
+        voice.started = true;
+    }
+    const auto channels = static_cast<std::size_t>(voice.stream->channels());
+    m_streamScratch.resize(frames * channels);
+    // A stream is read even when silent, so that it keeps time.
+    const std::size_t got = std::min(voice.stream->read(m_streamScratch.data(), frames), frames);
+    const float inverse = 1.0F / static_cast<float>(frames);
+    const float deltaLeft = (targetLeft - voice.gainLeft) * inverse;
+    const float deltaRight = (targetRight - voice.gainRight) * inverse;
+    float gainLeft = voice.gainLeft;
+    float gainRight = voice.gainRight;
+    for (std::size_t i = 0; i < got; ++i) {
+        const float left = m_streamScratch[i * channels];
+        const float right = m_streamScratch[i * channels + channels - 1];
+        bus[i * 2] += left * gainLeft;
+        bus[i * 2 + 1] += right * gainRight;
+        gainLeft += deltaLeft;
+        gainRight += deltaRight;
+    }
+    voice.gainLeft = targetLeft;
+    voice.gainRight = targetRight;
+    if (voice.stream->finished() || (voice.stopping && voice.fade <= 0.0F)) {
+        voice.active = false;
+        voice.stream.reset();
+    }
+}
+
 void Mixer::mixVoice(Voice& voice, float* bus, std::size_t frames)
 {
+    if (voice.stream) {
+        mixStreamVoice(voice, bus, frames);
+        return;
+    }
     const PcmBuffer& pcm = *voice.buffer;
     const bool loop = voice.settings.loop;
     float targetLeft = 0.0F;

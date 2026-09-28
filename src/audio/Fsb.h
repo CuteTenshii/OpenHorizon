@@ -25,6 +25,18 @@ enum class SampleCodec {
 
 const char* codecName(SampleCodec codec);
 
+/// A named position in a sample, from the "SYNC" chunk FMOD writes after a
+/// sample header when the mode has FSOUND_SYNCPOINTS (0x80000000). The chunk
+/// is "SYNC", a u32 count, then per point a u32 frame offset and a 256-byte
+/// NUL-padded name (verified on every sample of the radio banks, where the
+/// header sizes add up exactly and the offsets, converted to milliseconds,
+/// are the values RadioSoundbankInfo_*.xml lists).
+struct FsbSyncPoint {
+    /// Offset from the start of the sample in sample frames.
+    std::uint32_t frame = 0;
+    std::string name;
+};
+
 /// One entry of an FSB4 sample header table.
 struct FsbSample {
     std::string name;
@@ -53,6 +65,9 @@ struct FsbSample {
     /// sampleCount, entries grow by roughly one block's worth). Empty for
     /// other codecs and for XMA samples written without the table.
     std::vector<std::uint32_t> xmaSeekTable;
+    /// Named positions, in the order the header lists them. The index into
+    /// this list is what FMOD reports to a sync point callback.
+    std::vector<FsbSyncPoint> syncPoints;
 
     /// FSOUND_LOOP_NORMAL or FSOUND_LOOP_BIDI.
     bool loops() const { return (mode & 0x6U) != 0; }
@@ -99,7 +114,7 @@ struct FsbSample {
 ///                   and that many bytes holding u32 1, u32 entries + 1,
 ///                   then the seek table (inferred layout, consistent on
 ///                   every XMA sample); for MPEG with sync points a "SYNC"
-///                   chunk
+///                   chunk (see FsbSyncPoint)
 ///
 /// A basic header is just the frame length and compressed size; the other
 /// fields repeat the first sample's.
@@ -112,6 +127,18 @@ public:
     /// Parses the header of a bank the object then owns. Throws DataError
     /// naming `source` if the layout is not FSB4 or offsets run past the end.
     static FsbBank parse(Bytes data, std::string source);
+    /// Parses only the headers of a bank too large to hold in memory, such
+    /// as the 680 MB radio music bank that is streamed. `headers` must hold
+    /// at least the 0x30-byte header and the sample header table
+    /// (headersSize() tells how much that is); `fileSize` is the size of the
+    /// whole file, against which the sample offsets are checked. The bank
+    /// has no sample data: sampleData() throws, and the samples are read
+    /// from the file at their dataOffset instead.
+    static FsbBank parseHeaders(Bytes headers, std::uint64_t fileSize, std::string source);
+    /// The number of bytes parseHeaders() needs, from the first 0x30 bytes of
+    /// a bank. Throws DataError if they are not an FSB4 header.
+    static std::size_t headersSize(ByteView firstBytes, const std::string& source);
+    static constexpr std::size_t kFileHeaderSize = 0x30;
 
     const std::string& source() const { return m_source; }
     std::uint32_t version() const { return m_version; }
@@ -123,8 +150,11 @@ public:
     const std::vector<FsbSample>& samples() const { return m_samples; }
     std::size_t size() const { return m_samples.size(); }
     const FsbSample& sample(std::size_t index) const;
-    /// The encoded bytes of one sample.
+    /// The encoded bytes of one sample. Throws DataError for a bank made by
+    /// parseHeaders().
     ByteView sampleData(std::size_t index) const;
+    /// False for a bank made by parseHeaders().
+    bool hasData() const { return m_hasData; }
 
     /// The index of the sample with this name, compared without case. Names
     /// are matched the way FEV waveform file names relate to FSB names: with
@@ -135,7 +165,10 @@ public:
     bool sampleHasName(std::size_t index, std::string_view name) const;
 
 private:
+    static FsbBank parseImpl(Bytes data, std::uint64_t fileSize, bool hasData, std::string source);
+
     Bytes m_data;
+    bool m_hasData = true;
     std::string m_source;
     std::uint32_t m_version = 0;
     std::uint32_t m_flags = 0;

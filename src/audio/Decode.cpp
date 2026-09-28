@@ -230,6 +230,8 @@ std::vector<float> decodeXma(const FsbBank& bank, std::size_t index, int& channe
 struct MpegFrame {
     AVCodecID codec = AV_CODEC_ID_NONE;
     std::size_t size = 0;
+    /// Decoded frames per MPEG frame (ISO 11172-3 / 13818-3).
+    std::size_t samples = 0;
 };
 
 /// The frame starting at `p`, if the four bytes there are a valid MPEG audio
@@ -266,12 +268,15 @@ std::optional<MpegFrame> mpegFrameAt(const std::uint8_t* p)
     if (layer == 1) {
         frame.size = static_cast<std::size_t>((12 * bitrate / rate + padding) * 4);
         frame.codec = AV_CODEC_ID_MP1;
+        frame.samples = 384;
     } else if (layer == 2) {
         frame.size = static_cast<std::size_t>(144 * bitrate / rate + padding);
         frame.codec = AV_CODEC_ID_MP2;
+        frame.samples = 1152;
     } else {
         frame.size = static_cast<std::size_t>((mpeg1 ? 144 : 72) * bitrate / rate + padding);
         frame.codec = AV_CODEC_ID_MP3;
+        frame.samples = mpeg1 ? 1152 : 576;
     }
     return frame;
 }
@@ -332,6 +337,166 @@ std::vector<float> decodePcm(const FsbBank& bank, std::size_t index)
 }
 
 } // namespace
+
+struct MpegSampleStream::Impl {
+    static constexpr std::size_t kReadSize = 64 * 1024;
+
+    FsbSample sample;
+    ByteSource read;
+    std::string source;
+    std::optional<FfmpegStream> decoder;
+    /// Bytes of the sample's data from `bufferStart` on.
+    Bytes buffer;
+    std::size_t bufferStart = 0;
+    /// Scan position in the sample's data.
+    std::size_t pos = 0;
+    std::size_t position = 0;
+    /// Decoded frames still to drop before `position` is reached.
+    std::size_t discard = 0;
+    bool ended = false;
+
+    /// Makes bytes [at, at + count) of the sample's data available and
+    /// returns a pointer to them, or nullptr past the end of the data.
+    const std::uint8_t* bytesAt(std::size_t at, std::size_t count)
+    {
+        if (at + count > sample.compressedSize) {
+            return nullptr;
+        }
+        if (at < bufferStart || at + count > bufferStart + buffer.size()) {
+            const std::size_t length = std::min<std::size_t>(std::max(kReadSize, count), sample.compressedSize - at);
+            buffer.resize(length);
+            const std::size_t got = read(sample.dataOffset + at, buffer);
+            if (got < count) {
+                throw DataError("{}: the file ends inside the sample's data (offset 0x{:x})", source,
+                    sample.dataOffset + at);
+            }
+            buffer.resize(got);
+            bufferStart = at;
+        }
+        return buffer.data() + (at - bufferStart);
+    }
+
+    /// The next MPEG frame at or after `pos`, skipping the padding FSB puts
+    /// between frames, as decodeMpeg() finds them.
+    std::optional<MpegFrame> nextFrame()
+    {
+        while (const std::uint8_t* header = bytesAt(pos, 4)) {
+            const std::optional<MpegFrame> frame = mpegFrameAt(header);
+            if (frame && pos + frame->size <= sample.compressedSize) {
+                return frame;
+            }
+            ++pos;
+        }
+        return std::nullopt;
+    }
+};
+
+MpegSampleStream::MpegSampleStream(const FsbSample& sample, ByteSource read, std::string source,
+    std::size_t startFrame)
+    : m_impl(std::make_unique<Impl>())
+{
+    Impl& s = *m_impl;
+    s.sample = sample;
+    s.read = std::move(read);
+    s.source = std::move(source);
+    if (sample.codec != SampleCodec::Mpeg) {
+        throw DataError("{}: streaming decodes MPEG samples only, this one is {}", s.source, codecName(sample.codec));
+    }
+    if (startFrame > sample.sampleCount) {
+        throw DataError("{}: cannot start at frame {} of {}", s.source, startFrame, sample.sampleCount);
+    }
+    s.position = startFrame;
+    // Only headers are read up to the MPEG frame that decoding starts at.
+    std::size_t decodedStart = 0;
+    while (true) {
+        const std::optional<MpegFrame> frame = s.nextFrame();
+        if (!frame) {
+            break;
+        }
+        const std::size_t firstNeeded = startFrame / frame->samples;
+        const std::size_t decodeFrom = firstNeeded > kPrerollFrames ? firstNeeded - kPrerollFrames : 0;
+        if (decodedStart / frame->samples >= decodeFrom) {
+            break;
+        }
+        decodedStart += frame->samples;
+        s.pos += frame->size;
+    }
+    s.discard = startFrame - decodedStart;
+    s.ended = startFrame >= sample.sampleCount;
+}
+
+MpegSampleStream::~MpegSampleStream() = default;
+MpegSampleStream::MpegSampleStream(MpegSampleStream&&) noexcept = default;
+MpegSampleStream& MpegSampleStream::operator=(MpegSampleStream&&) noexcept = default;
+
+int MpegSampleStream::channels() const
+{
+    return m_impl->sample.channels;
+}
+
+int MpegSampleStream::sampleRate() const
+{
+    return m_impl->sample.frequency;
+}
+
+std::size_t MpegSampleStream::totalFrames() const
+{
+    return m_impl->sample.sampleCount;
+}
+
+std::size_t MpegSampleStream::position() const
+{
+    return m_impl->position;
+}
+
+bool MpegSampleStream::finished() const
+{
+    return m_impl->ended;
+}
+
+std::size_t MpegSampleStream::decode(std::size_t minFrames, std::vector<float>& out)
+{
+    Impl& s = *m_impl;
+    const auto channels = static_cast<std::size_t>(s.sample.channels);
+    std::size_t appended = 0;
+    while (!s.ended && appended < minFrames) {
+        const std::optional<MpegFrame> frame = s.nextFrame();
+        if (!frame && !s.decoder) {
+            throw DataError("{}: no MPEG frame in {} bytes", s.source, s.sample.compressedSize);
+        }
+        if (frame) {
+            if (!s.decoder) {
+                s.decoder.emplace(frame->codec, s.sample.frequency, s.sample.channels, std::span<const std::uint8_t>{},
+                    0, s.source);
+            }
+            s.decoder->decode(ByteView(s.bytesAt(s.pos, frame->size), frame->size));
+            s.pos += frame->size;
+        } else {
+            s.decoder->finish();
+        }
+        if (s.decoder->channels() != 0 && static_cast<std::size_t>(s.decoder->channels()) != channels) {
+            throw DataError("{}: decoded to {} channels, the header says {}", s.source, s.decoder->channels(),
+                channels);
+        }
+        std::vector<float>& decoded = s.decoder->samples();
+        const std::size_t frames = decoded.size() / channels;
+        const std::size_t dropped = std::min(frames, s.discard);
+        s.discard -= dropped;
+        const std::size_t keep = std::min(frames - dropped, s.sample.sampleCount - s.position);
+        out.insert(out.end(), decoded.begin() + static_cast<std::ptrdiff_t>(dropped * channels),
+            decoded.begin() + static_cast<std::ptrdiff_t>((dropped + keep) * channels));
+        decoded.clear();
+        s.position += keep;
+        appended += keep;
+        if (s.position >= s.sample.sampleCount) {
+            s.ended = true;
+        } else if (!frame) {
+            throw DataError("{}: the data ends at frame {}, the header says {}", s.source, s.position,
+                s.sample.sampleCount);
+        }
+    }
+    return appended;
+}
 
 PcmBuffer decodeSample(const FsbBank& bank, std::size_t index)
 {

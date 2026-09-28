@@ -14,6 +14,8 @@ constexpr std::size_t kNameLength = 30;
 constexpr std::size_t kDataAlignment = 32;
 constexpr std::uint32_t kBasicHeaders = 0x2;
 constexpr std::uint32_t kModeXma = 0x01000000;
+constexpr std::uint32_t kModeSyncPoints = 0x80000000;
+constexpr std::size_t kSyncNameLength = 256;
 
 std::string_view baseName(std::string_view name)
 {
@@ -52,6 +54,24 @@ void readXmaExtra(LeReader& in, std::size_t end, FsbSample& sample)
     sample.xmaSeekTable.reserve(entries);
     for (std::uint32_t i = 0; i < entries; ++i) {
         sample.xmaSeekTable.push_back(in.u32());
+    }
+}
+
+void readSyncPoints(LeReader& in, std::size_t end, FsbSample& sample)
+{
+    if (end - in.pos() < 8 || in.fixedString(4) != "SYNC") {
+        return;
+    }
+    const std::uint32_t count = in.u32();
+    if (count > (end - in.pos()) / (4 + kSyncNameLength)) {
+        in.fail(std::format("sample '{}' claims {} sync points in {} bytes", sample.name, count, end - in.pos()));
+    }
+    sample.syncPoints.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        FsbSyncPoint point;
+        point.frame = in.u32();
+        point.name = in.fixedString(kSyncNameLength);
+        sample.syncPoints.push_back(std::move(point));
     }
 }
 
@@ -100,8 +120,36 @@ SampleCodec codecFromMode(std::uint32_t mode)
 
 FsbBank FsbBank::parse(Bytes data, std::string source)
 {
+    const std::uint64_t size = data.size();
+    return parseImpl(std::move(data), size, true, std::move(source));
+}
+
+FsbBank FsbBank::parseHeaders(Bytes headers, std::uint64_t fileSize, std::string source)
+{
+    return parseImpl(std::move(headers), fileSize, false, std::move(source));
+}
+
+std::size_t FsbBank::headersSize(ByteView firstBytes, const std::string& source)
+{
+    LeReader in(firstBytes, source);
+    in.need(kHeaderSize);
+    if (in.fixedString(4) != "FSB4") {
+        in.seek(0);
+        in.fail("not an FSB4 sound bank");
+    }
+    in.skip(4);
+    const std::int32_t headersSize = in.s32();
+    if (headersSize < 0) {
+        in.fail(std::format("negative header table size {}", headersSize));
+    }
+    return kHeaderSize + static_cast<std::size_t>(headersSize);
+}
+
+FsbBank FsbBank::parseImpl(Bytes data, std::uint64_t fileSize, bool hasData, std::string source)
+{
     FsbBank bank;
     bank.m_data = std::move(data);
+    bank.m_hasData = hasData;
     bank.m_source = std::move(source);
     LeReader in(bank.m_data, bank.m_source);
 
@@ -127,10 +175,11 @@ FsbBank FsbBank::parse(Bytes data, std::string source)
         in.fail(std::format("{} samples cannot fit in {} header bytes", count, headersSize));
     }
     const std::size_t dataStart = kHeaderSize + static_cast<std::size_t>(headersSize);
-    if (dataStart + static_cast<std::size_t>(dataSize) > bank.m_data.size()) {
+    if (dataStart + static_cast<std::uint64_t>(dataSize) > fileSize) {
         in.fail(std::format("header and data need 0x{:x} bytes, the file has 0x{:x}",
-            dataStart + static_cast<std::size_t>(dataSize), bank.m_data.size()));
+            dataStart + static_cast<std::size_t>(dataSize), fileSize));
     }
+    in.need(dataStart - in.pos());
 
     const bool basic = (bank.m_flags & kBasicHeaders) != 0;
     std::size_t dataCursor = 0;
@@ -140,6 +189,7 @@ FsbBank FsbBank::parse(Bytes data, std::string source)
         if (basic && i > 0) {
             sample = bank.m_samples.front();
             sample.xmaSeekTable.clear();
+            sample.syncPoints.clear();
             sample.sampleCount = in.u32();
             sample.compressedSize = in.u32();
             sample.loopStart = 0;
@@ -169,6 +219,8 @@ FsbBank FsbBank::parse(Bytes data, std::string source)
             in.need(end - in.pos());
             if (sample.codec == SampleCodec::Xma) {
                 readXmaExtra(in, end, sample);
+            } else if ((sample.mode & kModeSyncPoints) != 0) {
+                readSyncPoints(in, end, sample);
             }
             in.seek(end);
         }
@@ -201,6 +253,9 @@ const FsbSample& FsbBank::sample(std::size_t index) const
 ByteView FsbBank::sampleData(std::size_t index) const
 {
     const FsbSample& s = sample(index);
+    if (!m_hasData) {
+        throw DataError("{}: only the headers were read, sample {} has to be read from the file", m_source, index);
+    }
     return ByteView(m_data).subspan(s.dataOffset, s.compressedSize);
 }
 

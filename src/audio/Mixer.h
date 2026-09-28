@@ -31,6 +31,25 @@ struct Rolloff {
     float gain(float distance) const;
 };
 
+/// Audio produced while it plays rather than held in a PcmBuffer, such as a
+/// decoder feeding from a worker thread. The mixer plays a stream at its own
+/// rate: the stream must deliver the mixer's sample rate, since nothing is
+/// resampled.
+class PcmStream {
+public:
+    virtual ~PcmStream() = default;
+    /// 1 or 2; fixed for the stream's life.
+    virtual int channels() const = 0;
+    /// Writes up to `frames` interleaved frames to `out` and returns how many
+    /// it wrote; fewer means the rest of the block is silence. Called on the
+    /// audio thread with the mixer's lock held, so it must not block and
+    /// must not call back into the mixer.
+    virtual std::size_t read(float* out, std::size_t frames) = 0;
+    /// True once the stream will never produce audio again; the mixer then
+    /// frees the voice.
+    virtual bool finished() const = 0;
+};
+
 /// Identifies a voice across the mixer's slot reuse; 0 is never a voice.
 using VoiceId = std::uint64_t;
 inline constexpr VoiceId kNoVoice = 0;
@@ -80,6 +99,11 @@ public:
     /// Starts a voice; returns kNoVoice (and logs) when all voices are busy
     /// or the buffer is empty.
     VoiceId play(std::shared_ptr<const PcmBuffer> buffer, const VoiceSettings& settings);
+    /// Starts a voice that pulls from `stream`. Pitch, looping and
+    /// startFrame do not apply to streams; volume, pan, bus and spatial
+    /// settings do. Returns kNoVoice (and logs) when all voices are busy or
+    /// the stream's channel count is not 1 or 2.
+    VoiceId playStream(std::shared_ptr<PcmStream> stream, const VoiceSettings& settings);
     /// Fades the voice out over `fadeSeconds` and frees it.
     void stop(VoiceId voice, float fadeSeconds = 0.01F);
     void stopAll();
@@ -113,6 +137,7 @@ public:
 private:
     struct Voice {
         std::shared_ptr<const PcmBuffer> buffer;
+        std::shared_ptr<PcmStream> stream;
         VoiceSettings settings;
         std::uint32_t generation = 0;
         bool active = false;
@@ -141,6 +166,9 @@ private:
         std::vector<float> buffer;
     };
 
+    VoiceId claimVoice(Voice&& voice);
+    int channelsOf(const Voice& voice) const;
+    void mixStreamVoice(Voice& voice, float* bus, std::size_t frames);
     Voice* find(VoiceId voice);
     const Voice* find(VoiceId voice) const;
     void targetGains(const Voice& voice, float& left, float& right) const;
@@ -150,6 +178,7 @@ private:
     const int m_sampleRate;
     mutable std::mutex m_mutex;
     std::vector<Voice> m_voices;
+    std::vector<float> m_streamScratch;
     std::vector<Bus> m_buses;
     glm::vec3 m_listenerPosition{0.0F};
     glm::vec3 m_listenerRight{1.0F, 0.0F, 0.0F};
