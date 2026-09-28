@@ -1,0 +1,656 @@
+#include "Minimap.h"
+
+#include "AnarkFormats.h"
+
+#include "base/Error.h"
+#include "base/Log.h"
+#include "vfs/Vfs.h"
+
+#include <pugixml.hpp>
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstring>
+#include <format>
+#include <numbers>
+#include <unordered_map>
+
+namespace fh::ui {
+
+namespace {
+
+constexpr std::uint32_t kNavMagic = 0x0E177551;
+constexpr const char* kProfilePath = "media/ui/MapProfileMinimap.xml";
+constexpr const char* kProfileName = "minimap";
+constexpr const char* kRegistryPath = "media/gametunablesettings/globalregistry.xml";
+
+/// The camera's clip planes, the defaults the view record gets at
+/// 0x82da0f58.
+constexpr float kNear = 10.0F;
+constexpr float kFar = 10000.0F;
+
+/// Size scaling of the profile's size elements (0x82da8ee0): a fixed
+/// `<Size>` keeps its value; a `<DynamicSize>` is scaled by
+/// 0.75 + 0.25 * depth / 200.
+constexpr float kDynamicSizeBase = 0.75F;
+constexpr float kDynamicSizeReference = 200.0F;
+
+/// The player's own car on the map (CMapEntityVehiclePlayerLocal).
+constexpr const char* kPlayerFilterTag = "vehicle_type";
+constexpr const char* kPlayerFilterValue = "player_local";
+
+/// The line and icon pixel shaders are ports of the map effect the
+/// executable embeds (techniques RenderMap_Line, RenderMap_Line_FadeLeftRight
+/// and RenderMap_Normal; pixel shader microcode at 0x821b6bf8, 0x821b71f8 and
+/// 0x821b62b4). Lines are ground quads with u running 0 along the line and
+/// out to -1 over the round caps, v from -1 to 1 across; the line is solid
+/// to half its quad's width and antialiased over about a pixel, and the
+/// fading variant adds a soft band from 0.75 to 0 out to the quad's edge.
+/// All three write sqrt(colour) (the render target holds linear colour).
+constexpr const char* kVertexShader = R"(#version 450 core
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec2 aUv;
+layout(location = 2) in vec4 aColor;
+uniform mat4 uViewProjection;
+out vec2 vUv;
+out vec4 vColor;
+void main()
+{
+    gl_Position = uViewProjection * vec4(aPosition, 1.0);
+    vUv = aUv;
+    vColor = aColor;
+}
+)";
+
+constexpr const char* kFragmentShader = R"(#version 450 core
+in vec2 vUv;
+in vec4 vColor;
+uniform int uTechnique;
+layout(binding = 0) uniform sampler2D uTexture;
+out vec4 oColor;
+void main()
+{
+    if (uTechnique == 2) {
+        vec4 texel = texture(uTexture, vUv);
+        // The icon sheet's colour channels are fetched gamma-expanded (its
+        // fetch constant marks them so); squaring stands in for the GPU's
+        // piecewise-linear curve.
+        vec3 linear = texel.rgb * texel.rgb * vColor.rgb;
+        oColor = vec4(sqrt(linear), texel.a * vColor.a);
+        return;
+    }
+    float along = clamp(-vUv.x, 0.0, 1.0);
+    float across = vUv.y;
+    float dist = sqrt(along * along + across * across);
+    vec2 gradAlong = vec2(dFdx(along), dFdy(along));
+    vec2 gradAcross = vec2(dFdx(across), dFdy(across));
+    float inverseGradient = inversesqrt(dot(gradAlong, gradAlong) + dot(gradAcross, gradAcross));
+    float thin = clamp(0.5 * inverseGradient, 0.0, 1.0);
+    float edge = clamp((1.0 - 2.0 * dist) * 0.5 * inverseGradient + 0.5, 0.0, 1.0);
+    float coverage = edge;
+    if (uTechnique == 1) {
+        float band = 0.75 * clamp(2.0 - 2.0 * dist, 0.0, 1.0);
+        coverage = edge * (1.0 - band) + band;
+    }
+    oColor = vec4(sqrt(vColor.rgb), vColor.a * thin * coverage);
+}
+)";
+
+float attributeFloat(const pugi::xml_node& node, const char* name, float fallback)
+{
+    const pugi::xml_attribute attribute = node.attribute(name);
+    return attribute ? attribute.as_float(fallback) : fallback;
+}
+
+std::optional<glm::vec4> colour(const pugi::xml_node& node)
+{
+    if (!node) {
+        return std::nullopt;
+    }
+    return glm::vec4(attributeFloat(node, "r", 0.0F), attributeFloat(node, "g", 0.0F), attributeFloat(node, "b", 0.0F),
+        attributeFloat(node, "a", 255.0F));
+}
+
+/// The technique a line symbolizer draws with; -1 for types that are not
+/// lines. Which symbolizer uses which technique is inferred from their
+/// names (line_fade_lr and RenderMap_Line_FadeLeftRight); the cap and colour
+/// flags are the ones the symbolizer constructors set (0x82daa4d8 and its
+/// siblings).
+int lineTechnique(std::string_view type)
+{
+    if (type == "line" || type == "line_coloured" || type == "line_coloured_noalpha" || type == "line_nocaps") {
+        return 0;
+    }
+    if (type == "line_fade_lr") {
+        return 1;
+    }
+    return -1;
+}
+
+/// Lines lerp from the primary colour to the secondary one by a ratio their
+/// entity's colour source provides (0x82d917d8); the road network's ways
+/// have none here, so the primary colour stands, as in the code path
+/// without one. Channels come out 0 to 1.
+glm::vec4 colorOf(const MapSymbolizer& symbolizer)
+{
+    return symbolizer.primary.value_or(glm::vec4(255.0F)) / 255.0F;
+}
+
+std::string lower(std::string text)
+{
+    std::transform(
+        text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return text;
+}
+
+} // namespace
+
+std::string_view NavWay::tag(std::string_view key) const
+{
+    for (const auto& [name, value] : tags) {
+        if (name == key) {
+            return value;
+        }
+    }
+    return {};
+}
+
+NavFile NavFile::parse(ByteView data, const std::string& source)
+{
+    BeReader in(data, source);
+    if (in.u32() != kNavMagic) {
+        in.fail("not a road network");
+    }
+    const std::uint32_t nodeCount = in.u32();
+    const std::uint32_t wayCount = in.u32();
+    const std::uint32_t tagCount = in.u32();
+    const std::uint32_t wayNodeCount = in.u32();
+    const std::uint32_t linkCount = in.u32();
+    const std::uint32_t keyCount = in.u32();
+    const std::uint32_t valueCount = in.u32();
+    const std::uint32_t keyBytes = in.u32();
+    const std::uint32_t valueBytes = in.u32();
+
+    in.need(static_cast<std::size_t>(nodeCount) * 32);
+    std::vector<glm::vec2> nodes(nodeCount);
+    for (glm::vec2& node : nodes) {
+        in.skip(4);
+        node.x = in.f32();
+        in.skip(4);
+        node.y = in.f32();
+        in.skip(16);
+    }
+    struct WayRecord {
+        std::uint32_t nodeCount;
+        std::uint32_t firstNode;
+        std::uint32_t tagCount;
+        std::uint32_t firstTag;
+    };
+    in.need(static_cast<std::size_t>(wayCount) * 16);
+    std::vector<WayRecord> ways(wayCount);
+    for (WayRecord& way : ways) {
+        way = {in.u32(), in.u32(), in.u32(), in.u32()};
+    }
+    in.need(static_cast<std::size_t>(wayNodeCount) * 4);
+    std::vector<std::uint32_t> wayNodes(wayNodeCount);
+    for (std::uint32_t& node : wayNodes) {
+        node = in.u32();
+    }
+    in.need(static_cast<std::size_t>(linkCount) * 8);
+    in.skip(static_cast<std::size_t>(linkCount) * 8);
+    in.need(static_cast<std::size_t>(tagCount) * 8);
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> tags(tagCount);
+    for (auto& [key, value] : tags) {
+        key = in.u32();
+        value = in.u32();
+    }
+    const auto readOffsets = [&](std::uint32_t count) {
+        in.need(static_cast<std::size_t>(count) * 4);
+        std::vector<std::uint32_t> offsets(count);
+        for (std::uint32_t& offset : offsets) {
+            offset = in.u32();
+        }
+        return offsets;
+    };
+    const std::vector<std::uint32_t> keyOffsets = readOffsets(keyCount);
+    const std::vector<std::uint32_t> valueOffsets = readOffsets(valueCount);
+    const ByteView keyText = in.bytes(keyBytes);
+    const ByteView valueText = in.bytes(valueBytes);
+    if (in.u32() != kNavMagic || !in.atEnd()) {
+        in.fail("the road network does not end with its magic");
+    }
+    const auto text = [&](ByteView blob, std::uint32_t offset) {
+        if (offset >= blob.size()) {
+            in.fail(std::format("text offset {} past {} bytes", offset, blob.size()));
+        }
+        const auto* start = reinterpret_cast<const char*>(blob.data()) + offset;
+        const std::size_t length = ::strnlen(start, blob.size() - offset);
+        return std::string(start, length);
+    };
+    std::vector<std::string> keys;
+    for (const std::uint32_t offset : keyOffsets) {
+        keys.push_back(text(keyText, offset));
+    }
+    std::vector<std::string> values;
+    for (const std::uint32_t offset : valueOffsets) {
+        values.push_back(text(valueText, offset));
+    }
+
+    NavFile file;
+    file.ways.reserve(wayCount);
+    for (const WayRecord& record : ways) {
+        if (static_cast<std::uint64_t>(record.firstNode) + record.nodeCount > wayNodes.size()
+            || static_cast<std::uint64_t>(record.firstTag) + record.tagCount > tags.size()) {
+            in.fail("a way reaches past its tables");
+        }
+        NavWay way;
+        way.points.reserve(record.nodeCount);
+        for (std::uint32_t i = 0; i < record.nodeCount; ++i) {
+            const std::uint32_t node = wayNodes[record.firstNode + i];
+            if (node >= nodes.size()) {
+                in.fail(std::format("way node {} of {}", node, nodes.size()));
+            }
+            way.points.push_back(nodes[node]);
+        }
+        for (std::uint32_t i = 0; i < record.tagCount; ++i) {
+            const auto [key, value] = tags[record.firstTag + i];
+            if (key >= keys.size() || value >= values.size()) {
+                in.fail("a tag names a missing key or value");
+            }
+            way.tags.emplace_back(keys[key], values[value]);
+        }
+        file.ways.push_back(std::move(way));
+    }
+    return file;
+}
+
+MapProfile MapProfile::parse(std::string_view xml, const std::string& source, std::string_view name)
+{
+    pugi::xml_document document;
+    const pugi::xml_parse_result result = document.load_buffer(xml.data(), xml.size());
+    if (!result) {
+        throw DataError("{}: {}", source, result.description());
+    }
+    for (const pugi::xml_node profileNode : document.child("MapRenderProfiles").children("Profile")) {
+        if (std::string_view(profileNode.attribute("name").as_string()) != name) {
+            continue;
+        }
+        MapProfile profile;
+        for (const pugi::xml_node groupNode : profileNode.children("Group")) {
+            MapGroup group;
+            group.name = groupNode.attribute("name").as_string();
+            const pugi::xml_node filter = groupNode.child("Filter");
+            group.filterTag = filter.attribute("tag").as_string();
+            group.filterValue = filter.attribute("value").as_string();
+            for (const pugi::xml_node node : groupNode.children("Symbolizer")) {
+                MapSymbolizer symbolizer;
+                symbolizer.type = node.attribute("type").as_string();
+                symbolizer.sortOrder = node.attribute("sort_order").as_int();
+                if (const pugi::xml_node size = node.child("Size")) {
+                    symbolizer.size = attributeFloat(size, "value", 0.0F);
+                    symbolizer.hasSize = true;
+                } else if (const pugi::xml_node dynamic = node.child("DynamicSize")) {
+                    symbolizer.size = attributeFloat(dynamic, "value", 0.0F);
+                    symbolizer.dynamicSize = true;
+                    symbolizer.hasSize = true;
+                }
+                symbolizer.primary = colour(node.child("ColourPrimary"));
+                symbolizer.secondary = colour(node.child("ColourSecondary"));
+                if (const pugi::xml_node atlas = node.child("Atlas")) {
+                    symbolizer.atlasX = atlas.attribute("x").as_int();
+                    symbolizer.atlasY = atlas.attribute("y").as_int();
+                    symbolizer.atlasColumns = std::max(1, atlas.attribute("x_slots").as_int(1));
+                    symbolizer.atlasRows = std::max(1, atlas.attribute("y_slots").as_int(1));
+                }
+                symbolizer.texture = node.child("Texture").attribute("value").as_string();
+                group.symbolizers.push_back(std::move(symbolizer));
+            }
+            profile.groups.push_back(std::move(group));
+        }
+        return profile;
+    }
+    throw DataError("{}: no profile \"{}\"", source, name);
+}
+
+SatNavTuning SatNavTuning::load(const Vfs& vfs)
+{
+    const Bytes data = vfs.readOrThrow(kRegistryPath);
+    pugi::xml_document document;
+    const pugi::xml_parse_result result = document.load_buffer(data.data(), data.size());
+    if (!result) {
+        throw DataError("{}: {}", kRegistryPath, result.description());
+    }
+    std::unordered_map<std::string, float> values;
+    for (const pugi::xml_node value : document.child("Registry").children("Value")) {
+        values.emplace(value.attribute("id").as_string(), value.attribute("value").as_float());
+    }
+    const auto get = [&](const char* id) {
+        const auto it = values.find(std::string("UI/Sat_Nav/") + id);
+        if (it == values.end()) {
+            throw DataError("{}: no UI/Sat_Nav/{}", kRegistryPath, id);
+        }
+        return it->second;
+    };
+    SatNavTuning tuning;
+    tuning.carSpeedMin = get("Car_Speed_Min");
+    tuning.carSpeedMax = get("Car_Speed_Max");
+    tuning.distanceMin = get("Map_Distance_Min");
+    tuning.distanceMax = get("Map_Distance_Max");
+    tuning.elevationMinDegrees = get("Elevation_Min");
+    tuning.elevationMaxDegrees = get("Elevation_Max");
+    tuning.fovMinDegrees = get("FOV_Min");
+    tuning.fovMaxDegrees = get("FOV_Max");
+    tuning.playerViewportY = get("Player_Position_In_Viewport_Y");
+    return tuning;
+}
+
+MinimapCamera MinimapCamera::follow(
+    const SatNavTuning& tuning, glm::vec2 position, float heading, float speed, float aspect)
+{
+    const float span = tuning.carSpeedMax - tuning.carSpeedMin;
+    const float t = span > 0.0F ? std::clamp((speed - tuning.carSpeedMin) / span, 0.0F, 1.0F) : 0.0F;
+    const auto lerp = [t](float a, float b) { return a + (b - a) * t; };
+    constexpr float kRadians = std::numbers::pi_v<float> / 180.0F;
+    const float distance = lerp(tuning.distanceMin, tuning.distanceMax);
+    const float elevation = lerp(tuning.elevationMinDegrees, tuning.elevationMaxDegrees) * kRadians;
+    const float fov = lerp(tuning.fovMinDegrees, tuning.fovMaxDegrees) * kRadians;
+
+    MinimapCamera camera;
+    camera.distance = distance;
+    const glm::vec3 flat(std::sin(heading), 0.0F, std::cos(heading));
+    camera.forward = flat * std::cos(elevation) - glm::vec3(0.0F, 1.0F, 0.0F) * std::sin(elevation);
+    camera.right = glm::normalize(glm::cross(glm::vec3(0.0F, 1.0F, 0.0F), camera.forward));
+    camera.up = glm::cross(camera.forward, camera.right);
+    camera.scaleY = 1.0F / std::tan(fov * 0.5F);
+    camera.scaleX = camera.scaleY / aspect;
+
+    const glm::vec3 car(position.x, 0.0F, position.y);
+    camera.eye = car - camera.forward * distance;
+    // Where the ray through the viewport's tuned height meets the ground,
+    // then the target mirrored about the car (0x82da0fe8).
+    const glm::vec3 ray = camera.forward + camera.up * (tuning.playerViewportY / camera.scaleY);
+    if (ray.y < 0.0F) {
+        const float along = -camera.eye.y / ray.y;
+        const glm::vec3 hit = camera.eye + ray * along;
+        const glm::vec3 target = car * 2.0F - hit;
+        camera.eye = glm::vec3(target.x, 0.0F, target.z) - camera.forward * distance;
+    }
+    return camera;
+}
+
+MinimapRenderer::MinimapRenderer(const Vfs& vfs, UiRenderer& renderer, const std::string& track)
+    : m_renderer(renderer)
+{
+    const std::string navPath = std::format("media/tracks/{}/{}.nav", track, track);
+    m_nav = NavFile::parse(vfs.readOrThrow(navPath), navPath);
+    const Bytes profile = vfs.readOrThrow(kProfilePath);
+    m_profile = MapProfile::parse(
+        std::string_view(reinterpret_cast<const char*>(profile.data()), profile.size()), kProfilePath, kProfileName);
+    m_tuning = SatNavTuning::load(vfs);
+    m_program = UiProgram("minimap", kVertexShader, kFragmentShader);
+    buildRoads();
+    m_viewProjection = m_program.location("uViewProjection");
+    m_technique = m_program.location("uTechnique");
+
+    glCreateVertexArrays(1, &m_vao);
+    glEnableVertexArrayAttrib(m_vao, 0);
+    glEnableVertexArrayAttrib(m_vao, 1);
+    glEnableVertexArrayAttrib(m_vao, 2);
+    glVertexArrayAttribFormat(m_vao, 0, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, position));
+    glVertexArrayAttribFormat(m_vao, 1, 2, GL_FLOAT, GL_FALSE, offsetof(Vertex, uv));
+    glVertexArrayAttribFormat(m_vao, 2, 4, GL_FLOAT, GL_FALSE, offsetof(Vertex, color));
+    glVertexArrayAttribBinding(m_vao, 0, 0);
+    glVertexArrayAttribBinding(m_vao, 1, 0);
+    glVertexArrayAttribBinding(m_vao, 2, 0);
+}
+
+MinimapRenderer::~MinimapRenderer()
+{
+    glDeleteBuffers(1, &m_vbo);
+    glDeleteVertexArrays(1, &m_vao);
+    glDeleteFramebuffers(1, &m_framebuffer);
+    glDeleteTextures(1, &m_color);
+}
+
+void MinimapRenderer::ensureTarget(int size)
+{
+    if (size == m_size && m_framebuffer) {
+        return;
+    }
+    glDeleteFramebuffers(1, &m_framebuffer);
+    glDeleteTextures(1, &m_color);
+    glCreateTextures(GL_TEXTURE_2D, 1, &m_color);
+    glTextureStorage2D(m_color, 1, GL_RGBA8, size, size);
+    glTextureParameteri(m_color, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTextureParameteri(m_color, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glCreateFramebuffers(1, &m_framebuffer);
+    glNamedFramebufferTexture(m_framebuffer, GL_COLOR_ATTACHMENT0, m_color, 0);
+    if (glCheckNamedFramebufferStatus(m_framebuffer, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        throw std::runtime_error("minimap render target is incomplete");
+    }
+    m_size = size;
+}
+
+void MinimapRenderer::appendLine(
+    const std::vector<glm::vec2>& points, float halfWidth, const glm::vec4& color, bool caps)
+{
+    if (points.size() < 2) {
+        return;
+    }
+    // 0x82da8200: a quad pair per point, offset along the averaged normal of
+    // the segments meeting there, and a cap quad past each end.
+    const auto normalOf = [](glm::vec2 from, glm::vec2 to) {
+        const glm::vec2 d = to - from;
+        const float length = glm::length(d);
+        return length > 0.0F ? glm::vec2(d.y, -d.x) / length : glm::vec2(0.0F);
+    };
+    const auto ground = [](glm::vec2 p) { return glm::vec3(p.x, 0.0F, p.y); };
+    std::vector<Vertex> strip;
+    const auto emitPair = [&](glm::vec2 centre, glm::vec2 normal, float u) {
+        strip.push_back({ground(centre - normal * halfWidth), glm::vec2(u, -1.0F), color});
+        strip.push_back({ground(centre + normal * halfWidth), glm::vec2(u, 1.0F), color});
+    };
+    const glm::vec2 firstDirection = glm::normalize(points[1] - points[0]);
+    const glm::vec2 firstNormal = normalOf(points[0], points[1]);
+    if (caps) {
+        emitPair(points[0] - firstDirection * halfWidth, firstNormal, -1.0F);
+    }
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        glm::vec2 normal;
+        if (i == 0) {
+            normal = firstNormal;
+        } else if (i + 1 == points.size()) {
+            normal = normalOf(points[i - 1], points[i]);
+        } else {
+            const glm::vec2 sum = normalOf(points[i - 1], points[i]) + normalOf(points[i], points[i + 1]);
+            const float length = glm::length(sum);
+            normal = length > 0.0F ? sum / length : normalOf(points[i], points[i + 1]);
+        }
+        emitPair(points[i], normal, 0.0F);
+    }
+    if (caps) {
+        const std::size_t last = points.size() - 1;
+        const glm::vec2 lastDirection = glm::normalize(points[last] - points[last - 1]);
+        emitPair(points[last] + lastDirection * halfWidth, normalOf(points[last - 1], points[last]), -1.0F);
+    }
+    for (std::size_t i = 0; i + 3 < strip.size(); i += 2) {
+        m_vertices.insert(
+            m_vertices.end(), {strip[i], strip[i + 1], strip[i + 2], strip[i + 1], strip[i + 3], strip[i + 2]});
+    }
+}
+
+void MinimapRenderer::appendIcon(
+    glm::vec2 centre, glm::vec2 direction, float halfSize, const MapSymbolizer& symbolizer, const glm::vec4& color)
+{
+    // An "icon" symbolizer lies on the ground, turned along its entity's
+    // direction (0x82da76a0, orientation mode 0), with its corners the size
+    // away along both axes. Which corner of the atlas cell faces forward
+    // is not traced: the cell's top is put forward.
+    const glm::vec2 forward = direction * halfSize;
+    const glm::vec2 side = glm::vec2(direction.y, -direction.x) * halfSize;
+    const float u0 = static_cast<float>(symbolizer.atlasX) / static_cast<float>(symbolizer.atlasColumns);
+    const float u1 = static_cast<float>(symbolizer.atlasX + 1) / static_cast<float>(symbolizer.atlasColumns);
+    const float v0 = static_cast<float>(symbolizer.atlasY) / static_cast<float>(symbolizer.atlasRows);
+    const float v1 = static_cast<float>(symbolizer.atlasY + 1) / static_cast<float>(symbolizer.atlasRows);
+    const auto ground = [](glm::vec2 p) { return glm::vec3(p.x, 0.0F, p.y); };
+    const Vertex frontLeft{ground(centre + forward - side), glm::vec2(u0, v0), color};
+    const Vertex frontRight{ground(centre + forward + side), glm::vec2(u1, v0), color};
+    const Vertex backLeft{ground(centre - forward - side), glm::vec2(u0, v1), color};
+    const Vertex backRight{ground(centre - forward + side), glm::vec2(u1, v1), color};
+    m_vertices.insert(m_vertices.end(), {frontLeft, frontRight, backLeft, frontRight, backRight, backLeft});
+}
+
+void MinimapRenderer::buildRoads()
+{
+    // The road network does not move and its line widths do not change with
+    // the camera (every line of the profile has a fixed <Size>), so its
+    // geometry is built once.
+    for (const MapGroup& group : m_profile.groups) {
+        if (group.filterTag.empty() || group.filterTag == kPlayerFilterTag) {
+            continue;
+        }
+        std::vector<const NavWay*> ways;
+        for (const NavWay& way : m_nav.ways) {
+            if (way.tag(group.filterTag) == group.filterValue) {
+                ways.push_back(&way);
+            }
+        }
+        for (const MapSymbolizer& symbolizer : group.symbolizers) {
+            const int technique = lineTechnique(symbolizer.type);
+            if (technique < 0 || ways.empty() || symbolizer.dynamicSize) {
+                continue;
+            }
+            Batch batch;
+            batch.sortOrder = symbolizer.sortOrder;
+            batch.technique = technique;
+            batch.first = m_vertices.size();
+            // Quad half-width: 2 * size * (k + (1 - k) * distance / ref),
+            // which a fixed size (k = 1) reduces to twice the size.
+            const float halfWidth = 2.0F * symbolizer.size;
+            const bool caps = symbolizer.type != "line_nocaps";
+            for (const NavWay* way : ways) {
+                appendLine(way->points, halfWidth, colorOf(symbolizer), caps);
+            }
+            batch.count = m_vertices.size() - batch.first;
+            if (batch.count > 0) {
+                m_roadBatches.push_back(batch);
+            }
+        }
+    }
+    m_roadVertexCount = m_vertices.size();
+}
+
+GLuint MinimapRenderer::render(glm::vec2 position, float heading, float speedMetresPerSecond, int size)
+{
+    size = std::max(8, size);
+    ensureTarget(size);
+    const MinimapCamera camera = MinimapCamera::follow(m_tuning, position, heading, speedMetresPerSecond, 1.0F);
+
+    m_vertices.resize(m_roadVertexCount);
+    m_batches = m_roadBatches;
+    const glm::vec2 playerDirection(std::sin(heading), std::cos(heading));
+    for (const MapGroup& group : m_profile.groups) {
+        if (group.filterTag != kPlayerFilterTag || group.filterValue != kPlayerFilterValue) {
+            continue;
+        }
+        for (const MapSymbolizer& symbolizer : group.symbolizers) {
+            if (symbolizer.type != "icon" || symbolizer.texture.empty()) {
+                continue;
+            }
+            const float scale = symbolizer.dynamicSize ? kDynamicSizeBase : 1.0F;
+            const float reference = symbolizer.dynamicSize ? kDynamicSizeReference : 1.0F;
+            const float depth = camera.depth(glm::vec3(position.x, 0.0F, position.y));
+            const float halfSize = symbolizer.size * (scale + (1.0F - scale) * depth / reference);
+            std::string path = lower("media/ui/textures/" + symbolizer.texture);
+            std::replace(path.begin(), path.end(), '\\', '/');
+            Batch batch;
+            batch.sortOrder = symbolizer.sortOrder;
+            batch.technique = 2;
+            batch.texture = m_renderer.texture(texturePathForScene(path));
+            batch.first = m_vertices.size();
+            if (batch.texture) {
+                appendIcon(position, playerDirection, halfSize, symbolizer, colorOf(symbolizer));
+            }
+            batch.count = m_vertices.size() - batch.first;
+            if (batch.count > 0) {
+                m_batches.push_back(batch);
+            }
+        }
+    }
+    // Lower sort orders first (inferred from the profile: shadows at 90,
+    // roads at 100 to 130, the player's arrow at 600 and 610).
+    std::stable_sort(
+        m_batches.begin(), m_batches.end(), [](const Batch& a, const Batch& b) { return a.sortOrder < b.sortOrder; });
+
+    const std::size_t bytes = m_vertices.size() * sizeof(Vertex);
+    if (bytes > m_vboCapacity) {
+        glDeleteBuffers(1, &m_vbo);
+        glCreateBuffers(1, &m_vbo);
+        m_vboCapacity = bytes + 4096 * sizeof(Vertex);
+        glNamedBufferData(m_vbo, static_cast<GLsizeiptr>(m_vboCapacity), nullptr, GL_DYNAMIC_DRAW);
+        glVertexArrayVertexBuffer(m_vao, 0, m_vbo, 0, sizeof(Vertex));
+        m_uploadedRoads = false;
+    }
+    // The roads go up once; only what follows them changes per frame.
+    const std::size_t roadBytes = m_roadVertexCount * sizeof(Vertex);
+    if (!m_uploadedRoads && roadBytes > 0) {
+        glNamedBufferSubData(m_vbo, 0, static_cast<GLsizeiptr>(roadBytes), m_vertices.data());
+        m_uploadedRoads = true;
+    }
+    if (bytes > roadBytes) {
+        glNamedBufferSubData(m_vbo, static_cast<GLintptr>(roadBytes), static_cast<GLsizeiptr>(bytes - roadBytes),
+            m_vertices.data() + m_roadVertexCount);
+    }
+
+    // Clip space: across along the camera's right, up along its up (negated
+    // so the texture's first row is the top, as UI textures are laid out),
+    // w the depth, z spanning the clip planes.
+    glm::mat4 viewProjection(0.0F);
+    const glm::vec3 x = camera.right * camera.scaleX;
+    const glm::vec3 y = -camera.up * camera.scaleY;
+    const float zScale = (kFar + kNear) / (kFar - kNear);
+    const float zOffset = -2.0F * kFar * kNear / (kFar - kNear);
+    for (int column = 0; column < 3; ++column) {
+        viewProjection[column][0] = x[column];
+        viewProjection[column][1] = y[column];
+        viewProjection[column][2] = camera.forward[column] * zScale;
+        viewProjection[column][3] = camera.forward[column];
+    }
+    viewProjection[3][0] = -glm::dot(x, camera.eye);
+    viewProjection[3][1] = -glm::dot(y, camera.eye);
+    viewProjection[3][2] = -glm::dot(camera.forward, camera.eye) * zScale + zOffset;
+    viewProjection[3][3] = -glm::dot(camera.forward, camera.eye);
+
+    GLint previousFramebuffer = 0;
+    GLint previousViewport[4] = {};
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previousFramebuffer);
+    glGetIntegerv(GL_VIEWPORT, previousViewport);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
+    glViewport(0, 0, size, size);
+    // No background symbolizer is in the profile and no clear colour was
+    // found: the target starts transparent.
+    const float clear[4] = {0.0F, 0.0F, 0.0F, 0.0F};
+    glClearNamedFramebufferfv(m_framebuffer, GL_COLOR, 0, clear);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(m_program.id());
+    glProgramUniformMatrix4fv(m_program.id(), m_viewProjection, 1, GL_FALSE, &viewProjection[0][0]);
+    glBindVertexArray(m_vao);
+    for (const Batch& batch : m_batches) {
+        glProgramUniform1i(m_program.id(), m_technique, batch.technique);
+        if (batch.texture) {
+            glBindTextureUnit(0, batch.texture->id());
+            glBindSampler(0, 0);
+        }
+        glDrawArrays(GL_TRIANGLES, static_cast<GLint>(batch.first), static_cast<GLsizei>(batch.count));
+    }
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(previousFramebuffer));
+    glViewport(previousViewport[0], previousViewport[1], previousViewport[2], previousViewport[3]);
+    return m_color;
+}
+
+} // namespace fh::ui

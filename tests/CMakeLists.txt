@@ -36,3 +36,10 @@ target_compile_options(tst_xenos PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_xenos PRIVATE fh1xenoscheck)
 # The test of every game shader runs only when FH1_GAME_DIR is set.
 add_test(NAME tst_xenos COMMAND tst_xenos)
+
+add_executable(tst_ui TestHarness.h tst_ui.cpp)
+target_compile_options(tst_ui PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_ui PRIVATE fh1ui)
+# The disc tests inside (every scene, gauge and font) run only when
+# FH1_GAME_DIR names an extracted disc.
+add_test(NAME tst_ui COMMAND tst_ui)
