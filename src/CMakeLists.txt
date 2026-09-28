@@ -71,6 +71,8 @@ add_library(fh1engine STATIC
     game/TimeOfDay.h
     physics/WorldCollision.cpp
     physics/WorldCollision.h
+    render/CarRenderer.cpp
+    render/CarRenderer.h
     render/FrameRenderer.cpp
     render/FrameRenderer.h
     render/Overlay.cpp
@@ -83,10 +85,11 @@ add_library(fh1engine STATIC
     render/WorldRenderer.h
 )
 target_compile_options(fh1engine PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1engine PUBLIC fh1platform fh1data fh1world fh1collision fh1audio xds::xds Freetype::Freetype PkgConfig::FONTCONFIG)
+target_link_libraries(fh1engine PUBLIC fh1platform fh1data fh1world fh1collision fh1audio fh1carmodel xds::xds Freetype::Freetype PkgConfig::FONTCONFIG)
 
 add_executable(fh1 app/main.cpp)
 target_compile_options(fh1 PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(fh1 PRIVATE fh1engine)
 add_subdirectory(audio)
 add_subdirectory(collision)
+add_subdirectory(carmodel)

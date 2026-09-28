@@ -17,3 +17,10 @@ target_link_libraries(tst_audio PRIVATE fh1audio)
 # The disc tests inside (decoding every sample, parsing every project and
 # engine tuning) run only when FH1_GAME_DIR names an extracted disc.
 add_test(NAME tst_audio COMMAND tst_audio)
+
+add_executable(tst_carmodel TestHarness.h tst_carmodel.cpp)
+target_compile_options(tst_carmodel PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_carmodel PRIVATE fh1carmodel)
+# The disc test inside (loading real cars) runs only when FH1_GAME_DIR names
+# an extracted disc.
+add_test(NAME tst_carmodel COMMAND tst_carmodel)

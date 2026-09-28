@@ -1,0 +1,461 @@
+// Tests of the car model reader: the carbin parser and vertex decoding on
+// files built here in the layout CarBin documents, the name rules, and, when
+// FH1_GAME_DIR names an extracted disc, a few real cars.
+
+#include "TestHarness.h"
+
+#include "carmodel/CarBin.h"
+#include "carmodel/CarMaterials.h"
+#include "carmodel/CarModel.h"
+#include "data/Database.h"
+#include "vfs/Vfs.h"
+
+#include <bit>
+#include <cmath>
+#include <cstdlib>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace {
+
+using fh::Bytes;
+namespace carmodel = fh::carmodel;
+using carmodel::CarBin;
+
+/// Builds big-endian test data.
+struct Writer {
+    Bytes data;
+
+    void u8(std::uint8_t v) { data.push_back(v); }
+    void u16(std::uint16_t v)
+    {
+        u8(static_cast<std::uint8_t>(v >> 8));
+        u8(static_cast<std::uint8_t>(v));
+    }
+    void s16(std::int16_t v) { u16(static_cast<std::uint16_t>(v)); }
+    void u32(std::uint32_t v)
+    {
+        u16(static_cast<std::uint16_t>(v >> 16));
+        u16(static_cast<std::uint16_t>(v));
+    }
+    void f32(float v) { u32(std::bit_cast<std::uint32_t>(v)); }
+    void zeros(std::size_t count) { data.insert(data.end(), count, 0); }
+    void string(std::string_view s)
+    {
+        u32(static_cast<std::uint32_t>(s.size()));
+        data.insert(data.end(), s.begin(), s.end());
+    }
+};
+
+/// One vertex of the 28-byte format: a unit direction and a length that,
+/// times the part box's half diagonal, give the position; texture
+/// coordinates; the identity tangent frame; lighting bytes.
+struct TestVertex {
+    std::int16_t dx = 0;
+    std::int16_t dy = 0;
+    std::int16_t dz = 0;
+    std::int16_t length = 0;
+    std::uint16_t u = 0;
+    std::uint16_t v = 0;
+};
+
+void writeVertex(Writer& w, const TestVertex& vertex)
+{
+    w.s16(vertex.dx);
+    w.s16(vertex.dy);
+    w.s16(vertex.dz);
+    w.s16(vertex.length);
+    w.u16(vertex.u);
+    w.u16(vertex.v);
+    w.u32(0);
+    // Quaternion (x, y, z, w) = (0, 0, 0, 1): the normal is +X.
+    w.s16(0);
+    w.s16(0);
+    w.s16(0);
+    w.s16(32767);
+    w.u8(106);
+    w.u8(127);
+    w.u8(127);
+    w.u8(127);
+}
+
+struct TestPart {
+    std::string name = "rotorLF";
+    std::string material = "rotor";
+    std::vector<TestVertex> vertices;
+    std::vector<std::uint16_t> indices;
+    std::uint32_t primitive = 6;
+    /// Leave the data out, as the `stripped_` files do.
+    bool stripped = false;
+};
+
+void writeVertexBuffer(Writer& w, std::uint32_t count, bool stripped, const std::vector<TestVertex>& vertices)
+{
+    w.u32(3);
+    w.u32(count);
+    w.u32(count > 0 ? 28 : 0);
+    w.u32(count > 0 ? (stripped ? 3 : 1) : 0);
+    if (count > 0) {
+        w.u32(0x12345678);
+        if (!stripped) {
+            for (const TestVertex& vertex : vertices) {
+                writeVertex(w, vertex);
+            }
+        }
+    }
+}
+
+void writePart(Writer& w, const TestPart& part)
+{
+    w.u32(5);
+    // Position (0, 1, 2), box half extents (1, 2, 2): half diagonal 3.
+    w.f32(0.0F);
+    w.f32(1.0F);
+    w.f32(2.0F);
+    w.f32(-1.0F);
+    w.f32(-2.0F);
+    w.f32(-2.0F);
+    w.f32(1.0F);
+    w.f32(2.0F);
+    w.f32(2.0F);
+    w.f32(1.0F);
+    w.f32(0.0F);
+    w.f32(0.0F);
+    w.f32(0.0F);
+    w.f32(0.0F);
+    // Glass section: two empty arrays.
+    w.u32(1);
+    w.u32(1);
+    w.u32(0);
+    w.u32(1);
+    w.u32(0);
+    w.u8(0);
+    w.u32(0);
+    // Mesh group: name, an empty vertex buffer for LODs 1 and up, meshes.
+    w.u32(1);
+    w.string(part.name);
+    writeVertexBuffer(w, 0, false, {});
+    w.u32(1);
+    w.u32(1);
+    w.u32(3);
+    w.u8(0);
+    // Texture coordinate factors: u from 0.25 over 0.5, v from 0 over 1.
+    w.f32(0.25F);
+    w.f32(0.5F);
+    w.f32(0.0F);
+    w.f32(1.0F);
+    w.zeros(12 * 4);
+    w.u32(2);
+    w.string(part.material);
+    w.u32(0);
+    w.u32(part.primitive);
+    w.u32(0);
+    w.u32(1);
+    for (const float f : {0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F, 0.0F, 0.0F, 1.0F, 1.0F}) {
+        w.f32(f);
+    }
+    w.u32(4);
+    w.u32(part.stripped ? 2 : 0);
+    w.u32(static_cast<std::uint32_t>(part.indices.size()));
+    w.u32(2);
+    if (!part.stripped) {
+        for (const std::uint16_t index : part.indices) {
+            w.u16(index);
+        }
+    }
+    w.u32(0);
+    // LOD 0 vertices, then the morph section.
+    writeVertexBuffer(w, static_cast<std::uint32_t>(part.vertices.size()), part.stripped, part.vertices);
+    w.u32(1);
+    w.u8(0);
+    writeVertexBuffer(w, 0, false, {});
+    writeVertexBuffer(w, 0, false, {});
+}
+
+/// A brake file (the shortest preamble) holding `part`; `translucent` puts
+/// its mesh in the translucent draw list.
+Bytes brakeFile(const TestPart& part, bool translucent)
+{
+    Writer w;
+    w.u32(1);
+    // Header.
+    w.u32(17);
+    w.u32(16);
+    w.u32(1);
+    w.u32(0);
+    w.u32(3);
+    w.zeros(256);
+    w.u32(0);
+    w.u32(0);
+    w.zeros(15 * 36);
+    w.f32(-0.33F);
+    w.f32(0.66F);
+    w.u32(0);
+    w.u32(1);
+    w.u32(0);
+    // Model and its draw lists.
+    w.u32(4);
+    w.u32(4);
+    w.u32(1);
+    w.u32(translucent ? 1 : 0);
+    if (translucent) {
+        w.u16(0);
+        w.u16(0);
+    }
+    w.u32(translucent ? 0 : 1);
+    if (!translucent) {
+        w.u16(0);
+        w.u16(0);
+    }
+    w.u32(1);
+    w.u32(1);
+    writePart(w, part);
+    // Tail: three empty arrays.
+    for (int i = 0; i < 3; ++i) {
+        w.u32(1);
+        w.u32(0);
+    }
+    return std::move(w.data);
+}
+
+TestPart quadPart()
+{
+    TestPart part;
+    // Two corners along +X and -X at full length (3 · 1/3 = 1 from the
+    // centre), one along +Y at a third of the length.
+    part.vertices = {
+        {32767, 0, 0, 10922, 0, 0},
+        {0, 32767, 0, 10922, 65535, 0},
+        {-32767, 0, 0, 10922, 0, 65535},
+        {0, 0, 32767, 10922, 65535, 65535},
+    };
+    part.indices = {0, 1, 2, 3};
+    return part;
+}
+
+TEST(appendTrianglesUnrollsStripsAndRestarts)
+{
+    std::vector<std::uint32_t> out;
+    const std::vector<std::uint32_t> strip{0, 1, 2, 3, 0xFFFF, 4, 5, 6};
+    carmodel::carbin::appendTriangles(strip, 6, 7, out);
+    CHECK_EQ(out, (std::vector<std::uint32_t>{0, 1, 2, 2, 1, 3, 4, 5, 6}));
+
+    out.clear();
+    const std::vector<std::uint32_t> list{0, 1, 2, 2, 2, 3};
+    carmodel::carbin::appendTriangles(list, 4, 4, out);
+    CHECK_EQ(out, (std::vector<std::uint32_t>{0, 1, 2}));
+}
+
+TEST(parseReadsPartMeshAndVertices)
+{
+    const TestPart part = quadPart();
+    const Bytes file = brakeFile(part, false);
+    const CarBin model = carmodel::carbin::parse(file, "test", CarBin::Kind::Brake);
+    CHECK_EQ(model.parts.size(), std::size_t{1});
+    CHECK_EQ(model.lodCount, 1U);
+    CHECK_NEAR(model.lightingRange.x, -0.33, 1e-6);
+    CHECK_NEAR(model.lightingRange.y, 0.66, 1e-6);
+    if (model.parts.empty()) {
+        return;
+    }
+    const CarBin::Part& p = model.parts.front();
+    CHECK_EQ(p.name, std::string("rotorLF"));
+    CHECK_EQ(p.lod0Vertices.count, 4U);
+    CHECK(p.vertices.empty());
+    CHECK_EQ(p.meshes.size(), std::size_t{1});
+    const CarBin::Mesh& mesh = p.meshes.front();
+    CHECK_EQ(mesh.name, std::string("rotor"));
+    CHECK(!mesh.translucent);
+    CHECK_EQ(mesh.triangles, (std::vector<std::uint32_t>{0, 1, 2, 2, 1, 3}));
+    CHECK_NEAR(mesh.uv0.x, 0.25, 1e-6);
+    CHECK_NEAR(mesh.uv0.y, 0.5, 1e-6);
+
+    // Half diagonal |(1, 2, 2)| = 3; a third of it along +X from (0, 1, 2).
+    const carmodel::Vertex v0 = carmodel::carbin::decodeVertex(p, p.verticesFor(mesh), 0);
+    CHECK_NEAR(v0.position.x, 1.0, 1e-3);
+    CHECK_NEAR(v0.position.y, 1.0, 1e-3);
+    // Z is negated into car space.
+    CHECK_NEAR(v0.position.z, -2.0, 1e-3);
+    const carmodel::Vertex v3 = carmodel::carbin::decodeVertex(p, p.verticesFor(mesh), 3);
+    CHECK_NEAR(v3.position.z, -3.0, 1e-3);
+    CHECK_NEAR(v0.normal.x, 1.0, 1e-4);
+    CHECK_NEAR(v0.tangent.y, 1.0, 1e-4);
+    CHECK_EQ(v0.lighting[0], std::uint8_t{106});
+
+    const glm::vec2 uv = carmodel::carbin::meshUv0(mesh, carmodel::carbin::decodeVertex(p, p.verticesFor(mesh), 1));
+    CHECK_NEAR(uv.x, 0.75, 1e-5);
+    CHECK_NEAR(uv.y, 0.0, 1e-5);
+}
+
+TEST(parseMarksTranslucentMeshesFromDrawLists)
+{
+    const Bytes file = brakeFile(quadPart(), true);
+    const CarBin model = carmodel::carbin::parse(file, "test", CarBin::Kind::Brake);
+    CHECK(!model.parts.empty() && model.parts.front().meshes.front().translucent);
+}
+
+TEST(parseReadsStrippedFiles)
+{
+    TestPart part = quadPart();
+    part.stripped = true;
+    const Bytes file = brakeFile(part, false);
+    const CarBin model = carmodel::carbin::parse(file, "stripped", CarBin::Kind::Brake);
+    CHECK(!model.parts.empty());
+    if (!model.parts.empty()) {
+        const CarBin::Part& p = model.parts.front();
+        CHECK(p.lod0Vertices.stripped);
+        CHECK_EQ(p.lod0Vertices.count, 4U);
+        CHECK(p.lod0Vertices.data.empty());
+        CHECK(p.meshes.front().indicesStripped);
+        CHECK_EQ(p.meshes.front().indexCount, 4U);
+        CHECK(p.meshes.front().triangles.empty());
+    }
+}
+
+TEST(parseRejectsDamagedFiles)
+{
+    const Bytes file = brakeFile(quadPart(), false);
+    Bytes trailing = file;
+    trailing.push_back(0);
+    CHECK_THROWS(carmodel::carbin::parse(trailing, "trailing", CarBin::Kind::Brake));
+    const Bytes truncated(file.begin(), file.end() - 5);
+    CHECK_THROWS(carmodel::carbin::parse(truncated, "truncated", CarBin::Kind::Brake));
+    // A brake file read as a wheel meets the wrong preamble version.
+    CHECK_THROWS(carmodel::carbin::parse(file, "kind", CarBin::Kind::Wheel));
+}
+
+TEST(parseReadsCarPreambleLights)
+{
+    const Bytes brake = brakeFile(quadPart(), false);
+    Writer w;
+    w.u32(5);
+    w.zeros(256 + 16 + 48 + 16);
+    w.u32(1);
+    w.f32(-0.5F);
+    w.f32(0.25F);
+    w.f32(2.0F);
+    w.s16(0);
+    w.s16(0);
+    w.s16(32767);
+    w.zeros(14);
+    // The rest is the brake file after its one-word preamble.
+    w.data.insert(w.data.end(), brake.begin() + 4, brake.end());
+    const CarBin model = carmodel::carbin::parse(w.data, "car", CarBin::Kind::Car);
+    CHECK_EQ(model.lights.size(), std::size_t{1});
+    if (!model.lights.empty()) {
+        CHECK_NEAR(model.lights.front().position.z, 2.0, 1e-6);
+        CHECK_NEAR(model.lights.front().direction.z, 1.0, 1e-4);
+    }
+}
+
+TEST(kindFromPathFollowsFolders)
+{
+    CHECK(carmodel::carbin::kindFromPath("media/wheels/alf_8c_08/alf_8c_08.carbin") == CarBin::Kind::Wheel);
+    CHECK(carmodel::carbin::kindFromPath("media/cars/alf_8c_08/alf_8c_08_rotorlf_lod0.carbin")
+        == CarBin::Kind::Brake);
+    CHECK(carmodel::carbin::kindFromPath("media/brakes/10_rotor_steel.rmb.carbin") == CarBin::Kind::Brake);
+    CHECK(carmodel::carbin::kindFromPath("media/cars/alf_8c_08/alf_8c_08_lod0.carbin") == CarBin::Kind::Car);
+}
+
+TEST(partVariantsFollowUpgradeNames)
+{
+    CHECK(carmodel::partVariant("body").stock);
+    CHECK(carmodel::partVariant("bumperFa").stock);
+    CHECK_EQ(carmodel::partVariant("bumperFa").slot, std::string("bumperF"));
+    CHECK(!carmodel::partVariant("bumperFb").stock);
+    CHECK(!carmodel::partVariant("bumperFrace").stock);
+    CHECK_EQ(carmodel::partVariant("bumperFrace").variant, std::string("race"));
+    CHECK(carmodel::partVariant("bumperFrameF").variant.empty());
+    CHECK(carmodel::partVariant("winga_arm1").stock);
+    CHECK_EQ(carmodel::partVariant("exhaustLb").slot, std::string("exhaustL"));
+    CHECK(!carmodel::partVariant("cagerace").stock);
+    CHECK(!carmodel::partVariant("lexanLHL").stock);
+}
+
+TEST(materialsClassifyByName)
+{
+    using carmodel::ModelSource;
+    using carmodel::Shading;
+    CHECK(carmodel::classifyMaterial("body", ModelSource::Exterior, false) == Shading::Paint);
+    CHECK(carmodel::classifyMaterial("window", ModelSource::Exterior, true) == Shading::Glass);
+    CHECK(carmodel::classifyMaterial("indicator_left", ModelSource::Exterior, false) == Shading::Lights);
+    CHECK(carmodel::classifyMaterial("chrome", ModelSource::Exterior, false) == Shading::Metal);
+    CHECK(carmodel::classifyMaterial("tire", ModelSource::Wheel, false) == Shading::Rubber);
+    CHECK(carmodel::classifyMaterial("leather", ModelSource::Cockpit, false) == Shading::Interior);
+    CHECK(carmodel::classifyMaterial("emblem", ModelSource::Exterior, false) == Shading::Decal);
+    CHECK(carmodel::isMotionBlurMaterial("blur_rim"));
+
+    const auto first = [](std::string_view material, ModelSource source) {
+        const std::vector<carmodel::TextureCandidate> candidates = carmodel::diffuseTextures(material, source);
+        return candidates.empty() ? std::string() : candidates.front().file;
+    };
+    CHECK_EQ(first("body", ModelSource::Exterior), std::string("nodamage_lod0.xds"));
+    CHECK_EQ(first("taillight2S", ModelSource::Exterior), std::string("lights_lod0.xds"));
+    CHECK_EQ(first("detail_glass_red", ModelSource::Exterior), std::string("lights_lod0.xds"));
+    CHECK_EQ(first("window", ModelSource::Exterior), std::string());
+    CHECK_EQ(first("leather", ModelSource::Cockpit), std::string("interior_lod0.xds"));
+    CHECK_EQ(first("body", ModelSource::Cockpit), std::string("nodamage_lod0.xds"));
+    CHECK_EQ(first("rim", ModelSource::Wheel), std::string("wheel_lod0.xds"));
+    CHECK_EQ(first("undercarriage", ModelSource::Exterior), std::string("undercarriage.xds"));
+}
+
+TEST(realCarsLoad)
+{
+    const char* gameDir = std::getenv("FH1_GAME_DIR");
+    if (gameDir == nullptr || *gameDir == '\0') {
+        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(gameDir);
+    std::optional<fh::Database> db;
+    if (const std::optional<Bytes> image = vfs.read("media/db/gamedb.slt")) {
+        db.emplace(*image);
+    }
+
+    // Every carbin of one car parses.
+    for (const std::string& path : vfs.list("media/cars/alf_8c_08")) {
+        if (path.ends_with(".carbin") && path.find("stripped_") == std::string::npos) {
+            const CarBin bin = carmodel::loadCarBin(vfs, path, carmodel::carbin::kindFromPath(path));
+            CHECK(!bin.parts.empty());
+        }
+    }
+
+    const carmodel::CarModel alfa = carmodel::CarModel::load(vfs, db ? &*db : nullptr, "ALF_8C_08");
+    CHECK(alfa.warnings.empty());
+    CHECK(alfa.mesh.triangleCount() > 150000);
+    CHECK_EQ(alfa.wheels.size(), std::size_t{4});
+    CHECK_EQ(alfa.mesh.vertices.size() % carmodel::CarMesh::kFloatsPerVertex, std::size_t{0});
+    // The collision box of maxdata.xml, less the door mirrors.
+    CHECK_NEAR(alfa.mesh.boundsMin.y, -0.030, 0.02);
+    CHECK_NEAR(alfa.mesh.boundsMax.y, 1.228, 0.02);
+    CHECK_NEAR(alfa.mesh.boundsMin.z, -2.167, 0.02);
+    CHECK_NEAR(alfa.mesh.boundsMax.z, 2.200, 0.02);
+    CHECK(!alfa.textures.empty());
+    for (const carmodel::CarModel::Texture& texture : alfa.textures) {
+        CHECK(!texture.chain.levels.empty());
+    }
+    for (const carmodel::WheelMount& wheel : alfa.wheels) {
+        CHECK_NEAR(std::abs(wheel.centre.z), 2.654 / 2.0, 0.01);
+        CHECK(wheel.radius > 0.3F && wheel.radius < 0.4F);
+    }
+
+    carmodel::CarModelOptions geometryOnly;
+    geometryOnly.textures = false;
+    for (const char* name : {"VW_Beetle_68", "KEN_T440_12", "BUS_TOUR_12"}) {
+        const carmodel::CarModel car = carmodel::CarModel::load(vfs, db ? &*db : nullptr, name, geometryOnly);
+        CHECK(car.mesh.triangleCount() > 10000);
+        CHECK_EQ(car.wheels.size(), std::size_t{4});
+        // Nothing far below the ground once the wheelbase centre is the origin.
+        CHECK(car.mesh.boundsMin.y > -0.4F);
+    }
+}
+
+} // namespace
+
+int main(int argc, char** argv)
+{
+    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
+}
