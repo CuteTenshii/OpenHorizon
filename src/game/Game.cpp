@@ -98,13 +98,32 @@ Game::~Game()
     m_jobs.reset();
 }
 
-std::unique_ptr<Game::Vehicle> Game::makeVehicle(int carId, const glm::vec4& colour) const
+std::unique_ptr<Game::Vehicle> Game::makeVehicle(int carId, const glm::vec4& colour, int colourSequence) const
 {
     auto vehicle = std::make_unique<Vehicle>();
     vehicle->spec = std::make_unique<CarSpec>(loadCarSpec(*m_database, carId, &m_vfs));
     vehicle->physics = std::make_unique<CarPhysics>(*vehicle->spec);
     vehicle->colour = colour;
     const CarSpec& spec = *vehicle->spec;
+    // The requested factory colour, or the car's first when the sequence
+    // is out of its range. RGB is packed 0xRRGGBB in sRGB.
+    const std::optional<Row> paint = m_database->queryOne(
+        "SELECT RGB, Metallic FROM Combo_Colors WHERE Ordinal = ? ORDER BY Sequence = ? DESC, Sequence LIMIT 1",
+        {std::to_string(carId), std::to_string(colourSequence)});
+    if (paint) {
+        const auto rgb = static_cast<std::uint32_t>(paint->integer("RGB"));
+        const auto linear = [](std::uint32_t channel) {
+            return std::pow(static_cast<float>(channel & 0xFFU) / 255.0F, 2.2F);
+        };
+        vehicle->paint = glm::vec3(linear(rgb >> 16), linear(rgb >> 8), linear(rgb));
+        vehicle->metallic = paint->i("Metallic") != 0;
+    }
+    try {
+        const carmodel::CarModel model = carmodel::CarModel::load(m_vfs, m_database.get(), spec.mediaName);
+        vehicle->model = std::make_unique<render::CarRenderer>(model);
+    } catch (const std::exception& e) {
+        logWarning("car model {}: {}", spec.mediaName, e.what());
+    }
     const std::optional<Row> names = m_database->queryOne(
         "SELECT c.Year, m.DisplayName AS Make, c.DisplayName FROM Data_Car c "
         "LEFT JOIN List_CarMake m ON m.Id = c.MakeID WHERE c.Id = ?",
@@ -535,7 +554,9 @@ void Game::startRace(const RaceEvent& event)
         const float hue = static_cast<float>(opponent) / 7.0F;
         const glm::vec4 colour(0.35F + 0.3F * std::sin(hue * 6.28F), 0.6F + 0.3F * std::cos(hue * 6.28F), 0.95F, 1.0F);
         try {
-            std::unique_ptr<Vehicle> ai = makeVehicle(carId, colour);
+            const std::size_t o = static_cast<std::size_t>(opponent);
+            std::unique_ptr<Vehicle> ai
+                = makeVehicle(carId, colour, o < event.opponentColours.size() ? event.opponentColours[o] : 1);
             ai->physics->assists().speedSensitiveSteering = false;
             // Alternate sides of the line, as a grid does, so the field does
             // not drive nose to tail.
@@ -817,13 +838,36 @@ render::FrameParams Game::frameParams() const
     return frame;
 }
 
-void Game::drawVehicles()
+render::CarPose Game::carPose(const Vehicle& vehicle) const
+{
+    const CarPhysics& car = *vehicle.physics;
+    render::CarPose pose;
+    pose.body = car.transform();
+    const glm::mat4 toCar = glm::inverse(pose.body);
+    for (std::size_t w = 0; w < CarPhysics::kWheels; ++w) {
+        const CarPhysics::WheelState& wheel = car.wheels()[w];
+        pose.hubs[w] = glm::vec3(toCar * glm::vec4(wheel.hubWorld, 1.0F));
+        pose.steer[w] = wheel.steerAngle;
+        pose.spin[w] = wheel.spinAngle;
+    }
+    pose.brakeLights = vehicle.controls.brake > 0.1F ? 1.0F : 0.0F;
+    pose.headLights = m_timeOfDay->lights();
+    pose.paint = vehicle.paint;
+    pose.metallic = vehicle.metallic;
+    return pose;
+}
+
+void Game::drawVehicles(const render::FrameParams& frame)
 {
     if (!m_playerPlaced) {
         return;
     }
-    // Outlines of the bodies and wheels until the car models are decoded.
     for (const auto& vehicle : m_vehicles) {
+        if (vehicle->model) {
+            vehicle->model->draw(frame, carPose(*vehicle), false);
+            continue;
+        }
+        // Outline of the body and wheels for a car whose model is missing.
         const CarPhysics& car = *vehicle->physics;
         const CarSpec& spec = *vehicle->spec;
         const glm::mat4 transform = car.transform();
@@ -839,13 +883,23 @@ void Game::drawVehicles()
             const glm::quat steer
                 = car.orientation() * glm::angleAxis(wheel.steerAngle, glm::vec3(0.0F, 1.0F, 0.0F));
             const glm::vec3 forward = steer * glm::vec3(0.0F, 0.0F, 1.0F);
-            const glm::vec4 colour = wheel.slipMagnitude > 1.0F ? glm::vec4(1.0F, 0.9F, 0.2F, 1.0F)
-                                                                : glm::vec4(0.9F, 0.9F, 0.9F, 1.0F);
+            const glm::vec4 colour(0.9F, 0.9F, 0.9F, 1.0F);
             const float radius = car.wheelRadius(w);
             m_overlay->circle(wheel.hubWorld, forward, up, radius, colour);
-            // A spoke shows the wheel turning.
             const glm::vec3 spoke = forward * std::cos(wheel.spinAngle) - up * std::sin(wheel.spinAngle);
             m_overlay->line(wheel.hubWorld, wheel.hubWorld + spoke * radius, colour);
+        }
+    }
+}
+
+void Game::drawVehicleGlass(const render::FrameParams& frame)
+{
+    if (!m_playerPlaced) {
+        return;
+    }
+    for (const auto& vehicle : m_vehicles) {
+        if (vehicle->model) {
+            vehicle->model->draw(frame, carPose(*vehicle), true);
         }
     }
 }
@@ -1230,8 +1284,9 @@ int Game::run()
         const render::FrameParams frame = frameParams();
         m_frame->begin(m_window.width(), m_window.height());
         m_worldRenderer->draw(frame);
+        drawVehicles(frame);
         m_frame->sky(frame);
-        drawVehicles();
+        drawVehicleGlass(frame);
         drawEventStarts(frame.projection * frame.view);
         drawDrivingLine();
         m_overlay->flush(frame.projection * frame.view, m_window.width(), m_window.height());

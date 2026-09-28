@@ -92,8 +92,10 @@ std::vector<RaceEvent> loadRaceEvents(const Database& db, Localisation& strings,
         event.aiSkill = row.i("AISkillMed", 70);
         event.aiTemperament = row.i("AITemperamentMed", 5);
         for (const Row& participant : db.query(
-                 "SELECT Ordinal FROM EventParticipants WHERE EventID = ? ORDER BY Priority, ID", {std::to_string(event.eventId)})) {
+                 "SELECT Ordinal, ColorSequence FROM EventParticipants WHERE EventID = ? ORDER BY Priority, ID",
+                 {std::to_string(event.eventId)})) {
             event.opponents.push_back(participant.i("Ordinal"));
+            event.opponentColours.push_back(participant.i("ColorSequence"));
         }
         events.push_back(std::move(event));
     }

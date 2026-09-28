@@ -39,8 +39,10 @@ struct RaceEvent {
     /// AI settings for the medium difficulty (0 to 100 skill).
     int aiSkill = 70;
     int aiTemperament = 5;
-    /// Car ids (Data_Car.Id) of the opponents, in grid order.
+    /// Car ids (Data_Car.Id) of the opponents, in grid order, and the
+    /// factory colour each runs (Combo_Colors.Sequence).
     std::vector<int> opponents;
+    std::vector<int> opponentColours;
 };
 
 /// Loads the races run on `track` (a Tracks.MediaName, e.g. "Colorado"),

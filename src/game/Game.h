@@ -16,6 +16,7 @@
 #include "game/TimeOfDay.h"
 #include "physics/WorldCollision.h"
 #include "platform/Window.h"
+#include "render/CarRenderer.h"
 #include "render/FrameRenderer.h"
 #include "render/Overlay.h"
 #include "render/WorldRenderer.h"
@@ -86,14 +87,20 @@ private:
         std::unique_ptr<AiDriver> ai;
         /// The engine, exhaust and tyres as heard; missing without audio.
         std::unique_ptr<audio::EngineSound> engine;
+        /// The car's own model; missing when it could not be loaded, and
+        /// the car is then drawn as an outline.
+        std::unique_ptr<render::CarRenderer> model;
         int lastGear = 1;
         CarControls controls;
         glm::vec4 colour{1.0F};
+        /// Factory paint (Combo_Colors), linear RGB.
+        glm::vec3 paint{0.8F};
+        bool metallic = false;
         std::string name;
     };
 
     void loadWorld();
-    std::unique_ptr<Vehicle> makeVehicle(int carId, const glm::vec4& colour) const;
+    std::unique_ptr<Vehicle> makeVehicle(int carId, const glm::vec4& colour, int colourSequence = 1) const;
     void spawnPlayer();
     void placeVehicle(Vehicle& vehicle, const glm::vec3& position, float heading);
     Vehicle& player() { return *m_vehicles.front(); }
@@ -116,7 +123,9 @@ private:
     void updateEventStarts();
     void updateCamera(float dt);
     render::FrameParams frameParams() const;
-    void drawVehicles();
+    void drawVehicles(const render::FrameParams& frame);
+    void drawVehicleGlass(const render::FrameParams& frame);
+    render::CarPose carPose(const Vehicle& vehicle) const;
     void drawEventStarts(const glm::mat4& viewProjection);
     void drawDrivingLine();
     void drawHud(float dt);
