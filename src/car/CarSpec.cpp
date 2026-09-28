@@ -9,7 +9,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <format>
+#include <string_view>
 
 namespace fh {
 
@@ -182,12 +184,115 @@ void readBodyFromArchive(const Vfs& vfs, CarSpec& spec)
             box.attribute("MaxZ").as_float()};
     }
     const pugi::xml_node misc = doc.child("MAXData").child("Misc");
+    std::array<float, 3> wheelbaseCentre{};
     if (misc) {
         spec.wheelbase = misc.attribute("Wheelbase").as_float(spec.wheelbase);
+        const pugi::xml_node centre = misc.child("BottomCenterWheelbasePos");
+        wheelbaseCentre = {centre.attribute("x").as_float(), centre.attribute("y").as_float(),
+            centre.attribute("z").as_float()};
+    }
+    // The spheres share the model's coordinates; the car model moves its
+    // origin by BottomCenterWheelbasePos, so the spheres move with it. The
+    // file's roof spheres sit behind the middle and its tallest bumper sphere
+    // at the -Z end, so +Z is the front here as in car space.
+    const pugi::xml_node spheres = doc.child("MAXData").child("Collision").child("CollSpheres");
+    if (spheres) {
+        const float offset[3] = {spheres.attribute("PosOffsetX").as_float(), spheres.attribute("PosOffsetY").as_float(),
+            spheres.attribute("PosOffsetZ").as_float()};
+        const float posScale = spheres.attribute("PosScale").as_float(1.0F);
+        const float radiusScale = spheres.attribute("RadiusScale").as_float(1.0F);
+        for (const pugi::xml_node sphere : spheres.children()) {
+            CarSpec::CollisionSphere s;
+            const char* axes[3] = {"PosX", "PosY", "PosZ"};
+            for (std::size_t a = 0; a < 3; ++a) {
+                s.centre[a] = (sphere.attribute(axes[a]).as_float() + offset[a]) * posScale - wheelbaseCentre[a];
+            }
+            s.radius = sphere.attribute("Radius").as_float() * radiusScale;
+            s.flags = sphere.attribute("Flags").as_int();
+            if (s.radius > 0.0F) {
+                spec.collisionSpheres.push_back(s);
+            }
+        }
     }
 }
 
+/// Reads `Section\Key value` lines (some write `Key = value`) of the
+/// game's ini files into `apply`, which returns false for unknown keys.
+template<typename Apply>
+void readIni(const std::string& text, Apply apply)
+{
+    std::size_t start = 0;
+    while (start < text.size()) {
+        std::size_t end = text.find('\n', start);
+        if (end == std::string::npos) {
+            end = text.size();
+        }
+        std::string line = text.substr(start, end - start);
+        start = end + 1;
+        std::replace(line.begin(), line.end(), '=', ' ');
+        std::replace(line.begin(), line.end(), '\t', ' ');
+        const std::size_t keyEnd = line.find(' ');
+        if (keyEnd == std::string::npos) {
+            continue;
+        }
+        const std::string key = line.substr(0, keyEnd);
+        const std::size_t valueStart = line.find_first_not_of(' ', keyEnd);
+        if (valueStart == std::string::npos) {
+            continue;
+        }
+        char* parsedEnd = nullptr;
+        const float value = std::strtof(line.c_str() + valueStart, &parsedEnd);
+        if (parsedEnd != line.c_str() + valueStart) {
+            apply(key, value);
+        }
+    }
+}
+
+constexpr std::string_view kPhysicsSettingsPath = "media/physics/physicssettings.ini";
+
+void readPhysicsSettings(const Vfs& vfs, CarSpec& spec)
+{
+    const std::optional<std::string> text = vfs.readText(std::string(kPhysicsSettingsPath));
+    if (!text) {
+        return;
+    }
+    readIni(*text, [&](const std::string& key, float value) {
+        if (key == "NormRearSlipAngleToCountersteer") {
+            spec.normRearSlipAngleToCountersteer = value;
+        } else if (key == "SteerFrictionClamp") {
+            spec.steerFrictionClamp = value;
+        }
+    });
+}
+
 } // namespace
+
+CollisionSettings loadCollisionSettings(const Vfs& vfs)
+{
+    CollisionSettings settings;
+    const std::optional<std::string> text = vfs.readText(std::string(kPhysicsSettingsPath));
+    if (!text) {
+        return settings;
+    }
+    readIni(*text, [&](const std::string& key, float value) {
+        if (key == "Collision\\CarCarRestitution") {
+            settings.carCarRestitution = value;
+        } else if (key == "Collision\\DefaultRestitution") {
+            settings.defaultRestitution = value;
+        } else if (key == "Collision\\PlayerTorqueScale") {
+            settings.playerTorqueScale = value;
+        } else if (key == "Collision\\TrafficTorqueScale") {
+            settings.trafficTorqueScale = value;
+        } else if (key == "Collision\\RaceCarTorqueScale") {
+            settings.raceCarTorqueScale = value;
+        } else if (key == "Collision\\RaceCarTorqueScaleInRace") {
+            settings.raceCarTorqueScaleInRace = value;
+        } else if (key == "Collision\\RaceCarTorqueScaleVsTrafficInRace") {
+            settings.raceCarTorqueScaleVsTrafficInRace = value;
+        }
+    });
+    return settings;
+}
 
 float SampledCurve::operator()(float input) const
 {
@@ -232,6 +337,19 @@ float TireFrictionCurve::peakSlip(float loadN) const
         }
     }
     return bestSlip;
+}
+
+float TireFrictionCurve::peakFriction(float loadN) const
+{
+    const auto peak = [](const SampledCurve& curve) {
+        if (curve.values.empty()) {
+            return curve.scale;
+        }
+        return *std::max_element(curve.values.begin(), curve.values.end()) * curve.scale;
+    };
+    const float loadKgf = std::min(loadN / kKgfToNewton, loadClampKgf);
+    const float t = std::clamp((loadKgf - lightLoadKgf) / (heavyLoadKgf - lightLoadKgf), 0.0F, 1.0F);
+    return peak(light) + (peak(heavy) - peak(light)) * t;
 }
 
 float TireCompound::widthScale(float widthMm) const
@@ -281,13 +399,22 @@ CarSpec loadCarSpec(const Database& db, int carId, const Vfs* vfs)
     spec.rearDownforceAt100MphLbf = car->f("BodyAeroForwardDownforceRear");
 
     spec.steerMaxAngleDeg = car->f("SteerMaxAngle", 35.0F);
+    // As the loader at 0x82CA9208 does: a filtered angle of 0.01 or less
+    // means the full angle.
     spec.steerMaxAngleFilteredDeg = car->f("SteerMaxAngleFiltered", spec.steerMaxAngleDeg);
+    if (spec.steerMaxAngleFilteredDeg <= 0.01F) {
+        spec.steerMaxAngleFilteredDeg = spec.steerMaxAngleDeg;
+    }
     spec.steerRateTurning = car->f("SteerMaxAngVelTurning", 100.0F);
     spec.steerRateStraighten = car->f("SteerMaxAngVelStraighten", 100.0F);
     spec.steerSpeedSensitiveMaxGees = car->f("SteerSpeedSensitiveMaxGees", 1.0F);
     spec.steerSpeedSensitiveMinAngleDeg = car->f("SteerSpeedSensitiveMinMaxAngle", 5.0F);
     spec.steerSpeedSensitiveSlowMph = car->f("SteerSpeedSensitiveSlowSpeed", 1.0F);
     spec.steerSpeedSensitiveFastMph = car->f("SteerSpeedSensitiveFastSpeed", 120.0F);
+    spec.steerSpeedSensitiveFastRateScale = car->f("SteerSpeedSensitiveFastRateScale", 1.0F);
+    spec.steerRateCountersteer = car->f("SteerAngVelCountersteer", 105.0F);
+    spec.steerRateDynFindPeak = car->f("SteerAngVelDynFindPeak", 10.0F);
+    spec.steerAccelTimeToMaxRate = car->f("SteerAccelTimeToMaxRate", 0.01F);
     spec.tcsSlipTakeoff = car->f("AssistsTCSSlipDefTakeoff", 33.0F);
     spec.tcsSlipMoving = car->f("AssistsTCSSlipDefMoving", 0.5F);
 
@@ -323,7 +450,11 @@ CarSpec loadCarSpec(const Database& db, int carId, const Vfs* vfs)
     spec.rearTrack -= spec.rearTires.widthMm * 0.001F;
     if (vfs) {
         readBodyFromArchive(*vfs, spec);
+        readPhysicsSettings(*vfs, spec);
     }
+    const std::optional<Row> weight = db.queryOne(
+        "SELECT * FROM List_UpgradeCarBodyWeight WHERE CarBodyId = ? ORDER BY IsStock DESC, Level ASC LIMIT 1",
+        {id(bodyId)});
 
     // Engine
     const std::optional<Row> engineUpgrade = stockRow(db, "List_UpgradeEngine", "Ordinal", carId);
@@ -426,11 +557,15 @@ CarSpec loadCarSpec(const Database& db, int carId, const Vfs* vfs)
     spec.rear = readSuspension(db, springs->i("RearSpringDamperPhysicsID"),
         barRear ? barRear->i("AntiSwayPhysicsID") : 0, spec.rearTrack);
 
-    // The database gives no centre-of-mass height. Road cars carry it at
-    // roughly a third of the body height above the ground, plus the ride
-    // height the suspension adds.
-    const float bodyHeight = spec.boundsMax[1] - spec.boundsMin[1];
-    spec.cgHeight = std::max(0.25F, 0.5F * (spec.front.rideHeight + spec.rear.rideHeight) + bodyHeight * 0.3F);
+    if (weight) {
+        spec.massKg = weight->f("Mass", spec.massKg);
+        spec.frontWeight = weight->f("CMBackFront", spec.frontWeight);
+        spec.cgHeight = weight->f("CMHeight", spec.cgHeight);
+        spec.inertiaBlock = {weight->f("BlockDimX", spec.inertiaBlock[0]), weight->f("BlockDimY", spec.inertiaBlock[1]),
+            weight->f("BlockDimZ", spec.inertiaBlock[2])};
+    } else {
+        logWarning("car {}: no List_UpgradeCarBodyWeight row for body {}", spec.mediaName, bodyId);
+    }
 
     // Brakes
     if (const std::optional<Row> brakes = stockRow(db, "List_UpgradeBrakes", "Ordinal", carId)) {

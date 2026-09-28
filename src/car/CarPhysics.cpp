@@ -77,13 +77,14 @@ CarPhysics::CarPhysics(const CarSpec& spec)
     const float wheelbase = m_spec.wheelbase;
     m_cgLocal = {0.0F, m_spec.cgHeight, wheelbase * (m_spec.frontWeight - 0.5F)};
 
-    // A solid box the size of the body overstates the moments of inertia,
-    // since a car's mass sits low and between the axles; 0.75 of the box's
-    // values lands near published yaw inertias of road cars.
-    const float width = m_spec.boundsMax[0] - m_spec.boundsMin[0];
-    const float height = m_spec.boundsMax[1] - m_spec.boundsMin[1];
-    const float length = m_spec.boundsMax[2] - m_spec.boundsMin[2];
-    const float k = m_mass / 12.0F * 0.75F;
+    // The game sizes the body's inertia by a box of its own
+    // (List_UpgradeCarBodyWeight.BlockDimX/Y/Z, read next to the mass and
+    // centre of mass); taking it as a uniform solid box is inferred from the
+    // columns' names, as the use of the block has not been traced.
+    const float width = m_spec.inertiaBlock[0];
+    const float height = m_spec.inertiaBlock[1];
+    const float length = m_spec.inertiaBlock[2];
+    const float k = m_mass / 12.0F;
     m_inertiaLocal = {k * (height * height + length * length), k * (width * width + length * length),
         k * (width * width + height * height)};
 
@@ -103,6 +104,7 @@ CarPhysics::CarPhysics(const CarSpec& spec)
         m_peakSlipAngle[w] = std::max(1.0F, m_spec.compound.lateral.peakSlip(m_staticLoad[w]));
     }
     m_engineSpeed = m_spec.idleRpm / kRpmPerRadPerSec;
+    buildLockTable();
 }
 
 glm::vec3 CarPhysics::wheelRestPosition(int wheel) const
@@ -165,6 +167,9 @@ void CarPhysics::reset(const glm::vec3& position, float heading, const GroundQue
         wheel = WheelState{};
     }
     m_steerAngle = 0.0F;
+    m_steerRate = 0.0F;
+    m_findPeakTime = 0.0F;
+    m_findPeakExtra = 0.0F;
     m_gear = 1;
     m_pendingGear = 1;
     m_shiftTimer = 0.0F;
@@ -189,17 +194,17 @@ void CarPhysics::setState(const glm::vec3& position, const glm::quat& orientatio
     m_angularVelocity = angularVelocity;
 }
 
-void CarPhysics::applyImpulse(const glm::vec3& impulse, const glm::vec3& worldPoint)
+void CarPhysics::applyImpulse(const glm::vec3& impulse, const glm::vec3& worldPoint, float angularScale)
 {
     m_velocity += impulse / m_mass;
-    m_angularVelocity += worldInverseInertia() * glm::cross(worldPoint - m_cgPosition, impulse);
+    m_angularVelocity += worldInverseInertia() * glm::cross(worldPoint - m_cgPosition, impulse) * angularScale;
 }
 
-float CarPhysics::impulseResponse(const glm::vec3& worldPoint, const glm::vec3& direction) const
+float CarPhysics::impulseResponse(const glm::vec3& worldPoint, const glm::vec3& direction, float angularScale) const
 {
     const glm::vec3 r = worldPoint - m_cgPosition;
     const glm::vec3 angular = glm::cross(worldInverseInertia() * glm::cross(r, direction), r);
-    return 1.0F / m_mass + glm::dot(direction, angular);
+    return 1.0F / m_mass + glm::dot(direction, angular) * angularScale;
 }
 
 float CarPhysics::resolveContact(
@@ -301,25 +306,220 @@ float CarPhysics::engineTorque(float rpm, float throttle) const
     return torque;
 }
 
+float CarPhysics::lateralCapability(float speed) const
+{
+    // After CCarDynamics' virtual at 0x82DE61B8: the axle loads from the
+    // weight split plus the aerodynamic downforce at this speed, then six
+    // rounds of summing each tyre's peak lateral force at its load and
+    // moving load to the outer tyre by that force times the height over the
+    // track. The game's height is the centre of mass less a per-axle value
+    // (vehicle +0x1E24, +0x2644) that has not been traced; the centre of
+    // mass height stands in for it.
+    const float q = (speed / kAeroReferenceSpeed) * (speed / kAeroReferenceSpeed);
+    const float weight = m_mass * kGravity;
+    const float frontAxle
+        = std::max(0.0F, weight * m_spec.frontWeight + m_spec.frontDownforceAt100MphLbf * kLbfToNewton * q);
+    const float rearAxle
+        = std::max(0.0F, weight * (1.0F - m_spec.frontWeight) + m_spec.rearDownforceAt100MphLbf * kLbfToNewton * q);
+    const auto tyreScale = [this](int wheel) {
+        const float width = wheel < 2 ? m_spec.frontTires.widthMm : m_spec.rearTires.widthMm;
+        return m_spec.compound.widthScale(width) * kLateralGripCalibration;
+    };
+    const auto force = [&](int wheel, float load) {
+        return m_spec.compound.lateral.peakFriction(load) * tyreScale(wheel) * load;
+    };
+    float frontOuter = frontAxle * 0.5F;
+    float frontInner = frontOuter;
+    float rearOuter = rearAxle * 0.5F;
+    float rearInner = rearOuter;
+    constexpr int kRounds = 6;
+    for (int round = 0; round < kRounds; ++round) {
+        const float frontForce = force(FrontLeft, frontOuter) + force(FrontRight, frontInner);
+        const float rearForce = force(RearLeft, rearOuter) + force(RearRight, rearInner);
+        const float frontShift = frontForce * m_spec.cgHeight / m_spec.frontTrack;
+        const float rearShift = rearForce * m_spec.cgHeight / m_spec.rearTrack;
+        frontOuter = frontAxle * 0.5F + frontShift;
+        frontInner = std::max(0.0F, frontAxle * 0.5F - frontShift);
+        rearOuter = rearAxle * 0.5F + rearShift;
+        rearInner = std::max(0.0F, rearAxle * 0.5F - rearShift);
+    }
+    const float total = force(FrontLeft, frontOuter) + force(FrontRight, frontInner) + force(RearLeft, rearOuter)
+        + force(RearRight, rearInner);
+    return total / m_mass;
+}
+
+void CarPhysics::buildLockTable()
+{
+    // 0x82DE7E70: at each sample speed, the kinematic steering angle for a
+    // turn at SteerSpeedSensitiveMaxGees times the tyres' lateral capability
+    // (tan = wheelbase * acceleration / speed^2), kept between
+    // SteerSpeedSensitiveMinMaxAngle and SteerMaxAngle.
+    const float maxAngle = m_spec.steerMaxAngleDeg * kDegToRad;
+    const float minAngle = m_spec.steerSpeedSensitiveMinAngleDeg * kDegToRad;
+    const float lower = std::min(minAngle, maxAngle);
+    const float upper = std::max(minAngle, maxAngle);
+    const float spacing = kLockTableTopSpeed / static_cast<float>(kLockTableSize - 1);
+    for (int i = 0; i < kLockTableSize; ++i) {
+        const float speed = std::max(static_cast<float>(i) * spacing, 0.01F);
+        const float angle = std::atan(
+            m_spec.steerSpeedSensitiveMaxGees * m_spec.wheelbase * lateralCapability(speed) / (speed * speed));
+        m_lockTable[static_cast<std::size_t>(i)] = std::clamp(angle, lower, upper);
+    }
+}
+
+float CarPhysics::lockAt(float speed) const
+{
+    // 0x82DF21B8: Catmull-Rom through the table, the end samples extended
+    // linearly, capped at the full lock.
+    const float spacing = kLockTableTopSpeed / static_cast<float>(kLockTableSize - 1);
+    const float position = std::clamp(speed, 0.0F, kLockTableTopSpeed) / spacing;
+    const int last = kLockTableSize - 1;
+    const int i0 = std::min(static_cast<int>(position), last);
+    const int i1 = std::min(i0 + 1, last);
+    const float t = position - std::floor(position);
+    const auto at = [this](int i) { return m_lockTable[static_cast<std::size_t>(i)]; };
+    const float p1 = at(i0);
+    const float p2 = at(i1);
+    const float p0 = i0 > 0 ? at(i0 - 1) : 2.0F * p1 - p2;
+    const float p3 = i1 < last ? at(i1 + 1) : 2.0F * p2 - p1;
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    const float value = p0 * (-0.5F * t3 + t2 - 0.5F * t) + p1 * (1.5F * t3 - 2.5F * t2 + 1.0F)
+        + p2 * (-1.5F * t3 + 2.0F * t2 + 0.5F * t) + p3 * (0.5F * t3 - 0.5F * t2);
+    return std::min(value, m_spec.steerMaxAngleDeg * kDegToRad);
+}
+
+float CarPhysics::normalisedSlip(int wheel) const
+{
+    // Slip angle over the tyre's peak slip angle; positive when the tyre
+    // pushes the car to the right, the way a right turn (positive steer)
+    // loads it. The game weighs a per-wheel value by load that its tunable
+    // NormRearSlipAngleToCountersteer names a normalised slip angle; that
+    // the value is exactly this ratio is inferred from that name and the
+    // 1.05 threshold the steering compares it with.
+    const WheelState& state = m_wheels[static_cast<std::size_t>(wheel)];
+    return state.relaxedSlipAngle * kRadToDeg / m_peakSlipAngle[static_cast<std::size_t>(wheel)];
+}
+
+void CarPhysics::steerTowards(float target, float rate, float acceleration, float dt)
+{
+    const float difference = target - m_steerAngle;
+    if ((m_steerRate > 0.0F) != (difference > 0.0F)) {
+        m_steerRate = 0.0F;
+    }
+    m_steerRate += (difference >= 0.0F ? 1.0F : -1.0F) * acceleration * dt;
+    m_steerRate = std::clamp(m_steerRate, -rate, rate);
+    if (std::abs(m_steerRate) * dt > std::abs(difference)) {
+        m_steerRate = difference / dt;
+    }
+    m_steerAngle += m_steerRate * dt;
+}
+
 void CarPhysics::updateSteering(const CarControls& controls, float dt)
 {
-    float maxAngle = m_spec.steerMaxAngleFilteredDeg;
-    // Speed-sensitive steering: at speed, limit the angle to what corners at
-    // SteerSpeedSensitiveMaxGees plus the tyres' peak slip angle, so a full
-    // stick deflection does not spin the car.
-    const float speed = std::abs(forwardSpeed());
-    const float slow = m_spec.steerSpeedSensitiveSlowMph * kMphToMs;
-    if (m_assists.speedSensitiveSteering && speed > slow) {
-        const float lateral = m_spec.steerSpeedSensitiveMaxGees * kGravity;
-        const float kinematic = std::atan(m_spec.wheelbase * lateral / (speed * speed)) * kRadToDeg;
-        const float limited
-            = std::max(m_spec.steerSpeedSensitiveMinAngleDeg, kinematic + m_peakSlipAngle[FrontLeft] * 0.5F);
-        maxAngle = std::min(maxAngle, limited);
+    const float input = std::clamp(controls.steer, -1.0F, 1.0F);
+    const float turnRate = m_spec.steerRateTurning * kDegToRad;
+    const float straightenRate = m_spec.steerRateStraighten * kDegToRad;
+    const float accelerationTime = std::max(m_spec.steerAccelTimeToMaxRate, 1e-4F);
+    const float current = m_steerAngle;
+
+    if (!m_assists.speedSensitiveSteering) {
+        const float target = input * m_spec.steerMaxAngleFilteredDeg * kDegToRad;
+        const bool turningIn = std::abs(target) > std::abs(current) && target * current >= 0.0F;
+        m_steerAngle = moveTowards(current, target, (turningIn ? turnRate : straightenRate) * dt);
+        m_steerRate = 0.0F;
+    } else {
+        // Wheel loads weight the per-axle slips (0x82DF9620).
+        const auto axleSlip = [this](int left) {
+            const float loadLeft = std::max(0.0F, m_wheels[left].load);
+            const float loadRight = std::max(0.0F, m_wheels[left + 1].load);
+            constexpr float kMinLoad = 1e-7F;
+            return (normalisedSlip(left) * loadLeft + normalisedSlip(left + 1) * loadRight)
+                / std::max(loadLeft + loadRight, kMinLoad);
+        };
+        const float frontSlip = axleSlip(FrontLeft);
+        const float rearSlip = axleSlip(RearLeft);
+        const float speed = forwardSpeed();
+        const float maxAngle = m_spec.steerMaxAngleDeg * kDegToRad;
+        // The game checks the second front wheel when steering right and the
+        // first otherwise; which of its wheels is left is not traced, so the
+        // wheel on the inside of the turn is taken, with its slip opposing
+        // the steering.
+        const bool frontOpposes = current > 0.0F ? normalisedSlip(FrontRight) <= 0.0F : normalisedSlip(FrontLeft) > 0.0F;
+        const bool countersteer = std::abs(rearSlip) > m_spec.normRearSlipAngleToCountersteer;
+        constexpr float kMinAssistSpeed = 2.0F;
+        const bool releasing = (current > 0.0F && input <= 0.0F) || (current < 0.0F && input >= 0.0F)
+            || (current == 0.0F && input == 0.0F);
+
+        if (speed < kMinAssistSpeed || frontOpposes || countersteer || releasing) {
+            // The plain path: the stick's share of the full lock.
+            const float target = input * maxAngle;
+            if (countersteer) {
+                const float rate = m_spec.steerRateCountersteer * kDegToRad;
+                const float difference = target - current;
+                m_steerRate = std::abs(difference) > rate * dt ? std::copysign(rate, difference) : difference / dt;
+                m_steerAngle += m_steerRate * dt;
+            } else {
+                const bool turningIn
+                    = (current >= 0.0F && target > current) || (current <= 0.0F && target < current);
+                const float rate = turningIn ? turnRate : straightenRate;
+                steerTowards(target, rate, rate / accelerationTime, dt);
+            }
+            m_findPeakTime = 0.0F;
+            m_findPeakExtra = 0.0F;
+        } else {
+            const float slow = m_spec.steerSpeedSensitiveSlowMph * kMphToMs;
+            const float fast = m_spec.steerSpeedSensitiveFastMph * kMphToMs;
+            const float lowSpeed = std::min(slow, fast);
+            const float highSpeed = std::max(slow, fast);
+            const float minAngle = m_spec.steerSpeedSensitiveMinAngleDeg * kDegToRad;
+            const float lock
+                = std::clamp(lockAt(speed), std::min(minAngle, maxAngle), std::max(minAngle, maxAngle));
+            const float target = input * lock;
+
+            // The turning rate shrinks with the lock the table allows, and
+            // by SteerSpeedSensitiveFastRateScale towards the fast speed.
+            const float lockRatio = lockAt(std::clamp(speed, lowSpeed, highSpeed)) / lockAt(slow);
+            float rateScale = 1.0F;
+            if (speed >= highSpeed) {
+                rateScale = m_spec.steerSpeedSensitiveFastRateScale;
+            } else if (speed > lowSpeed) {
+                rateScale = 1.0F
+                    + (speed - lowSpeed) / (highSpeed - lowSpeed) * (m_spec.steerSpeedSensitiveFastRateScale - 1.0F);
+            }
+            float rate = lockRatio * turnRate * rateScale;
+
+            // Holding the stick at full lock with the front tyres short of
+            // their peak adds lock at SteerAngVelDynFindPeak.
+            constexpr float kFullInput = 0.976F;
+            constexpr float kFrontPeak = 1.05F;
+            const bool fullInput = std::abs(input) >= kFullInput;
+            if (fullInput) {
+                const bool atLock = std::abs(current) >= lock - rate * dt;
+                if (atLock && std::abs(frontSlip) < kFrontPeak) {
+                    m_findPeakTime += dt;
+                    rate = std::min(rate, m_spec.steerRateDynFindPeak * kDegToRad);
+                    m_findPeakExtra += (target >= 0.0F ? 1.0F : -1.0F) * rate * dt;
+                } else {
+                    m_findPeakTime = 0.0F;
+                }
+            } else {
+                m_findPeakTime = 0.0F;
+                m_findPeakExtra = 0.0F;
+            }
+            float goal = std::clamp(m_findPeakExtra + target, -maxAngle, maxAngle);
+            if (fullInput && ((input > 0.0F && goal < current) || (input < 0.0F && goal > current))) {
+                goal = current;
+            }
+            // Past SteerFrictionClamp the front tyres get no more lock than
+            // they have.
+            if (std::abs(frontSlip) >= m_spec.steerFrictionClamp && current * frontSlip > 0.0F) {
+                const float hold = std::max(std::abs(current), minAngle);
+                goal = std::clamp(goal, -hold, hold);
+            }
+            steerTowards(goal, rate, rate / accelerationTime, dt);
+        }
     }
-    const float target = std::clamp(controls.steer, -1.0F, 1.0F) * maxAngle * kDegToRad;
-    const bool turningIn = std::abs(target) > std::abs(m_steerAngle) && target * m_steerAngle >= 0.0F;
-    const float rate = (turningIn ? m_spec.steerRateTurning : m_spec.steerRateStraighten) * kDegToRad;
-    m_steerAngle = moveTowards(m_steerAngle, target, rate * dt);
 
     // Ackermann geometry: the inner wheel turns tighter.
     const float angle = m_steerAngle;

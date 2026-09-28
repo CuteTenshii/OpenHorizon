@@ -46,6 +46,10 @@ struct TireFrictionCurve {
     float friction(float slip, float loadN) const;
     /// The slip at which the blended curve peaks for `loadN`.
     float peakSlip(float loadN) const;
+    /// Peak friction for `loadN`: each curve's highest value, blended by
+    /// load between the two curves' loads and clamped at both ends, as the
+    /// game's lookup at 0x82DD1678 blends its per-curve peaks.
+    float peakFriction(float loadN) const;
 };
 
 struct TireCompound {
@@ -136,6 +140,10 @@ struct CarSpec {
     int classId = 0;
     float performanceIndex = 0.0F;
 
+    /// List_UpgradeCarBodyWeight.Mass of the stock body; the executable reads
+    /// it with CMHeight, CMBackFront and BlockDimX/Y/Z into the car's rigid
+    /// body (loader at 0x82CA9A10). Data_Car.CurbWeight (in 100 kg) agrees
+    /// for 173 of the 176 cars and is the fallback.
     float massKg = 1400.0F;
     /// Share of the weight on the front axle.
     float frontWeight = 0.55F;
@@ -145,8 +153,23 @@ struct CarSpec {
     /// Bounds of the body in car space (x right, y up, z forward), metres.
     std::array<float, 3> boundsMin{-0.9F, 0.0F, -2.2F};
     std::array<float, 3> boundsMax{0.9F, 1.3F, 2.2F};
-    /// Height of the centre of mass above the ground at ride height.
+    /// Height of the centre of mass above the ground at ride height
+    /// (List_UpgradeCarBodyWeight.CMHeight).
     float cgHeight = 0.5F;
+    /// Size of the box the game gives the body for its moments of inertia
+    /// (List_UpgradeCarBodyWeight.BlockDimX/Y/Z: width, height, length).
+    std::array<float, 3> inertiaBlock{1.9F, 0.9F, 4.5F};
+
+    /// One of the spheres `physics/maxdata.xml` lists as the body's collision
+    /// shape, in car space (the file's coordinates less
+    /// BottomCenterWheelbasePos, as the car model is placed). Flags 2 marks
+    /// the body spheres; flags 1 the 5 cm corner points.
+    struct CollisionSphere {
+        std::array<float, 3> centre{};
+        float radius = 0.0F;
+        int flags = 0;
+    };
+    std::vector<CollisionSphere> collisionSpheres;
 
     // Engine
     std::string engineName;
@@ -222,6 +245,19 @@ struct CarSpec {
     float steerSpeedSensitiveMinAngleDeg = 5.0F;
     float steerSpeedSensitiveSlowMph = 1.0F;
     float steerSpeedSensitiveFastMph = 120.0F;
+    /// Scale on the turning rate at and above the fast speed.
+    float steerSpeedSensitiveFastRateScale = 1.0F;
+    /// Degrees per second when countersteering and when searching for the
+    /// front tyres' peak at full lock.
+    float steerRateCountersteer = 105.0F;
+    float steerRateDynFindPeak = 10.0F;
+    /// Seconds for the steering to reach its full rate from rest.
+    float steerAccelTimeToMaxRate = 0.01F;
+    /// From media/physics/physicssettings.ini (PhysicsSettings): the
+    /// normalised rear slip above which the steering countersteers, and the
+    /// normalised front slip above which it stops adding lock.
+    float normRearSlipAngleToCountersteer = 3.0F;
+    float steerFrictionClamp = 1.2F;
     float tcsSlipTakeoff = 33.0F;
     float tcsSlipMoving = 0.5F;
 
@@ -245,6 +281,27 @@ struct CarSpec {
     /// Engine torque at full throttle, N·m, including the game's trim.
     float fullThrottleTorque(float rpm) const;
 };
+
+/// Car-to-car collision settings from `media/physics/physicssettings.ini`,
+/// as the game binds them (loader at 0x82CA0CE0, defaults set by the
+/// constructor at 0x82E08010, used where a key is absent).
+///
+/// The disc's file spells one key "CarCarResitution", which does not match
+/// the name the executable binds ("CarCarRestitution"), so the game keeps
+/// that value's default of -0.2.
+struct CollisionSettings {
+    float carCarRestitution = -0.2F;
+    float defaultRestitution = 0.0F;
+    float playerTorqueScale = 0.0F;
+    float trafficTorqueScale = 0.3F;
+    float raceCarTorqueScale = 0.3F;
+    float raceCarTorqueScaleInRace = 0.2F;
+    float raceCarTorqueScaleVsTrafficInRace = 0.2F;
+};
+
+/// Reads the collision settings; keys the file does not give keep the
+/// executable's defaults.
+CollisionSettings loadCollisionSettings(const Vfs& vfs);
 
 /// Reads the stock specification of car `carId` (`Data_Car.Id`) from the
 /// game database, and the body dimensions from the car's own archive when

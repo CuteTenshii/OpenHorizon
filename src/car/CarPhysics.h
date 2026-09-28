@@ -55,8 +55,10 @@ struct DrivingAssists {
     bool tractionControl = true;
     bool stabilityControl = true;
     bool automaticGearbox = true;
-    /// Limits the steering angle at speed to what the tyres can use, as the
-    /// game does for pad players; wheel users turn it off.
+    /// The game's pad steering (CCarDynamics, 0x82DF9620): the stick asks
+    /// for a share of a speed-dependent lock the tyres can use. Off, the
+    /// stick maps straight onto SteerMaxAngleFiltered, which the AI drivers
+    /// and the performance harness rely on.
     bool speedSensitiveSteering = true;
 };
 
@@ -140,8 +142,9 @@ public:
     float wheelRadius(int wheel) const { return wheel < 2 ? m_spec.frontTires.radius() : m_spec.rearTires.radius(); }
     bool allWheelsOffGround() const;
 
-    /// Adds an impulse at a world point, for collisions.
-    void applyImpulse(const glm::vec3& impulse, const glm::vec3& worldPoint);
+    /// Adds an impulse at a world point, for collisions. `angularScale`
+    /// scales the turning part, as the game's collision torque scales do.
+    void applyImpulse(const glm::vec3& impulse, const glm::vec3& worldPoint, float angularScale = 1.0F);
     /// Resolves the body touching a static surface at `point` with surface
     /// normal `normal` (pointing out of the surface) and penetration
     /// `depth`: an impulse that stops the approach, with Coulomb friction
@@ -161,7 +164,7 @@ public:
     /// How much a unit impulse along `direction` at `worldPoint` changes the
     /// point's velocity along it: 1/m plus the rotational term. Two-body
     /// contacts divide by the sum of both bodies' responses.
-    float impulseResponse(const glm::vec3& worldPoint, const glm::vec3& direction) const;
+    float impulseResponse(const glm::vec3& worldPoint, const glm::vec3& direction, float angularScale = 1.0F) const;
     float mass() const { return m_mass; }
     /// Centre of mass in car space.
     const glm::vec3& centreOfMass() const { return m_cgLocal; }
@@ -183,7 +186,19 @@ private:
         float slope = 0.0F;
     };
 
+    /// Entries of the speed-sensitive lock table: the game samples it at
+    /// 32 speeds from 0 to 150 mph (0x82DE7E70).
+    static constexpr int kLockTableSize = 32;
+    static constexpr float kLockTableTopSpeed = 67.056F;
+
     void updateSteering(const CarControls& controls, float dt);
+    void buildLockTable();
+    float lateralCapability(float speed) const;
+    float lockAt(float speed) const;
+    float normalisedSlip(int wheel) const;
+    /// Moves the steering's angular velocity towards `target` within `rate`
+    /// and `acceleration` (0x82DE4990) and integrates the angle.
+    void steerTowards(float target, float rate, float acceleration, float dt);
     void updateGearbox(const CarControls& controls, float dt);
     void computeSuspension(const GroundQuery& ground, float dt, glm::vec3& force, glm::vec3& torque);
     void computeAero(glm::vec3& force, glm::vec3& torque) const;
@@ -222,6 +237,12 @@ private:
     std::array<Contact, kWheels> m_contacts{};
     bool m_clutchLocked = false;
     float m_steerAngle = 0.0F;
+    /// Steering angular velocity (rad/s) and the find-peak state: the time
+    /// spent at full lock and the lock added beyond the table.
+    float m_steerRate = 0.0F;
+    float m_findPeakTime = 0.0F;
+    float m_findPeakExtra = 0.0F;
+    std::array<float, kLockTableSize> m_lockTable{};
 
     int m_gear = 1;
     int m_pendingGear = 1;

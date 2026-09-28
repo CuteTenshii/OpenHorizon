@@ -19,9 +19,6 @@ namespace {
 
 constexpr float kPi = 3.14159265F;
 constexpr float kMsToKmh = 3.6F;
-/// Keyboard steering eases towards full lock and back, as a stick would.
-constexpr float kKeySteerRate = 2.5F;
-constexpr float kKeyReturnRate = 4.0F;
 /// How long the results stay up after the player finishes.
 constexpr float kResultsSeconds = 8.0F;
 const glm::vec4 kHudText{0.96F, 0.96F, 0.94F, 1.0F};
@@ -46,11 +43,6 @@ constexpr float kFestivalDriverSpeed = 27.0F;
 /// Caps on cars kept at once, for the frame rate.
 constexpr int kMaxTrafficCars = 12;
 constexpr int kMaxFestivalCars = 4;
-
-float approach(float value, float target, float rate)
-{
-    return value < target ? std::min(value + rate, target) : std::max(value - rate, target);
-}
 
 std::string formatTime(float seconds)
 {
@@ -349,7 +341,7 @@ void Game::spawnPlayer()
     }
 }
 
-CarControls Game::readPlayerControls(float dt)
+CarControls Game::readPlayerControls(float /*dt*/)
 {
     const InputState& in = m_window.input();
     CarControls controls;
@@ -365,8 +357,10 @@ CarControls Game::readPlayerControls(float dt)
     if (m_cameraMode == CameraMode::Free) {
         keyThrottle = keyBrake = keySteer = 0.0F;
     }
-    const bool returning = keySteer == 0.0F || keySteer * m_keyboardSteer < 0.0F;
-    m_keyboardSteer = approach(m_keyboardSteer, keySteer, (returning ? kKeyReturnRate : kKeySteerRate) * dt);
+    // A key is a stick pushed fully over. The game smooths only the pedals
+    // and handbrake (physicssettings.ini ControllerDelays); steering goes to
+    // the car raw, whose own steering limits the lock and its rate.
+    m_keyboardSteer = keySteer;
 
     controls.throttle = std::max(keyThrottle, in.axis(Axis::RightTrigger));
     controls.brake = std::max(keyBrake, in.axis(Axis::LeftTrigger));
@@ -532,18 +526,69 @@ void Game::updateAudio(float dt)
 
 void Game::collideVehicles()
 {
+    // Collision tuning from media/physics/physicssettings.ini, read once.
+    static const CollisionSettings settings = loadCollisionSettings(m_vfs);
+    // No body friction between cars: surfaceTypes.xml has no Car/Car pair
+    // and the code applying the Default one to car bodies was not found.
+    // Applied per sphere pair it glued cars that pressed against each
+    // other, stopping race packs at the first corner.
+    // The game's restitution values for cars are zero or negative (-0.2 car
+    // to car); what it does with a negative value is not traced, so any
+    // value at or below zero is taken as no rebound.
+    const float bounce = std::max(0.0F, settings.carCarRestitution);
+    // How much of a hit turns each car, by the settings' names (Player,
+    // Traffic, RaceCar, RaceCarInRace, RaceCarVsTrafficInRace
+    // TorqueScale); the code applying them has not been traced.
+    const auto torqueScale = [&](const Vehicle& self, const Vehicle& other) {
+        switch (self.role) {
+        case Vehicle::Role::Player:
+            return settings.playerTorqueScale;
+        case Vehicle::Role::Traffic:
+            return settings.trafficTorqueScale;
+        case Vehicle::Role::Racer:
+        case Vehicle::Role::Festival:
+            break;
+        }
+        if (!m_race) {
+            return settings.raceCarTorqueScale;
+        }
+        return other.role == Vehicle::Role::Traffic ? settings.raceCarTorqueScaleVsTrafficInRace
+                                                    : settings.raceCarTorqueScaleInRace;
+    };
+    // The body spheres of the car's maxdata.xml (flags 2), or the generated
+    // ones when the file has none.
+    const auto bodySpheres = [](const Vehicle& vehicle) {
+        std::vector<BodySphere> spheres;
+        for (const CarSpec::CollisionSphere& s : vehicle.spec->collisionSpheres) {
+            if (s.flags == 2) {
+                spheres.push_back({glm::vec3(s.centre[0], s.centre[1], s.centre[2]), s.radius});
+            }
+        }
+        return spheres.empty() ? vehicle.spheres : spheres;
+    };
+    // Share of each overlap removed per step.
+    constexpr float kPushOut = 0.3F;
+
     for (std::size_t a = 0; a < m_vehicles.size(); ++a) {
         for (std::size_t b = a + 1; b < m_vehicles.size(); ++b) {
-            CarPhysics& carA = *m_vehicles[a]->physics;
-            CarPhysics& carB = *m_vehicles[b]->physics;
+            Vehicle& vehicleA = *m_vehicles[a];
+            Vehicle& vehicleB = *m_vehicles[b];
+            CarPhysics& carA = *vehicleA.physics;
+            CarPhysics& carB = *vehicleB.physics;
             if (glm::length(carA.position() - carB.position()) > 8.0F) {
                 continue;
             }
+            const float turnA = torqueScale(vehicleA, vehicleB);
+            const float turnB = torqueScale(vehicleB, vehicleA);
+            const float inverseMassA = 1.0F / carA.mass();
+            const float inverseMassB = 1.0F / carB.mass();
             const glm::mat4 ta = carA.transform();
             const glm::mat4 tb = carB.transform();
-            for (const BodySphere& sa : m_vehicles[a]->spheres) {
+            const std::vector<BodySphere> spheresA = bodySpheres(vehicleA);
+            const std::vector<BodySphere> spheresB = bodySpheres(vehicleB);
+            for (const BodySphere& sa : spheresA) {
                 const glm::vec3 ca = glm::vec3(ta * glm::vec4(sa.centre, 1.0F));
-                for (const BodySphere& sb : m_vehicles[b]->spheres) {
+                for (const BodySphere& sb : spheresB) {
                     const glm::vec3 cb = glm::vec3(tb * glm::vec4(sb.centre, 1.0F));
                     const glm::vec3 offset = ca - cb;
                     const float distance = glm::length(offset);
@@ -556,15 +601,20 @@ void Game::collideVehicles()
                     const float approachSpeed
                         = glm::dot(carA.worldPointVelocity(point) - carB.worldPointVelocity(point), normal);
                     if (approachSpeed < 0.0F) {
+                        // Both masses and inertias enter through the
+                        // response, so a heavy car barely yields to a light
+                        // one.
                         const float response
-                            = carA.impulseResponse(point, normal) + carB.impulseResponse(point, normal);
-                        const float impulse = -1.1F * approachSpeed / response;
-                        carA.applyImpulse(normal * impulse, point);
-                        carB.applyImpulse(-normal * impulse, point);
+                            = carA.impulseResponse(point, normal, turnA) + carB.impulseResponse(point, normal, turnB);
+                        const float impulse = -(1.0F + bounce) * approachSpeed / response;
+                        carA.applyImpulse(normal * impulse, point, turnA);
+                        carB.applyImpulse(-normal * impulse, point, turnB);
                     }
-                    const float depth = reach - distance;
-                    carA.translate(normal * (depth * 0.3F));
-                    carB.translate(-normal * (depth * 0.3F));
+                    // The lighter car gives way more.
+                    const float depth = (reach - distance) * kPushOut;
+                    const float shareA = inverseMassA / (inverseMassA + inverseMassB);
+                    carA.translate(normal * (depth * shareA));
+                    carB.translate(-normal * (depth * (1.0F - shareA)));
                 }
             }
         }
@@ -649,6 +699,9 @@ void Game::startRace(const RaceEvent& event)
     m_lineGuide = std::make_unique<AiDriver>(m_race->line(), *player().spec, 100, 0.0F);
     if (m_options.autopilot) {
         player().ai = std::make_unique<AiDriver>(m_race->line(), *player().spec, 90, 0.0F);
+        // The AI's speed profile assumes the full lock, as for every other
+        // AI car; the pad assist would cut it to a few degrees at speed.
+        player().physics->assists().speedSensitiveSteering = false;
     }
     m_timeOfDay->setSeconds(event.timeOfDay);
     m_resultsTime = 0.0F;
@@ -668,6 +721,7 @@ void Game::endRace()
     m_vehicles.resize(1);
     m_collision->setActiveRoute(-1);
     player().ai.reset();
+    player().physics->assists().speedSensitiveSteering = true;
     m_lineGuide.reset();
     m_race.reset();
 }
