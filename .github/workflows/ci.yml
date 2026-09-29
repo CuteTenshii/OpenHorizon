@@ -39,6 +39,51 @@ jobs:
           SDL_AUDIO_DRIVER: dummy
         run: ctest --test-dir build --output-on-failure -LE 'perf|slow'
 
+  windows:
+    name: Windows build and tests (MSVC)
+    # Windows Server 2025 with Visual Studio and vcpkg (C:\vcpkg) installed.
+    runs-on: windows-latest
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      # FFmpeg and shaderc take most of an hour to build from source; the
+      # built packages are reused until vcpkg.json changes.
+      - uses: actions/cache@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-x64-windows-${{ hashFiles('vcpkg.json') }}
+
+      # vcpkg.json pins a builtin-baseline, which vcpkg looks up in its own
+      # git history; the image's clone may be shallow.
+      - name: Prepare vcpkg
+        shell: pwsh
+        run: |
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force "$env:VCPKG_DEFAULT_BINARY_CACHE" | Out-Null
+          if ((git -C "$env:VCPKG_INSTALLATION_ROOT" rev-parse --is-shallow-repository) -eq "true") {
+            git -C "$env:VCPKG_INSTALLATION_ROOT" fetch --unshallow
+          } else {
+            git -C "$env:VCPKG_INSTALLATION_ROOT" fetch origin
+          }
+
+      # The preset builds with Ninja and cl, which need the Visual Studio
+      # developer environment.
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: cmake --preset windows-release -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+
+      - name: Build
+        run: cmake --build --preset windows-release
+
+      - name: Test
+        env:
+          SDL_VIDEO_DRIVER: offscreen
+          SDL_AUDIO_DRIVER: dummy
+        run: ctest --preset windows-release -LE "perf|slow"
+
   format:
     name: Formatting of changed lines
     if: github.event_name == 'pull_request'
