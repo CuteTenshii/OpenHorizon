@@ -195,6 +195,17 @@ public:
     /// chunks); tiles holding changed chunks are rebuilt, keeping their old
     /// version on screen until the new one is ready.
     void setHiddenChunks(const std::vector<bool>& hidden);
+    /// Shows the event props (world::EventPropFilter::route) of route
+    /// `routeId` in place of the current route's, rebuilding the tiles that
+    /// change as setHiddenChunks() does. The renderer starts on route 0,
+    /// free roam's.
+    void setEventRoute(int routeId);
+    /// The route free roam loads (world::Placement::eventRoutes).
+    static constexpr int kFreeRoamRoute = 0;
+    int eventRoute() const { return m_eventRoute; }
+    /// Chunks of event props the tiles include under the current route and
+    /// hidden chunks, all levels of detail.
+    std::size_t eventChunksIncluded() const { return m_eventChunksIncluded; }
     /// Starts drawing `chunks` as one movable object, built in the
     /// background; returns its handle.
     int addDynamic(std::vector<std::uint32_t> chunks);
@@ -316,8 +327,14 @@ private:
     void bindTexture(GLuint unit, GLuint texture);
     void bindSamplers(const TrackPrograms::Program& program, const world::ShadedMesh::Batch& batch);
 
+    /// Applies the event route and the hidden chunks to the grid.
+    void applyFilters();
+
     const world::TrackWorld& m_world;
     JobPool& m_jobs;
+    int m_eventRoute = kFreeRoamRoute;
+    std::vector<bool> m_hiddenChunks;
+    std::size_t m_eventChunksIncluded = 0;
     world::WorldTileGrid m_grid;
     std::vector<TileState> m_tiles;
     std::unordered_map<std::uint32_t, TextureSlot> m_textures;

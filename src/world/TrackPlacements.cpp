@@ -19,8 +19,6 @@ constexpr std::uint32_t kMaxZoneEntries = 1'000'000;
 constexpr std::size_t kRecordFixedBytes = 52;
 constexpr std::size_t kRecordPaddingBytes = 16;
 constexpr std::size_t kBlockTrailerBytes = 32;
-/// A set's name lies within this many bytes from the start.
-constexpr std::size_t kScatterNameEnd = 0x80;
 /// Block id of props that only an event or a script shows.
 constexpr std::uint32_t kEventBlock = 0xFFFFFFFF;
 
@@ -32,12 +30,6 @@ void skipSection(BeReader& r, std::size_t bytesPerEntry)
         r.fail(std::format("implausible section size {}", count));
     }
     r.skip(static_cast<std::size_t>(count) * bytesPerEntry);
-}
-
-bool containsText(ByteView data, std::string_view text)
-{
-    const auto* first = reinterpret_cast<const char*>(data.data());
-    return std::string_view(first, data.size()).find(text) != std::string_view::npos;
 }
 
 } // namespace
@@ -61,9 +53,9 @@ bool Placement::belongsToEvent(std::string_view eventId) const
     return eventTag.size() == eventId.size() || eventTag[eventId.size()] == '_';
 }
 
-bool Placement::belongsToRace(std::string_view eventId, int routeId) const
+bool Placement::onRoute(int routeId) const
 {
-    return belongsToEvent(eventId) || std::find(eventRoutes.begin(), eventRoutes.end(), routeId) != eventRoutes.end();
+    return eventRoutes.empty() || std::find(eventRoutes.begin(), eventRoutes.end(), routeId) != eventRoutes.end();
 }
 
 std::vector<std::pair<std::uint32_t, Placement>> TrackPlacements::readZone(ByteView zone)
@@ -188,7 +180,7 @@ std::optional<TrackPlacements> TrackPlacements::load(
     }
 
     // Procedural sets, likewise stored several times each. Only the start of
-    // a file is read to tell a model set from the others.
+    // a file is read to tell a model set from the others by its kind.
     const std::vector<std::size_t> sets = distinctEntries(archive, ".pgeo");
     struct ReadSet {
         bool isModelSet = false;
@@ -202,7 +194,7 @@ std::optional<TrackPlacements> TrackPlacements::load(
         ReadSet& read = readSets[s];
         const lzx::ZipEntry& entry = entries[sets[s]];
         try {
-            read.isModelSet = containsText(readEntryPrefix(archive, entry, kScatterNameEnd), kModelSetName);
+            read.isModelSet = scatterSetKind(readEntryPrefix(archive, entry, kScatterKindEnd)) == kModelSetKind;
             if (read.isModelSet) {
                 read.set = readScatterSet(readEntry(archive, entry));
                 read.set->entry = static_cast<std::uint32_t>(sets[s]);

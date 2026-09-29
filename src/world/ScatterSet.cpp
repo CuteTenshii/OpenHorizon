@@ -8,12 +8,21 @@ namespace fh::world {
 
 namespace {
 
+constexpr std::size_t kKindOffset = 0x30;
+constexpr std::size_t kNameLengthOffset = 0x3C;
 constexpr std::size_t kExtraCountOffset = 0x40;
+constexpr std::size_t kHeaderEntryCountOffset = 0x44;
 constexpr std::size_t kFileSizeOffset = 0x48;
 constexpr std::size_t kMeshCountOffset = 0x54;
-constexpr std::size_t kNameOffset = 0x60;
-constexpr std::size_t kNameBytes = 0x1C;
-constexpr std::size_t kMeshTableOffset = 0x80;
+constexpr std::size_t kEventBlockFlagOffset = 0x58;
+constexpr std::size_t kDataOffset = 0x60;
+constexpr std::size_t kEventBlockBytes = 56;
+constexpr std::size_t kEventTagOffset = 4;
+constexpr std::size_t kEventTagBytes = 32;
+constexpr std::size_t kEventRouteCountOffset = 36;
+constexpr std::size_t kEventRoutesOffset = 37;
+constexpr std::uint32_t kEventBlockId = 0xFFFFFFFF;
+constexpr std::uint32_t kMaxNameLength = 256;
 constexpr std::size_t kMeshBytes = 64;
 constexpr std::size_t kMeshPathLength = 32;
 constexpr std::size_t kMeshSlots = 36;
@@ -87,10 +96,18 @@ std::array<float, 3> levelRanges(int levels, float firstSwitch, float secondSwit
 
 } // namespace
 
+std::optional<std::uint32_t> scatterSetKind(ByteView prefix)
+{
+    if (prefix.size() < kScatterKindEnd || std::memcmp(prefix.data(), "OEGP", 4) != 0) {
+        return std::nullopt;
+    }
+    return loadBe32(prefix.data() + kKindOffset);
+}
+
 ScatterSet readScatterSet(ByteView data)
 {
     const Reader r(data);
-    if (data.size() < kMeshTableOffset || std::memcmp(data.data(), "OEGP", 4) != 0) {
+    if (data.size() < kDataOffset || std::memcmp(data.data(), "OEGP", 4) != 0) {
         throw DataError("not a procedural placement set");
     }
     if (r.u32(kFileSizeOffset) != data.size()) {
@@ -101,16 +118,43 @@ ScatterSet readScatterSet(ByteView data)
     if (meshCount == 0 || meshCount > kMaxMeshes || extraCount > kMaxExtra) {
         throw DataError("implausible mesh or entry counts");
     }
+    // None of Colorado's 2031 model sets has header entries (202 sets of
+    // kind 5 do), whose own layout is not known.
+    if (r.u32(kHeaderEntryCountOffset) != 0) {
+        throw DataError("the set has header entries");
+    }
     ScatterSet set;
-    const auto nameStart = data.begin() + kNameOffset;
-    const auto nameEnd = std::find(nameStart, nameStart + kNameBytes, std::uint8_t{0});
-    set.name.assign(nameStart, nameEnd);
+    std::size_t nameOffset = kDataOffset;
+    if (r.u32(kEventBlockFlagOffset) != 0) {
+        if (r.u32(kDataOffset) != kEventBlockId) {
+            throw DataError("the set's event block is not one");
+        }
+        r.need(kDataOffset, kEventBlockBytes);
+        const auto tag = data.begin() + kDataOffset + kEventTagOffset;
+        set.eventTag.assign(tag, std::find(tag, tag + kEventTagBytes, std::uint8_t{0}));
+        const std::size_t routeCount = data[kDataOffset + kEventRouteCountOffset];
+        if (kEventRoutesOffset + routeCount > kEventBlockBytes) {
+            throw DataError("the set's event block lists too many routes");
+        }
+        const auto routes = data.begin() + kDataOffset + kEventRoutesOffset;
+        set.eventRoutes.assign(routes, routes + static_cast<std::ptrdiff_t>(routeCount));
+        set.eventProp = true;
+        nameOffset += kEventBlockBytes;
+    }
+    const std::uint32_t nameLength = r.u32(kNameLengthOffset);
+    if (nameLength > kMaxNameLength) {
+        throw DataError("implausible name length {}", nameLength);
+    }
+    r.need(nameOffset, nameLength);
+    const auto nameStart = data.begin() + static_cast<std::ptrdiff_t>(nameOffset);
+    set.name.assign(nameStart, std::find(nameStart, nameStart + nameLength, std::uint8_t{0}));
+    const std::size_t meshTable = alignUp(nameOffset + nameLength, 16);
 
     // Mesh entries: which carry draw records, and how many levels each has.
     std::vector<int> levels(meshCount, 0);
     std::vector<std::uint32_t> pathLengths(meshCount, 0);
     for (std::uint32_t m = 0; m < meshCount; ++m) {
-        const std::size_t entry = kMeshTableOffset + static_cast<std::size_t>(m) * kMeshBytes;
+        const std::size_t entry = meshTable + static_cast<std::size_t>(m) * kMeshBytes;
         pathLengths[m] = r.u32(entry + kMeshPathLength);
         if (pathLengths[m] > kMaxPathLength) {
             throw DataError("mesh {} has an implausible path length", m);
@@ -125,7 +169,7 @@ ScatterSet readScatterSet(ByteView data)
             }
         }
     }
-    std::size_t offset = kMeshTableOffset + static_cast<std::size_t>(meshCount) * kMeshBytes;
+    std::size_t offset = meshTable + static_cast<std::size_t>(meshCount) * kMeshBytes;
     set.meshDraws.resize(meshCount);
     for (std::uint32_t m = 0; m < meshCount; ++m) {
         for (int level = 0; level < levels[m]; ++level) {
@@ -200,6 +244,9 @@ ScatterSet readScatterSet(ByteView data)
             const glm::vec3 z = -r.vec3(record + 2 * kAxisStride);
             instance.placement.rows = {x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z};
             instance.placement.ranges = ranges;
+            instance.placement.eventProp = set.eventProp;
+            instance.placement.eventTag = set.eventTag;
+            instance.placement.eventRoutes = set.eventRoutes;
             set.instances.push_back(std::move(instance));
         }
     }

@@ -153,10 +153,9 @@ EventPropFilter EventPropFilter::all()
     return filter;
 }
 
-EventPropFilter EventPropFilter::race(std::string eventId, int routeId)
+EventPropFilter EventPropFilter::route(int routeId)
 {
     EventPropFilter filter;
-    filter.m_eventId = std::move(eventId);
     filter.m_routeId = routeId;
     return filter;
 }
@@ -166,7 +165,7 @@ bool EventPropFilter::includes(const WorldChunk& chunk) const
     if (!chunk.placed || !chunk.placement.eventProp || m_all) {
         return true;
     }
-    return chunk.placement.belongsToRace(m_eventId, m_routeId);
+    return m_routeId >= 0 && chunk.placement.eventTag.empty() && chunk.placement.onRoute(m_routeId);
 }
 
 WorldTileGrid::WorldTileGrid(

@@ -6,7 +6,7 @@ What is left before this plays like Forza Horizon, from player reports and from 
 
 | Area | Problem | Work |
 |------|---------|------|
-| World | Shading looks wrong, forests are missing, the sky has no clouds, sun or moon. | Track shaders through the Xenos translator, the forest layers, sky objects. |
+| World | Shading looks wrong, and the sky has no clouds. | Track shaders through the Xenos translator, the cloud layers. |
 
 ## Next
 

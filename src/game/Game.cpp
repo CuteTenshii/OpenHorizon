@@ -1265,8 +1265,11 @@ void Game::startRace(const RaceEvent& event)
         line = RacingLine::through(points, false);
     }
     m_race = std::make_unique<Race>(event, std::move(route), std::move(*line));
-    // The race's own barriers close off the side roads of its route.
+    // The race's own barriers close off the side roads of its route, and
+    // its route's props (barriers, chevrons, gantries) come out in place of
+    // free roam's, as loading the race's route does (0x82662448).
     m_collision->setActiveRoute(event.routeId);
+    m_worldRenderer->setEventRoute(event.routeId);
     const RaceRoute& grid = m_race->route();
 
     // The player takes the grid slot the event names, the back of the grid
@@ -1344,6 +1347,9 @@ void Game::endRace(bool toFreeRoam)
     }
     m_vehicles.resize(1);
     m_collision->setActiveRoute(-1);
+    // Free roam loads route 0 again (missions.xml load_freeroam_route,
+    // 0x8298D2D8).
+    m_worldRenderer->setEventRoute(render::WorldRenderer::kFreeRoamRoute);
     player().ai.reset();
     player().physics->assists().speedSensitiveSteering = true;
     m_drivingLine.reset();

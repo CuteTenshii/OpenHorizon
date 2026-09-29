@@ -24,11 +24,13 @@
 
 #include <glm/geometric.hpp>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <random>
 #include <string>
 #include <utility>
@@ -817,8 +819,8 @@ TEST(readsZonePlacements)
     CHECK(event.eventRoutes == (std::vector<std::uint8_t>{147, 206}));
     CHECK(event.belongsToEvent("fr04"));
     CHECK(!event.belongsToEvent("FR0"));
-    CHECK(event.belongsToRace("FR99", 206));
-    CHECK(!event.belongsToRace("FR99", 12));
+    CHECK(event.onRoute(206));
+    CHECK(!event.onRoute(12));
     CHECK(event.gameplayId.empty());
     CHECK(p.gameplayId.empty());
     const world::Placement& gameplay = placements[2].second;
@@ -915,6 +917,94 @@ TEST(readsScatterSets)
     Writer patch{truncated};
     patch.patch32(0x48, static_cast<std::uint32_t>(truncated.size()));
     CHECK_THROWS(world::readScatterSet(patch.data));
+}
+
+TEST(readsEventGatedScatterSets)
+{
+    TestScatterInstance upright;
+    upright.position = glm::vec3(10, 20, 30);
+    TestScatterMesh tree;
+    tree.draws = {61908, 61909};
+    TestScatterGroup trees;
+    trees.instances = {upright, upright};
+    trees.blocks = {{50.0F, 100.0F}};
+    const std::string name = "models_proc_clrd_trees_redstone_area02[freeroam]_0";
+    const Bytes plain = scatterFile("Models_Ungrouped_1706", {tree}, {trees});
+    CHECK(world::scatterSetKind(plain) == std::optional<std::uint32_t>(world::kModelSetKind));
+    CHECK(!world::scatterSetKind(fh::ByteView(plain).first(0x20)).has_value());
+    CHECK(!world::readScatterSet(plain).eventProp);
+
+    // The event block and the longer name replace the plain set's 32-byte
+    // name field; everything after it moves by a multiple of 16 bytes.
+    Writer w;
+    w.data.assign(plain.begin(), plain.begin() + 0x60);
+    w.u32(0xFFFFFFFF);
+    std::string tag = "FR04";
+    tag.resize(32, '\0');
+    w.text(tag);
+    w.u8(2);
+    w.u8(0);
+    w.u8(21);
+    w.padTo(0x60 + 56);
+    w.text(name);
+    w.u8(0);
+    w.alignTo(16);
+    w.data.insert(w.data.end(), plain.begin() + 0x80, plain.end());
+    w.patch32(0x3C, static_cast<std::uint32_t>(name.size() + 1));
+    w.patch32(0x48, static_cast<std::uint32_t>(w.data.size()));
+    w.patch32(0x58, 0x0C92BCB0);
+    const world::ScatterSet set = world::readScatterSet(w.data);
+    CHECK_EQ(set.name, name);
+    CHECK(set.eventProp);
+    CHECK_EQ(set.eventTag, std::string("FR04"));
+    CHECK(set.eventRoutes == (std::vector<std::uint8_t>{0, 21}));
+    CHECK(set.meshDraws == (std::vector<std::vector<std::uint32_t>>{{61908, 61909}}));
+    CHECK_EQ(set.instances.size(), std::size_t{2});
+    for (const world::ScatterSet::Instance& instance : set.instances) {
+        CHECK(instance.placement.position == upright.position);
+        CHECK(instance.placement.eventProp);
+        CHECK_EQ(instance.placement.eventTag, std::string("FR04"));
+        CHECK(instance.placement.onRoute(0));
+        CHECK(instance.placement.onRoute(21));
+        CHECK(!instance.placement.onRoute(3));
+    }
+
+    Writer notABlock{w.data};
+    notABlock.patch32(0x60, 0x000000A2);
+    CHECK_THROWS(world::readScatterSet(notABlock.data));
+    Writer headerEntries{w.data};
+    headerEntries.patch32(0x44, 1);
+    CHECK_THROWS(world::readScatterSet(headerEntries.data));
+}
+
+TEST(eventPropsFollowTheLoadedRoute)
+{
+    world::WorldChunk plain;
+    plain.placed = true;
+    world::WorldChunk freeRoam = plain;
+    freeRoam.placement.eventProp = true;
+    freeRoam.placement.eventRoutes = {0, 21};
+    world::WorldChunk race = freeRoam;
+    race.placement.eventRoutes = {147};
+    world::WorldChunk everyRoute = freeRoam;
+    everyRoute.placement.eventRoutes.clear();
+    world::WorldChunk named = freeRoam;
+    named.placement.eventTag = "FR04_01";
+
+    const world::EventPropFilter none;
+    CHECK(none.includes(plain));
+    CHECK(!none.includes(freeRoam));
+    const world::EventPropFilter onFreeRoam = world::EventPropFilter::route(0);
+    CHECK(onFreeRoam.includes(plain));
+    CHECK(onFreeRoam.includes(freeRoam));
+    CHECK(!onFreeRoam.includes(race));
+    CHECK(onFreeRoam.includes(everyRoute));
+    CHECK(!onFreeRoam.includes(named));
+    const world::EventPropFilter onRace = world::EventPropFilter::route(147);
+    CHECK(!onRace.includes(freeRoam));
+    CHECK(onRace.includes(race));
+    CHECK(onRace.includes(everyRoute));
+    CHECK(world::EventPropFilter::all().includes(named));
 }
 
 TEST(readsShaderLayoutsAndPvsTables)
@@ -1265,11 +1355,31 @@ TEST(loadsColorado)
     CHECK_EQ(colorado.placements->zoneCount(), 1434);
     CHECK_EQ(colorado.placements->failedZones(), 0);
     CHECK_EQ(colorado.placements->drawCount(), std::size_t{62173});
-    CHECK_EQ(colorado.placements->scatterSets().size(), std::size_t{1562});
+    // Every model set: 1562 ungated and 469 behind an event block.
+    CHECK_EQ(colorado.placements->scatterSets().size(), std::size_t{2031});
     CHECK_EQ(colorado.placements->failedScatterSets(), 0);
+    CHECK_EQ(colorado.placements->scatterInstanceCount(), std::size_t{174802});
     // The map manager's counts: about 48,000 zone-placed props and 128,600
-    // procedural copies.
-    CHECK_NEAR(static_cast<double>(colorado.placements->scatterInstanceCount()), 128600.0, 500.0);
+    // procedural copies outside event blocks.
+    std::size_t ungatedCopies = 0;
+    // The free-roam forests: 55 tree sets and a fence set for route 0.
+    std::size_t freeRoamSets = 0;
+    std::size_t freeRoamCopies = 0;
+    for (const world::ScatterSet& set : colorado.placements->scatterSets()) {
+        ungatedCopies += set.eventProp ? 0 : set.instances.size();
+        const bool forest = set.name.starts_with("models_proc_clrd_trees_mountains_")
+            || set.name.starts_with("models_proc_clrd_trees_redstone_")
+            || set.name.starts_with("models_proc_clrd_trees_maintown_")
+            || set.name.starts_with("models_proc_clrd_redrock_");
+        if (forest && set.eventProp && set.eventTag.empty()
+            && std::find(set.eventRoutes.begin(), set.eventRoutes.end(), 0) != set.eventRoutes.end()) {
+            ++freeRoamSets;
+            freeRoamCopies += set.instances.size();
+        }
+    }
+    CHECK_NEAR(static_cast<double>(ungatedCopies), 128600.0, 500.0);
+    CHECK_EQ(freeRoamSets, std::size_t{56});
+    CHECK_EQ(freeRoamCopies, std::size_t{385});
     const world::WorldIndex& index = colorado.index;
     CHECK_NEAR(static_cast<double>(index.placedCount() - index.scatteredCount()), 48000.0, 1000.0);
     // The 100 discount signs, one placed chunk each.

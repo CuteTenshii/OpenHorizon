@@ -161,6 +161,8 @@ public:
     const Race* race() const { return m_race.get(); }
     /// The clock the world's animation runs on (render::FrameParams::time).
     float animationTime() const { return m_time; }
+    /// The world renderer, or nullptr before the world is loaded.
+    const render::WorldRenderer* worldRenderer() const { return m_worldRenderer.get(); }
     /// Whether the last frame drew the HUD.
     bool hudDrawn() const { return m_hudDrawn; }
     /// Vertices the last frame drew with the system-font overlay outside

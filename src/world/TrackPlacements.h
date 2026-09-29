@@ -36,23 +36,35 @@ struct Placement {
     /// distances at which the game switches to the next level of detail and
     /// stops drawing the model. Negative when unused. Inferred from the data.
     std::array<float, 3> ranges{};
-    /// True if the game draws the prop only while an event or a script
-    /// switches it on: race barriers, chevrons and banners, festival set
-    /// dressing, the open and closed states of barn-find barns. Such records
-    /// carry a block whose u32 is 0xFFFFFFFF; breakable props (road signs,
-    /// cones, bins) carry blocks with other values and are always there.
-    /// Inferred from which models carry which blocks.
+    /// True if the prop carries an event block (u32 0xFFFFFFFF), whose
+    /// routes and tag decide when the game draws it: race barriers, chevrons
+    /// and banners, festival set dressing, the forests of free roam, the
+    /// open and closed states of barn-find barns. Breakable props (road
+    /// signs, cones, bins) carry blocks with other values and are always
+    /// there.
+    ///
+    /// Verified in the executable: the track keeps three gates for such
+    /// blocks (0x82E3F980): one for blocks whose u32 is not 0xFFFFFFFF, one
+    /// for route lists and one for tags. The route gate (0x82E3FA00, set up
+    /// at 0x82E439B0) shows a prop when its list is empty, when the loaded
+    /// route is -1, or when the list holds the loaded route, and hides it
+    /// otherwise; it runs when the prop is added and, for props with a list,
+    /// whenever the route changes (0x82E439D8). The same test is 0x82CECF78.
+    /// See onRoute().
     bool eventProp = false;
     /// For some event props, the event that shows them: its HorizonEventID
     /// ("FR04"), or that ID with a suffix naming a part of its set dressing
     /// ("FR04_01", "FR04_NODE"). Barn finds, gas stations and outposts carry
     /// names of their own. Empty when the record names nothing, as for the
-    /// props of street races and much of the festival.
+    /// props of street races and much of the festival. The activation zones
+    /// show and hide props by these names (see ActivityProps).
     std::string eventTag;
-    /// The race routes (Tracks.RouteId in gamedb) the game puts the prop
-    /// out for: start gantries, barriers and chevrons along a route, shared
-    /// by every race run on it. Props with an eventTag mostly list route 0,
-    /// the free-roam session's.
+    /// The routes the prop is drawn on (see eventProp): Tracks.RouteId in
+    /// gamedb for a race's route, whose start gantries, barriers and
+    /// chevrons every race run on it shares, and 0 for free roam. Verified:
+    /// the free-roam flows load route 0 (media/gamemodes/missions.xml,
+    /// load_freeroam_route; 0x8298D2D8 goes back to it), and Colorado's
+    /// free-roam track row (Tracks 317, ColoradoFreeRoam) has RouteId 0.
     std::vector<std::uint8_t> eventRoutes;
     /// The GameplayID of the `Ribbon_00/GameObjs.xml` entry the prop stands
     /// for, named by a block that is not an event block: "flyer_001" to
@@ -66,9 +78,9 @@ struct Placement {
     /// True if the prop belongs to the event whose HorizonEventID is
     /// `eventId`, by its eventTag (ignoring case).
     bool belongsToEvent(std::string_view eventId) const;
-    /// True if the prop belongs to the race `eventId` run on route
-    /// `routeId`: by its eventTag, or by the route in eventRoutes.
-    bool belongsToRace(std::string_view eventId, int routeId) const;
+    /// Whether the route gate (see eventProp) shows the prop while route
+    /// `routeId` is loaded: its list is empty or holds the route.
+    bool onRoute(int routeId) const;
 
     /// Maps a point of the parsed model (whose Z the parser already negated)
     /// to world coordinates.
@@ -135,7 +147,8 @@ public:
     int zoneCount() const { return m_zones; }
     int failedZones() const { return m_failedZones; }
 
-    /// The procedural model sets ("Models_Ungrouped") of the track.
+    /// The procedural model sets of the track (kind 7, see ScatterSet),
+    /// those with an event block included.
     const std::vector<ScatterSet>& scatterSets() const { return m_scatterSets; }
     /// Copies placed by all procedural sets together.
     std::size_t scatterInstanceCount() const;

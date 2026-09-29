@@ -27,18 +27,22 @@ namespace fh::world {
 /// chunks are always included.
 class EventPropFilter {
 public:
-    /// None, as the game shows the world outside events.
+    /// None.
     EventPropFilter() = default;
     static EventPropFilter all();
-    /// Only the props that belong to one race (Placement::belongsToRace).
-    static EventPropFilter race(std::string eventId, int routeId);
+    /// The props the game's route gate shows while route `routeId` is loaded
+    /// (Placement::onRoute): 0 in free roam, a race's Tracks.RouteId during
+    /// the race. Props with an eventTag are left out whatever their routes:
+    /// the game also shows and hides them by name, which the activation
+    /// zones do here (ActivityProps), and how its route and name gates
+    /// combine for a prop that has both was not traced.
+    static EventPropFilter route(int routeId);
 
     bool includes(const WorldChunk& chunk) const;
     bool operator==(const EventPropFilter&) const = default;
 
 private:
     bool m_all = false;
-    std::string m_eventId;
     int m_routeId = -1;
 };
 

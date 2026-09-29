@@ -235,7 +235,7 @@ void setSceneLighting(Shader& shader, const SceneLighting& lighting)
 WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
     : m_world(world)
     , m_jobs(jobs)
-    , m_grid(world.index, kTileSize)
+    , m_grid(world.index, kTileSize, world::EventPropFilter::route(m_eventRoute))
     , m_alive(std::make_shared<std::atomic<bool>>(true))
     , m_programs(world.shaders, bindlessSupported())
     , m_bindless(m_programs.bindless())
@@ -245,6 +245,7 @@ WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
     , m_black3D(blackVolume())
 {
     m_tiles.resize(m_grid.tiles().size());
+    applyFilters();
     GLint uniformAlignment = 0;
     GLint storageAlignment = 0;
     glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &uniformAlignment);
@@ -530,12 +531,34 @@ void WorldRenderer::evictTextures()
 
 void WorldRenderer::setHiddenChunks(const std::vector<bool>& hidden)
 {
-    for (std::size_t tile : m_grid.update(world::EventPropFilter{}, hidden)) {
+    m_hiddenChunks = hidden;
+    applyFilters();
+}
+
+void WorldRenderer::setEventRoute(int routeId)
+{
+    if (routeId == m_eventRoute) {
+        return;
+    }
+    m_eventRoute = routeId;
+    applyFilters();
+}
+
+void WorldRenderer::applyFilters()
+{
+    for (std::size_t tile : m_grid.update(world::EventPropFilter::route(m_eventRoute), m_hiddenChunks)) {
         // Rebuilt at the current distance on the next update; the old mesh
         // stays on screen meanwhile.
         m_tiles[tile].requestedState = -1;
         m_tiles[tile].pending.reset();
         m_tiles[tile].pendingState = -1;
+    }
+    const auto& chunks = m_world.index.chunks();
+    m_eventChunksIncluded = 0;
+    for (const world::WorldTileGrid::Tile& tile : m_grid.tiles()) {
+        for (const std::uint32_t c : tile.chunks) {
+            m_eventChunksIncluded += chunks[c].placed && chunks[c].placement.eventProp ? 1 : 0;
+        }
     }
 }
 

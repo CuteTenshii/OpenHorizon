@@ -18,6 +18,8 @@
 #include "game/Title.h"
 #include "platform/Input.h"
 #include "platform/Window.h"
+#include "render/FrameStats.h"
+#include "render/WorldRenderer.h"
 #include "ui/Navigation.h"
 #include "ui/PauseMenu.h"
 #include "ui/WorldMap.h"
@@ -1012,6 +1014,94 @@ TEST(loadingScreenStaysUntilTheStartIsReady)
     CHECK(!game.inControl());
     CHECK(session.waitForCar());
     CHECK(!game.loadingStatus().fading);
+}
+
+/// GPU milliseconds of the world pass (the frame statistics' DrawWorld
+/// part), averaged over one second of `session` standing still.
+double worldPassMs(Session& session)
+{
+    double seconds = 0.0;
+    int frames = 0;
+    for (float t = 0.0F; t < 1.0F; t += kStep) {
+        session.run(kStep, {});
+
+        ++frames;
+    }
+    return seconds * 1000.0 / frames;
+}
+
+// Free roam draws its own forests: the procedural tree sets behind an event
+// block for route 0 (models_proc_clrd_trees_mountains_area4a[freeroam]_*
+// stand around here), which were never loaded.
+TEST(freeRoamDrawsItsForests)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::GameOptions options;
+    options.spawnAt = glm::vec2(4330.0F, -250.0F);
+    options.spawnHeading = 0.0F;
+    options.startTime = 12.0F * 3600.0F;
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(4.0F, {});
+    const fh::render::WorldRenderer* world = session.game().worldRenderer();
+    CHECK(world != nullptr);
+    if (world == nullptr) {
+        return;
+    }
+    CHECK_EQ(world->eventRoute(), 0);
+    CHECK(world->eventChunksIncluded() > 0);
+    std::fprintf(stderr, "forest: world pass GPU %.3f ms\n", worldPassMs(session));
+    session.capture("forest_area4a");
+}
+
+// A race puts out its route's props (barriers, chevrons, gantries) and
+// leaving it takes them away again, back to free roam's.
+TEST(raceShowsItsRoutePropsUntilItEnds)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::GameOptions options;
+    options.race = "FR02";
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(2.0F, {});
+    fh::Game& game = session.game();
+    const fh::render::WorldRenderer* world = game.worldRenderer();
+    CHECK(world != nullptr && game.race() != nullptr);
+    if (world == nullptr || game.race() == nullptr) {
+        return;
+    }
+    // FR02 runs on route 96 (FESTIVAL_PLNS_006).
+    CHECK_EQ(world->eventRoute(), game.race()->event().routeId);
+    CHECK_EQ(world->eventRoute(), 96);
+    const std::size_t raceChunks = world->eventChunksIncluded();
+    CHECK(raceChunks > 0);
+    std::fprintf(stderr, "race grid: %zu event chunks, world pass GPU %.3f ms\n", raceChunks, worldPassMs(session));
+    session.capture("race_props_grid");
+
+    session.press(fh::Button::Start);
+    const fh::ui::PauseMenu* menu = game.pauseMenu();
+    CHECK(menu != nullptr);
+    if (menu == nullptr) {
+        return;
+    }
+    for (std::size_t i = 0; i < menu->entries().size()
+        && menu->entries()[static_cast<std::size_t>(menu->focus())].item != fh::ui::PauseItem::QuitRace;
+        ++i) {
+        session.press(fh::Button::DpadDown);
+    }
+    CHECK(menu->entries()[static_cast<std::size_t>(menu->focus())].item == fh::ui::PauseItem::QuitRace);
+    session.press(fh::Button::A);
+    CHECK(menu->confirming());
+    session.press(fh::Button::A);
+    session.run(2.0F, {});
+    CHECK(game.race() == nullptr);
+    CHECK_EQ(world->eventRoute(), 0);
+    CHECK(world->eventChunksIncluded() != raceChunks);
+    session.capture("race_props_after");
 }
 
 } // namespace
