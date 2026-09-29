@@ -308,6 +308,16 @@ void Game::loadWorld()
     } catch (const std::exception& e) {
         logWarning("flyers: {}", e.what());
     }
+    try {
+        m_particles.emplace(particles::ParticleManager::load(m_vfs));
+        m_tyreEffects.emplace(*m_particles, particles::SurfaceEffectTable::load(m_vfs));
+        m_particleRenderer = std::make_unique<particles::ParticleRenderer>(m_vfs);
+        logInfo("particles: {} systems", m_particles->systems().size());
+    } catch (const std::exception& e) {
+        logWarning("particles: {}", e.what());
+        m_tyreEffects.reset();
+        m_particles.reset();
+    }
     m_hiddenChunks.assign(m_world->index.chunks().size(), false);
 
     m_objects = GameObjects::load(m_vfs, m_options.track);
@@ -598,6 +608,68 @@ void Game::attachEngineSound(Vehicle& vehicle, bool spatial) const
     } catch (const std::exception& e) {
         logWarning("audio: {}: {}", vehicle.spec->mediaName, e.what());
     }
+}
+
+void Game::updateParticles(float dt)
+{
+    if (!m_particles || !m_tyreEffects) {
+        return;
+    }
+    // The tyre rules take the game's wheel state; what CarPhysics offers in
+    // its place is noted per field (see particles/TyreEffects.h).
+    constexpr float kGravity = 9.80665F;
+    constexpr float kRadiansPerSecondToRpm = 9.549296F;
+    for (const auto& vehicle : m_vehicles) {
+        const CarPhysics& car = *vehicle->physics;
+        particles::TyreCarInput input;
+        input.velocity = car.velocity();
+        input.right = car.right();
+        input.up = car.up();
+        input.forward = car.forward();
+        input.position = car.position();
+        const float quarterWeight = car.mass() * kGravity * 0.25F;
+        for (std::size_t w = 0; w < CarPhysics::kWheels; ++w) {
+            const CarPhysics::WheelState& wheel = car.wheels()[w];
+            particles::TyreWheelInput& out = input.wheels[w];
+            // Render geometry has no surface type and so no tyre effects.
+            out.onGround = wheel.onGround && wheel.ground.surface >= 0;
+            out.surface = static_cast<std::size_t>(std::max(wheel.ground.surface, 0));
+            const glm::quat steer = car.orientation() * glm::angleAxis(wheel.steerAngle, glm::vec3(0.0F, 1.0F, 0.0F));
+            out.frame.axle = steer * glm::vec3(1.0F, 0.0F, 0.0F);
+            out.frame.row1 = steer * glm::vec3(0.0F, 1.0F, 0.0F);
+            out.frame.row2 = steer * glm::vec3(0.0F, 0.0F, 1.0F);
+            out.frame.position = wheel.hubWorld;
+            out.radius = car.wheelRadius(static_cast<int>(w));
+            out.treadSpeed = wheel.spin * out.radius;
+            // Inferred stand-ins: the game's slide value (wheel +0x28) as the
+            // combined slip of the tyre, the friction circle value as the
+            // slip normalised to the tyre's peak.
+            out.slide = std::sqrt(wheel.slipRatio * wheel.slipRatio
+                + std::tan(wheel.slipAngle) * std::tan(wheel.slipAngle));
+            out.frictionCircle = wheel.slipMagnitude;
+            out.normalisedLoad = quarterWeight > 0.0F ? wheel.load / quarterWeight : 0.0F;
+            out.wheelVelocity = car.worldPointVelocity(wheel.hubWorld);
+            out.wheelRpm = wheel.spin * kRadiansPerSecondToRpm;
+        }
+        m_tyreEffects->emit(input);
+    }
+    m_particles->update(dt);
+}
+
+void Game::drawParticles(const render::FrameParams& frame)
+{
+    if (!m_particles || !m_particleRenderer) {
+        return;
+    }
+    particles::ParticleFrame pf;
+    pf.viewProjection = frame.projection * frame.view;
+    pf.cameraPosition = m_camera.position;
+    pf.viewForward = glm::normalize(m_camera.target - m_camera.position);
+    pf.nearPlane = m_camera.nearPlane;
+    pf.towardsSun = -frame.lighting.sunDirection;
+    pf.sunColour = frame.lighting.sunColour;
+    pf.ambientColour = frame.lighting.ambientTop;
+    m_particleRenderer->draw(*m_particles, pf);
 }
 
 void Game::updateRadio(float dt)
@@ -2099,6 +2171,7 @@ int Game::run()
             physicsSteps = stepPhysics(dt);
             m_frameStats->mark(Part::Physics);
             updateDebris(dt);
+            updateParticles(dt);
             updateAudio(dt);
             updateRadio(dt);
             if (m_options.demoDrive && secondTicked(m_time, dt)) {
@@ -2138,6 +2211,7 @@ int Game::run()
         m_frameStats->mark(Part::DrawCars);
         m_frame->sky(frame);
         drawVehicleGlass(frame);
+        drawParticles(frame);
         drawEventStarts(frame.projection * frame.view);
         drawDrivingLine();
         m_overlay->flush(frame.projection * frame.view, m_window.width(), m_window.height());

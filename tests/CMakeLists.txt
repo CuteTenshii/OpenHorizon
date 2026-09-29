@@ -57,3 +57,10 @@ target_link_libraries(tst_menu PRIVATE fh1ui)
 # The disc tests inside (the pause menu's entries and texts, the scenes and
 # the map's data) run only when FH1_GAME_DIR names an extracted disc.
 add_test(NAME tst_menu COMMAND tst_menu)
+
+add_executable(tst_particles TestHarness.h tst_particles.cpp)
+target_compile_options(tst_particles PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_particles PRIVATE fh1particles)
+# The disc test inside (every effect file, the surface table and the effect
+# list the game loads) runs only when FH1_GAME_DIR names an extracted disc.
+add_test(NAME tst_particles COMMAND tst_particles)

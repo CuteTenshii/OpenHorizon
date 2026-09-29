@@ -18,6 +18,9 @@
 #include "game/Smashables.h"
 #include "game/TimeOfDay.h"
 #include "game/TrafficConfig.h"
+#include "particles/ParticleManager.h"
+#include "particles/ParticleRenderer.h"
+#include "particles/TyreEffects.h"
 #include "physics/WorldCollision.h"
 #include "radio/Radio.h"
 #include "platform/Window.h"
@@ -137,6 +140,9 @@ private:
     void collideVehicles();
     void collideSmashables(Vehicle& vehicle);
     void updateDebris(float dt);
+    /// Runs the tyre effect rules for every car and advances the particles.
+    void updateParticles(float dt);
+    void drawParticles(const render::FrameParams& frame);
     void attachEngineSound(Vehicle& vehicle, bool spatial) const;
     static audio::EngineSoundOptions engineSoundOptions(bool spatial);
     void updateAudio(float dt);
@@ -204,6 +210,11 @@ private:
     /// The map returns to the pause menu when it was opened from there.
     bool m_mapFromPause = false;
     std::unique_ptr<physics::WorldCollision> m_collision;
+    /// The effects of DefaultTrack.xml; the tyre rules keep a pointer to
+    /// the manager, so it stays in place once loaded.
+    std::optional<particles::ParticleManager> m_particles;
+    std::optional<particles::TyreEffects> m_tyreEffects;
+    std::unique_ptr<particles::ParticleRenderer> m_particleRenderer;
 
     // Declared before the vehicles so it outlives their engine sounds, whose
     // destructors release mixer buses.
