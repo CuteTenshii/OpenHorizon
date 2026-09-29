@@ -129,6 +129,67 @@ struct Differential {
     float accelReferenceTorque = 50.0F;
 };
 
+/// One block of `FrictionTorqueMod` in `media/physics/physicssettings.ini`:
+/// how far the yaw torque of the tyre forces is scaled and clamped, as the
+/// executable's step at 0x82DEFF88 applies it. The `0` values hold while
+/// the car's velocity is within the angle whose cosine is `cosYawAngle0` of
+/// its heading, the `1` values beyond `cosYawAngle1`; in between they blend.
+/// "Turn" applies when the torque turns the body the way it already yaws,
+/// "Straighten" otherwise. Clamps are angular accelerations in degrees per
+/// second squared. Field order is the loader's (0x82CA7218).
+struct FrictionTorqueMod {
+    float cosYawAngle0 = 0.0F;
+    float cosYawAngle1 = 0.0F;
+    float turnScale0 = 0.0F;
+    float straightenScale0 = 0.0F;
+    float turnClamp0 = 0.0F;
+    float straightenClamp0 = 0.0F;
+    float turnScale1 = 0.0F;
+    float straightenScale1 = 0.0F;
+    float turnClamp1 = 0.0F;
+    float straightenClamp1 = 0.0F;
+};
+
+/// The driving-assist tunables of `media/physics/physicssettings.ini`
+/// (PhysicsSettings, bound by the loader at 0x82CA0CE0 and read at run time
+/// from 0x8359FAD8). The initial values are the ones the disc's file holds,
+/// kept for running without the disc; `loadCarSpec` reads the file.
+struct AssistSettings {
+    /// Stability management and traction control act above these speeds
+    /// (mph), compared as squared speeds (0x82DEEF80, 0x82DF8630).
+    float stabilityManageSpeedMph = 30.0F;
+    float tractionControlSpeedMph = 30.0F;
+    /// Normalised slip past the allowed slip over which traction control
+    /// goes from no cut to a fully closed throttle.
+    float tcsFullEffectFricDiff = 0.25F;
+    /// Scale on the allowed slip when the driven tyres are at their peak slip
+    /// angle, per drive layout.
+    float tcsFullSteerSlipScaleRwd = 1.1F;
+    float tcsFullSteerSlipScaleFwd = 1.2F;
+    float tcsFullSteerSlipScaleAwd = 2.0F;
+    /// Without ABS, a brake pedal at or past `noAbsBrakeTravel` still lets
+    /// a wheel go at these normalised slips, blended by steering input,
+    /// holding it released for `noAbsDisableTime` seconds.
+    float noAbsBrakeTravel = 0.975F;
+    float noAbsDisableTime = 0.0F;
+    float noAbsSlipFrontNoSteer = 1.0F;
+    float noAbsSlipFrontFullSteer = 0.71F;
+    float noAbsSlipRearNoSteer = 1.0F;
+    float noAbsSlipRearFullSteer = 0.71F;
+    /// CarTuning range of the traction-control slip settings: the car's
+    /// value is held within it (0x82DF6600, 0x82DF5080).
+    float tuneTcsSlipDefMin = 0.1F;
+    float tuneTcsSlipDefMax = 30.0F;
+    /// FrictionTorqueMod: the `0` and `1` blocks apply at these masses and
+    /// blend between them.
+    float frictionTorqueMass0Kg = 909.1F;
+    float frictionTorqueMass1Kg = 1590.9F;
+    std::array<FrictionTorqueMod, 2> frictionTorqueWithAssists{
+        FrictionTorqueMod{0.996194F, 0.961261F, 1.0F, 1.0F, 180.0F, 145.0F, 0.7F, 0.8F, 120.0F, 140.0F},
+        FrictionTorqueMod{0.996194F, 0.961261F, 1.0F, 1.0F, 150.0F, 115.0F, 0.7F, 0.8F, 100.0F, 120.0F}};
+    std::array<FrictionTorqueMod, 2> frictionTorqueNoAssists = frictionTorqueWithAssists;
+};
+
 struct CarSpec {
     int id = 0;
     std::string mediaName;
@@ -222,6 +283,17 @@ struct CarSpec {
     float brakeBias = 0.5F;
     float handbrakeScale = 1.5F;
     float absReleasePoint = 0.7F;
+    /// ABS (List_UpgradeBrakes): the normalised slip at which a wheel's
+    /// brake lets go, front and rear, with the wheel straight and at full
+    /// steering input, and how long it stays released (seconds). The loader
+    /// at 0x82CAA740 reads them in the order ReleasePointABS, DurationABS,
+    /// front no-steer, front full-steer, rear no-steer, rear full-steer,
+    /// and 0x82DF8630 blends each pair by the steering input.
+    float absDuration = 0.05F;
+    float absSlipFrontNoSteer = 3.0F;
+    float absSlipFrontFullSteer = 0.5F;
+    float absSlipRearNoSteer = 2.5F;
+    float absSlipRearFullSteer = 2.0F;
     int frontBrakeSize = 12;
     int rearBrakeSize = 12;
 
@@ -258,8 +330,19 @@ struct CarSpec {
     /// normalised front slip above which it stops adding lock.
     float normRearSlipAngleToCountersteer = 3.0F;
     float steerFrictionClamp = 1.2F;
+    /// Data_Car.AssistsTCSSlipDefTakeoff / Moving: the driven wheels'
+    /// normalised slip traction control allows below and above
+    /// TractionControlSpeed.
     float tcsSlipTakeoff = 33.0F;
     float tcsSlipMoving = 0.5F;
+    /// AutoSteerOverrides.STMSlipMin / STMSlipMax (by
+    /// Data_Car.AutoSteerOverrideId): the rear tyres' average normalised
+    /// slip angle where stability management starts to brake, and where it
+    /// brakes fully. The table's AutoSteer columns belong to the game's
+    /// auto-steer setting, which this engine does not have.
+    float stmSlipMin = 1.5F;
+    float stmSlipMax = 3.0F;
+    AssistSettings assistSettings;
 
     /// The game's own simulation results for the stock car, kept to check
     /// this engine's car model against.

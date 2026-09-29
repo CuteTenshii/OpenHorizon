@@ -8,10 +8,12 @@
 #include <pugixml.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <format>
 #include <string_view>
+#include <utility>
 
 namespace fh {
 
@@ -256,11 +258,67 @@ void readPhysicsSettings(const Vfs& vfs, CarSpec& spec)
     if (!text) {
         return;
     }
+    AssistSettings& assists = spec.assistSettings;
+    const std::array<std::pair<std::string_view, float*>, 18> scalars{{
+        {"NormRearSlipAngleToCountersteer", &spec.normRearSlipAngleToCountersteer},
+        {"SteerFrictionClamp", &spec.steerFrictionClamp},
+        {"StabilityManageSpeed", &assists.stabilityManageSpeedMph},
+        {"TractionControlSpeed", &assists.tractionControlSpeedMph},
+        {"TCSFullEffectFricDiff", &assists.tcsFullEffectFricDiff},
+        {"TCSFullSteerSlipScaleRWD", &assists.tcsFullSteerSlipScaleRwd},
+        {"TCSFullSteerSlipScaleFWD", &assists.tcsFullSteerSlipScaleFwd},
+        {"TCSFullSteerSlipScaleAWD", &assists.tcsFullSteerSlipScaleAwd},
+        {"NoABSBrakeTravel", &assists.noAbsBrakeTravel},
+        {"NoABSDisableTime", &assists.noAbsDisableTime},
+        {"NoABSSlipDefFrontNoSteer", &assists.noAbsSlipFrontNoSteer},
+        {"NoABSSlipDefFrontFullSteer", &assists.noAbsSlipFrontFullSteer},
+        {"NoABSSlipDefRearNoSteer", &assists.noAbsSlipRearNoSteer},
+        {"NoABSSlipDefRearFullSteer", &assists.noAbsSlipRearFullSteer},
+        {"CarTuning\\TuneTCSSlipDefMin", &assists.tuneTcsSlipDefMin},
+        {"CarTuning\\TuneTCSSlipDefMax", &assists.tuneTcsSlipDefMax},
+        {"FrictionTorqueMod\\Mass0KG", &assists.frictionTorqueMass0Kg},
+        {"FrictionTorqueMod\\Mass1KG", &assists.frictionTorqueMass1Kg},
+    }};
+    const auto modField = [](FrictionTorqueMod& mod, std::string_view name) -> float* {
+        const std::array<std::pair<std::string_view, float*>, 10> fields{{
+            {"CosYawAngle0", &mod.cosYawAngle0},
+            {"CosYawAngle1", &mod.cosYawAngle1},
+            {"TurnScale0", &mod.turnScale0},
+            {"StraightenScale0", &mod.straightenScale0},
+            {"TurnClamp0", &mod.turnClamp0},
+            {"StraightenClamp0", &mod.straightenClamp0},
+            {"TurnScale1", &mod.turnScale1},
+            {"StraightenScale1", &mod.straightenScale1},
+            {"TurnClamp1", &mod.turnClamp1},
+            {"StraightenClamp1", &mod.straightenClamp1},
+        }};
+        for (const auto& [fieldName, field] : fields) {
+            if (fieldName == name) {
+                return field;
+            }
+        }
+        return nullptr;
+    };
+    const std::array<std::pair<std::string_view, FrictionTorqueMod*>, 4> blocks{{
+        {"FrictionTorqueMod\\WithAssists0\\", &assists.frictionTorqueWithAssists[0]},
+        {"FrictionTorqueMod\\WithAssists1\\", &assists.frictionTorqueWithAssists[1]},
+        {"FrictionTorqueMod\\NoAssists0\\", &assists.frictionTorqueNoAssists[0]},
+        {"FrictionTorqueMod\\NoAssists1\\", &assists.frictionTorqueNoAssists[1]},
+    }};
     readIni(*text, [&](const std::string& key, float value) {
-        if (key == "NormRearSlipAngleToCountersteer") {
-            spec.normRearSlipAngleToCountersteer = value;
-        } else if (key == "SteerFrictionClamp") {
-            spec.steerFrictionClamp = value;
+        for (const auto& [name, field] : scalars) {
+            if (key == name) {
+                *field = value;
+                return;
+            }
+        }
+        for (const auto& [prefix, block] : blocks) {
+            if (key.starts_with(prefix)) {
+                if (float* field = modField(*block, std::string_view(key).substr(prefix.size()))) {
+                    *field = value;
+                }
+                return;
+            }
         }
     });
 }
@@ -417,6 +475,11 @@ CarSpec loadCarSpec(const Database& db, int carId, const Vfs* vfs)
     spec.steerAccelTimeToMaxRate = car->f("SteerAccelTimeToMaxRate", 0.01F);
     spec.tcsSlipTakeoff = car->f("AssistsTCSSlipDefTakeoff", 33.0F);
     spec.tcsSlipMoving = car->f("AssistsTCSSlipDefMoving", 0.5F);
+    if (const std::optional<Row> steer = db.queryOne(
+            "SELECT * FROM AutoSteerOverrides WHERE Id = ?", {id(car->i("AutoSteerOverrideId"))})) {
+        spec.stmSlipMin = steer->f("STMSlipMin", spec.stmSlipMin);
+        spec.stmSlipMax = steer->f("STMSlipMax", spec.stmSlipMax);
+    }
 
     spec.reference.timeTo60Mph = car->f("SimTimeTo60MPH");
     spec.reference.timeTo100Mph = car->f("SimTimeTo100MPH");
@@ -574,6 +637,11 @@ CarSpec loadCarSpec(const Database& db, int carId, const Vfs* vfs)
         spec.brakeBias = brakes->f("BrakeBiasSlider", 0.5F);
         spec.handbrakeScale = brakes->f("BiasHandbrake", 1.5F);
         spec.absReleasePoint = brakes->f("ReleasePointABS", 0.7F);
+        spec.absDuration = brakes->f("DurationABS", spec.absDuration);
+        spec.absSlipFrontNoSteer = brakes->f("ReleasePointABSFrontNoSteer", spec.absSlipFrontNoSteer);
+        spec.absSlipFrontFullSteer = brakes->f("ReleasePointABSFrontFullSteer", spec.absSlipFrontFullSteer);
+        spec.absSlipRearNoSteer = brakes->f("ReleasePointABSRearNoSteer", spec.absSlipRearNoSteer);
+        spec.absSlipRearFullSteer = brakes->f("ReleasePointABSRearFullSteer", spec.absSlipRearFullSteer);
         spec.frontBrakeSize = brakes->i("FrontBrakeSize", 12);
         spec.rearBrakeSize = brakes->i("RearBrakeSize", 12);
     }

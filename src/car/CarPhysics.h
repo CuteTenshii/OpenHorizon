@@ -50,6 +50,9 @@ struct CarControls {
     bool shiftDown = false;
 };
 
+/// The player's assist settings. ABS, traction control and stability
+/// management follow CCarDynamics' assist step at 0x82DF8630 (see
+/// CarPhysics::applyAssists).
 struct DrivingAssists {
     bool abs = true;
     bool tractionControl = true;
@@ -204,6 +207,18 @@ private:
     void computeAero(glm::vec3& force, glm::vec3& torque) const;
     float engineTorque(float rpm, float throttle) const;
     float brakeTorque(int wheel, const CarControls& controls) const;
+    /// The game's assist step: sets each wheel's share of the brake pedal
+    /// (stability management, then ABS) and returns the throttle traction
+    /// control leaves.
+    float applyAssists(const CarControls& controls, float dt);
+    void applyStabilityManagement();
+    void applyAbs(const CarControls& controls);
+    float tractionControlCut() const;
+    /// Wheel slip ratio over the tyre's peak slip ratio.
+    float normalisedSlipRatio(int wheel) const;
+    /// FrictionTorqueMod: scales and clamps the yaw part of the tyres'
+    /// torque about the centre of mass.
+    glm::vec3 modifyFrictionTorque(const glm::vec3& tyreTorque) const;
     void tyreForces(int wheel, float spin, float& fx, float& fy, float& slipRatio, float& magnitude) const;
     void prepareTyres(float dt);
     float effectiveWheelInertia(int wheel, float dt) const;
@@ -251,8 +266,11 @@ private:
     float m_clutchEngagement = 1.0F;
     float m_throttleApplied = 0.0F;
     float m_tcsCut = 0.0F;
+    /// Each wheel's brake pedal after the assists (0 to 1), and the time
+    /// since ABS last released it.
+    std::array<float, kWheels> m_wheelBrake{};
+    std::array<float, kWheels> m_absTimer{};
     float m_accumulator = 0.0F;
-    bool m_reverseRequested = false;
 };
 
 } // namespace fh

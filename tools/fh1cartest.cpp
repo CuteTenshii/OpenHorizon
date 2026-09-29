@@ -31,10 +31,22 @@ struct Result {
     float lateralG = NAN;
 };
 
+/// The assists the game's own tests ran with: the test car set-up at
+/// 0x82DFD810 turns ABS, traction control and stability management on, and
+/// the test steps mark the car scripted (+0x1828), which skips traction
+/// control (0x82DF8630).
+void assistsLikeGameTests(fh::CarPhysics& car)
+{
+    car.assists().abs = true;
+    car.assists().tractionControl = false;
+    car.assists().stabilityControl = true;
+}
+
 void accelerationRun(const fh::CarSpec& spec, Result& result)
 {
     const fh::FlatGround ground;
     fh::CarPhysics car(spec);
+    assistsLikeGameTests(car);
     car.reset({0.0F, 0.0F, 0.0F}, 0.0F, ground);
     fh::CarControls idle;
     for (int i = 0; i < 360; ++i) {
@@ -79,8 +91,7 @@ void brakingRun(const fh::CarSpec& spec, Result& result)
 {
     const fh::FlatGround ground;
     fh::CarPhysics car(spec);
-    // The game's braking figures match a stop on locked wheels.
-    car.assists().abs = false;
+    assistsLikeGameTests(car);
     car.reset({0.0F, 0.0F, 0.0F}, 0.0F, ground);
     fh::CarControls controls;
     controls.throttle = 1.0F;
@@ -105,7 +116,7 @@ void skidpadRun(const fh::CarSpec& spec, Result& result)
 {
     const fh::FlatGround ground;
     fh::CarPhysics car(spec);
-    car.assists().stabilityControl = false;
+    assistsLikeGameTests(car);
     car.assists().speedSensitiveSteering = false;
     car.reset({0.0F, 0.0F, 0.0F}, 0.0F, ground);
     fh::CarControls controls;
