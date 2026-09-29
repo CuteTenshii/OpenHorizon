@@ -157,10 +157,14 @@ private:
 /// horizon_e 36: 554 against 414; "0" in horizon_e 54: 54 against 40;
 /// "PLEASE WAIT" in horizon_e 16: 156 against 119; the loading tip's
 /// placeholder in horizon_a 16: 493 against 360), which is the 96/72 of a
-/// point size drawn in pixels. The runtime's own mapping from size to glyph
-/// scale was not traced (the text setup at 0x82f2a1e8 passes the size
-/// through a per-font factor that returns 1, 0x825ecbd8). The HUD draws
-/// through UiRenderer without this factor.
+/// point size drawn in pixels. The text layout's scale has the same factor:
+/// the style setup (0x82430aa0, 0x824309b8) takes a value its text object
+/// holds times 4/3 (the constant at 0x82000ca4) over the font's build size
+/// of 14. Inferred: that the value held is the element's size (which the
+/// text setup at 0x82f2a1e8 passes through a per-font factor that returns
+/// 1, 0x825ecbd8), and that an em of the glyph meshes is the build size, as
+/// the widths above agree. The HUD draws through UiRenderer without this
+/// factor.
 inline constexpr float kTextPointsToUnits = 4.0F / 3.0F;
 
 /// Scales the size of every text item by kTextPointsToUnits.

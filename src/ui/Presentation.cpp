@@ -919,6 +919,7 @@ std::vector<DrawItem> Presentation::evaluate() const
         if (present && nodeOpacity > 0.0F && node.record) {
             if (node.record->kind == FbfKind::Model) {
                 DrawItem item;
+                item.element = element;
                 item.layer = layerOf(element);
                 item.depth = world[3].z;
                 item.order = order++;
@@ -966,6 +967,7 @@ std::vector<DrawItem> Presentation::evaluate() const
             } else if (node.record->kind == FbfKind::Text) {
                 DrawItem item;
                 item.isText = true;
+                item.element = element;
                 item.layer = layerOf(element);
                 item.depth = world[3].z;
                 item.order = order++;

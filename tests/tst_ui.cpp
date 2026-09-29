@@ -544,8 +544,11 @@ Bytes buildFont()
     w.f32(14.0F);
     w.f32(1.0F);
     w.u32(8);
-    w.s32(750);
-    w.s32(250);
+    // Eight metrics in font units as the text fonts have them, then the
+    // units per em.
+    for (const std::int32_t metric : {750, 250, 750, -250, 0, 750, -250, 0, 1000}) {
+        w.s32(metric);
+    }
     w.padTo(data + 0x100);
     for (std::uint32_t g = 0; g < 2; ++g) {
         w.u32(g == 0 ? 'H' : 'I');
@@ -601,6 +604,8 @@ TEST(vector_font_reads_glyphs)
     }
     CHECK_NEAR(font.capHeight(), 0.75, 1e-3);
     CHECK_NEAR(font.ascent(), 0.75, 1e-4);
+    CHECK_NEAR(font.descent(), 0.25, 1e-4);
+    CHECK_NEAR(font.lineHeight(), 1.0, 1e-4);
     CHECK_NEAR(font.spaceAdvance(), 0.25, 1e-6);
     CHECK_NEAR(font.measure("HI H", 0.1F), 0.6 + 0.3 + 0.25 + 0.6 + 0.3, 1e-5);
     CHECK(font.glyph(U'Z') == nullptr);
@@ -1550,6 +1555,9 @@ TEST(disc_fonts_cover_latin1)
         CHECK(font->glyph(0xE9) != nullptr);
         CHECK(font->glyph(0x20AC) != nullptr);
         CHECK(font->capHeight() > 0.5F && font->capHeight() < 1.0F);
+        // 1115 up and 372 down over 991 font units in every text font.
+        CHECK_NEAR(font->ascent(), 1115.0 / 991.0, 1e-4);
+        CHECK_NEAR(font->lineHeight(), 1487.0 / 991.0, 1e-4);
         for (const auto& [code, glyph] : font->glyphs()) {
             CHECK(glyph.triangles.size() % 3 == 0);
         }

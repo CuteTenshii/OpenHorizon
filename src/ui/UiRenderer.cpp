@@ -494,34 +494,69 @@ const UiRenderer::FontGpu& UiRenderer::fontBuffer(const VectorFont& font)
     return m_fontBuffers.emplace(&font, std::move(gpu)).first->second;
 }
 
-void UiRenderer::drawText(const DrawText& text)
+std::vector<TextLineLayout> layoutText(const VectorFont& font, const DrawText& text)
 {
-    const VectorFont* font = m_fonts.font(text.font);
-    if (!font || text.size <= 0.0F || text.text.empty()) {
-        return;
+    std::vector<TextLineLayout> lines;
+    if (text.size <= 0.0F) {
+        return lines;
     }
-    std::vector<std::string_view> lines;
     std::string_view rest = text.text;
     while (true) {
         const std::size_t newline = rest.find('\n');
-        lines.push_back(rest.substr(0, newline));
+        TextLineLayout line;
+        line.text = rest.substr(0, newline);
+        lines.push_back(line);
         if (newline == std::string_view::npos) {
             break;
         }
         rest = rest.substr(newline + 1);
     }
     const float size = text.size;
-    const float lineStep = font->lineHeight() * size + text.leading;
-    const float capHeight = font->capHeight() * size;
-    const float blockHeight = capHeight + lineStep * static_cast<float>(lines.size() - 1);
-    // The anchor is the top, middle or bottom of the capitals of the block.
-    float baseline = -capHeight;
-    if (text.verticalAlign == 1) {
-        baseline = blockHeight * 0.5F - capHeight;
-    } else if (text.verticalAlign == 2) {
-        baseline = blockHeight - capHeight;
+    const float lineStep = font.lineHeight() * size + text.leading;
+    const float blockHeight = lineStep * static_cast<float>(lines.size());
+    // The element's origin is the top of the block of lines, raised by a
+    // fraction of the block's height for the other vertical alignments
+    // (0x8243a2a8: 0.5, 1, 0.75 and 0.25 for alignments 1 to 4, none for
+    // the rest), and each baseline lies the font's ascent below the top of
+    // its line (0x8242f1d0 with the line records of 0x8242fa08).
+    float top = 0.0F;
+    switch (text.verticalAlign) {
+    case 1:
+        top = 0.5F * blockHeight;
+        break;
+    case 2:
+        top = blockHeight;
+        break;
+    case 3:
+        top = 0.75F * blockHeight;
+        break;
+    case 4:
+        top = 0.25F * blockHeight;
+        break;
+    default:
+        break;
     }
+    float baseline = top - font.ascent() * size;
+    for (TextLineLayout& line : lines) {
+        line.width = font.measure(line.text, text.tracking / size) * size;
+        if (text.horizontalAlign == 1) {
+            line.x = -line.width * 0.5F;
+        } else if (text.horizontalAlign == 2) {
+            line.x = -line.width;
+        }
+        line.baseline = baseline;
+        baseline -= lineStep;
+    }
+    return lines;
+}
 
+void UiRenderer::drawText(const DrawText& text)
+{
+    const VectorFont* font = m_fonts.font(text.font);
+    if (!font || text.size <= 0.0F || text.text.empty()) {
+        return;
+    }
+    const float size = text.size;
     const FontGpu& gpu = fontBuffer(*font);
     const GLuint program = m_textProgram.id();
     glUseProgram(program);
@@ -534,17 +569,11 @@ void UiRenderer::drawText(const DrawText& text)
     glBindVertexArray(m_textVao);
 
     const Glyph* fallback = font->fallback();
-    for (const std::string_view line : lines) {
-        const float width = font->measure(line, text.tracking / size) * size;
-        float pen = 0.0F;
-        if (text.horizontalAlign == 1) {
-            pen = -width * 0.5F;
-        } else if (text.horizontalAlign == 2) {
-            pen = -width;
-        }
+    for (const TextLineLayout& line : layoutText(*font, text)) {
+        float pen = line.x;
         std::size_t i = 0;
-        while (i < line.size()) {
-            const char32_t c = decodeUtf8(line, i);
+        while (i < line.text.size()) {
+            const char32_t c = decodeUtf8(line.text, i);
             if (c == U' ' || c == 0xA0) {
                 pen += font->spaceAdvance() * size + text.tracking;
                 continue;
@@ -558,12 +587,11 @@ void UiRenderer::drawText(const DrawText& text)
             }
             const auto range = gpu.ranges.find(glyph->codePoint);
             if (range != gpu.ranges.end() && range->second.second > 0) {
-                glProgramUniform2f(program, m_textPen, pen, baseline);
+                glProgramUniform2f(program, m_textPen, pen, line.baseline);
                 glDrawArrays(GL_TRIANGLES, range->second.first, range->second.second);
             }
             pen += glyph->advance * size + text.tracking;
         }
-        baseline -= lineStep;
     }
 }
 

@@ -66,6 +66,8 @@ struct DrawItem {
     float depth = 0.0F;
     int order = 0;
     bool isText = false;
+    /// The element index of the model or text drawn.
+    int element = -1;
     /// For models, the element index of the material they are drawn with.
     int material = -1;
     DrawModel model;

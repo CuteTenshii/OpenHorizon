@@ -58,11 +58,14 @@ struct Glyph {
 ///         point, 0x20/0x24 = offset and size of a hash table of
 ///         {u16 code point, u16 glyph} (not needed: glyphs carry their
 ///         code point)
-///       geometry header: u32 unknown, u32 glyph records offset, u32 0,
-///         u32 1, u32 0, u32 vertex bytes, u32 vertex count, u32 index
-///         count, f32 space advance (ems), f32 build size (14), f32 line
-///         height (ems), u32 8, 8 x s32 metrics in font units
-///         (ascent, descent, ...), u32
+///       geometry header: u32 offset of the metrics block that starts at
+///         0x0C (the runtime copies 72 bytes from it), u32 glyph records
+///         offset, u32 0, u32 1, u32 0, u32 vertex bytes, u32 vertex count,
+///         u32 index count, f32 space advance (ems), f32 build size (14),
+///         f32 (about 1.02 to 1.04 in the text fonts; not read by the
+///         layout), u32 8, 8 x s32 metrics in font units ({1115, 372, 1115,
+///         -372, 0, 1115, -372, 0} in fonts A, B and E), s32 font units per
+///         em (991 in A, B and E)
 ///       glyph records, 40 bytes: u32 code point, f32 advance, s16 first
 ///         kerning pair (-1 for none) and a u16 the game does not read, u32 vertex
 ///         byte offset, u32 vertex count, u32 first index, u32 triangle
@@ -73,6 +76,15 @@ struct Glyph {
 ///     .gpu: vertices of four halfs {x, y, u, v}, where the sign of x marks
 ///       an outside triangle and |x| is the position, then u16 indices
 ///       (relative to the glyph's first vertex)
+///
+/// The text layout's vertical metrics, verified from the executable: a
+/// line is ascent + descent high and its baseline lies ascent below its
+/// top, with ascent the s32 at 0x44 and descent minus the s32 at 0x48, both
+/// over the units per em at 0x50 (0x8242fff0 and 0x82430468 read them at
+/// 56, 60 and 68 in the metrics block; the line breaker 0x8242fa08 keeps
+/// each line's largest ascent and height). In every text font that is
+/// 1.125 em up and 0.375 em down from the baseline, so capitals (0.75 em)
+/// sit 0.375 em below the top of their line.
 ///
 /// Fonts have no kerning pairs: the kerning lookup (0x82ef4cd8) returns 0
 /// when a glyph's first pair is -1, which it is for every glyph of every
@@ -90,10 +102,13 @@ public:
     const std::map<char32_t, Glyph>& glyphs() const { return m_glyphs; }
 
     float spaceAdvance() const { return m_spaceAdvance; }
+    /// Height of a line of text in ems: ascent() + descent().
     float lineHeight() const { return m_lineHeight; }
     /// Height of capitals above the baseline, in ems (from 'H').
     float capHeight() const { return m_capHeight; }
+    /// Distance from the top of a line to its baseline, in ems.
     float ascent() const { return m_ascent; }
+    /// Distance from the baseline to the bottom of a line, in ems.
     float descent() const { return m_descent; }
 
     /// Advance of `utf8` in ems, with `trackingEms` added between glyphs.
@@ -103,10 +118,10 @@ private:
     std::map<char32_t, Glyph> m_glyphs;
     char32_t m_defaultChar = 0;
     float m_spaceAdvance = 0.25F;
-    float m_lineHeight = 1.0F;
+    float m_lineHeight = 0.0F;
     float m_capHeight = 0.7F;
-    float m_ascent = 0.75F;
-    float m_descent = 0.25F;
+    float m_ascent = 0.0F;
+    float m_descent = 0.0F;
 };
 
 /// Decodes one code point from `text` at `i` and advances `i`. Invalid

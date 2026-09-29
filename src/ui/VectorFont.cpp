@@ -132,19 +132,25 @@ VectorFont VectorFont::parse(ByteView data, const std::string& source)
     const std::uint32_t vertexCount = in.u32();
     const std::uint32_t indexCount = in.u32();
     font.m_spaceAdvance = in.f32();
+    // The build size (0x24) cancels out of the layout (the size scale
+    // divides by it, 0x824309b8); the f32 at 0x28 and the first five
+    // metrics are not read by the text layout.
+    in.skip(12 + 5 * 4);
+    const std::int32_t unitsAscent = in.s32();
+    const std::int32_t unitsDescent = in.s32();
     in.skip(4);
-    font.m_lineHeight = in.f32();
-    in.skip(4);
-    const float unitsAscent = static_cast<float>(in.s32());
-    const float unitsDescent = static_cast<float>(in.s32());
+    const std::int32_t unitsPerEm = in.s32();
     if (vertexBytes != vertexCount * 8 || vertexBytes + indexCount * 2 > gpuSection.size) {
         in.fail(std::format("geometry of {} vertices and {} indices does not fit the {} byte .gpu section", vertexCount,
             indexCount, gpuSection.size));
     }
-    if (unitsAscent > 0.0F && unitsDescent > 0.0F) {
-        font.m_ascent = font.m_lineHeight * unitsAscent / (unitsAscent + unitsDescent);
-        font.m_descent = font.m_lineHeight - font.m_ascent;
+    if (unitsAscent <= 0 || unitsDescent > 0 || unitsPerEm <= 0) {
+        in.fail(std::format(
+            "implausible line metrics: ascent {}, descent {}, em {}", unitsAscent, unitsDescent, unitsPerEm));
     }
+    font.m_ascent = static_cast<float>(unitsAscent) / static_cast<float>(unitsPerEm);
+    font.m_descent = static_cast<float>(-unitsDescent) / static_cast<float>(unitsPerEm);
+    font.m_lineHeight = font.m_ascent + font.m_descent;
 
     const std::uint8_t* gpu = data.data() + gpuSection.offset;
     const std::uint8_t* indices = gpu + vertexBytes;

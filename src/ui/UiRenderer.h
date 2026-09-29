@@ -19,6 +19,21 @@ class Vfs;
 
 namespace fh::ui {
 
+/// One line of a DrawText as UiRenderer::drawText() places it, in the
+/// text's own space (before DrawText::world): the pen starts at (x,
+/// baseline) and the line's glyphs advance `width` from there.
+struct TextLineLayout {
+    std::string_view text;
+    float x = 0.0F;
+    float baseline = 0.0F;
+    float width = 0.0F;
+};
+
+/// The lines of `text` (split at its line breaks) where drawText() draws
+/// them with `font`; the text's size, tracking and leading are taken as
+/// they are (after the text scale). The views point into `text.text`.
+std::vector<TextLineLayout> layoutText(const VectorFont& font, const DrawText& text);
+
 /// An OpenGL texture the UI owns.
 class UiTexture {
 public:
