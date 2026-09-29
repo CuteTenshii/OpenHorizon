@@ -2,63 +2,18 @@
 
 #include <glm/gtc/type_ptr.hpp>
 
-#include <stdexcept>
 #include <utility>
 
 namespace fh::render {
 
-namespace {
-
-GLuint compile(std::string_view name, GLenum stage, std::string_view source)
+Shader::Shader(std::string_view name, std::string_view vertexSource, std::string_view fragmentSource)
+    : m_program(linkProgram(name, vertexSource, fragmentSource))
 {
-    const GLuint shader = glCreateShader(stage);
-    const char* text = source.data();
-    const auto length = static_cast<GLint>(source.size());
-    glShaderSource(shader, 1, &text, &length);
-    glCompileShader(shader);
-    GLint ok = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        GLint logLength = 0;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
-        std::string log(static_cast<std::size_t>(std::max(logLength, 1)), '\0');
-        glGetShaderInfoLog(shader, logLength, nullptr, log.data());
-        glDeleteShader(shader);
-        throw std::runtime_error(std::string(name) + (stage == GL_VERTEX_SHADER ? " vertex" : " fragment")
-            + " shader: " + log);
-    }
-    return shader;
 }
 
-} // namespace
-
-Shader::Shader(std::string_view name, std::string_view vertexSource, std::string_view fragmentSource)
+Shader::Shader(ProgramBuild& build)
+    : m_program(build.finish())
 {
-    const GLuint vertex = compile(name, GL_VERTEX_SHADER, vertexSource);
-    GLuint fragment = 0;
-    try {
-        fragment = compile(name, GL_FRAGMENT_SHADER, fragmentSource);
-    } catch (...) {
-        glDeleteShader(vertex);
-        throw;
-    }
-    m_program = glCreateProgram();
-    glAttachShader(m_program, vertex);
-    glAttachShader(m_program, fragment);
-    glLinkProgram(m_program);
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
-    GLint ok = 0;
-    glGetProgramiv(m_program, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        GLint logLength = 0;
-        glGetProgramiv(m_program, GL_INFO_LOG_LENGTH, &logLength);
-        std::string log(static_cast<std::size_t>(std::max(logLength, 1)), '\0');
-        glGetProgramInfoLog(m_program, logLength, nullptr, log.data());
-        glDeleteProgram(m_program);
-        m_program = 0;
-        throw std::runtime_error(std::string(name) + " program: " + log);
-    }
 }
 
 Shader::~Shader()

@@ -65,6 +65,13 @@ target_link_libraries(tst_particles PRIVATE fh1particles)
 # list the game loads) runs only when FH1_GAME_DIR names an extracted disc.
 add_test(NAME tst_particles COMMAND tst_particles)
 
+add_executable(tst_render TestHarness.h tst_render.cpp)
+target_compile_options(tst_render PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_render PRIVATE fh1platform)
+# The GL cases run in an offscreen context and skip without one; the cache
+# goes to a folder of their own under the temporary directory.
+add_test(NAME tst_render COMMAND tst_render)
+
 add_executable(tst_car TestHarness.h tst_car.cpp)
 target_compile_options(tst_car PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_car PRIVATE fh1data)

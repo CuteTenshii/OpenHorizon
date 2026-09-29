@@ -2,6 +2,7 @@
 
 #include "base/Error.h"
 #include "base/Log.h"
+#include "render/GlProgram.h"
 #include "vfs/Vfs.h"
 
 #include <xds/xds.h>
@@ -10,7 +11,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <stdexcept>
 #include <utility>
 
 namespace fh::ui {
@@ -92,26 +92,6 @@ void main()
     fragColour = vec4(uColour.rgb, uColour.a * coverage);
 }
 )";
-
-GLuint compileStage(std::string_view name, GLenum stage, std::string_view source)
-{
-    const GLuint shader = glCreateShader(stage);
-    const char* text = source.data();
-    const auto length = static_cast<GLint>(source.size());
-    glShaderSource(shader, 1, &text, &length);
-    glCompileShader(shader);
-    GLint ok = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        GLint logLength = 0;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
-        std::string log(static_cast<std::size_t>(std::max(logLength, 1)), '\0');
-        glGetShaderInfoLog(shader, logLength, nullptr, log.data());
-        glDeleteShader(shader);
-        throw std::runtime_error(std::string(name) + " shader: " + log);
-    }
-    return shader;
-}
 
 GLint glWrap(TextureWrap wrap)
 {
@@ -212,32 +192,8 @@ void UiTexture::uploadDxt1(int x, int y, int width, int height, const std::uint8
 }
 
 UiProgram::UiProgram(std::string_view name, std::string_view vertex, std::string_view fragment)
+    : m_id(render::linkProgram(name, vertex, fragment))
 {
-    const GLuint vs = compileStage(name, GL_VERTEX_SHADER, vertex);
-    GLuint fs = 0;
-    try {
-        fs = compileStage(name, GL_FRAGMENT_SHADER, fragment);
-    } catch (...) {
-        glDeleteShader(vs);
-        throw;
-    }
-    m_id = glCreateProgram();
-    glAttachShader(m_id, vs);
-    glAttachShader(m_id, fs);
-    glLinkProgram(m_id);
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    GLint ok = 0;
-    glGetProgramiv(m_id, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        GLint logLength = 0;
-        glGetProgramiv(m_id, GL_INFO_LOG_LENGTH, &logLength);
-        std::string log(static_cast<std::size_t>(std::max(logLength, 1)), '\0');
-        glGetProgramInfoLog(m_id, logLength, nullptr, log.data());
-        glDeleteProgram(m_id);
-        m_id = 0;
-        throw std::runtime_error(std::string(name) + " program: " + log);
-    }
 }
 
 UiProgram::~UiProgram()

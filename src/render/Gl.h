@@ -78,9 +78,13 @@
     X(PFNGLCREATEPROGRAMPROC, glCreateProgram)                                                                         \
     X(PFNGLDELETEPROGRAMPROC, glDeleteProgram)                                                                         \
     X(PFNGLATTACHSHADERPROC, glAttachShader)                                                                           \
+    X(PFNGLDETACHSHADERPROC, glDetachShader)                                                                           \
     X(PFNGLLINKPROGRAMPROC, glLinkProgram)                                                                             \
     X(PFNGLGETPROGRAMIVPROC, glGetProgramiv)                                                                           \
     X(PFNGLGETPROGRAMINFOLOGPROC, glGetProgramInfoLog)                                                                 \
+    X(PFNGLPROGRAMPARAMETERIPROC, glProgramParameteri)                                                                 \
+    X(PFNGLGETPROGRAMBINARYPROC, glGetProgramBinary)                                                                   \
+    X(PFNGLPROGRAMBINARYPROC, glProgramBinary)                                                                         \
     X(PFNGLUSEPROGRAMPROC, glUseProgram)                                                                               \
     X(PFNGLGETUNIFORMLOCATIONPROC, glGetUniformLocation)                                                               \
     X(PFNGLPROGRAMUNIFORM1IPROC, glProgramUniform1i)                                                                   \
@@ -128,16 +132,24 @@
     X(PFNGLCLIENTWAITSYNCPROC, glClientWaitSync)                                                                       \
     X(PFNGLDELETESYNCPROC, glDeleteSync)
 
+// Extension entry points the renderer uses when the driver has them; they
+// stay null otherwise, so callers check before calling.
+#define FH_GL_OPTIONAL_FUNCTIONS(X)                                                                                    \
+    X(PFNGLMAXSHADERCOMPILERTHREADSKHRPROC, glMaxShaderCompilerThreadsKHR)                                             \
+    X(PFNGLMAXSHADERCOMPILERTHREADSARBPROC, glMaxShaderCompilerThreadsARB)
+
 namespace fh::gl {
 
 #define FH_GL_DECLARE(type, name) extern type name;
 FH_GL_FUNCTIONS(FH_GL_DECLARE)
+FH_GL_OPTIONAL_FUNCTIONS(FH_GL_DECLARE)
 #undef FH_GL_DECLARE
 
 using ProcLoader = void* (*)(const char* name);
 
-/// Loads every listed entry point. Returns the name of the first one the
-/// driver lacks, or nullptr when all were found.
+/// Loads every listed entry point. Returns the name of the first required
+/// one the driver lacks, or nullptr when all were found; optional ones it
+/// lacks stay null.
 const char* load(ProcLoader loader);
 
 } // namespace fh::gl

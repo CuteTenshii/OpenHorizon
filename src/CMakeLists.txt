@@ -38,6 +38,8 @@ add_library(fh1platform STATIC
     platform/Window.h
     render/Gl.cpp
     render/Gl.h
+    render/GlProgram.cpp
+    render/GlProgram.h
 )
 target_compile_options(fh1platform PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(fh1platform PUBLIC fh1base SDL3::SDL3 OpenGL::GL)

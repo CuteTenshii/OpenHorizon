@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Gl.h"
+#include "GlProgram.h"
 
 #include <glm/glm.hpp>
 
@@ -11,12 +12,17 @@
 namespace fh::render {
 
 /// A linked GLSL program. Uniform locations are looked up once and cached.
+/// Programs go through the binary cache (GlProgram.h).
 class Shader {
 public:
     Shader() = default;
-    /// Compiles and links; throws std::runtime_error with the driver's log,
-    /// prefixed by `name`, when either fails.
+    /// Compiles and links, or restores the program from the cache; throws
+    /// std::runtime_error with the driver's log, prefixed by `name`, when
+    /// either fails.
     Shader(std::string_view name, std::string_view vertexSource, std::string_view fragmentSource);
+    /// Takes the program of a build started earlier, waiting for it if
+    /// the driver is still compiling; throws as above.
+    explicit Shader(ProgramBuild& build);
     ~Shader();
     Shader(Shader&& other) noexcept;
     Shader& operator=(Shader&& other) noexcept;

@@ -6,6 +6,7 @@
 
 #include "base/Error.h"
 #include "base/Log.h"
+#include "render/GlProgram.h"
 #include "vfs/Vfs.h"
 #include "world/XboxTexture.h"
 
@@ -16,47 +17,9 @@
 #include <array>
 #include <cctype>
 #include <cmath>
-#include <stdexcept>
 
 namespace fh::particles {
 namespace {
-
-GLuint compileStage(GLenum type, const char* source)
-{
-    const GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, nullptr);
-    glCompileShader(shader);
-    GLint ok = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (ok == 0) {
-        std::array<char, 4096> log{};
-        glGetShaderInfoLog(shader, static_cast<GLsizei>(log.size()), nullptr, log.data());
-        glDeleteShader(shader);
-        throw std::runtime_error(std::string("particle shader: ") + log.data());
-    }
-    return shader;
-}
-
-GLuint linkProgram()
-{
-    const GLuint vertex = compileStage(GL_VERTEX_SHADER, glsl::kVertex);
-    const GLuint fragment = compileStage(GL_FRAGMENT_SHADER, glsl::kFragment);
-    const GLuint program = glCreateProgram();
-    glAttachShader(program, vertex);
-    glAttachShader(program, fragment);
-    glLinkProgram(program);
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
-    GLint ok = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &ok);
-    if (ok == 0) {
-        std::array<char, 4096> log{};
-        glGetProgramInfoLog(program, static_cast<GLsizei>(log.size()), nullptr, log.data());
-        glDeleteProgram(program);
-        throw std::runtime_error(std::string("particle program: ") + log.data());
-    }
-    return program;
-}
 
 /// One particle as the shaders read it (ParticleShaders.cpp).
 struct Record {
@@ -130,7 +93,7 @@ int quadTypeOf(const EffectDefinition& d)
 
 ParticleRenderer::ParticleRenderer(const Vfs& vfs)
     : m_vfs(&vfs)
-    , m_program(linkProgram())
+    , m_program(render::linkProgram("particle", glsl::kVertex, glsl::kFragment))
 {
     glCreateVertexArrays(1, &m_vao);
     glCreateBuffers(1, &m_records);
