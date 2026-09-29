@@ -1,22 +1,30 @@
-// Tests of the pause menu and the full-screen map: the text wrapping and the
-// map camera on values built here, and, when FH1_GAME_DIR names an
-// extracted disc, the pause menu's entries for free roam and races with
-// their texts from the string tables, the structure of the scenes both
-// screens bind, the map's tunables, background tiles and cursor area.
+// Tests of the pause menu, the full-screen map and the title screen: the
+// text wrapping, the map camera and the title prompt's timing on values
+// built here, and, when FH1_GAME_DIR names an extracted disc, the pause
+// menu's entries for free roam and races with their texts from the string
+// tables, the structure of the scenes the screens bind, the map's tunables,
+// background tiles and cursor area, and the title's movie and music.
 // Nothing here needs an OpenGL context.
 
 #include "TestHarness.h"
 
+#include "audio/AudioLibrary.h"
+#include "audio/Fev.h"
 #include "base/Bytes.h"
 #include "ui/AnarkFormats.h"
 #include "ui/LoadingScreen.h"
 #include "ui/MenuCommon.h"
 #include "ui/Minimap.h"
+#include "ui/MovieRenderer.h"
 #include "ui/PauseMenu.h"
 #include "ui/Presentation.h"
+#include "ui/TitleScreen.h"
 #include "ui/WorldMap.h"
 #include "vfs/Vfs.h"
 
+#include <pugixml.hpp>
+
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -141,6 +149,103 @@ TEST(map_zoom_stays_within_the_cursor_zoom_limits)
         camera.update({0.0F, 0.0F}, -1.0F, 1.0F / 60.0F);
     }
     CHECK_NEAR(camera.zoom(), 0.38, 1e-6);
+}
+
+bool fires(const TitleFlow::Step& step, std::string_view event)
+{
+    return std::find(step.events.begin(), step.events.end(), event) != step.events.end();
+}
+
+TEST(movie_definitions_select_streams_by_number)
+{
+    const MovieStreams title
+        = MovieStreams::parse("<xml>\n<StreamDefinition>\n<Video id=\"2\" />\n</StreamDefinition>\n</xml>", "t");
+    CHECK(title.video == 2);
+    CHECK(title.audio.empty());
+    const MovieStreams fmv = MovieStreams::parse(
+        "<xml><StreamDefinition><Audio id=\"6\" lang=\"EN\"/><Audio id=\"1\" lang=\"FR\"/><Video id=\"7\" />"
+        "</StreamDefinition></xml>",
+        "f");
+    CHECK(fmv.video == 7);
+    CHECK_EQ(fmv.audio.size(), std::size_t{2});
+    CHECK_EQ(fmv.audio[0].id, 6);
+    CHECK_EQ(fmv.audio[0].language, std::string("EN"));
+}
+
+TEST(title_prompt_fades_in_eight_updates_after_entering)
+{
+    TitleFlow flow;
+    const TitleFlow::Step enter = flow.enter();
+    CHECK(fires(enter, "CONTROLLER_ONLY"));
+    CHECK(enter.startMusic);
+    for (int i = 1; i < TitleFlow::kFadeInDelay; ++i) {
+        CHECK(!fires(flow.update({}, 1.0F / 60.0F, false), "FADE_IN"));
+    }
+    CHECK(fires(flow.update({}, 1.0F / 60.0F, false), "FADE_IN"));
+    CHECK(!fires(flow.update({}, 1.0F / 60.0F, false), "FADE_IN"));
+}
+
+TEST(title_prompt_starts_on_a_or_start_and_not_on_b)
+{
+    TitleFlow flow;
+    flow.enter();
+    MenuInput b;
+    b.back = true;
+    CHECK(flow.update(b, 0.1F, false).action == TitleAction::None);
+    MenuInput start;
+    start.start = true;
+    const TitleFlow::Step pressed = flow.update(start, 0.1F, false);
+    CHECK(pressed.action == TitleAction::Start);
+    CHECK(fires(pressed, "START_OUTRO"));
+    MenuInput a;
+    a.accept = true;
+    CHECK(flow.update(a, 0.1F, false).action == TitleAction::None);
+    CHECK(fires(flow.resume(), "START_INTRO"));
+    CHECK(flow.update(a, 0.1F, false).action == TitleAction::Start);
+}
+
+TEST(title_prompt_goes_to_the_attract_after_53_idle_seconds)
+{
+    TitleFlow flow;
+    flow.enter();
+    constexpr float kStep = 0.5F;
+    float t = 0.0F;
+    TitleFlow::Step step;
+    while (!fires(step, "FADE_OUT")) {
+        step = flow.update({}, kStep, false);
+        t += kStep;
+    }
+    CHECK_NEAR(t, 53.5, 1e-3);
+    CHECK(step.stopMusic);
+    MenuInput start;
+    start.start = true;
+    // Input is ignored while fading out; the attract needs both the Fader's
+    // FADE_OUT_COMPLETE and the 2 s wait.
+    CHECK(flow.update(start, kStep, false).action == TitleAction::None);
+    CHECK(flow.update({}, kStep, true).action == TitleAction::None);
+    CHECK(flow.update({}, kStep, false).action == TitleAction::None);
+    CHECK(flow.update({}, kStep, false).action == TitleAction::Attract);
+    CHECK(flow.inAttract());
+    const TitleFlow::Step back = flow.returnFromAttract();
+    CHECK(back.startMusic);
+    for (int i = 1; i < TitleFlow::kReturnFadeInDelay; ++i) {
+        CHECK(!fires(flow.update({}, kStep, false), "FADE_IN"));
+    }
+    CHECK(fires(flow.update({}, kStep, false), "FADE_IN"));
+    CHECK(flow.update(start, kStep, false).action == TitleAction::Start);
+}
+
+TEST(title_idle_timer_holds_while_the_sign_in_step_has_the_input)
+{
+    TitleFlow flow;
+    flow.enter();
+    MenuInput start;
+    start.start = true;
+    flow.update(start, 1.0F, false);
+    for (int i = 0; i < 120; ++i) {
+        CHECK(!fires(flow.update({}, 1.0F, false), "FADE_OUT"));
+    }
+    CHECK_NEAR(flow.idleSeconds(), 0.0, 1e-9);
 }
 
 const char* gameDir()
@@ -299,6 +404,97 @@ TEST(disc_loading_tips_resolve_from_the_string_tables)
     }
     CHECK_NEAR(textBoxWidth(scene, scene.contractParameter(root, "TEXT_LINE_1")), 0.385 * 1280.0, 1e-2);
     CHECK(scene.contractParameter(root, "MATERIAL_BACKGROUND") >= 0);
+}
+
+TEST(disc_title_scene_binds_the_movie_and_the_prompt)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    UiStrings strings(vfs, "en");
+    CHECK_EQ(strings.get("Main", "IDS_PressStart"), std::string("PRESS START"));
+
+    Presentation scene(SceneFiles::load(vfs, "media/ui/scenes/ui4/120_p_pre_splash"));
+    int root = -1;
+    for (const int child : scene.children(0)) {
+        if (scene.kind(child) == ElementKind::Behavior && scene.contractParameter(child, "TEXT_PRESS_START") >= 0) {
+            root = child;
+        }
+    }
+    CHECK(root >= 0);
+    CHECK_EQ(scene.name(scene.contractParameter(root, "TEXT_PRESS_START")), std::string("TitleTapeText"));
+    const int video = scene.contract(scene.contractParameter(root, "COMPONENT_VIDEO"), "CUSTREND_MOVIERENDERER");
+    CHECK(video >= 0);
+    CHECK(scene.contractFlag(video, "VIDEOLOOP").value_or(false));
+    CHECK(scene.contractFlag(video, "VIDEOAUTOPLAY").value_or(false));
+    const int viewport = scene.contractParameter(video, "MODEL_VIEWPORT");
+    CHECK_EQ(scene.name(viewport), std::string("loading_image"));
+    const BgfFile& bgf = scene.files().bgf;
+    std::string path;
+    for (const Attribute& attribute : bgf.elements[static_cast<std::size_t>(video)].attributes) {
+        if (attribute.hash == anarkHash("VIDEOPATH")) {
+            path = bgf.strings[attribute.raw];
+        }
+    }
+    CHECK_EQ(path, std::string("GAME:\\Media\\UI\\Videos\\PressStart.wmv"));
+    for (const char* event : {"CONTROLLER_ONLY", "FADE_IN", "FADE_OUT", "START_OUTRO", "START_INTRO"}) {
+        CHECK(scene.fireEvent(root, event));
+    }
+    CHECK(scene.slideNames(scene.find("Layer/Fader")).size() == 4);
+}
+
+TEST(disc_title_movie_is_the_wmv3_stream_its_definition_names)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const MovieStreams streams
+        = MovieStreams::parse(vfs.readText("media/ui/videos/pressstart.def").value_or(""), "PressStart.def");
+    CHECK(streams.video == 2);
+    CHECK(streams.audio.empty());
+    const MovieInfo info = MovieRenderer::probe(vfs, "GAME:\\Media\\UI\\Videos\\PressStart.wmv");
+    CHECK_EQ(info.streamId, 2);
+    CHECK_EQ(info.codec, std::string("wmv3"));
+    CHECK_EQ(info.width, 1280);
+    CHECK_EQ(info.height, 720);
+    CHECK_NEAR(info.duration, 53.93, 0.01);
+    CHECK_NEAR(info.firstFrameTime, 0.0, 1e-6);
+}
+
+TEST(disc_title_music_is_the_front_end_ambience)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const std::string sounds = vfs.readText("media/audio/ui/ui4audio.xml").value_or("");
+    pugi::xml_document document;
+    CHECK(static_cast<bool>(document.load_buffer(sounds.data(), sounds.size())));
+    const pugi::xml_node splash
+        = document.child("ui4audio").child("defaults").find_child_by_attribute("event", "play", "SplashScreen");
+    CHECK_EQ(std::string(splash.attribute("group").as_string()), std::string("UIInGame/UI/FrontEnd"));
+    CHECK_EQ(std::string(splash.attribute("cue").as_string()), std::string("FE_Ambience"));
+    CHECK(splash.attribute("isLooping").as_bool());
+
+    fh::audio::AudioLibrary library(vfs);
+    const auto project = library.project("Game:\\Media\\Audio\\UI\\UIInGame\\UIInGame.fev");
+    const fh::audio::FevEvent* event = project->findEvent("UI/FrontEnd/FE_Ambience");
+    CHECK(event != nullptr);
+    if (!event) {
+        return;
+    }
+    CHECK_EQ(event->layers.size(), std::size_t{1});
+    CHECK_EQ(event->layers[0].sounds.size(), std::size_t{1});
+    CHECK_EQ(project->soundDefinition(event->layers[0].sounds[0].soundDefinition).name,
+        std::string("/FrontEnd/PressStart_Music"));
 }
 
 } // namespace

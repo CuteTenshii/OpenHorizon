@@ -1,8 +1,11 @@
-// Inspects and renders the game's pause menu and full-screen map without
-// the game: dumps a scene's contracts and event handlers, and draws the
-// pause menu or the map for sample states into a PNG through an offscreen
-// OpenGL context.
+// Inspects and renders the game's front-end screens without the game: dumps
+// a scene's contracts and event handlers, and draws the pause menu, the
+// loading screen, the map or the title screen for sample states into a PNG
+// through an offscreen OpenGL context.
 
+#include "audio/AudioDevice.h"
+#include "audio/AudioLibrary.h"
+#include "audio/Wav.h"
 #include "base/Error.h"
 #include "data/Database.h"
 #include "data/StringTable.h"
@@ -13,6 +16,7 @@
 #include "ui/MenuCommon.h"
 #include "ui/PauseMenu.h"
 #include "ui/Presentation.h"
+#include "ui/TitleScreen.h"
 #include "ui/WorldMap.h"
 #include "vfs/Vfs.h"
 
@@ -48,6 +52,7 @@ int usage()
         "       fh1menu DISC loading OUT.png [--group NAME] [--seed N] [--size WxH] [--time S]\n"
         "       fh1menu DISC map OUT.png [--track NAME] [--at X,Z] [--heading DEG] [--move DX,DY --move-time S]\n"
         "                                [--zoom Z --zoom-time S] [--steps KEYS] [--size WxH] [--time S]\n"
+        "       fh1menu DISC title OUT.png [--steps KEYS] [--size WxH] [--time S] [--wav OUT.wav]\n"
         "  DISC       the extracted disc (its root or its media folder)\n"
         "  SCENE      a scene under media/ui/scenes/ui4 without extension, such as 925_pause_menu\n"
         "  contracts  lists the scene's behaviour elements (contracts) with their parameters and the\n"
@@ -60,7 +65,10 @@ int usage()
         "             freeroam), after --time seconds (default 3)\n"
         "  map        draws the full-screen map opened with the player at X,Z facing DEG (0 north, 90 east) and\n"
         "             the track's race starts, after holding the left stick at DX,DY for --move-time seconds,\n"
-        "             the right stick at Z (positive zooms in) for --zoom-time seconds, and the KEYS\n");
+        "             the right stick at Z (positive zooms in) for --zoom-time seconds, and the KEYS\n"
+        "  title      draws the title screen after --time seconds (default 3), the KEYS pressed at the\n"
+        "             start (s is Start, a is A), and with --wav mixes its music offline into OUT.wav;\n"
+        "             past 53 s the screen goes to its attract, which the tool leaves at once\n");
     return 2;
 }
 
@@ -265,6 +273,9 @@ MenuInput stepInput(char step)
         break;
     case 'b':
         input.back = true;
+        break;
+    case 's':
+        input.start = true;
         break;
     case 'x':
         input.x = true;
@@ -525,6 +536,76 @@ int renderLoading(const fh::Vfs& vfs, const std::string& out, const std::string&
     return writePng(out, target.read()) ? 0 : 1;
 }
 
+struct TitleOptions {
+    std::string steps;
+    float time = 3.0F;
+    int width = 1280;
+    int height = 720;
+    std::string wav;
+};
+
+const char* titleActionName(TitleAction action)
+{
+    switch (action) {
+    case TitleAction::None:
+        return "none";
+    case TitleAction::Start:
+        return "start";
+    case TitleAction::Attract:
+        return "attract";
+    }
+    return "?";
+}
+
+int renderTitle(const fh::Vfs& vfs, const std::string& out, const TitleOptions& options)
+{
+    fh::Window window(hiddenWindow());
+    OffscreenTarget target(options.width, options.height);
+    // The music is mixed without a playback device, into a WAV if asked.
+    fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
+    fh::audio::AudioLibrary library(vfs);
+    TitleAudio audio;
+    audio.mixer = &device.mixer();
+    audio.library = &library;
+    TitleScreen screen(vfs, audio, "en");
+    screen.show();
+    std::printf("prompt: %s\n", screen.pressStartText().c_str());
+    std::vector<float> mixed;
+    constexpr float kStep = 1.0F / 60.0F;
+    constexpr std::size_t kFramesPerStep = fh::audio::AudioDevice::kSampleRate / 60;
+    const auto frame = [&](const MenuInput& input) {
+        const TitleAction action = screen.update(input, kStep);
+        if (action != TitleAction::None) {
+            std::printf("action: %s\n", titleActionName(action));
+        }
+        if (action == TitleAction::Attract) {
+            screen.returnFromAttract();
+        }
+        const std::vector<float> block = device.render(kFramesPerStep);
+        if (!options.wav.empty()) {
+            mixed.insert(mixed.end(), block.begin(), block.end());
+        }
+        target.clear();
+        screen.draw(options.width, options.height);
+    };
+    for (const char step : options.steps) {
+        frame(stepInput(step));
+    }
+    for (int i = 0; i < std::max(1, static_cast<int>(options.time / kStep)); ++i) {
+        frame(MenuInput{});
+    }
+    std::printf("movie %s at %.2f s, music %s\n", screen.hasMovie() ? "playing" : "missing", screen.movieTime(),
+        screen.musicPlaying() ? "playing" : "silent");
+    if (!options.wav.empty()) {
+        fh::audio::PcmBuffer pcm;
+        pcm.sampleRate = fh::audio::AudioDevice::kSampleRate;
+        pcm.channels = fh::audio::AudioDevice::kChannels;
+        pcm.samples = std::move(mixed);
+        fh::audio::writeWav(options.wav, pcm, fh::audio::WavFormat::Float32);
+    }
+    return writePng(out, target.read()) ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -634,6 +715,26 @@ int main(int argc, char** argv)
                 }
             }
             return renderMap(vfs, std::string(args[0]), options);
+        }
+        if (command == "title" && !args.empty()) {
+            TitleOptions options;
+            for (std::size_t i = 1; i + 1 < args.size(); i += 2) {
+                const std::string value(args[i + 1]);
+                if (args[i] == "--steps") {
+                    options.steps = value;
+                } else if (args[i] == "--time") {
+                    options.time = std::stof(value);
+                } else if (args[i] == "--wav") {
+                    options.wav = value;
+                } else if (args[i] == "--size") {
+                    if (!parseSize(value, options.width, options.height)) {
+                        return usage();
+                    }
+                } else {
+                    return usage();
+                }
+            }
+            return renderTitle(vfs, std::string(args[0]), options);
         }
         return usage();
     } catch (const std::exception& e) {
