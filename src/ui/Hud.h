@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -50,6 +51,18 @@ struct HudMapLine {
     std::string value;
     /// World x and z, in order.
     std::vector<glm::vec2> points;
+};
+
+/// A reading of a speed trap or speed zone for the HUD_SPEED_CAMERA
+/// control, as the game's CHudStatusSpeedCamera carries it (0x82979af0):
+/// the kind (+24: 0 speed trap, 1 speed zone), the speed (+28) and the
+/// profile's best before it (+32), both in metres per second.
+struct HudSpeedCamera {
+    /// Counts readings: a new value starts the display.
+    std::size_t serial = 0;
+    bool zone = false;
+    float speed = 0.0F;
+    float previousBest = 0.0F;
 };
 
 /// What the HUD shows in one frame. Each field feeds the HUD control the
@@ -144,6 +157,10 @@ struct HudState {
     /// raises it through a status of its own (CHudStatusRadioTuning) whose
     /// trigger was not found; leave it false unless the radio says so.
     bool radioTuning = false;
+
+    /// The latest speed trap or speed zone reading, if any; the HUD shows
+    /// one when its serial changes.
+    std::optional<HudSpeedCamera> speedCamera;
 
     /// Seconds since the previous frame.
     float dt = 0.0F;

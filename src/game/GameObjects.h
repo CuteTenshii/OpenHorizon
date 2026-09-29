@@ -29,6 +29,8 @@ public:
     /// Reads `media/tracks/<track>/Ribbon_00/GameObjs.xml`. Throws DataError
     /// if it is missing or malformed.
     static GameObjects load(const Vfs& vfs, std::string_view track);
+    /// A set of the given objects; for tests and tools.
+    static GameObjects fromObjects(std::vector<GameObject> objects);
 
     const std::vector<GameObject>& all() const { return m_objects; }
     /// The object whose id matches exactly (ignoring case), if any.

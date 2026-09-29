@@ -57,6 +57,10 @@ find_package(Freetype REQUIRED)
 pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
 
 add_library(fh1engine STATIC
+    game/Activities.cpp
+    game/Activities.h
+    game/ActivityProps.cpp
+    game/ActivityProps.h
     game/AiDriver.cpp
     game/AiDriver.h
     game/CameraSettings.cpp
@@ -67,12 +71,16 @@ add_library(fh1engine STATIC
     game/Game.h
     game/GameObjects.cpp
     game/GameObjects.h
+    game/Outposts.cpp
+    game/Outposts.h
     game/Race.cpp
     game/Race.h
     game/RaceData.cpp
     game/RaceData.h
     game/Smashables.cpp
     game/Smashables.h
+    game/SpeedTraps.cpp
+    game/SpeedTraps.h
     game/TimeOfDay.cpp
     game/TimeOfDay.h
     game/Title.cpp

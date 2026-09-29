@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <format>
+#include <utility>
 
 namespace fh {
 
@@ -54,6 +55,13 @@ GameObjects GameObjects::load(const Vfs& vfs, std::string_view track)
         objects.m_objects.push_back(std::move(object));
     }
     return objects;
+}
+
+GameObjects GameObjects::fromObjects(std::vector<GameObject> objects)
+{
+    GameObjects result;
+    result.m_objects = std::move(objects);
+    return result;
 }
 
 const GameObject* GameObjects::find(std::string_view id) const

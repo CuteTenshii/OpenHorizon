@@ -12,6 +12,8 @@
 #include "data/StringTable.h"
 #include "vfs/Vfs.h"
 
+#include <pugixml.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -91,6 +93,22 @@ private:
     std::unordered_map<std::string, std::optional<StringTable>> m_tables;
 };
 
+/// A value of media/gametunablesettings/globalregistry.xml, if it has it.
+std::optional<float> registryValue(const Vfs& vfs, std::string_view id)
+{
+    const std::optional<Bytes> data = vfs.read("media/gametunablesettings/globalregistry.xml");
+    pugi::xml_document document;
+    if (!data || !document.load_buffer(data->data(), data->size())) {
+        return std::nullopt;
+    }
+    for (const pugi::xml_node value : document.child("Registry").children("Value")) {
+        if (value.attribute("id").as_string() == id) {
+            return value.attribute("value").as_float();
+        }
+    }
+    return std::nullopt;
+}
+
 std::string replaceAll(std::string text, std::string_view from, std::string_view to)
 {
     for (std::size_t at = text.find(from); at != std::string::npos; at = text.find(from, at + to.size())) {
@@ -116,6 +134,8 @@ struct Hud::Impl {
     void updateCountdown(const HudState& state);
     void updatePrompt(const HudState& state);
     void updateRadio(const HudState& state);
+    void updateSpeedCamera(const HudState& state);
+    std::string formatSpeed(float metresPerSecond, bool metric);
     void handleFiredEvents();
     void setRadioStation(int station);
     void setRadioTrack(const std::string& title, const std::string& artist);
@@ -233,6 +253,28 @@ struct Hud::Impl {
     bool radioArtistShown = true;
     bool radioTuningShown = false;
 
+    /// The HUD_SPEED_CAMERA control (bound at 0x828b3178). Its stage is the
+    /// control's +112: 0 idle, 2 waiting for the personal best to show
+    /// (the reading arrives complete, so the live stage 1 is skipped), 3
+    /// showing it.
+    int speedCameraElement = -1;
+    int speedCameraContract = -1;
+    int speedCameraType = -1;
+    int speedCameraSpeed = -1;
+    int speedCameraUnits = -1;
+    int speedCameraOldBest = -1;
+    int speedCameraNewBest = -1;
+    std::vector<int> speedCameraLineUnits;
+    int speedCameraLeaderboard = -1;
+    int speedCameraStage = 0;
+    float speedCameraTimer = 0.0F;
+    std::size_t speedCameraSerial = 0;
+    std::optional<bool> speedCameraMetric;
+    /// UI/SpeedCamera/TimeUnitilPBShows: seconds from SHOW to the personal
+    /// best (0x828b5030); 2 in globalregistry.xml and as the executable's
+    /// default (0x8323e080).
+    float speedCameraBestDelay = 2.0F;
+
     /// The scene's SUPER_STACKER contracts, which move and stretch elements
     /// to follow the texts the HUD sets.
     SuperStackers stackers;
@@ -245,6 +287,9 @@ Hud::Impl::Impl(const Vfs& vfs, const std::string& track, const std::string& lan
     , renderer(vfs, fonts)
 {
     bind();
+    if (const std::optional<float> delay = registryValue(vfs, "UI/SpeedCamera/TimeUnitilPBShows")) {
+        speedCameraBestDelay = *delay;
+    }
     try {
         minimap = std::make_unique<MinimapRenderer>(vfs, renderer, track);
     } catch (const DataError& e) {
@@ -339,6 +384,17 @@ void Hud::Impl::bind()
     satNavContract = scene.contract(parameter(hudContract, "COMPONENT_SAT_NAV"), "HUD_SAT_NAV");
     satNavDistance = parameter(satNavContract, "TEXT_TARGET_DISTANCE");
 
+    speedCameraElement = parameter(hudContract, "COMPONENT_SPEED_CAMERA");
+    speedCameraContract = scene.contract(speedCameraElement, "HUD_SPEED_CAMERA");
+    speedCameraType = parameter(speedCameraContract, "AMBIENT_TYPE");
+    speedCameraSpeed = parameter(speedCameraContract, "CURRENT_SPEED");
+    speedCameraUnits = parameter(speedCameraContract, "CURRENT_SPEED_UNITS");
+    speedCameraOldBest = parameter(speedCameraContract, "OLD_PB");
+    speedCameraNewBest = parameter(speedCameraContract, "NEW_PB");
+    speedCameraLineUnits = {parameter(speedCameraContract, "COMP_LINE1_SPEED_UNITS"),
+        parameter(speedCameraContract, "COMP_LINE2_SPEED_UNITS")};
+    speedCameraLeaderboard = parameter(speedCameraContract, "VIEW_LEADERBOARD");
+
     const int radio = parameter(hudContract, "COMPONENT_RADIO");
     radioContract = scene.contract(radio, "HUD_RADIO");
     radioControl = parameter(radioContract, "RADIO_CONTROL");
@@ -386,6 +442,12 @@ void Hud::Impl::startSession(bool race)
     // fill their fixed texts.
     text(radioOffText, strings.get(kInGame, "IDS_RadioOff"));
     text(parameter(radioTuningContract, "TEXT_RADIO_TUNING"), strings.get("Main", "IDS_RadioTuning"));
+    // HUD_SPEED_CAMERA's attach (0x828b0858) fills its fixed texts; the
+    // units follow the unit setting, which the session may change.
+    text(speedCameraNewBest, strings.get(kActivities, "IDS_NewPB"));
+    text(speedCameraLeaderboard, strings.get(kActivities, "IDS_ViewLeaderboard"));
+    speedCameraStage = 0;
+    speedCameraMetric.reset();
 
     // The map renderer draws into a target the material shows; the model
     // only gives it its size (with USE_MATERIAL_VIEWPORT set, 0x826e2e20),
@@ -798,9 +860,72 @@ void Hud::Impl::updateRadio(const HudState& state)
     }
 }
 
+std::string Hud::Impl::formatSpeed(float metresPerSecond, bool metric)
+{
+    // The control formats with the unit value formatter (0x82d6fbd0) for
+    // unit type 13 and two decimals (0x828b0ba0). Its conversion from
+    // metres per second is taken to be the speed trap's 2.2369 for miles per
+    // hour (0x82005ae8) and 3.6 for kilometres per hour (inferred: the
+    // formatter's unit table was not traced).
+    const float value = metresPerSecond * (metric ? 3.6F : 2.2369F);
+    return std::format("{:.2f}", value);
+}
+
+void Hud::Impl::updateSpeedCamera(const HudState& state)
+{
+    if (!speedCameraMetric || *speedCameraMetric != state.metric) {
+        // The attach sets the units from the unit setting's speed entry:
+        // IDS_Mph or IDS_KmPerHour of the Activities table (0x828b0880).
+        const std::string units = strings.get(kActivities, state.metric ? "IDS_KmPerHour" : "IDS_Mph");
+        text(speedCameraUnits, units);
+        for (const int line : speedCameraLineUnits) {
+            text(line, units);
+        }
+        speedCameraMetric = state.metric;
+    }
+    if (state.speedCamera && state.speedCamera->serial != speedCameraSerial) {
+        // A new status (0x828b5658): the title by its kind, the speed, then
+        // SHOW; the reading is complete, so the control waits for the best.
+        const HudSpeedCamera& reading = *state.speedCamera;
+        speedCameraSerial = reading.serial;
+        text(speedCameraType,
+            strings.get(
+                kActivities, reading.zone ? "IDS_Description_AverageSpeedZone" : "IDS_Description_SpeedCamera"));
+        text(speedCameraSpeed, formatSpeed(reading.speed, state.metric));
+        fire(speedCameraContract, "SHOW");
+        speedCameraStage = 2;
+        speedCameraTimer = 0.0F;
+    }
+    if (speedCameraStage == 2 && state.speedCamera) {
+        speedCameraTimer += state.dt;
+        if (speedCameraTimer >= speedCameraBestDelay) {
+            // 0x828b32d0: a faster reading shows NEW PB!, a slower one the
+            // old best as "{0}: {1}" with IDS_PB.
+            const HudSpeedCamera& reading = *state.speedCamera;
+            if (reading.speed > reading.previousBest) {
+                fire(speedCameraContract, "SHOW_NEWPB");
+            } else {
+                text(speedCameraOldBest,
+                    std::format(
+                        "{}: {}", strings.get(kActivities, "IDS_PB"), formatSpeed(reading.previousBest, state.metric)));
+                fire(speedCameraContract, "SHOW_OLDPB");
+            }
+            speedCameraStage = 3;
+        }
+    }
+}
+
 void Hud::Impl::handleFiredEvents()
 {
     for (const Presentation::FiredEvent& fired : scene.takeFiredEvents()) {
+        // HUD_SPEED_CAMERA's event hook (0x828b55a8): PB_COMPLETE without a
+        // leaderboard comparison to show (status +38, set only by the
+        // online leaderboards) and HUD_COMPLETE both let the status go
+        // (0x828ae7f8); the slides play themselves out.
+        if ((fired.target == speedCameraElement || fired.target == speedCameraContract)
+            && (fired.event == "PB_COMPLETE" || fired.event == "HUD_COMPLETE")) {
+            speedCameraStage = 0;
+        }
         // HUD_RADIO's event hook (0x828b0400): the panel's slides fire
         // HIDE_COMPLETE near their end, and the control then hides the panel
         // (0x828ae540). What it does with START_HIDE (a call through its
@@ -833,6 +958,7 @@ void Hud::draw(const HudState& state, int width, int height)
     impl.updateCountdown(state);
     impl.updatePrompt(state);
     impl.updateRadio(state);
+    impl.updateSpeedCamera(state);
     impl.scene.update(state.dt);
     impl.handleFiredEvents();
     impl.stackers.layout(impl.scene, impl.renderer);
