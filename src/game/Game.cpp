@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <thread>
 #include <cmath>
 #include <format>
 #include <fstream>
@@ -143,10 +144,15 @@ Game::Game(Window& window, const GameOptions& options)
     try {
         m_pause = std::make_unique<ui::PauseMenu>(m_vfs);
         m_map = std::make_unique<ui::WorldMap>(m_vfs, m_options.track);
+        m_loading = std::make_unique<ui::LoadingScreen>(m_vfs, "en", std::random_device{}());
+        // Free roam's first load shows the "freeroam" tip group, as fast
+        // travel does; the group the game's initial load uses was not traced.
+        m_loading->show("freeroam");
     } catch (const std::exception& e) {
         logWarning("menus: {}; no pause menu or map", e.what());
         m_pause.reset();
         m_map.reset();
+        m_loading.reset();
     }
 
     try {
@@ -275,6 +281,14 @@ void Game::drawLoading(const std::string& message)
     glViewport(0, 0, w, h);
     glClearColor(0.04F, 0.04F, 0.05F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT);
+    if (m_loading && m_loading->isShown()) {
+        const auto now = std::chrono::steady_clock::now();
+        m_loading->update(std::chrono::duration<float>(now - m_loadingDrawn).count());
+        m_loadingDrawn = now;
+        m_loading->draw(w, h);
+        m_window.swapBuffers();
+        return;
+    }
     const float scale = 1.2F;
     const float width = m_overlay->textWidth(message, scale);
     m_overlay->text((static_cast<float>(w) - width) * 0.5F, static_cast<float>(h) * 0.5F, message, kHudText, scale);
@@ -286,7 +300,14 @@ void Game::loadWorld()
 {
     drawLoading(std::format("Loading {}", m_options.track));
     const auto start = std::chrono::steady_clock::now();
-    m_world = world::TrackWorld::load(m_vfs, m_options.track);
+    // Progress arrives from whichever loader thread finished a batch; only
+    // the main thread may draw.
+    const std::thread::id mainThread = std::this_thread::get_id();
+    m_world = world::TrackWorld::load(m_vfs, m_options.track, [&](std::size_t, std::size_t) {
+        if (std::this_thread::get_id() == mainThread) {
+            drawLoading(std::format("Loading {}", m_options.track));
+        }
+    });
     if (!m_world) {
         throw DataError("track {} could not be loaded", m_options.track);
     }
@@ -425,6 +446,9 @@ void Game::spawnPlayer()
     placeVehicle(player(), m_spawnPosition, m_spawnHeading);
     if (m_radio && !m_playerPlaced) {
         m_radio->startFreeRoam();
+    }
+    if (m_loading) {
+        m_loading->hide();
     }
     m_playerPlaced = true;
     m_chaseVelocity = glm::vec3(0.0F);
@@ -1925,7 +1949,7 @@ bool Game::updateMenus(const ui::MenuInput& input, float dt)
     case ui::PauseAction::RetireFromEvent:
         endRace();
         break;
-    case ui::PauseAction::QuitToTitle:
+    case ui::PauseAction::Quit:
         // QUIT leaves the game for the desktop.
         return false;
     default:
@@ -2031,7 +2055,7 @@ void Game::drawHud(float dt)
             y += lineHeight;
         }
     }
-    if (!m_playerPlaced) {
+    if (!m_playerPlaced && !m_loading) {
         const std::string message = "Loading the area around the start";
         const float width = m_overlay->textWidth(message, 1.0F);
         m_overlay->rect((w - width) * 0.5F - 20.0F, h * 0.5F - 12.0F, width + 40.0F, m_overlay->lineHeight() + 24.0F,
@@ -2223,6 +2247,10 @@ int Game::run()
         }
         if (m_pause && m_pause->isOpen()) {
             m_pause->draw(m_window.width(), m_window.height());
+        }
+        if (m_loading && m_loading->isShown()) {
+            m_loading->update(dt);
+            m_loading->draw(m_window.width(), m_window.height());
         }
         m_frameStats->mark(Part::DrawOther);
 

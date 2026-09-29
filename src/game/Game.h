@@ -30,6 +30,7 @@
 #include "render/Overlay.h"
 #include "render/WorldRenderer.h"
 #include "ui/Hud.h"
+#include "ui/LoadingScreen.h"
 #include "ui/MenuCommon.h"
 #include "ui/PauseMenu.h"
 #include "ui/WorldMap.h"
@@ -39,6 +40,7 @@
 #include <glm/glm.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -204,6 +206,10 @@ private:
     /// menu); while either is open the simulation stands still.
     std::unique_ptr<ui::PauseMenu> m_pause;
     std::unique_ptr<ui::WorldMap> m_map;
+    /// The game's loading screen, shown until the player's car is placed.
+    std::unique_ptr<ui::LoadingScreen> m_loading;
+    /// When the loading screen was last drawn, for its tip timing.
+    std::chrono::steady_clock::time_point m_loadingDrawn = std::chrono::steady_clock::now();
     /// Half a stick's travel counts as a menu direction; the threshold the
     /// game's front end uses was not traced.
     ui::MenuInputReader m_menuInput{0.5F};
