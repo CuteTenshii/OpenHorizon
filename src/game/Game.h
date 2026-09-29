@@ -192,6 +192,10 @@ public:
     std::size_t activityPropChunksDrawn() const { return m_activityProps ? m_activityProps->chunksDrawn() : 0; }
     /// Times the profile has been written since the game started.
     std::size_t profileSaves() const { return m_profileSaves; }
+    /// Where the time of the frames goes, per part of the frame; the perf
+    /// test reads it and may serialise it (FrameStats::setSerialised).
+    const render::FrameStats& frameStats() const { return *m_frameStats; }
+    render::FrameStats& frameStats() { return *m_frameStats; }
 
 private:
     struct BodySphere {

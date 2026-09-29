@@ -112,3 +112,12 @@ target_link_libraries(tst_scenarios PRIVATE fh1engine)
 # FH1_GAME_DIR. Each scenario loads the game, so they take minutes.
 add_test(NAME tst_scenarios COMMAND tst_scenarios)
 set_tests_properties(tst_scenarios PROPERTIES TIMEOUT 1800)
+
+add_executable(tst_perf TestHarness.h tst_perf.cpp)
+target_compile_options(tst_perf PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_perf PRIVATE fh1engine)
+# Free roam driven along the roads, timed per part of the frame, against a
+# drawing budget. Needs the disc and a GPU, and its timings depend on the
+# machine and its load: labelled perf and left out of the pre-push run.
+add_test(NAME tst_perf COMMAND tst_perf)
+set_tests_properties(tst_perf PROPERTIES LABELS perf TIMEOUT 600)

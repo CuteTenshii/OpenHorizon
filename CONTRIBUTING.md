@@ -59,7 +59,7 @@ Each area is a library in its own `src/` folder with its own `CMakeLists.txt`, t
 
 ## Commits
 
-One concern per commit, with a message that says why. A short scoped subject such as `fix(car): hold a stopped car on the handbrake` reads well in the log. Every commit should build and pass the tests on its own; the pre-push hook builds and runs everything except the scenarios and the slow tests.
+One concern per commit, with a message that says why. A short scoped subject such as `fix(car): hold a stopped car on the handbrake` reads well in the log. Every commit should build and pass the tests on its own; the pre-push hook builds and runs everything except the scenarios, the perf test and the slow tests.
 
 ## What to work on
 

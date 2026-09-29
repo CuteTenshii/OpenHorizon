@@ -39,6 +39,7 @@
     X(PFNGLFINISHPROC, glFinish)                                                                                       \
     X(PFNGLBEGINQUERYPROC, glBeginQuery)                                                                               \
     X(PFNGLENDQUERYPROC, glEndQuery)                                                                                   \
+    X(PFNGLQUERYCOUNTERPROC, glQueryCounter)                                                                           \
     X(PFNGLGETQUERYOBJECTIVPROC, glGetQueryObjectiv)                                                                   \
     X(PFNGLGETQUERYOBJECTUI64VPROC, glGetQueryObjectui64v)                                                             \
     X(PFNGLDEBUGMESSAGECALLBACKPROC, glDebugMessageCallback)                                                           \

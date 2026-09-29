@@ -12,7 +12,9 @@ pre-commit:
 pre-push:
   commands:
     # Builds and runs the unit tests and car checks; the scenario tests take
-    # minutes and run with scripts/run-tests.sh, and the slow tests sweep
-    # every file of a kind on the disc (scripts/run-tests.sh build -L slow).
+    # minutes and run with scripts/run-tests.sh, the perf test's timings
+    # depend on the machine (scripts/run-tests.sh build -L perf), and the
+    # slow tests sweep every file of a kind on the disc
+    # (scripts/run-tests.sh build -L slow).
     tests:
-      run: scripts/run-tests.sh build -E tst_scenarios -LE slow
+      run: scripts/run-tests.sh build -E tst_scenarios -LE 'perf|slow'

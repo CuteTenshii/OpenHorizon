@@ -2863,12 +2863,17 @@ bool Game::frame(const InputState& controls, float dt)
             drawVehicles(frame);
             m_frameStats->mark(Part::DrawCars);
             m_frame->sky(frame);
+            m_frameStats->mark(Part::DrawSky);
             drawVehicleGlass(frame);
+            m_frameStats->mark(Part::DrawGlass);
             drawDrivingLine(frame.projection * frame.view);
+            m_frameStats->mark(Part::DrawDrivingLine);
             drawParticles(frame);
+            m_frameStats->mark(Part::DrawParticles);
             m_overlayVertices = m_overlay->queuedVertices();
             m_overlay->flush(frame.projection * frame.view, m_present.width(), m_present.height());
             m_frame->finish(m_tone);
+            m_frameStats->mark(Part::Tonemap);
             if (const float fade = fadeAlpha(); fade > 0.0F && m_fadeIn) {
                 m_overlay->rect(0.0F, 0.0F, static_cast<float>(m_present.width()),
                     static_cast<float>(m_present.height()), glm::vec4(m_fadeIn->colour, fade));
@@ -2879,6 +2884,7 @@ bool Game::frame(const InputState& controls, float dt)
                 drawHud(dt);
             }
             m_overlay->flush(glm::mat4(1.0F), m_present.width(), m_present.height());
+            m_frameStats->mark(Part::DrawHud);
         }
         if (m_pause && m_pause->isOpen()) {
             m_pause->draw(m_present.width(), m_present.height());
@@ -2887,7 +2893,7 @@ bool Game::frame(const InputState& controls, float dt)
             m_loading->update(dt);
             m_loading->draw(m_present.width(), m_present.height());
         }
-        m_frameStats->mark(Part::DrawOther);
+        m_frameStats->mark(Part::DrawMenus);
 
         ++m_frameCount;
         m_present.present();
