@@ -2331,8 +2331,13 @@ ui::HudState Game::hudState(float dt) const
         }
     }
     // The sat-nav route: the route entity, which the minimap draws from the
-    // car's place along it (its reveal is whole outside the map).
+    // car's place along it (its reveal is whole outside the map), and the
+    // distance left under the minimap (0x8266cf20 reads the planner's +624
+    // while it has a goal; a race's own distance is kept in races).
     if (m_navigation && !m_navigation->routeNodes().empty()) {
+        if (!state.destinationDistance && m_navigation->routeDistance() > 0.0F) {
+            state.destinationDistance = m_navigation->routeDistance();
+        }
         ui::HudMapLine route{"type", "route", m_navigation->route(), {}};
         route.ratios = ui::routeRatios(route.points.size(), m_navigation->routeProgress(), 1.0F);
         state.mapLines.push_back(std::move(route));

@@ -190,6 +190,11 @@ public:
 
     void draw(const HudState& state, int width, int height);
 
+    /// The sat-nav readout's text as last drawn (HUD_SAT_NAV's
+    /// TEXT_TARGET_DISTANCE), for the scenario tests; empty when the HUD
+    /// has none.
+    std::string satNavDistanceText() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

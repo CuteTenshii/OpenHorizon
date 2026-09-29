@@ -1940,6 +1940,65 @@ TEST(map_line_pick_tries_the_segments_beside_the_nearest_point)
     }
 }
 
+// "When a direction is selected, the number of km is supposed to be
+// shown." The planner's distance (0x82a4d4a8): from the car to the route's
+// node after its place, then along the route to the waypoint.
+TEST(disc_route_distance_is_what_is_left_of_the_route)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    Navigation navigation(vfs, "colorado");
+    const NavFile& nav = navigation.network();
+    const NavWay& road = nav.ways[33];
+    const glm::vec3 from = nav.nodes[road.nodes[0]].position;
+    const glm::vec3 ahead = glm::normalize(nav.nodes[road.nodes[1]].position - from);
+    navigation.update(from, ahead);
+    CHECK_EQ(navigation.routeDistance(), 0.0F);
+
+    glm::vec2 waypoint(0.0F);
+    for (const NavWay& way : nav.ways) {
+        const glm::vec2 middle = way.points[way.points.size() / 2];
+        if (way.tag("road_type") == "a" && glm::length(middle - glm::vec2(from.x, from.z)) > 3000.0F) {
+            waypoint = middle;
+            break;
+        }
+    }
+    navigation.setDestination(waypoint);
+    const std::vector<std::uint32_t> route = navigation.routeNodes();
+    CHECK(route.size() > 3);
+    if (route.size() <= 3) {
+        return;
+    }
+    // A new search has no distance until the car is found along it.
+    CHECK_EQ(navigation.routeDistance(), 0.0F);
+    CHECK_EQ(navigation.routeLength(), 0.0F);
+    const auto along = [&](std::size_t first) {
+        float length = 0.0F;
+        for (std::size_t i = first + 1; i < route.size(); ++i) {
+            length += glm::length(nav.nodes[route[i]].position - nav.nodes[route[i - 1]].position);
+        }
+        return length;
+    };
+    navigation.update(from, ahead);
+    CHECK_EQ(navigation.routeProgress(), std::size_t{0});
+    CHECK_NEAR(navigation.routeDistance(), along(0), 0.01);
+    CHECK_NEAR(navigation.routeLength(), along(0), 0.01);
+
+    // A few metres on towards the next node, the distance shrinks by as
+    // much, and the length the reveal is timed by stays.
+    const glm::vec3 next = nav.nodes[route[1]].position;
+    const glm::vec3 moved = from + glm::normalize(next - from) * 3.0F;
+    navigation.update(moved, ahead);
+    CHECK_EQ(navigation.routeProgress(), std::size_t{0});
+    CHECK_NEAR(navigation.routeDistance(), glm::length(next - moved) + along(1), 0.01);
+    CHECK_NEAR(navigation.routeLength(), along(0), 0.01);
+    CHECK(navigation.routeDistance() < navigation.routeLength());
+}
+
 } // namespace
 
 int main(int argc, char** argv)

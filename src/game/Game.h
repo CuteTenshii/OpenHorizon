@@ -156,6 +156,8 @@ public:
     /// The road network, the car's place on it and the roads driven; null
     /// when the track's network could not be read.
     const ui::Navigation* navigation() const { return m_navigation.get(); }
+    /// The HUD, or nullptr when its scene could not be loaded.
+    const ui::Hud* hud() const { return m_hud.get(); }
     /// Whether the last frame drew the world (the map screen does not).
     bool worldDrawn() const { return m_worldDrawn; }
     float timeOfDaySeconds() const { return m_timeOfDay ? m_timeOfDay->seconds() : 0.0F; }

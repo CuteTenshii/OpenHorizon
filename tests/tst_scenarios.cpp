@@ -1351,6 +1351,90 @@ TEST(setRouteOnARoadAwayFromMarkers)
     CHECK(navigation->routeNodes().empty());
 }
 
+// "When a direction is selected, the number of km is supposed to be
+// shown." The HUD's sat-nav readout shows the planner's distance left
+// (0x8266cf20 reads its +624) in kilometres with one decimal, and it goes
+// down as the car drives along the route.
+TEST(satNavShowsTheDistanceLeft)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::GameOptions options;
+    options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
+    options.spawnHeading = 3.14159265F;
+    options.metric = true;
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(0.5F, {});
+    const fh::ui::Navigation* navigation = session.game().navigation();
+    const fh::ui::WorldMap* map = session.game().worldMap();
+    const fh::ui::Hud* hud = session.game().hud();
+    CHECK(navigation != nullptr && map != nullptr && hud != nullptr);
+    if (navigation == nullptr || map == nullptr || hud == nullptr) {
+        return;
+    }
+    CHECK(!session.game().currentHudState().destinationDistance.has_value());
+    // The car faces south along its road: the destination is that road
+    // 800 m to the south, so the route runs ahead of the car.
+    session.press(fh::Button::Back);
+    session.run(1.0F, {});
+    const glm::vec2 car = session.game().currentMapState().playerPosition;
+    for (int frame = 0; frame < 1200 && car.y - map->camera().cursor().y < 800.0F; ++frame) {
+        session.run(kStep, {.cursorY = -0.25F});
+    }
+    session.run(0.5F, {});
+    CHECK(map->hovered() == nullptr);
+    session.press(fh::Button::A);
+    session.press(fh::Button::B);
+    session.run(0.5F, {});
+    CHECK(navigation->destination().has_value());
+
+    // What is left: from the car to the route's node after its place, then
+    // along the route.
+    const auto left = [&] {
+        const std::vector<std::uint32_t>& route = navigation->routeNodes();
+        const std::size_t next = navigation->routeProgress() + 1;
+        if (next >= route.size()) {
+            return 0.0F;
+        }
+        const fh::ui::NavFile& nav = navigation->network();
+        float distance = glm::length(session.game().playerCar().position() - nav.nodes[route[next]].position);
+        for (std::size_t i = next + 1; i < route.size(); ++i) {
+            distance += glm::length(nav.nodes[route[i]].position - nav.nodes[route[i - 1]].position);
+        }
+        return distance;
+    };
+    const auto shown = [&] {
+        return std::format("{:.1f} KM", session.game().currentHudState().destinationDistance.value_or(0.0F) / 1000.0F);
+    };
+    const std::optional<float> first = session.game().currentHudState().destinationDistance;
+    CHECK(first.has_value());
+    if (!first) {
+        return;
+    }
+    CHECK_NEAR(*first, left(), 1.0);
+    CHECK_EQ(hud->satNavDistanceText(), shown());
+    session.capture("satnav_distance");
+
+    // Driving on along the route until the car's place moves along it,
+    // then stopping there: the readout counts down with the car.
+    for (int frame = 0; frame < 1200 && navigation->routeProgress() < 2; ++frame) {
+        session.run(kStep, {.throttle = 0.5F});
+    }
+    CHECK(navigation->routeProgress() >= 2);
+    session.run(3.0F, {.brake = 1.0F});
+    CHECK(navigation->destination().has_value());
+    const std::optional<float> later = session.game().currentHudState().destinationDistance;
+    CHECK(later.has_value());
+    if (later) {
+        CHECK(*later < *first - 20.0F);
+        CHECK_NEAR(*later, left(), 1.0);
+    }
+    CHECK_EQ(hud->satNavDistanceText(), shown());
+    session.capture("satnav_distance_driven");
+}
+
 } // namespace
 
 int main(int argc, char** argv)

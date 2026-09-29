@@ -615,11 +615,12 @@ void Hud::Impl::updateSatNav(const HudState& state)
     // HUD_SAT_NAV's distance (0x828b0768): SHOW_TARGET when a distance
     // appears, the text whenever it changes, HIDE_TARGET when it goes to 0.
     // The text is the game's unit value formatter (0x82d6fbd0 with unit
-    // type 10 and one decimal, as the call passes); its kilometre or mile
-    // template (UnitStrings IDS_Units_Kilometers and IDS_Units_Miles) and
-    // the metre-to-mile factor (1609.344, a constant of the executable) are
-    // taken to be what that unit type selects (inferred: its table was not
-    // traced).
+    // type 10 and one decimal, as the call passes). Verified from its
+    // tables: unit type 10 is unit 16 (UnitStrings IDS_Units_Miles, a
+    // factor of 0.000621371 per metre) in unit systems 0 and 1 and unit 13
+    // (IDS_Units_Kilometers, 0.001) in systems 2 to 4 (0x82d6a350,
+    // 0x82d69a50); English's "en" locale uses system 0 and "en-eu" system 2
+    // (0x82d74a48). Inferred: that the metric setting stands for the second.
     const float distance = state.destinationDistance.value_or(0.0F);
     if (distance != 0.0F) {
         if (shownDistance == 0.0F) {
@@ -942,6 +943,11 @@ Hud::Hud(const Vfs& vfs, const std::string& track, const std::string& language)
 }
 
 Hud::~Hud() = default;
+
+std::string Hud::satNavDistanceText() const
+{
+    return m_impl->satNavDistance >= 0 ? m_impl->scene.text(m_impl->satNavDistance) : std::string();
+}
 
 void Hud::draw(const HudState& state, int width, int height)
 {
