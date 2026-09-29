@@ -158,6 +158,10 @@ VectorFont VectorFont::parse(ByteView data, const std::string& source)
         const std::uint32_t count = in.u32();
         const std::uint32_t firstIndex = in.u32();
         const std::uint32_t triangles = in.u32();
+        // The meshes start at the pen; the glyph draw (0x82442cb4) hands
+        // this offset to the vertex shader with the geometry, and without it
+        // wide glyphs such as 'm' and 'w' sit a tenth of an em too far right.
+        const float xOffset = in.f32();
         if (vertexOffset % 8 != 0 || vertexOffset + count * 8 > vertexBytes
             || (firstIndex + triangles * 3) > indexCount) {
             in.fail(std::format(
@@ -182,7 +186,7 @@ VectorFont VectorFont::parse(ByteView data, const std::string& source)
                 const std::uint16_t rawX = loadBe16(v);
                 const float x = halfToFloat(rawX);
                 GlyphVertex& corner = corners[c];
-                corner.position = {std::fabs(x), halfToFloat(loadBe16(v + 2))};
+                corner.position = {std::fabs(x) + xOffset, halfToFloat(loadBe16(v + 2))};
                 corner.curve = {halfToFloat(loadBe16(v + 4)), halfToFloat(loadBe16(v + 6))};
                 if ((rawX & 0x7FFFU) != 0) {
                     ((rawX & 0x8000U) ? outsideVotes : insideVotes) += 1;

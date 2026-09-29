@@ -551,7 +551,7 @@ Bytes buildFont()
         w.u32(3);
         w.u32(g * 3);
         w.u32(1);
-        w.f32(0.0F);
+        w.f32(g == 0 ? 0.0F : -0.125F);
         w.f32(0.0F);
         w.f32(1.0F);
     }
@@ -592,7 +592,8 @@ TEST(vector_font_reads_glyphs)
     CHECK(i != nullptr);
     if (i) {
         CHECK(i->triangles[0].outside);
-        CHECK_NEAR(i->triangles[1].position.x, 0.5, 1e-3);
+        // The record's x offset moves the mesh onto the pen.
+        CHECK_NEAR(i->triangles[1].position.x, 0.5 - 0.125, 1e-3);
     }
     CHECK_NEAR(font.capHeight(), 0.75, 1e-3);
     CHECK_NEAR(font.ascent(), 0.75, 1e-4);

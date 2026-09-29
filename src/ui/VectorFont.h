@@ -37,7 +37,8 @@ struct Glyph {
     char32_t codePoint = 0;
     /// Pen advance in ems.
     float advance = 0.0F;
-    /// Triangle list, three vertices per triangle.
+    /// Triangle list, three vertices per triangle, with the record's x
+    /// offset applied.
     std::vector<GlyphVertex> triangles;
     /// Extent of the outline (not the covering mesh) in ems.
     glm::vec2 inkMin{0.0F};
@@ -62,15 +63,22 @@ struct Glyph {
 ///         count, f32 space advance (ems), f32 build size (14), f32 line
 ///         height (ems), u32 8, 8 x s32 metrics in font units
 ///         (ascent, descent, ...), u32
-///       glyph records, 40 bytes: u32 code point, f32 advance, u32
-///         0xFFFF0000, u32 vertex byte offset, u32 vertex count, u32 first
-///         index, u32 triangle count, f32 x offset (unused: vertices are
-///         already placed), f32 0, f32 1
+///       glyph records, 40 bytes: u32 code point, f32 advance, s16 first
+///         kerning pair (-1 for none) and a u16 the game does not read, u32 vertex
+///         byte offset, u32 vertex count, u32 first index, u32 triangle
+///         count, f32 x offset, f32 y offset (0 in every font), f32 scale
+///         (1 in every font). The draw (0x82442cb4) passes the last three
+///         to the vertex shader: the meshes start at the pen, and the x
+///         offset (about -0.04 to -0.25 em) moves each glyph onto it.
 ///     .gpu: vertices of four halfs {x, y, u, v}, where the sign of x marks
 ///       an outside triangle and |x| is the position, then u16 indices
 ///       (relative to the glyph's first vertex)
 ///
-/// Fonts have no kerning pairs ("num kerns 0" in the compiler logs).
+/// Fonts have no kerning pairs: the kerning lookup (0x82ef4cd8) returns 0
+/// when a glyph's first pair is -1, which it is for every glyph of every
+/// font on the disc ("num kerns 0" in the compiler logs). The layout
+/// (0x82442d4c) advances the pen by the glyph's advance times the size,
+/// without rounding to pixels.
 class VectorFont {
 public:
     /// Throws DataError if the data is not a vfont.
