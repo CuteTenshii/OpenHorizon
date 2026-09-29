@@ -85,6 +85,8 @@ private:
         ShHemisphereBlue,
         ShDirectionalColour,
         PaintColour,
+        LampAmounts,
+        HeadLampAmounts,
         Count,
     };
     using ConstantSlots = std::array<XenosProgram::FloatSlot, static_cast<std::size_t>(Constant::Count)>;

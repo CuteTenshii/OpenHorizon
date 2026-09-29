@@ -141,7 +141,8 @@ GLenum blendFactor(std::uint32_t d3dBlend)
 constexpr std::array kConstantNames{"matWVP", "matWV", "matW", "matWInvT", "c_eyePosWS", "c_vsEyePosWS",
     "pack_partPosition", "uv1CompressionFactors", "uv2CompressionFactors", "shCompressionFactors", "vsUseMorph",
     "q_ModelToWorld", "tireRotation", "wheelScale", "tireDeformation", "wheelMorph", "shDirectionalLightI",
-    "shHemisphericalLightR", "shHemisphericalLightG", "shHemisphericalLightB", "shDirectionalColour", "PaintColor"};
+    "shHemisphericalLightR", "shHemisphericalLightG", "shHemisphericalLightB", "shDirectionalColour", "PaintColor",
+    "dynamicLightsAmount", "dynamicLights2"};
 
 /// Texture units whose binding draw() tracks, enough for every sampler
 /// unit of the translated shaders (pixel s0 to s15, vertex from 16).
@@ -409,6 +410,18 @@ void CarRenderer::fillConstants(XenosConstants& c, const Pass& pass, const Frame
         XenosProgram::set(c, slot, value);
     }
     set(Constant::PaintColour, glm::vec4(pose.paint, 1.0F));
+    // The lamps, as the car draw sets them for every pass (0x824491B8-
+    // 0x824493FC) from the car presentation's lamp setters (vtable
+    // 0x82255BFC, slots 60-65, identified by their order and argument
+    // counts against the deferred commands at 0x82E7E368-0x82E7E3F0):
+    // dynamicLightsAmount holds the brake, reverse and left and right
+    // indicator amounts, dynamicLights2 the headlamp amount, a light-state
+    // bit, the daytime running lamp amount and another bit. The lamp lenses
+    // add BrakeColor times dynamicLightsAmount.x. This game drives only the
+    // brake and headlamp amounts (CarPose); the reverse lamps, indicators,
+    // running lamps and light-state bits have no source here and stay 0.
+    set(Constant::LampAmounts, glm::vec4(pose.brakeLights, 0.0F, 0.0F, 0.0F));
+    set(Constant::HeadLampAmounts, glm::vec4(pose.headLights, 0.0F, 0.0F, 0.0F));
     c.system.streamBase[kVertexStream] = range.byteOffset / 4;
     c.system.streamBase[kMorphStream] = 0;
     c.system.streamBase[kDamageStream] = 0;
