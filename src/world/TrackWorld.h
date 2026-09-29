@@ -3,6 +3,7 @@
 #include "Archive.h"
 #include "ScatterSet.h"
 #include "TrackPlacements.h"
+#include "TrackShaders.h"
 #include "TrackTextures.h"
 #include "WorldIndex.h"
 #include "ZoneGrid.h"
@@ -48,6 +49,8 @@ struct TrackWorld {
     std::optional<TrackPlacements> placements;
     /// Missing when the PVS file cannot be read; geometry is then untextured.
     std::optional<TrackTextures> textures;
+    /// The track's effects, which the renderer draws the models with.
+    TrackShaders shaders;
     WorldIndex index;
     /// What was missing or could not be read, for the log.
     std::vector<std::string> warnings;

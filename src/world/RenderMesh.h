@@ -61,6 +61,12 @@ struct RenderMesh {
         std::uint32_t tableIndex = 0;
         /// Texture coordinate offset (x, y) and scale (z, w).
         glm::vec4 uvOffsetScale{0.0F, 0.0F, 1.0F, 1.0F};
+        /// What the track shaders apply to a stored position before the
+        /// world matrix (their positionOffset and positionScale constants):
+        /// position * scale + offset, in the file's coordinates (Z not yet
+        /// negated).
+        glm::vec3 positionOffset{0.0F};
+        glm::vec3 positionScale{1.0F};
     };
     struct Part {
         std::string name;

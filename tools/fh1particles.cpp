@@ -265,7 +265,7 @@ int drawScene(const fh::Vfs& vfs, const particles::ParticleManager& manager, par
     pf.nearPlane = camera.nearPlane;
     pf.towardsSun = -frame.lighting.sunDirection;
     pf.sunColour = frame.lighting.sunColour;
-    pf.ambientColour = frame.lighting.ambientTop;
+    pf.ambientColour = frame.lighting.ambientColour;
 
     frameRenderer.begin(kWidth, kHeight);
     frameRenderer.sky(frame);

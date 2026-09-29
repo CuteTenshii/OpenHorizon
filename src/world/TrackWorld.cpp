@@ -31,8 +31,8 @@ std::optional<TrackWorld> TrackWorld::load(
             world.warnings.push_back(std::format("the backdrop terrain is drawn from everywhere: {}", e.what()));
         }
     } else {
-        world.warnings.push_back(std::format("the backdrop terrain is drawn from everywhere: {} is missing",
-            paths.zoneGrid));
+        world.warnings.push_back(
+            std::format("the backdrop terrain is drawn from everywhere: {} is missing", paths.zoneGrid));
     }
 
     if (const std::optional<Bytes> pvs = vfs.read(paths.pvs)) {
@@ -54,6 +54,11 @@ std::optional<TrackWorld> TrackWorld::load(
     } else {
         world.warnings.push_back(
             std::format("props are not placed and textures are unknown: {} is missing", paths.pvs));
+    }
+
+    world.shaders = TrackShaders::load(archive);
+    if (world.shaders.failed() > 0) {
+        world.warnings.push_back(std::format("{} track effects could not be read", world.shaders.failed()));
     }
 
     std::optional<WorldIndex> index = WorldIndex::build(archive, progress, cancel,

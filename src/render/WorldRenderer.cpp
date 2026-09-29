@@ -2,10 +2,18 @@
 
 #include "base/Log.h"
 #include "world/TrackTextures.h"
+#include "xenos/GlslTranslator.h"
+
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
+#include <format>
+#include <stdexcept>
 #include <string>
+#include <string_view>
+#include <tuple>
 
 namespace fh::render {
 
@@ -19,136 +27,83 @@ constexpr float kNearbyRadius = 600.0F;
 constexpr std::size_t kTextureBudget = std::size_t{1} << 30;
 constexpr int kMaxUploadsPerFrame = 6;
 constexpr int kMaxTextureUploadsPerFrame = 48;
+/// Job priority of translating the track effects: before any tile (tiles
+/// use their distance in metres, moving objects -2000).
+constexpr float kTranslatePriority = -3000.0F;
+constexpr std::size_t kFrameBlockBytes = sizeof(TrackFrameConstants);
+/// Without bindless textures each batch's material is a uniform block of
+/// its own, on the 256-byte offset alignment.
+constexpr std::size_t kMaterialBlockBytes = 256;
+/// Texture handle table entries allocated at first; it doubles as needed.
+constexpr std::size_t kInitialHandles = 4096;
+constexpr std::size_t kProgramBlockBytes = 256 * sizeof(glm::vec4);
+/// Offsets in the fixed block buffer: the translator's control block, then
+/// its system block without and with the alpha-to-mask emulation, each on a
+/// 256-byte boundary.
+constexpr std::size_t kControlOffset = 0;
+constexpr std::size_t kSystemOffset = 256;
+constexpr std::size_t kSystemAlphaToMaskOffset = 512;
+constexpr std::size_t kFixedBytes = 768;
+/// Xbox 360 D3DCULL_NONE.
+constexpr std::uint32_t kCullNone = 0;
+/// Direct3D's alpha comparison "greater or equal", in the translator's
+/// alphaTest numbering.
+constexpr float kAlphaGreaterEqual = 7.0F;
 
-const char* const kVertexSource = R"(#version 450 core
-layout(location = 0) in vec3 aPosition;
-layout(location = 1) in vec3 aNormal;
-layout(location = 2) in vec2 aTexcoord0;
-layout(location = 3) in vec2 aTexcoord1;
-layout(location = 4) in vec4 aColour;
-uniform mat4 uViewProjection;
-// Identity for the static world; places moving objects (knocked-over props).
-uniform mat4 uModel;
-out vec3 vPosition;
-out vec3 vNormal;
-out vec2 vTexcoord0;
-out vec2 vTexcoord1;
-out vec4 vColour;
-void main()
+GLenum blendFactor(std::uint32_t xenosBlend)
 {
-    vec4 world = uModel * vec4(aPosition, 1.0);
-    vPosition = world.xyz;
-    vNormal = mat3(uModel) * aNormal;
-    vTexcoord0 = aTexcoord0;
-    vTexcoord1 = aTexcoord1;
-    vColour = aColour;
-    gl_Position = uViewProjection * world;
-}
-)";
-
-const char* const kFragmentBody = R"(
-in vec3 vPosition;
-in vec3 vNormal;
-in vec2 vTexcoord0;
-in vec2 vTexcoord1;
-in vec4 vColour;
-layout(location = 0) out vec4 fragColour;
-layout(binding = 0) uniform sampler2D uDiffuse;
-layout(binding = 1) uniform sampler2D uLayerB;
-layout(binding = 2) uniform sampler2D uLayerC;
-layout(binding = 3) uniform sampler2D uSplat;
-layout(binding = 4) uniform sampler2D uOcclusion;
-uniform int uShading;
-uniform vec2 uScaleA;
-uniform vec2 uScaleB;
-uniform vec2 uScaleC;
-uniform vec3 uCamera;
-uniform float uTime;
-
-const int kPlain = 0;
-const int kSplat = 1;
-const int kVertexBlend = 2;
-const int kWater = 3;
-
-// Ground mixes up to three layers: by the splat map (red weighs B, green C,
-// the rest A) or by the vertex colour's alpha, then darkens them by the
-// baked occlusion map on the second texture coordinates.
-vec3 groundColour()
-{
-    vec3 a = texture(uDiffuse, vTexcoord0 * uScaleA).rgb;
-    vec3 b = texture(uLayerB, vTexcoord0 * uScaleB).rgb;
-    vec3 blended;
-    if (uShading == kSplat) {
-        vec3 c = texture(uLayerC, vTexcoord0 * uScaleC).rgb;
-        vec2 w = texture(uSplat, vTexcoord1).rg;
-        float wa = max(1.0 - w.x - w.y, 0.0);
-        blended = (a * wa + b * w.x + c * w.y) / max(wa + w.x + w.y, 1e-4);
-    } else {
-        blended = mix(a, b, vColour.a);
+    switch (xenosBlend) {
+    case 0:
+        return GL_ZERO;
+    case 6:
+        return GL_SRC_ALPHA;
+    case 7:
+        return GL_ONE_MINUS_SRC_ALPHA;
+    default:
+        return GL_ONE;
     }
-    return blended * texture(uOcclusion, vTexcoord1).r;
 }
 
-void main()
+bool hasExtension(std::string_view name)
 {
-    vec3 toEye = uCamera - vPosition;
-    float distance = length(toEye);
-    toEye /= max(distance, 1e-4);
-    vec3 toSun = -uSunDirection;
-
-    if (uShading == kWater) {
-        // Two scrolling normal-map samples ripple the surface; the colour is
-        // a deep tint mixed towards the sky by the Fresnel term.
-        vec2 flow = vec2(uTime * 0.013, uTime * 0.008);
-        vec3 n1 = texture(uDiffuse, vTexcoord0 * 4.0 + flow).xyz * 2.0 - 1.0;
-        vec3 n2 = texture(uDiffuse, vTexcoord0 * 7.0 - flow.yx).xyz * 2.0 - 1.0;
-        vec3 surfaceNormal = normalize(vec3((n1.x + n2.x) * 0.1, 1.0, (n1.y + n2.y) * 0.1));
-        float fresnel = 0.02 + 0.98 * pow(1.0 - clamp(dot(toEye, surfaceNormal), 0.0, 1.0), 5.0);
-        vec3 mirrored = reflect(-toEye, surfaceNormal);
-        vec3 colour = mix(vec3(0.02, 0.07, 0.08), skyColour(mirrored), fresnel);
-        float glint = pow(max(dot(mirrored, toSun), 0.0), 200.0);
-        colour += uSunColour * glint * 4.0;
-        fragColour = vec4(applyFog(colour, vPosition, uCamera), mix(0.7, 1.0, fresnel));
-        return;
-    }
-
-    vec3 normal = normalize(gl_FrontFacing ? vNormal : -vNormal);
-    vec3 albedo;
-    if (uShading == kPlain) {
-        vec4 texel = texture(uDiffuse, vTexcoord0);
-        // Foliage, fences and decals are cut-outs.
-        if (texel.a < 0.5) {
-            discard;
+    GLint count = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &count);
+    for (GLint i = 0; i < count; ++i) {
+        const auto* extension = reinterpret_cast<const char*>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(i)));
+        if (extension != nullptr && name == extension) {
+            return true;
         }
-        albedo = texel.rgb;
-    } else {
-        albedo = groundColour();
     }
-    float sun = max(dot(normal, toSun), 0.0);
-    vec3 ambient = hemisphereAmbient(normal, uAmbientTop, uAmbientBottom);
-    vec3 colour = albedo * (ambient + uSunColour * sun);
-    fragColour = vec4(applyFog(colour, vPosition, uCamera), 1.0);
-}
-)";
-
-std::string worldFragmentSource()
-{
-    return std::string("#version 450 core\n") + kSceneLightingGlsl + kFragmentBody;
+    return false;
 }
 
-GLint shadingCode(world::TileMesh::Shading shading)
+bool bindlessSupported()
 {
-    switch (shading) {
-    case world::TileMesh::Shading::Plain:
-        return 0;
-    case world::TileMesh::Shading::Splat:
-        return 1;
-    case world::TileMesh::Shading::VertexBlend:
-        return 2;
-    case world::TileMesh::Shading::Water:
-        return 3;
+    return glGetTextureHandleARB != nullptr && glMakeTextureHandleResidentARB != nullptr
+        && glMakeTextureHandleNonResidentARB != nullptr && hasExtension("GL_ARB_bindless_texture")
+        && hasExtension("GL_ARB_shader_draw_parameters");
+}
+
+GLuint blackVolume()
+{
+    GLuint id = 0;
+    glCreateTextures(GL_TEXTURE_3D, 1, &id);
+    glTextureStorage3D(id, 1, GL_RGBA8, 1, 1, 1);
+    const std::array<std::uint8_t, 4> black{0, 0, 0, 255};
+    glTextureSubImage3D(id, 0, 0, 0, 0, 1, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, black.data());
+    return id;
+}
+
+GLuint blackCubeMap()
+{
+    GLuint id = 0;
+    glCreateTextures(GL_TEXTURE_CUBE_MAP, 1, &id);
+    glTextureStorage2D(id, 1, GL_RGBA8, 1, 1);
+    const std::array<std::uint8_t, 4> black{0, 0, 0, 255};
+    for (int face = 0; face < 6; ++face) {
+        glTextureSubImage3D(id, 0, 0, 0, face, 1, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, black.data());
     }
-    return 0;
+    return id;
 }
 
 } // namespace
@@ -171,8 +126,6 @@ uniform vec3 uHazeDirection;
 uniform float uHazeIntensity;
 uniform float uHazePower;
 uniform float uHazeEllipticalScale;
-uniform vec3 uSunDiscDirection;
-uniform vec3 uSunDiscColour;
 uniform vec3 uFogColour;
 uniform vec3 uFogScatterColour;
 uniform float uFogScatterPower;
@@ -265,8 +218,6 @@ void setSceneLighting(Shader& shader, const SceneLighting& lighting)
     shader.set("uHazeIntensity", lighting.hazeIntensity);
     shader.set("uHazePower", lighting.hazePower);
     shader.set("uHazeEllipticalScale", lighting.hazeEllipticalScale);
-    shader.set("uSunDiscDirection", lighting.sunDiscDirection);
-    shader.set("uSunDiscColour", lighting.sunDiscColour);
     shader.set("uFogColour", lighting.fogColour);
     shader.set("uFogScatterColour", lighting.fogScatterColour);
     shader.set("uFogScatterPower", lighting.fogScatterPower);
@@ -286,12 +237,42 @@ WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
     , m_jobs(jobs)
     , m_grid(world.index, kTileSize)
     , m_alive(std::make_shared<std::atomic<bool>>(true))
-    , m_shader("world", kVertexSource, worldFragmentSource())
-    , m_white(Texture::solid(200, 200, 200, 255))
-    , m_flatNormal(Texture::solid(128, 128, 255, 255))
+    , m_programs(world.shaders, bindlessSupported())
+    , m_bindless(m_programs.bindless())
+    , m_white(Texture::solid(255, 255, 255, 255))
+    , m_black(Texture::solid(0, 0, 0, 255))
+    , m_blackCube(blackCubeMap())
+    , m_black3D(blackVolume())
 {
     m_tiles.resize(m_grid.tiles().size());
-    logInfo("world: {} tiles of {:.0f} m", m_tiles.size(), kTileSize);
+    GLint uniformAlignment = 0;
+    GLint storageAlignment = 0;
+    glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &uniformAlignment);
+    glGetIntegerv(GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT, &storageAlignment);
+    if (static_cast<std::size_t>(uniformAlignment) > kMaterialBlockBytes
+        || static_cast<std::size_t>(storageAlignment) > world::ShadedMesh::kVertexAlignment) {
+        throw std::runtime_error(std::format("buffer offset alignment {} / {} exceeds the 256 bytes the world "
+                                             "renderer packs its blocks to",
+            uniformAlignment, storageAlignment));
+    }
+    // Translate every track effect up front, ahead of the tiles; the GL
+    // thread links them in slices (precompile()) or on first use.
+    m_programs.prepareAll(m_jobs, kTranslatePriority);
+    glCreateBuffers(1, &m_fixedBlocks);
+    glNamedBufferStorage(m_fixedBlocks, kFixedBytes, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    if (m_bindless) {
+        m_handles.resize(texturehandle::kFirstTrackTexture);
+        m_handles[texturehandle::kBlack] = glGetTextureHandleARB(m_black.id());
+        m_handles[texturehandle::kWhite] = glGetTextureHandleARB(m_white.id());
+        m_handles[texturehandle::kBlackCube] = glGetTextureHandleARB(m_blackCube);
+        m_handles[texturehandle::kBlack3D] = glGetTextureHandleARB(m_black3D);
+        for (const GLuint64 handle : m_handles) {
+            glMakeTextureHandleResidentARB(handle);
+        }
+        m_dirtyEnd = m_handles.size();
+    }
+    logInfo("world: {} tiles of {:.0f} m, {} track effects, {}", m_tiles.size(), kTileSize, world.shaders.size(),
+        m_bindless ? "bindless textures" : "bound textures");
 }
 
 WorldRenderer::~WorldRenderer()
@@ -302,57 +283,121 @@ WorldRenderer::~WorldRenderer()
     m_alive->store(false);
     m_jobs.clearAndWait();
     for (TileState& tile : m_tiles) {
-        if (tile.mesh) {
-            destroy(*tile.mesh);
+        tile.mesh.reset();
+    }
+    m_dynamics.clear();
+    if (m_bindless) {
+        for (const auto& [id, slot] : m_textures) {
+            if (slot.handle != 0) {
+                glMakeTextureHandleNonResidentARB(slot.handle);
+            }
+        }
+        for (std::uint32_t entry = 0; entry < texturehandle::kFirstTrackTexture; ++entry) {
+            glMakeTextureHandleNonResidentARB(m_handles[entry]);
         }
     }
+    glDeleteBuffers(1, &m_handleBuffer);
+    glDeleteTextures(1, &m_black3D);
+    glDeleteTextures(1, &m_blackCube);
+    glDeleteBuffers(static_cast<GLsizei>(m_frameBuffers.size()), m_frameBuffers.data());
+    glDeleteBuffers(1, &m_fixedBlocks);
 }
 
 void WorldRenderer::destroy(GpuMesh& mesh)
 {
     glDeleteVertexArrays(1, &mesh.vao);
-    glDeleteBuffers(1, &mesh.vbo);
-    glDeleteBuffers(1, &mesh.ibo);
-    mesh.vao = mesh.vbo = mesh.ibo = 0;
+    glDeleteBuffers(1, &mesh.vertices);
+    glDeleteBuffers(1, &mesh.indices);
+    glDeleteBuffers(1, &mesh.materials);
+    mesh.vao = mesh.vertices = mesh.indices = mesh.materials = 0;
 }
 
-std::shared_ptr<WorldRenderer::GpuMesh> WorldRenderer::upload(const world::TileMesh& mesh)
+std::vector<std::uint32_t> WorldRenderer::TileBuild::textureIds() const
 {
+    std::vector<std::uint32_t> ids = shaded.textureIds();
+    for (const std::uint32_t id : scattered.textures()) {
+        if (id != world::TileMesh::kNoTexture && std::find(ids.begin(), ids.end(), id) == ids.end()) {
+            ids.push_back(id);
+        }
+    }
+    return ids;
+}
+
+std::unique_ptr<WorldRenderer::TileBuild> WorldRenderer::build(const std::vector<std::uint32_t>& chunks)
+{
+    // Procedural copies go to ScatterPass (see there for why).
+    std::vector<std::uint32_t> placed;
+    std::vector<std::uint32_t> scattered;
+    for (const std::uint32_t c : chunks) {
+        (c < m_world.index.chunks().size() && m_world.index.chunks()[c].scattered ? scattered : placed).push_back(c);
+    }
+    const world::TrackTextures* textures = m_world.textures ? &*m_world.textures : nullptr;
+    auto result = std::make_unique<TileBuild>();
+    result->shaded = world::buildShadedMesh(*m_world.archive, m_world.index, placed, m_world.shaders, textures);
+    if (!scattered.empty()) {
+        result->scattered = world::buildTileMesh(*m_world.archive, m_world.index, scattered, textures);
+    }
+    // Translation is CPU work; doing it here keeps it off the GL thread,
+    // which then only compiles.
+    for (const world::ShadedMesh::Batch& batch : result->shaded.batches) {
+        m_programs.prepare(batch.shader);
+    }
+    return result;
+}
+
+std::shared_ptr<WorldRenderer::GpuMesh> WorldRenderer::upload(const TileBuild& build)
+{
+    const world::ShadedMesh& mesh = build.shaded;
     auto gpu = std::shared_ptr<GpuMesh>(new GpuMesh, [](GpuMesh* m) {
         destroy(*m);
         delete m;
     });
-    using world::TileMesh;
-    glCreateBuffers(1, &gpu->vbo);
-    glNamedBufferStorage(gpu->vbo, static_cast<GLsizeiptr>(mesh.vertices.size() * sizeof(float)),
-        mesh.vertices.data(), 0);
-    glCreateBuffers(1, &gpu->ibo);
-    glNamedBufferStorage(gpu->ibo, static_cast<GLsizeiptr>(mesh.indices.size() * sizeof(std::uint32_t)),
-        mesh.indices.data(), 0);
+    glCreateBuffers(1, &gpu->vertices);
+    glNamedBufferStorage(gpu->vertices, static_cast<GLsizeiptr>(mesh.vertices.size()), mesh.vertices.data(), 0);
+    glCreateBuffers(1, &gpu->indices);
+    glNamedBufferStorage(
+        gpu->indices, static_cast<GLsizeiptr>(mesh.indices.size() * sizeof(std::uint32_t)), mesh.indices.data(), 0);
     glCreateVertexArrays(1, &gpu->vao);
-    constexpr GLsizei stride = TileMesh::kFloatsPerVertex * sizeof(float);
-    glVertexArrayVertexBuffer(gpu->vao, 0, gpu->vbo, 0, stride);
-    glVertexArrayElementBuffer(gpu->vao, gpu->ibo);
-    const auto attribute = [&](GLuint index, GLint size, GLenum type, GLboolean normalised, int floatOffset) {
-        glEnableVertexArrayAttrib(gpu->vao, index);
-        glVertexArrayAttribFormat(gpu->vao, index, size, type, normalised,
-            static_cast<GLuint>(floatOffset * static_cast<int>(sizeof(float))));
-        glVertexArrayAttribBinding(gpu->vao, index, 0);
-    };
-    attribute(0, 3, GL_FLOAT, GL_FALSE, 0);
-    attribute(1, 3, GL_FLOAT, GL_FALSE, TileMesh::kNormal);
-    attribute(2, 2, GL_FLOAT, GL_FALSE, TileMesh::kTexcoord);
-    attribute(3, 2, GL_FLOAT, GL_FALSE, TileMesh::kSecondTexcoord);
-    // The colour's four bytes share one float's slot.
-    attribute(4, 4, GL_UNSIGNED_BYTE, GL_TRUE, TileMesh::kColour);
+    glVertexArrayElementBuffer(gpu->vao, gpu->indices);
+
+    static_assert(TrackMaterial::kConstants == world::ShadedMesh::kMaterialConstants);
+    const std::size_t stride = m_bindless ? sizeof(TrackMaterial) : kMaterialBlockBytes;
+    std::vector<std::uint8_t> materials(std::max<std::size_t>(mesh.batches.size(), 1) * stride, 0);
+    for (std::size_t b = 0; b < mesh.batches.size(); ++b) {
+        const world::ShadedMesh::Batch& batch = mesh.batches[b];
+        TrackMaterial material;
+        std::copy_n(batch.constants.begin(), std::min(batch.constants.size(), TrackMaterial::kConstants),
+            material.constants.begin());
+        material.base[0] = static_cast<std::uint32_t>(batch.vertexOffset / sizeof(std::uint32_t));
+        for (std::size_t r = 0; r < batch.textures.size() && r < material.textures.size(); ++r) {
+            const std::uint32_t id = batch.textures[r];
+            const bool engine = id == world::ShadedMesh::kNoTexture || id == world::ShadedMesh::kEngineTexture;
+            material.textures[r] = engine || !m_bindless ? TrackMaterial::kEngineTextureEntry : textureEntry(id);
+            if (!engine && std::find(gpu->textureIds.begin(), gpu->textureIds.end(), id) == gpu->textureIds.end()) {
+                gpu->textureIds.push_back(id);
+            }
+        }
+        // Without bindless textures the block ends after the base word.
+        std::memcpy(materials.data() + b * stride, &material, std::min(stride, sizeof material));
+    }
+    glCreateBuffers(1, &gpu->materials);
+    glNamedBufferStorage(gpu->materials, static_cast<GLsizeiptr>(materials.size()), materials.data(), 0);
+
     gpu->batches = mesh.batches;
-    gpu->triangles = mesh.triangleCount();
+    gpu->programs.reserve(mesh.batches.size());
+    for (const world::ShadedMesh::Batch& batch : mesh.batches) {
+        gpu->programs.push_back(m_programs.program(batch.shader));
+    }
+    gpu->triangles = mesh.triangleCount() + build.scattered.triangleCount();
+    if (!build.scattered.indices.empty()) {
+        gpu->scattered = ScatterPass::upload(build.scattered);
+    }
     return gpu;
 }
 
 void WorldRenderer::requestTexture(std::uint32_t id, float priority)
 {
-    if (id == world::TileMesh::kNoTexture || !m_world.textures) {
+    if (!m_world.textures) {
         return;
     }
     TextureSlot& slot = m_textures[id];
@@ -366,8 +411,7 @@ void WorldRenderer::requestTexture(std::uint32_t id, float priority)
             return;
         }
         try {
-            auto chain = std::make_unique<world::TextureMipChain>(
-                m_world.textures->loadTexture(*m_world.archive, id));
+            auto chain = std::make_unique<world::TextureMipChain>(m_world.textures->loadTexture(*m_world.archive, id));
             const std::lock_guard lock(m_resultMutex);
             m_loadedTextures.push_back({id, std::move(chain)});
         } catch (const std::exception& e) {
@@ -378,30 +422,77 @@ void WorldRenderer::requestTexture(std::uint32_t id, float priority)
     });
 }
 
-bool WorldRenderer::texturesReady(const world::TileMesh& mesh) const
+bool WorldRenderer::texturesReady(const TileBuild& build) const
 {
-    for (const world::TileMesh::Batch& batch : mesh.batches) {
-        for (std::uint32_t id : batch.textures()) {
-            if (id == world::TileMesh::kNoTexture) {
-                continue;
-            }
-            const auto it = m_textures.find(id);
-            if (it == m_textures.end() || (!it->second.ready && !it->second.failed)) {
-                return false;
-            }
+    for (const std::uint32_t id : build.textureIds()) {
+        const auto it = m_textures.find(id);
+        if (it == m_textures.end() || (!it->second.ready && !it->second.failed)) {
+            return false;
         }
     }
     return true;
 }
 
-const Texture* WorldRenderer::textureOr(std::uint32_t id, const Texture* fallback)
+const Texture* WorldRenderer::texture(std::uint32_t id)
 {
     const auto it = m_textures.find(id);
     if (it == m_textures.end() || !it->second.ready) {
-        return fallback;
+        return nullptr;
     }
     it->second.lastUsed = m_frame;
     return &it->second.texture;
+}
+
+void WorldRenderer::touchTextures(const GpuMesh& mesh)
+{
+    for (const std::uint32_t id : mesh.textureIds) {
+        const auto it = m_textures.find(id);
+        if (it != m_textures.end()) {
+            it->second.lastUsed = m_frame;
+        }
+    }
+}
+
+std::uint32_t WorldRenderer::textureEntry(std::uint32_t id)
+{
+    const auto [it, added] = m_textureEntries.try_emplace(id, static_cast<std::uint32_t>(m_handles.size()));
+    if (added) {
+        // Black until the texture is resident, and for good if the disc
+        // lacks it (see the class comment).
+        m_handles.push_back(m_handles[texturehandle::kBlack]);
+        m_dirtyFirst = std::min(m_dirtyFirst, m_handles.size() - 1);
+        m_dirtyEnd = m_handles.size();
+    }
+    return it->second;
+}
+
+void WorldRenderer::setHandle(std::uint32_t entry, GLuint64 handle)
+{
+    m_handles[entry] = handle;
+    m_dirtyFirst = std::min<std::size_t>(m_dirtyFirst, entry);
+    m_dirtyEnd = std::max<std::size_t>(m_dirtyEnd, entry + 1);
+}
+
+void WorldRenderer::flushHandles()
+{
+    if (m_handles.size() > m_handleCapacity) {
+        m_handleCapacity = std::max(kInitialHandles, m_handleCapacity);
+        while (m_handleCapacity < m_handles.size()) {
+            m_handleCapacity *= 2;
+        }
+        glDeleteBuffers(1, &m_handleBuffer);
+        glCreateBuffers(1, &m_handleBuffer);
+        glNamedBufferStorage(m_handleBuffer, static_cast<GLsizeiptr>(m_handleCapacity * sizeof(GLuint64)), nullptr,
+            GL_DYNAMIC_STORAGE_BIT);
+        m_dirtyFirst = 0;
+        m_dirtyEnd = m_handles.size();
+    }
+    if (m_dirtyFirst < m_dirtyEnd) {
+        glNamedBufferSubData(m_handleBuffer, static_cast<GLintptr>(m_dirtyFirst * sizeof(GLuint64)),
+            static_cast<GLsizeiptr>((m_dirtyEnd - m_dirtyFirst) * sizeof(GLuint64)), m_handles.data() + m_dirtyFirst);
+    }
+    m_dirtyFirst = m_handles.size();
+    m_dirtyEnd = 0;
 }
 
 void WorldRenderer::evictTextures()
@@ -426,7 +517,12 @@ void WorldRenderer::evictTextures()
         if (total <= kTextureBudget * 3 / 4) {
             break;
         }
-        total -= m_textures[id].texture.byteSize();
+        TextureSlot& slot = m_textures[id];
+        total -= slot.texture.byteSize();
+        if (slot.handle != 0) {
+            glMakeTextureHandleNonResidentARB(slot.handle);
+            setHandle(textureEntry(id), m_handles[texturehandle::kBlack]);
+        }
         m_textures.erase(id);
     }
     m_stats.textureBytes = total;
@@ -451,8 +547,7 @@ int WorldRenderer::addDynamic(std::vector<std::uint32_t> chunks)
         if (!alive->load()) {
             return;
         }
-        auto mesh = std::make_unique<world::TileMesh>(world::buildTileMesh(
-            *m_world.archive, m_world.index, chunks, m_world.textures ? &*m_world.textures : nullptr));
+        std::unique_ptr<TileBuild> mesh = build(chunks);
         const std::lock_guard lock(m_resultMutex);
         m_builtDynamics.push_back({handle, std::move(mesh)});
     });
@@ -481,6 +576,7 @@ void WorldRenderer::update(const glm::vec3& camera)
     // Finished work from the workers.
     std::deque<BuiltTile> built;
     std::deque<LoadedTexture> loaded;
+    std::deque<BuiltDynamic> dynamics;
     std::vector<std::uint32_t> failed;
     {
         const std::lock_guard lock(m_resultMutex);
@@ -491,18 +587,7 @@ void WorldRenderer::update(const glm::vec3& camera)
             m_loadedTextures.pop_front();
         }
         failed.swap(m_failedTextures);
-        for (BuiltDynamic& dynamic : m_builtDynamics) {
-            const auto it = m_dynamics.find(dynamic.handle);
-            if (it != m_dynamics.end() && !dynamic.mesh->indices.empty()) {
-                it->second.mesh = upload(*dynamic.mesh);
-                for (const world::TileMesh::Batch& batch : dynamic.mesh->batches) {
-                    for (std::uint32_t id : batch.textures()) {
-                        requestTexture(id, 0.0F);
-                    }
-                }
-            }
-        }
-        m_builtDynamics.clear();
+        dynamics.swap(m_builtDynamics);
     }
     for (std::uint32_t id : failed) {
         m_textures[id].failed = true;
@@ -514,6 +599,21 @@ void WorldRenderer::update(const glm::vec3& camera)
         slot.texture = Texture::fromMipChain(*texture.chain, colour);
         slot.ready = true;
         slot.requested = true;
+        if (m_bindless) {
+            slot.handle = glGetTextureHandleARB(slot.texture.id());
+            glMakeTextureHandleResidentARB(slot.handle);
+            setHandle(textureEntry(texture.id), slot.handle);
+        }
+    }
+    for (BuiltDynamic& dynamic : dynamics) {
+        const auto it = m_dynamics.find(dynamic.handle);
+        if (it == m_dynamics.end() || dynamic.mesh->empty()) {
+            continue;
+        }
+        for (const std::uint32_t id : dynamic.mesh->textureIds()) {
+            requestTexture(id, 0.0F);
+        }
+        it->second.mesh = upload(*dynamic.mesh);
     }
     for (BuiltTile& result : built) {
         TileState& tile = m_tiles[result.tile];
@@ -524,10 +624,8 @@ void WorldRenderer::update(const glm::vec3& camera)
         tile.pending = std::move(result.mesh);
         tile.pendingState = result.state;
         const float distance = m_grid.distanceTo(m_grid.tiles()[result.tile], camera.x, camera.z);
-        for (const world::TileMesh::Batch& batch : tile.pending->batches) {
-            for (std::uint32_t id : batch.textures()) {
-                requestTexture(id, distance);
-            }
+        for (const std::uint32_t id : tile.pending->textureIds()) {
+            requestTexture(id, distance);
         }
     }
 
@@ -540,7 +638,7 @@ void WorldRenderer::update(const glm::vec3& camera)
         if (!texturesReady(*tile.pending)) {
             continue;
         }
-        tile.mesh = tile.pending->indices.empty() ? nullptr : upload(*tile.pending);
+        tile.mesh = tile.pending->empty() ? nullptr : upload(*tile.pending);
         tile.builtState = tile.pendingState;
         tile.pending.reset();
         tile.pendingState = -1;
@@ -576,8 +674,7 @@ void WorldRenderer::update(const glm::vec3& camera)
             if (!alive->load()) {
                 return;
             }
-            auto mesh = std::make_unique<world::TileMesh>(world::buildTileMesh(*m_world.archive, m_world.index,
-                chunks, m_world.textures ? &*m_world.textures : nullptr));
+            std::unique_ptr<TileBuild> mesh = build(chunks);
             const std::lock_guard lock(m_resultMutex);
             m_builtTiles.push_back({i, wanted, std::move(mesh)});
         });
@@ -589,34 +686,112 @@ void WorldRenderer::update(const glm::vec3& camera)
         std::count_if(m_textures.begin(), m_textures.end(), [](const auto& entry) { return entry.second.ready; }));
 }
 
-void WorldRenderer::drawBatches(const GpuMesh& mesh, bool waterPass)
+bool WorldRenderer::texturesLoaded(const world::ShadedMesh::Batch& batch) const
 {
-    for (const world::TileMesh::Batch& batch : mesh.batches) {
-        const bool water = batch.shading == world::TileMesh::Shading::Water;
-        if (water != waterPass || batch.indexCount == 0) {
+    for (const std::uint32_t id : batch.textures) {
+        if (id == world::ShadedMesh::kNoTexture || id == world::ShadedMesh::kEngineTexture) {
             continue;
         }
-        if (batch.backdrop && batch.chunk != world::TileMesh::kMergedChunks
+        const auto it = m_textures.find(id);
+        if (it == m_textures.end() || (!it->second.ready && !it->second.failed)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void WorldRenderer::collect(const GpuMesh& mesh, std::uint32_t frameSlot)
+{
+    for (std::uint32_t b = 0; b < mesh.batches.size(); ++b) {
+        const world::ShadedMesh::Batch& batch = mesh.batches[b];
+        const TrackPrograms::Program* program = mesh.programs[b];
+        if (program == nullptr || batch.indexCount == 0 || !texturesLoaded(batch)) {
+            continue;
+        }
+        if (batch.backdrop && batch.chunk != world::ShadedMesh::kMergedChunks
             && !m_world.index.chunks()[batch.chunk].visibleFrom(m_cameraZone)) {
             continue;
         }
-        using Layer = world::TileMesh::Layer;
-        const Texture* base = textureOr(batch.texture, water ? &m_flatNormal : &m_white);
-        base->bind(0);
-        textureOr(batch.layers[Layer::LayerB], base)->bind(1);
-        textureOr(batch.layers[Layer::LayerC], base)->bind(2);
-        textureOr(batch.layers[Layer::SplatMap], &m_white)->bind(3);
-        textureOr(batch.layers[Layer::OcclusionMap], &m_white)->bind(4);
-        m_shader.set("uShading", shadingCode(batch.shading));
-        m_shader.set("uScaleA", glm::vec2(batch.layerScales[0], batch.layerScales[1]));
-        m_shader.set("uScaleB", glm::vec2(batch.layerScales[2], batch.layerScales[3]));
-        m_shader.set("uScaleC", glm::vec2(batch.layerScales[4], batch.layerScales[5]));
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT,
-            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t)));
-        if (!waterPass) {
-            ++m_stats.batches;
-            m_stats.triangles += batch.indexCount / 3;
+        (program->state.blend ? m_blended : m_opaque).push_back({program, &mesh, b, frameSlot});
+    }
+}
+
+void WorldRenderer::bindSamplers(const TrackPrograms::Program& program, const world::ShadedMesh::Batch& batch)
+{
+    for (const TrackPrograms::Sampler& sampler : program.samplers) {
+        const std::uint32_t id = sampler.reg >= 0 && static_cast<std::size_t>(sampler.reg) < batch.textures.size()
+            ? batch.textures[static_cast<std::size_t>(sampler.reg)]
+            : world::ShadedMesh::kNoTexture;
+        const Texture* own
+            = id != world::ShadedMesh::kNoTexture && id != world::ShadedMesh::kEngineTexture ? texture(id) : nullptr;
+        if (own != nullptr && !sampler.cube) {
+            bindTexture(sampler.unit, own->id());
+            continue;
         }
+        if (sampler.cube) {
+            bindTexture(sampler.unit, m_blackCube);
+        } else if (sampler.shadowMask) {
+            bindTexture(sampler.unit, m_white.id());
+        } else {
+            bindTexture(sampler.unit, m_black.id());
+        }
+    }
+}
+
+void WorldRenderer::bindTexture(GLuint unit, GLuint texture)
+{
+    if (unit < m_boundTextures.size()) {
+        if (m_boundTextures[unit] == texture) {
+            return;
+        }
+        m_boundTextures[unit] = texture;
+    }
+    glBindTextureUnit(unit, texture);
+}
+
+void WorldRenderer::drawItems(const std::vector<DrawItem>& items)
+{
+    const TrackPrograms::Program* program = nullptr;
+    const GpuMesh* mesh = nullptr;
+    std::uint32_t frameSlot = 0xFFFFFFFF;
+    for (const DrawItem& item : items) {
+        const world::ShadedMesh::Batch& batch = item.mesh->batches[item.batch];
+        if (item.program != program) {
+            program = item.program;
+            program->shader.use();
+            applyState(program->state);
+            glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kVertexConstants, program->defaults, 0,
+                static_cast<GLsizeiptr>(kProgramBlockBytes));
+            glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kPixelConstants, program->defaults,
+                static_cast<GLintptr>(kProgramBlockBytes), static_cast<GLsizeiptr>(kProgramBlockBytes));
+        }
+        if (item.mesh != mesh) {
+            mesh = item.mesh;
+            glBindVertexArray(mesh->vao);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mesh->vertices);
+            if (m_bindless) {
+                glBindBufferBase(GL_SHADER_STORAGE_BUFFER, trackbinding::kMaterial, mesh->materials);
+            }
+        }
+        if (item.frameSlot != frameSlot) {
+            frameSlot = item.frameSlot;
+            glBindBufferRange(GL_UNIFORM_BUFFER, trackbinding::kFrame, m_frameBuffer,
+                static_cast<GLintptr>(frameSlot * kFrameBlockBytes), static_cast<GLsizeiptr>(kFrameBlockBytes));
+        }
+        const auto* indices
+            = reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t));
+        if (m_bindless) {
+            // The base instance tells the programs which material to read.
+            glDrawElementsInstancedBaseInstance(
+                GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT, indices, 1, item.batch);
+        } else {
+            glBindBufferRange(GL_UNIFORM_BUFFER, trackbinding::kMaterial, mesh->materials,
+                static_cast<GLintptr>(item.batch * kMaterialBlockBytes), static_cast<GLsizeiptr>(kMaterialBlockBytes));
+            bindSamplers(*program, batch);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT, indices);
+        }
+        ++m_stats.batches;
+        m_stats.triangles += batch.indexCount / 3;
     }
 }
 
@@ -625,75 +800,176 @@ void WorldRenderer::draw(const FrameParams& frame)
     m_stats.tilesDrawn = 0;
     m_stats.triangles = 0;
     m_stats.batches = 0;
-
-    m_shader.use();
-    m_shader.set("uViewProjection", frame.projection * frame.view);
-    m_shader.set("uModel", glm::mat4(1.0F));
-    m_shader.set("uCamera", frame.cameraPosition);
-    setSceneLighting(m_shader, frame.lighting);
-    m_shader.set("uTime", frame.time);
+    m_opaque.clear();
+    m_blended.clear();
+    m_scatterDraws.clear();
+    // Other passes bind textures between frames.
+    m_boundTextures.fill(0);
 
     const glm::mat4 viewProjection = frame.projection * frame.view;
+    const glm::mat4 inverseView = glm::inverse(frame.view);
     const auto& tiles = m_grid.tiles();
-    // Opaque first; water is drawn after, blended over what is below it.
-    for (int pass = 0; pass < 2; ++pass) {
-        const bool waterPass = pass == 1;
-        if (waterPass) {
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glDepthMask(GL_FALSE);
+    for (std::size_t i = 0; i < tiles.size(); ++i) {
+        const TileState& state = m_tiles[i];
+        if (!state.mesh) {
+            continue;
         }
-        for (std::size_t i = 0; i < tiles.size(); ++i) {
-            const TileState& state = m_tiles[i];
-            if (!state.mesh) {
-                continue;
-            }
-            // Cull the whole tile against the view frustum by its bounds.
-            const glm::vec3& lo = tiles[i].boundsMin;
-            const glm::vec3& hi = tiles[i].boundsMax;
-            bool outside = false;
-            for (int plane = 0; plane < 5 && !outside; ++plane) {
-                int beyond = 0;
-                for (int corner = 0; corner < 8; ++corner) {
-                    const glm::vec4 p = viewProjection
-                        * glm::vec4((corner & 1) ? hi.x : lo.x, (corner & 2) ? hi.y : lo.y,
-                            (corner & 4) ? hi.z : lo.z, 1.0F);
-                    const float value = plane == 0 ? p.x + p.w
-                        : plane == 1               ? p.w - p.x
-                        : plane == 2               ? p.y + p.w
-                        : plane == 3               ? p.w - p.y
-                                                   : p.w;
-                    if (value < 0.0F) {
-                        ++beyond;
-                    }
+        // Cull the whole tile against the view frustum by its bounds.
+        const glm::vec3& lo = tiles[i].boundsMin;
+        const glm::vec3& hi = tiles[i].boundsMax;
+        bool outside = false;
+        for (int plane = 0; plane < 5 && !outside; ++plane) {
+            int beyond = 0;
+            for (int corner = 0; corner < 8; ++corner) {
+                const glm::vec4 p = viewProjection
+                    * glm::vec4(
+                        (corner & 1) ? hi.x : lo.x, (corner & 2) ? hi.y : lo.y, (corner & 4) ? hi.z : lo.z, 1.0F);
+                const float value = plane == 0 ? p.x + p.w
+                    : plane == 1               ? p.w - p.x
+                    : plane == 2               ? p.y + p.w
+                    : plane == 3               ? p.w - p.y
+                                               : p.w;
+                if (value < 0.0F) {
+                    ++beyond;
                 }
-                outside = beyond == 8;
             }
-            if (outside) {
-                continue;
-            }
-            glBindVertexArray(state.mesh->vao);
-            if (!waterPass) {
-                ++m_stats.tilesDrawn;
-            }
-            drawBatches(*state.mesh, waterPass);
+            outside = beyond == 8;
         }
-        m_shader.set("uModel", glm::mat4(1.0F));
-        for (const auto& [handle, dynamic] : m_dynamics) {
-            if (!dynamic.mesh) {
-                continue;
-            }
-            m_shader.set("uModel", dynamic.transform);
-            glBindVertexArray(dynamic.mesh->vao);
-            drawBatches(*dynamic.mesh, waterPass);
+        if (outside) {
+            continue;
         }
-        m_shader.set("uModel", glm::mat4(1.0F));
-        if (waterPass) {
-            glDisable(GL_BLEND);
-            glDepthMask(GL_TRUE);
+        ++m_stats.tilesDrawn;
+        touchTextures(*state.mesh);
+        collect(*state.mesh, 0);
+        if (state.mesh->scattered) {
+            m_scatterDraws.emplace_back(state.mesh.get(), glm::mat4(1.0F));
         }
     }
+
+    // Frame constants: the static world's, then one block per moving object.
+    std::vector<TrackFrameConstants> blocks;
+    blocks.push_back(TrackFrameConstants::make(viewProjection, inverseView, frame.cameraPosition, frame.lighting));
+    for (const auto& [handle, dynamic] : m_dynamics) {
+        if (!dynamic.mesh) {
+            continue;
+        }
+        const auto slot = static_cast<std::uint32_t>(blocks.size());
+        blocks.push_back(TrackFrameConstants::make(
+            viewProjection, inverseView, frame.cameraPosition, frame.lighting, dynamic.transform));
+        touchTextures(*dynamic.mesh);
+        collect(*dynamic.mesh, slot);
+        if (dynamic.mesh->scattered) {
+            m_scatterDraws.emplace_back(dynamic.mesh.get(), dynamic.transform);
+        }
+    }
+    const std::size_t ring = m_frame % kFrameBuffers;
+    if (blocks.size() > m_frameSlots[ring]) {
+        glDeleteBuffers(1, &m_frameBuffers[ring]);
+        m_frameSlots[ring] = std::max<std::size_t>(blocks.size(), m_frameSlots[ring] * 2);
+        glCreateBuffers(1, &m_frameBuffers[ring]);
+        glNamedBufferStorage(m_frameBuffers[ring], static_cast<GLsizeiptr>(m_frameSlots[ring] * kFrameBlockBytes),
+            nullptr, GL_DYNAMIC_STORAGE_BIT);
+    }
+    m_frameBuffer = m_frameBuffers[ring];
+    glNamedBufferSubData(m_frameBuffer, 0, static_cast<GLsizeiptr>(blocks.size() * kFrameBlockBytes), blocks.data());
+
+    // The translator's fixed blocks: no boolean or loop constants set (the
+    // headlight pass, pixel b100, stays off), identity clip space (the
+    // camera's projection already gives reversed-Z clip coordinates), pixel
+    // rows counted from the top as Direct3D does.
+    GLint viewport[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    if (viewport[3] != m_fixedHeight) {
+        m_fixedHeight = viewport[3];
+        xenos::SystemConstants system;
+        system.screen = {1.0F, static_cast<float>(viewport[3]), 0.0F, 0.0F};
+        // Alpha to mask on a single-sample target: with the passes' offsets
+        // (0xAA, two quarters per sample) a pixel is covered when its alpha
+        // reaches one half. Inferred from how the Xbox 360 dithers alpha to
+        // coverage; the foliage effects set it instead of an alpha test.
+        xenos::SystemConstants alphaToMask = system;
+        alphaToMask.alphaTest = {kAlphaGreaterEqual, 0.5F, 0.0F, 0.0F};
+        const auto controlBytes = xenos::ControlConstants{}.pack();
+        const auto systemBytes = system.pack();
+        const auto alphaToMaskBytes = alphaToMask.pack();
+        glNamedBufferSubData(
+            m_fixedBlocks, kControlOffset, static_cast<GLsizeiptr>(controlBytes.size()), controlBytes.data());
+        glNamedBufferSubData(
+            m_fixedBlocks, kSystemOffset, static_cast<GLsizeiptr>(systemBytes.size()), systemBytes.data());
+        glNamedBufferSubData(m_fixedBlocks, kSystemAlphaToMaskOffset, static_cast<GLsizeiptr>(alphaToMaskBytes.size()),
+            alphaToMaskBytes.data());
+    }
+    glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kControlConstants, m_fixedBlocks, kControlOffset,
+        static_cast<GLsizeiptr>(xenos::ControlConstants::kBytes));
+
+    if (m_bindless) {
+        flushHandles();
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, trackbinding::kTextureHandles, m_handleBuffer);
+    }
+
+    // Grouped by program, then by tile, to keep state changes down; with
+    // bound textures, batches sharing textures go together.
+    const auto order = [bindless = m_bindless](const DrawItem& a, const DrawItem& b) {
+        if (bindless) {
+            return std::tie(a.program, a.frameSlot, a.mesh, a.batch)
+                < std::tie(b.program, b.frameSlot, b.mesh, b.batch);
+        }
+        const auto& ta = a.mesh->batches[a.batch].textures;
+        const auto& tb = b.mesh->batches[b.batch].textures;
+        return std::tie(a.program, a.frameSlot, ta, a.mesh, a.batch)
+            < std::tie(b.program, b.frameSlot, tb, b.mesh, b.batch);
+    };
+    std::sort(m_opaque.begin(), m_opaque.end(), order);
+    std::sort(m_blended.begin(), m_blended.end(), order);
+    drawItems(m_opaque);
+    if (!m_scatterDraws.empty()) {
+        applyState(world::TrackShaders::RenderState{});
+        m_scatter.begin(frame);
+        const auto loaded = [this](std::uint32_t id) { return texture(id); };
+        for (const auto& [mesh, model] : m_scatterDraws) {
+            m_scatter.setModel(model);
+            m_stats.triangles += m_scatter.draw(*mesh->scattered, loaded, m_world.index, m_cameraZone);
+            ++m_stats.batches;
+        }
+        // The pass binds its own textures and vertex array.
+        m_boundTextures.fill(0);
+    }
+    // Blending passes (decals, road blends, lakes) after everything opaque.
+    drawItems(m_blended);
+
+    // Back to the state the other scene passes expect.
+    applyState(world::TrackShaders::RenderState{});
     glBindVertexArray(0);
+    glUseProgram(0);
+}
+
+void WorldRenderer::applyState(const world::TrackShaders::RenderState& state)
+{
+    if (state.cull == kCullNone) {
+        glDisable(GL_CULL_FACE);
+    } else {
+        glEnable(GL_CULL_FACE);
+    }
+    glDepthMask(state.depthWrite ? GL_TRUE : GL_FALSE);
+    if (state.blend) {
+        glEnable(GL_BLEND);
+        glBlendFunc(blendFactor(state.sourceBlend), blendFactor(state.destinationBlend));
+    } else {
+        glDisable(GL_BLEND);
+    }
+    // The slope-scaled part of the pass's depth bias. Reversed depth grows
+    // towards the camera, so the offset keeps its sign. The constant part
+    // is a distance in the game's own depth range, which this projection
+    // does not share, and is left out.
+    if (state.slopeScaleDepthBias != 0.0F) {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(state.slopeScaleDepthBias, 0.0F);
+    } else {
+        glDisable(GL_POLYGON_OFFSET_FILL);
+    }
+    const std::size_t system = state.alphaToMask ? kSystemAlphaToMaskOffset : kSystemOffset;
+    glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kSystemConstants, m_fixedBlocks, static_cast<GLintptr>(system),
+        static_cast<GLsizeiptr>(xenos::SystemConstants::kBytes));
 }
 
 } // namespace fh::render

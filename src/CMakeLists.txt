@@ -103,10 +103,14 @@ add_library(fh1engine STATIC
     render/PresentTarget.h
     render/Overlay.cpp
     render/Overlay.h
+    render/ScatterPass.cpp
+    render/ScatterPass.h
     render/Shader.cpp
     render/Shader.h
     render/Texture.cpp
     render/Texture.h
+    render/TrackPrograms.cpp
+    render/TrackPrograms.h
     render/WorldRenderer.cpp
     render/WorldRenderer.h
     render/XenosProgram.cpp

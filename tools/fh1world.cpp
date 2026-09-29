@@ -4,6 +4,7 @@
 
 #include "base/Log.h"
 #include "vfs/Vfs.h"
+#include "world/ShadedTiles.h"
 #include "world/TrackWorld.h"
 #include "world/WorldTiles.h"
 
@@ -146,6 +147,7 @@ int main(int argc, char** argv)
             std::printf("zone grid: %d zones in %d x %d cells\n", world.zones->zoneCount(), world.zones->columns(),
                 world.zones->rows());
         }
+        std::printf("track effects: %zu (%d unreadable)\n", world.shaders.size(), world.shaders.failed());
         if (world.textures) {
             std::printf("textures: %zu render objects, %zu shaders, %zu bundled copies\n",
                 world.textures->objectCount(), world.textures->shaderCount(), world.textures->bundledTextureCount());
@@ -234,6 +236,27 @@ int main(int argc, char** argv)
             first = false;
         }
         std::printf("), %d failed chunks, %.2f s\n", totalFailed, meshSeconds);
+
+        // The same tiles as the renderer draws them, with the track effects.
+        std::size_t shadedTriangles = 0;
+        std::size_t shadedBatches = 0;
+        std::size_t shadedBytes = 0;
+        int skippedMaterials = 0;
+        std::map<std::string, std::size_t> batchesByEffect;
+        for (const Job& job : jobs) {
+            const fh::world::ShadedMesh shaded
+                = fh::world::buildShadedMesh(*world.archive, index, job.chunks, world.shaders, textures);
+            shadedTriangles += shaded.triangleCount();
+            shadedBatches += shaded.batches.size();
+            shadedBytes += shaded.vertices.size();
+            skippedMaterials += shaded.skippedMaterials;
+            for (const fh::world::ShadedMesh::Batch& batch : shaded.batches) {
+                ++batchesByEffect[world.shaders.at(batch.shader).name];
+            }
+        }
+        std::printf("shaded meshes: %zu triangles, %zu batches of %zu effects, %zu vertex bytes, %d materials "
+                    "skipped\n",
+            shadedTriangles, shadedBatches, batchesByEffect.size(), shadedBytes, skippedMaterials);
 
         if (textures == nullptr) {
             return totalFailed == 0 ? 0 : 1;

@@ -16,7 +16,6 @@ constexpr std::uint32_t kMaxMaterials = 4096;
 constexpr std::uint32_t kMinStride = 12;
 constexpr std::uint32_t kMaxStride = 64;
 constexpr std::size_t kPartSeparatorBytes = 48;
-constexpr std::size_t kMaterialTransformBytes = 32;
 constexpr std::uint32_t kStripRestart16 = 0xFFFF;
 constexpr std::uint32_t kStripRestart32 = 0xFFFFFFFF;
 
@@ -281,7 +280,16 @@ RenderMesh parse(ByteView data, const std::string& source)
             r.u32();
             material.tableIndex = r.u32();
             r.expect(1, "material header");
-            r.skip(kMaterialTransformBytes);
+            const float xOffset = r.f32();
+            const float yOffset = r.f32();
+            const float zOffset = r.f32();
+            r.skip(4);
+            const float xScale = r.f32();
+            const float yScale = r.f32();
+            const float zScale = r.f32();
+            r.skip(4);
+            material.positionOffset = glm::vec3(xOffset, yOffset, zOffset);
+            material.positionScale = glm::vec3(xScale, yScale, zScale);
             const float uOffset = r.f32();
             const float vOffset = r.f32();
             const float uScale = r.f32();

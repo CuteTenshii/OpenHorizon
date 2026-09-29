@@ -7,8 +7,12 @@ add_library(fh1world STATIC
     RenderMesh.h
     ScatterSet.cpp
     ScatterSet.h
+    ShadedTiles.cpp
+    ShadedTiles.h
     TrackPlacements.cpp
     TrackPlacements.h
+    TrackShaders.cpp
+    TrackShaders.h
     TrackTextures.cpp
     TrackTextures.h
     TrackWorld.cpp
@@ -23,7 +27,7 @@ add_library(fh1world STATIC
     ZoneGrid.h
 )
 target_compile_options(fh1world PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1world PUBLIC fh1base xds::xds glm::glm Threads::Threads)
+target_link_libraries(fh1world PUBLIC fh1base fh1xenos xds::xds glm::glm Threads::Threads)
 
 # The library already owns the target name, so the tool's target has its own
 # and only its output file is called fh1world.

@@ -9,7 +9,9 @@
 #include "world/PvsFile.h"
 #include "world/RenderMesh.h"
 #include "world/ScatterSet.h"
+#include "world/ShadedTiles.h"
 #include "world/TrackPlacements.h"
+#include "world/TrackShaders.h"
 #include "world/TrackTextures.h"
 #include "world/TrackWorld.h"
 #include "world/WorldIndex.h"
@@ -85,6 +87,9 @@ struct TestMaterial {
     std::uint32_t tableIndex = 0;
     /// Texture coordinate offset u, v and scale u, v.
     std::array<float, 4> uvOffsetScale{0.0F, 0.0F, 1.0F, 1.0F};
+    /// Position offset and scale x, y, z.
+    std::array<float, 3> positionOffset{0.0F, 0.0F, 0.0F};
+    std::array<float, 3> positionScale{1.0F, 1.0F, 1.0F};
     std::string name = "Mat0";
 };
 
@@ -179,7 +184,14 @@ Bytes renderModel(const std::vector<TestPart>& parts, const std::optional<TestTa
             w.u32(6);
             w.u32(material.tableIndex);
             w.u32(1);
-            w.fill(32, 0);
+            for (const float f : material.positionOffset) {
+                w.f32(f);
+            }
+            w.f32(0.0F);
+            for (const float f : material.positionScale) {
+                w.f32(f);
+            }
+            w.f32(0.0F);
             for (const float f : material.uvOffsetScale) {
                 w.f32(f);
             }
@@ -258,8 +270,8 @@ TestPart quad(std::string name, float cx, float cz, float y, float half)
 
 /// A compiled shader whose vertex inputs are `inputs`, and whose pixel
 /// shader constant table names `samplers` (register, name).
-Bytes shaderObject(const std::vector<std::uint32_t>& inputs,
-    const std::vector<std::pair<std::uint16_t, std::string>>& samplers = {})
+Bytes shaderObject(
+    const std::vector<std::uint32_t>& inputs, const std::vector<std::pair<std::uint16_t, std::string>>& samplers = {})
 {
     Writer w;
     w.text("constant table");
@@ -521,15 +533,15 @@ Bytes scatterFile(const std::string& name, const std::vector<TestScatterMesh>& m
                 w.f32(axis.z);
                 w.f32(0.0F);
             }
-            for (const float v : {instance.position.x, instance.position.y, instance.position.z, 1.0F, 0.5F, 0.5F,
-                     0.5F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F}) {
+            for (const float v : {instance.position.x, instance.position.y, instance.position.z, 1.0F, 0.5F, 0.5F, 0.5F,
+                     0.0F, 0.0F, 1.0F, 0.0F, 0.0F}) {
                 w.f32(v);
             }
         }
         for (const auto& [first, second] : group.blocks) {
             const float distance = first > 0.0F ? group.drawDistance : 0.0F;
-            for (const float v : {first, second, distance, 150.0F, 300.0F, 2500.0F, distance,
-                     first > 0.0F ? 15.0F : 0.0F}) {
+            for (const float v :
+                {first, second, distance, 150.0F, 300.0F, 2500.0F, distance, first > 0.0F ? 15.0F : 0.0F}) {
                 w.f32(v);
             }
         }
@@ -684,6 +696,8 @@ TEST(parsesMaterialTablesAndTexcoords)
     part.texcoords = {{0, 0}, {65535, 0}, {0, 65535}, {32768, 16384}};
     part.materials[0].tableIndex = 1;
     part.materials[0].uvOffsetScale = {0.5F, -0.25F, 2.0F, 4.0F};
+    part.materials[0].positionOffset = {1.0F, 2.0F, 3.0F};
+    part.materials[0].positionScale = {0.5F, 0.25F, 2.0F};
     TestMaterialInfo first;
     first.textureSlots = {-1};
     TestMaterialInfo second;
@@ -705,6 +719,8 @@ TEST(parsesMaterialTablesAndTexcoords)
     const world::RenderMesh::Part& parsed = mesh.parts[0];
     const world::RenderMesh::Material& material = parsed.materials[0];
     CHECK_EQ(material.tableIndex, 1U);
+    CHECK(material.positionOffset == glm::vec3(1.0F, 2.0F, 3.0F));
+    CHECK(material.positionScale == glm::vec3(0.5F, 0.25F, 2.0F));
     CHECK_EQ(parsed.vertexData.size(), std::size_t{96});
     CHECK(world::RenderMesh::texcoord(parsed, material, 0, 16) == glm::vec2(0.5F, -0.25F));
     CHECK(world::RenderMesh::texcoord(parsed, material, 1, 16) == glm::vec2(2.5F, -0.25F));
@@ -920,9 +936,8 @@ TEST(readsShaderLayoutsAndPvsTables)
     }
     // Vertex-blended ground: three coordinate pairs and a colour, with its
     // samplers in the pixel shader's constant table.
-    const std::optional<world::ShaderLayout> blend
-        = world::readShaderLayout(shaderObject({0x3007, 0x5008, 0x15009, 0x2500A, 0xA00B},
-            {{0, "Blend_ASampler"}, {1, "Blend_BSampler"}, {5, "AO_Sampler"}}));
+    const std::optional<world::ShaderLayout> blend = world::readShaderLayout(shaderObject(
+        {0x3007, 0x5008, 0x15009, 0x2500A, 0xA00B}, {{0, "Blend_ASampler"}, {1, "Blend_BSampler"}, {5, "AO_Sampler"}}));
     CHECK(blend.has_value());
     if (blend) {
         CHECK_EQ(blend->texcoord0Offset, 16);
@@ -1051,6 +1066,43 @@ TEST(decodesAndEncodesTextures)
     dxt3.height = 4;
     dxt3.data = Bytes(16, 0xFF);
     CHECK(world::buildMipChain(dxt3).format == world::TextureSurface::Format::Dxt5);
+}
+
+TEST(convertsTrackVertexDeclarations)
+{
+    namespace dt = world::decltype360;
+    fh::xenos::VertexDeclaration file;
+    const auto element = [](std::uint16_t offset, std::uint32_t type, fh::xenos::DeclUsage usage, std::uint8_t index) {
+        fh::xenos::VertexDeclElement e;
+        e.offset = offset;
+        e.type = type;
+        e.usage = static_cast<std::uint8_t>(usage);
+        e.usageIndex = index;
+        return e;
+    };
+    file.elements = {element(0, dt::kFloat3, fh::xenos::DeclUsage::Position, 0),
+        element(12, dt::kDec3N, fh::xenos::DeclUsage::Normal, 0),
+        element(16, dt::kUShort2N, fh::xenos::DeclUsage::Texcoord, 0),
+        element(20, dt::kColor, fh::xenos::DeclUsage::Color, 0)};
+    const std::optional<fh::xenos::VertexDeclaration> render = world::TrackShaders::renderDeclaration(file);
+    CHECK(render.has_value());
+    if (render) {
+        CHECK_EQ(render->elements.size(), std::size_t{4});
+        CHECK_EQ(render->elements[1].offset, std::uint16_t{12});
+        CHECK_EQ(render->elements[1].type, dt::kFloat3Native);
+        CHECK_EQ(render->elements[2].offset, std::uint16_t{24});
+        CHECK_EQ(render->elements[2].type, dt::kFloat2Native);
+        CHECK_EQ(render->elements[3].offset, std::uint16_t{32});
+        CHECK_EQ(render->elements[3].type, dt::kColor);
+        CHECK_EQ(render->stride(0), 36U);
+        // Same formats, no byte swap.
+        CHECK(render->elements[0].format() == file.elements[0].format());
+        CHECK_EQ(render->elements[0].endian(), 0U);
+        CHECK(render->elements[2].format() == fh::xenos::VertexFormat::F32_32_Float);
+    }
+    fh::xenos::VertexDeclaration unknown;
+    unknown.elements = {element(0, 0x2A2360, fh::xenos::DeclUsage::Position, 0)};
+    CHECK(!world::TrackShaders::renderDeclaration(unknown).has_value());
 }
 
 TEST(buildsAWorldFromAnArchive)
@@ -1235,6 +1287,27 @@ TEST(loadsColorado)
     }
     CHECK(backdrop > 0);
 
+    // Every effect the models name parses, with its Default pass's states.
+    CHECK_EQ(colorado.shaders.size(), std::size_t{173});
+    CHECK_EQ(colorado.shaders.failed(), 0);
+    const auto stateOf = [&colorado](std::string_view name) {
+        const std::optional<std::uint32_t> effect
+            = colorado.shaders.find(std::string("shaders\\track\\") + std::string(name) + ".fx");
+        CHECK(effect.has_value());
+        return effect ? colorado.shaders.at(*effect).state : world::TrackShaders::RenderState{};
+    };
+    CHECK_EQ(stateOf("h_diff_1").cull, 2U);
+    CHECK(!stateOf("h_diff_1").blend);
+    CHECK_EQ(stateOf("tree_diff_opac_dirlight_2_2sd_noanim").cull, 0U);
+    CHECK(stateOf("tree_diff_opac_dirlight_2_2sd_noanim").alphaToMask);
+    CHECK_EQ(stateOf("tree_diff_opac_dirlight_2_2sd_noanim").alphaToMaskOffsets, 0xAAU);
+    const world::TrackShaders::RenderState lake = stateOf("lake_anim_norm_opac_refl_3");
+    CHECK(lake.blend);
+    CHECK_EQ(lake.sourceBlend, 6U);
+    CHECK_EQ(lake.destinationBlend, 7U);
+    CHECK(stateOf("h_vblnd_decal_lm").slopeScaleDepthBias == 1.0F);
+    CHECK(!stateOf("h_vblnd_decal_lm").depthWrite);
+
     // The marker pole the README names stands in a zone, and its tiles
     // build without failures.
     const world::WorldTileGrid grid(index, 500.0F);
@@ -1247,13 +1320,25 @@ TEST(loadsColorado)
         const world::TileMesh mesh = world::buildTileMesh(*colorado.archive, index, chunks, &*colorado.textures);
         CHECK_EQ(mesh.failedChunks, 0);
         CHECK(mesh.triangleCount() > 10000);
+        // The effects' declarations fit every material's vertices, so the
+        // shaded build keeps every triangle.
+        const world::ShadedMesh shaded
+            = world::buildShadedMesh(*colorado.archive, index, chunks, colorado.shaders, &*colorado.textures);
+        CHECK_EQ(shaded.failedChunks, 0);
+        CHECK_EQ(shaded.skippedMaterials, 0);
+        CHECK_EQ(shaded.triangleCount(), mesh.triangleCount());
+        for (const world::ShadedMesh::Batch& batch : shaded.batches) {
+            CHECK_EQ(batch.vertexOffset % world::ShadedMesh::kVertexAlignment, std::size_t{0});
+            CHECK_EQ(batch.stride, colorado.shaders.at(batch.shader).renderDeclaration.stride(0));
+            CHECK(batch.vertexOffset + std::size_t{batch.vertexCount} * batch.stride <= shaded.vertices.size());
+        }
         const std::vector<std::uint32_t> ids = mesh.textures();
         CHECK(!ids.empty());
         for (std::size_t i = 0; i < std::min<std::size_t>(ids.size(), 8); ++i) {
             const world::TextureMipChain chain = colorado.textures->loadTexture(*colorado.archive, ids[i]);
             CHECK(!chain.levels.empty());
-            CHECK_EQ(chain.levels.size(), static_cast<std::size_t>(std::bit_width(static_cast<unsigned>(
-                                              std::max(chain.width, chain.height)))));
+            CHECK_EQ(chain.levels.size(),
+                static_cast<std::size_t>(std::bit_width(static_cast<unsigned>(std::max(chain.width, chain.height)))));
         }
     }
 }

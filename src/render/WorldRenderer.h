@@ -1,19 +1,25 @@
 #pragma once
 
 #include "Gl.h"
+#include "ScatterPass.h"
 #include "Shader.h"
 #include "Texture.h"
+#include "TrackPrograms.h"
 
 #include "base/JobPool.h"
+#include "world/ShadedTiles.h"
 #include "world/TrackWorld.h"
 #include "world/WorldTiles.h"
 
 #include <glm/glm.hpp>
 
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -22,10 +28,10 @@ namespace fh::render {
 /// The light, sky and fog of one moment, in the terms of the game's own
 /// shaders (all colours linear RGB, in the scene's HDR units):
 ///
-/// - Track surfaces are lit by `sunColor` times the cosine towards the sun
-///   plus a hemisphere ambient, `mix(groundColor, skyColor, 0.5 + 0.5 * n.y)`
-///   (the track effects' `sunColor`, `sunDir`, `skyColor` and `groundColor`
-///   constants).
+/// - Track surfaces are drawn with the game's own effects (TrackPrograms),
+///   which take the sun (`sunDir`, `sunColor`), a flat ambient (`ambColor`)
+///   and a hemisphere ambient from above and below (`skyColor`,
+///   `groundColor`) from this block.
 /// - The sky dome (the game's `Sky_PS` and `Sky_Simple_VS`, embedded in the
 ///   executable) is `gain * clamp(mix(base, haze, h), 0, 1)` with
 ///   `base = mix(bottom, top, t ^ colourPower)`,
@@ -56,6 +62,10 @@ struct SceneLighting {
     /// Direction light travels from the sun (or moon), normalised.
     glm::vec3 sunDirection{};
     glm::vec3 sunColour{};
+    /// Flat ambient of the world (the track effects' `ambColor`, sampled
+    /// from the AmbientColour curve into the same lighting block as the
+    /// hemisphere pair below; 0x8265A7CC).
+    glm::vec3 ambientColour{};
     /// Hemisphere ambient of the world: from straight above and below.
     glm::vec3 ambientTop{};
     glm::vec3 ambientBottom{};
@@ -125,8 +135,33 @@ void setSceneLighting(Shader& shader, const SceneLighting& lighting);
 /// Streams and draws a track's world: 500 m tiles are rebuilt on worker
 /// threads whenever the camera crosses one of a tile's level-of-detail
 /// edges, and the textures their batches use are decoded in the background
-/// and uploaded once ready. Until a tile's new geometry and textures are all
-/// in, the old version stays on screen, so moving never shows holes.
+/// and uploaded once ready. Until a tile's new geometry, textures and
+/// programs are all in, the old version stays on screen, so moving never
+/// shows holes. Every batch draws with its material's own track effect,
+/// translated from the game's microcode (TrackPrograms), reading the
+/// converted vertices (world::ShadedMesh) from a storage buffer.
+///
+/// Where the driver has bindless textures (see TrackPrograms), a draw binds
+/// nothing between the batches of one tile: every texture a visible tile
+/// uses stays resident, a table in a storage buffer holds their handles,
+/// and each batch's material names its entries. Binding textures per batch
+/// instead costs about three times the GPU time with the thousands of
+/// batches a view holds, so the bound path remains only for drivers without
+/// them.
+///
+/// What the effects sample that the game supplies itself is bound as
+/// follows, the features behind it not being implemented: the screen-space
+/// shadow mask (ShadowMaskSamp, which the game fills from its cascaded
+/// shadow maps) white, so every surface counts as sunlit; other samplers a
+/// material leaves to the engine (lightmaps it did not bake) black; cube
+/// maps (reflections the game renders at run time) black.
+///
+/// A few ambient occlusion and lightmap textures (56 of Colorado's, all in
+/// AO_Sampler, AOMapSampler or Light_MapSampler slots, none of them diffuse)
+/// have no data on the disc: the PVS file and the zones' streaming tables
+/// name them, but bin.zip has no `_0x<ID>` file for them and no bundle pack
+/// holds their record. Their units get the black texture, like the
+/// lightmaps a material leaves to the engine.
 class WorldRenderer {
 public:
     struct Stats {
@@ -161,6 +196,13 @@ public:
     void setDynamicTransform(int handle, const glm::mat4& transform);
     void removeDynamic(int handle);
 
+    /// Track effects not linked yet. Their translation starts on the job
+    /// pool when the renderer is made; precompile() links them.
+    std::size_t programsPending() const { return m_programs.pendingCount(); }
+    /// Links translated track effects for up to `budget` on the GL thread,
+    /// for a loading screen to call every frame. Returns whether any remain.
+    bool precompile(std::chrono::microseconds budget) { return m_programs.compileSome(budget); }
+
     /// Tiles farther than this are not drawn, in metres.
     void setDrawDistance(float metres) { m_drawDistance = metres; }
     const Stats& stats() const { return m_stats; }
@@ -169,12 +211,31 @@ public:
     bool nearbyReady() const { return m_nearbyReady; }
 
 private:
+    /// What a tile (or moving object) is built into: the track-effect
+    /// geometry, and the procedural copies ScatterPass draws.
+    struct TileBuild {
+        world::ShadedMesh shaded;
+        world::TileMesh scattered;
+
+        bool empty() const { return shaded.indices.empty() && scattered.indices.empty(); }
+        std::vector<std::uint32_t> textureIds() const;
+    };
     struct GpuMesh {
         GLuint vao = 0;
-        GLuint vbo = 0;
-        GLuint ibo = 0;
-        std::vector<world::TileMesh::Batch> batches;
+        GLuint vertices = 0;
+        GLuint indices = 0;
+        /// One TrackMaterial per batch, 256 bytes apart without bindless
+        /// textures (a uniform block each), packed with them.
+        GLuint materials = 0;
+        std::vector<world::ShadedMesh::Batch> batches;
+        /// Every texture the batches name, to keep them from eviction while
+        /// the mesh is drawn.
+        std::vector<std::uint32_t> textureIds;
+        /// The program of each batch, nullptr where it cannot be built.
+        std::vector<const TrackPrograms::Program*> programs;
         std::size_t triangles = 0;
+        /// The procedural copies, nullptr when there are none.
+        std::shared_ptr<ScatterPass::Mesh> scattered;
     };
     struct TileState {
         int builtState = -1;
@@ -183,13 +244,13 @@ private:
         std::shared_ptr<GpuMesh> mesh;
         /// A finished build waiting for its textures before it replaces the
         /// mesh on screen.
-        std::unique_ptr<world::TileMesh> pending;
+        std::unique_ptr<TileBuild> pending;
         int pendingState = -1;
     };
     struct BuiltTile {
         std::size_t tile = 0;
         int state = 0;
-        std::unique_ptr<world::TileMesh> mesh;
+        std::unique_ptr<TileBuild> mesh;
     };
     struct LoadedTexture {
         std::uint32_t id = 0;
@@ -201,6 +262,8 @@ private:
         bool ready = false;
         bool failed = false;
         std::uint64_t lastUsed = 0;
+        /// The resident bindless handle, 0 without one.
+        GLuint64 handle = 0;
     };
 
     struct Dynamic {
@@ -209,17 +272,42 @@ private:
     };
     struct BuiltDynamic {
         int handle = 0;
-        std::unique_ptr<world::TileMesh> mesh;
+        std::unique_ptr<TileBuild> mesh;
+    };
+    struct DrawItem {
+        const TrackPrograms::Program* program = nullptr;
+        const GpuMesh* mesh = nullptr;
+        std::uint32_t batch = 0;
+        /// Block of the frame constant buffer: 0 for the static world, one
+        /// per moving object after it.
+        std::uint32_t frameSlot = 0;
     };
 
-    std::shared_ptr<GpuMesh> upload(const world::TileMesh& mesh);
-    void drawBatches(const GpuMesh& mesh, bool waterPass);
+    std::unique_ptr<TileBuild> build(const std::vector<std::uint32_t>& chunks);
+    std::shared_ptr<GpuMesh> upload(const TileBuild& build);
     static void destroy(GpuMesh& mesh);
     void requestTexture(std::uint32_t id, float priority);
-    bool texturesReady(const world::TileMesh& mesh) const;
-    /// The loaded texture, or `fallback` while it is not ready.
-    const Texture* textureOr(std::uint32_t id, const Texture* fallback);
+    bool texturesReady(const TileBuild& build) const;
+    const Texture* texture(std::uint32_t id);
+    /// The texture handle table entry of texture `id`, assigned on first
+    /// use and kept for the renderer's life.
+    std::uint32_t textureEntry(std::uint32_t id);
+    void setHandle(std::uint32_t entry, GLuint64 handle);
+    /// Uploads the handle table entries changed since the last frame.
+    void flushHandles();
+    /// Whether every texture the batch names is on the GPU or known to be
+    /// missing from the disc.
+    bool texturesLoaded(const world::ShadedMesh::Batch& batch) const;
+    /// Marks the textures of a mesh about to be drawn as used this frame.
+    void touchTextures(const GpuMesh& mesh);
     void evictTextures();
+    void collect(const GpuMesh& mesh, std::uint32_t frameSlot);
+    void drawItems(const std::vector<DrawItem>& items);
+    /// Sets the pass's render states and the matching system block.
+    void applyState(const world::TrackShaders::RenderState& state);
+    /// glBindTextureUnit, skipped when the unit already holds `texture`.
+    void bindTexture(GLuint unit, GLuint texture);
+    void bindSamplers(const TrackPrograms::Program& program, const world::ShadedMesh::Batch& batch);
 
     const world::TrackWorld& m_world;
     JobPool& m_jobs;
@@ -236,9 +324,43 @@ private:
 
     std::unordered_map<int, Dynamic> m_dynamics;
     int m_nextDynamic = 1;
-    Shader m_shader;
+    TrackPrograms m_programs;
+    /// Whether the programs take their textures from the handle table.
+    bool m_bindless = false;
+    /// The engine-supplied textures (see the class comment).
     Texture m_white;
-    Texture m_flatNormal;
+    Texture m_black;
+    GLuint m_blackCube = 0;
+    /// For volume samplers, which no track texture feeds.
+    GLuint m_black3D = 0;
+    /// The texture handle table (see texturehandle) on the CPU and the GPU,
+    /// with the range of entries changed since it was last uploaded.
+    std::vector<GLuint64> m_handles;
+    GLuint m_handleBuffer = 0;
+    std::size_t m_handleCapacity = 0;
+    std::size_t m_dirtyFirst = 0;
+    std::size_t m_dirtyEnd = 0;
+    std::unordered_map<std::uint32_t, std::uint32_t> m_textureEntries;
+    /// Frame constant blocks, the system and control blocks.
+    /// Frames in flight: each frame writes its constants into the next
+    /// buffer, so the driver never waits for the GPU to finish reading one.
+    static constexpr std::size_t kFrameBuffers = 3;
+    std::array<GLuint, kFrameBuffers> m_frameBuffers{};
+    std::array<std::size_t, kFrameBuffers> m_frameSlots{};
+    /// The frame buffer of the frame being drawn.
+    GLuint m_frameBuffer = 0;
+    GLuint m_fixedBlocks = 0;
+    /// Framebuffer height the fixed blocks were last written for.
+    int m_fixedHeight = -1;
+    /// Texture on each unit as this renderer last bound it, this frame.
+    std::array<GLuint, 32> m_boundTextures{};
+    ScatterPass m_scatter;
+    /// Meshes with procedural copies to draw this frame, with the matrix
+    /// that places them (identity for the static world).
+    std::vector<std::pair<const GpuMesh*, glm::mat4>> m_scatterDraws;
+    std::vector<DrawItem> m_opaque;
+    /// Batches whose pass blends, drawn after all opaque ones.
+    std::vector<DrawItem> m_blended;
     float m_drawDistance = 9000.0F;
     std::uint64_t m_frame = 0;
     glm::vec3 m_camera{0.0F};

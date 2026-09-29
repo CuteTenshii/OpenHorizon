@@ -193,6 +193,7 @@ render::SceneLighting TimeOfDay::lighting() const
     // The hemisphere pair the track shaders call skyColor and groundColor;
     // the executable samples these curves together with the sun's into the
     // one lighting block it hands the renderer (0x8265A7CC).
+    l.ambientColour = m_curves.sample("AmbientColour", t);
     l.ambientTop = m_curves.sample("HLTopColour", t);
     l.ambientBottom = m_curves.sample("HLBottomColour", t);
     l.carAmbientTop = m_curves.sample("CarHLColourTop", t);

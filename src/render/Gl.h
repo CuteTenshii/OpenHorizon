@@ -67,6 +67,7 @@
     X(PFNGLDRAWELEMENTSPROC, glDrawElements)                                                                           \
     X(PFNGLDRAWELEMENTSBASEVERTEXPROC, glDrawElementsBaseVertex)                                                       \
     X(PFNGLDRAWELEMENTSINSTANCEDPROC, glDrawElementsInstanced)                                                         \
+    X(PFNGLDRAWELEMENTSINSTANCEDBASEINSTANCEPROC, glDrawElementsInstancedBaseInstance)                                 \
     X(PFNGLDRAWARRAYSINSTANCEDPROC, glDrawArraysInstanced)                                                             \
     X(PFNGLMULTIDRAWELEMENTSINDIRECTPROC, glMultiDrawElementsIndirect)                                                 \
     X(PFNGLCREATESHADERPROC, glCreateShader)                                                                           \
@@ -136,7 +137,10 @@
 // stay null otherwise, so callers check before calling.
 #define FH_GL_OPTIONAL_FUNCTIONS(X)                                                                                    \
     X(PFNGLMAXSHADERCOMPILERTHREADSKHRPROC, glMaxShaderCompilerThreadsKHR)                                             \
-    X(PFNGLMAXSHADERCOMPILERTHREADSARBPROC, glMaxShaderCompilerThreadsARB)
+    X(PFNGLMAXSHADERCOMPILERTHREADSARBPROC, glMaxShaderCompilerThreadsARB)                                             \
+    X(PFNGLGETTEXTUREHANDLEARBPROC, glGetTextureHandleARB)                                                             \
+    X(PFNGLMAKETEXTUREHANDLERESIDENTARBPROC, glMakeTextureHandleResidentARB)                                           \
+    X(PFNGLMAKETEXTUREHANDLENONRESIDENTARBPROC, glMakeTextureHandleNonResidentARB)
 
 namespace fh::gl {
 
