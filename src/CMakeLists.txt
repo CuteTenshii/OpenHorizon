@@ -43,6 +43,11 @@ add_library(fh1platform STATIC
 )
 target_compile_options(fh1platform PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(fh1platform PUBLIC fh1base SDL3::SDL3 OpenGL::GL)
+# Gl.h declares the entry points from the Khronos glcorearb.h, which Linux
+# distributions ship with their GL headers and the Windows SDK lacks (vcpkg's
+# opengl-registry provides it there).
+find_path(FH1N_GLCOREARB_INCLUDE_DIR GL/glcorearb.h REQUIRED)
+target_include_directories(fh1platform PUBLIC ${FH1N_GLCOREARB_INCLUDE_DIR})
 
 add_executable(fh1carspec ../tools/fh1carspec.cpp)
 target_compile_options(fh1carspec PRIVATE ${FH1N_WARNINGS})
@@ -54,7 +59,6 @@ target_link_libraries(fh1cartest PRIVATE fh1data)
 add_subdirectory(world)
 
 find_package(Freetype REQUIRED)
-pkg_check_modules(FONTCONFIG REQUIRED IMPORTED_TARGET fontconfig)
 
 add_library(fh1engine STATIC
     game/Activities.cpp
@@ -119,7 +123,13 @@ add_library(fh1engine STATIC
     render/XenosProgram.h
 )
 target_compile_options(fh1engine PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1engine PUBLIC fh1platform fh1data fh1world fh1collision fh1audio fh1carmodel fh1ui fh1radio fh1particles fh1profile xds::xds Freetype::Freetype PkgConfig::FONTCONFIG)
+target_link_libraries(fh1engine PUBLIC fh1platform fh1data fh1world fh1collision fh1audio fh1carmodel fh1ui fh1radio fh1particles fh1profile xds::xds Freetype::Freetype)
+# The overlay finds its font through fontconfig; Windows has none, and the
+# overlay looks in the system font folder there instead.
+if(NOT WIN32)
+    find_package(Fontconfig REQUIRED)
+    target_link_libraries(fh1engine PUBLIC Fontconfig::Fontconfig)
+endif()
 
 add_executable(fh1 app/main.cpp)
 target_compile_options(fh1 PRIVATE ${FH1N_WARNINGS})

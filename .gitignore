@@ -1,5 +1,8 @@
 /build/
 /build-debug/
+/build-windows/
+/build-windows-debug/
+/build-mingw/
 /cmake-build-*/
 /compile_commands.json
 /.cache/

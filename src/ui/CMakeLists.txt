@@ -34,10 +34,8 @@ add_library(fh1ui STATIC
 )
 target_compile_options(fh1ui PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(fh1ui PUBLIC fh1base fh1platform fh1data xds::xds glm::glm)
-# The front end's movies are ASF files, which libavformat demuxes; the root
-# only asks for the codec libraries the audio decoders need.
-pkg_check_modules(AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
-target_link_libraries(fh1ui PUBLIC fh1audio PkgConfig::AVFORMAT PkgConfig::FFMPEG)
+# The front end's movies are ASF files, which libavformat demuxes.
+target_link_libraries(fh1ui PUBLIC fh1audio FH1N::avformat FH1N::avcodec)
 
 # The library owns the target name, so the tool's target has its own and
 # only its output file is called fh1ui.

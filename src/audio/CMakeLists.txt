@@ -28,7 +28,7 @@ add_library(fh1audio STATIC
     Wav.h
 )
 target_compile_options(fh1audio PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1audio PUBLIC fh1base PkgConfig::FFMPEG SDL3::SDL3 Threads::Threads glm::glm)
+target_link_libraries(fh1audio PUBLIC fh1base FH1N::avcodec SDL3::SDL3 Threads::Threads glm::glm)
 
 # The library already owns the target name, so the tool's target has its own
 # and only its output file is called fh1audio.
