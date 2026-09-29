@@ -24,7 +24,7 @@ set(XDS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(XDS_BUILD_QT_PLUGIN OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(lzx
     GIT_REPOSITORY https://git.tenshii.moe/Tenshii/lzx.git
-    GIT_TAG 5e3b4cf83ac9b841ae782c40bb9d368c884ce7c5
+    GIT_TAG 50561e5d4f2fd0be535b5b80743ffc62c426330a # v0.1.0
     EXCLUDE_FROM_ALL
 )
 FetchContent_Declare(xds
