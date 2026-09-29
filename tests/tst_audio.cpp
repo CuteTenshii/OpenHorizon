@@ -14,6 +14,7 @@
 #include "audio/EventPlayer.h"
 #include "audio/Fev.h"
 #include "audio/Fsb.h"
+#include "audio/MixSnapshots.h"
 #include "audio/Mixer.h"
 #include "audio/TyreSound.h"
 #include "audio/Wav.h"
@@ -869,6 +870,42 @@ TEST(mixerBusesFilterAndScale)
     CHECK_EQ(filtered.activeVoiceCount(), std::size_t{0});
 }
 
+TEST(mixerBusesFeedOtherBuses)
+{
+    Mixer mixer(48000);
+    // A category bus with a car's emitter bus feeding it, created in either
+    // order of slot numbers.
+    const BusId spare = mixer.createBus();
+    const BusId category = mixer.createBus();
+    mixer.destroyBus(spare);
+    const BusId emitter = mixer.createBus(category);
+    CHECK(emitter < category);
+    mixer.setBusVolume(category, 0.5F);
+    mixer.setBusVolume(emitter, 0.8F);
+    CHECK_NEAR(mixer.busGain(emitter), 0.4, 1e-6);
+    CHECK_NEAR(mixer.busVolume(emitter), 0.8, 1e-6);
+    VoiceSettings settings;
+    settings.loop = true;
+    settings.bus = emitter;
+    mixer.play(constant(0.5F, 4800), settings);
+    std::vector<float> out = render(mixer, 512);
+    CHECK_NEAR(out[100], 0.2 * std::cos(std::numbers::pi / 4.0), 1e-4);
+
+    mixer.setBusVolume(category, 0.0F);
+    render(mixer, 512);
+    out = render(mixer, 512);
+    CHECK_NEAR(out[100], 0.0, 1e-6);
+    CHECK_NEAR(mixer.busGain(emitter), 0.0, 1e-6);
+
+    // Without its output, a bus feeds the master.
+    mixer.destroyBus(category);
+    CHECK_NEAR(mixer.busGain(emitter), 0.8, 1e-6);
+    render(mixer, 512);
+    out = render(mixer, 512);
+    CHECK_NEAR(out[100], 0.4 * std::cos(std::numbers::pi / 4.0), 1e-4);
+    CHECK_EQ(mixer.busGain(category), 0.0F);
+}
+
 TEST(mixerLimiterHoldsTheCeiling)
 {
     Mixer mixer(48000);
@@ -1608,6 +1645,215 @@ TEST(discEngineSoundPlays)
     CHECK(engine.tyres() && engine.tyres()->isPlaying());
 
     CHECK_THROWS(EngineSound(device, vfs, "NOT_A_CAR_00"));
+}
+
+/// A few snapshots in the layout of audiomixersnapshots.xml, with the disc's
+/// values for the categories used.
+constexpr std::string_view kSnapshotXml = R"(<?xml version="1.0" encoding="utf-8"?>
+<MixSnapshots>
+  <DynamicsData><CrashData threshold="50" drop="10"/></DynamicsData>
+  <FreeRoam group="Gameplay">
+    <FocusCar  active="1" destvolume="0.350000" fadetime="0.500000" returntime="0.000000" returnfadetime="0.000000"/>
+    <GameMusic active="1" destvolume="1.000000" fadetime="0.500000" returntime="0.000000" returnfadetime="0.000000"/>
+  </FreeRoam>
+  <Loading group="Gameplay">
+    <FocusCar  active="1" destvolume="0.00000" fadetime="2.000000" returntime="0.000000" returnfadetime="0.000000"/>
+  </Loading>
+  <Paused group="Gameplay">
+    <FocusCar  active="1" destvolume="0.000000" fadetime="0.200000" returntime="0.000000" returnfadetime="0.100000"/>
+    <GameMusic active="1" destvolume="0.2500000" fadetime="0.200000" returntime="0.000000" returnfadetime="0.100000"/>
+    <GameUI    active="1" destvolume="1.000000" fadetime="0.000000" returntime="0.000000" returnfadetime="0.100000"/>
+  </Paused>
+  <Crash group="Impact" >
+    <FocusCar  active="1" destvolume="0.700000" fadetime="0.000000" returntime="0.200000" returnfadetime="0.300000"/>
+    <Collision active="0" destvolume="1.00000"  fadetime="0.000000" returntime="0.000000" returnfadetime="0.000000"/>
+  </Crash>
+  <TopSpeed group="Speed">
+    <GameMusic active="1" destvolume="1.1500000" fadetime="0.000000" returntime="0.000000" returnfadetime="0.000000"/>
+  </TopSpeed>
+  <Video group="Elsewhere">
+    <FocusCar  active="1" destvolume="0.000000" fadetime="0.000000" returntime="0.000000" returnfadetime="0.000000"/>
+  </Video>
+</MixSnapshots>
+)";
+
+/// Runs `updates` updates of `seconds` each.
+void advance(SnapshotMixer& mixer, int updates, float seconds)
+{
+    for (int i = 0; i < updates; ++i) {
+        mixer.update(seconds);
+    }
+}
+
+TEST(mixSnapshotsParse)
+{
+    const MixSnapshots snapshots = MixSnapshots::parse(kSnapshotXml, "test");
+    const MixSnapshot& paused = snapshots.snapshot(MixSnapshotId::Paused);
+    CHECK(paused.present);
+    CHECK(paused.group == MixGroup::Gameplay);
+    const MixSetting& focus = paused.settings[static_cast<std::size_t>(MixCategory::FocusCar)];
+    CHECK(focus.active);
+    CHECK_NEAR(focus.volume, 0.0, 1e-6);
+    CHECK_NEAR(focus.fadeTime, 0.2, 1e-6);
+    CHECK_NEAR(focus.returnFadeTime, 0.1, 1e-6);
+    CHECK_NEAR(paused.settings[static_cast<std::size_t>(MixCategory::GameMusic)].volume, 0.25, 1e-6);
+    CHECK(!paused.settings[static_cast<std::size_t>(MixCategory::Tire)].active);
+    CHECK(!snapshots.snapshot(MixSnapshotId::Crash).settings[static_cast<std::size_t>(MixCategory::Collision)].active);
+    CHECK(!snapshots.snapshot(MixSnapshotId::Race).present);
+    CHECK(!snapshots.snapshot(MixSnapshotId::Video).group.has_value());
+    CHECK(findMixSnapshot("PausedMultiplayer") == MixSnapshotId::PausedMultiplayer);
+    CHECK(!findMixSnapshot("paused").has_value());
+    CHECK_EQ(mixCategoryName(MixCategory::RallyCoDriver), std::string_view("RallyCoDriver"));
+    CHECK_THROWS(MixSnapshots::parse("<NotSnapshots/>", "test"));
+}
+
+TEST(snapshotMixerFadesPausesAndRestores)
+{
+    SnapshotMixer mixer(MixSnapshots::parse(kSnapshotXml, "test"));
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 1.0, 1e-6);
+
+    // A new fade covers the distance from the group's volume in fadetime,
+    // starting one update after it was applied.
+    mixer.apply(MixSnapshotId::FreeRoam);
+    CHECK(mixer.current(MixGroup::Gameplay) == MixSnapshotId::FreeRoam);
+    CHECK(!mixer.saved().has_value());
+    mixer.update(0.1F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 1.0, 1e-6);
+    mixer.update(0.1F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 1.0 - 0.65 * 0.2, 1e-5);
+    advance(mixer, 5, 0.1F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+    CHECK_EQ(mixer.faderCount(), std::size_t{0});
+
+    // Pausing saves FreeRoam and fades the car out in 0.2 s and the music
+    // down to a quarter; the UI stays.
+    mixer.apply(MixSnapshotId::Paused);
+    CHECK(mixer.saved() == MixSnapshotId::FreeRoam);
+    mixer.update(0.05F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+    mixer.update(0.1F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.175, 1e-5);
+    CHECK_NEAR(mixer.volume(MixCategory::GameMusic), 1.0 - 0.75 * 0.5, 1e-5);
+    advance(mixer, 2, 0.1F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.0, 1e-6);
+    CHECK_NEAR(mixer.volume(MixCategory::GameMusic), 0.25, 1e-6);
+    CHECK_NEAR(mixer.volume(MixCategory::GameUI), 1.0, 1e-6);
+
+    // Leaving it goes back to FreeRoam over Paused's 0.1 s return fade, and
+    // FreeRoam stays the one saved.
+    mixer.restore();
+    CHECK(mixer.current(MixGroup::Gameplay) == MixSnapshotId::FreeRoam);
+    CHECK(mixer.saved() == MixSnapshotId::FreeRoam);
+    mixer.update(0.05F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.0, 1e-6);
+    mixer.update(0.05F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.175, 1e-5);
+    advance(mixer, 2, 0.05F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+
+    // Loading is not saved either.
+    mixer.apply(MixSnapshotId::Loading);
+    mixer.apply(MixSnapshotId::Paused);
+    CHECK(mixer.saved() == MixSnapshotId::FreeRoam);
+}
+
+TEST(snapshotMixerRestartsRunningFades)
+{
+    SnapshotMixer mixer(MixSnapshots::parse(kSnapshotXml, "test"));
+    mixer.apply(MixSnapshotId::FreeRoam);
+    advance(mixer, 10, 0.1F);
+    mixer.apply(MixSnapshotId::Paused);
+    advance(mixer, 2, 0.1F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.175, 1e-5);
+    // Still fading: the fader restarts from where the group is with a step
+    // of |1 - target| per fade time.
+    mixer.restore();
+    mixer.update(0.02F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.175 + 0.65 * 0.2, 1e-5);
+    advance(mixer, 2, 0.02F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+}
+
+TEST(snapshotMixerGroupsMultiplyAndReturn)
+{
+    SnapshotMixer mixer(MixSnapshots::parse(kSnapshotXml, "test"));
+    mixer.apply(MixSnapshotId::FreeRoam);
+    advance(mixer, 10, 0.1F);
+
+    // A crash dips the car in its own group, straight away after the timer
+    // starts, and returns to 1 after 0.2 s over 0.3 s.
+    mixer.apply(MixSnapshotId::Crash);
+    mixer.update(0.1F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+    mixer.update(0.1F);
+    CHECK_NEAR(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), 0.7, 1e-6);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35 * 0.7, 1e-6);
+    mixer.update(0.1F);
+    CHECK_NEAR(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), 0.7, 1e-6);
+    mixer.update(0.1F);
+    mixer.update(0.15F);
+    CHECK_NEAR(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), 0.85, 1e-5);
+    advance(mixer, 2, 0.15F);
+    CHECK_NEAR(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), 1.0, 1e-6);
+    CHECK_EQ(mixer.faderCount(), std::size_t{0});
+    CHECK_NEAR(mixer.groupVolume(MixGroup::Impact, MixCategory::Collision), 1.0, 1e-6);
+
+    // The product is clamped to 1.
+    mixer.apply(MixSnapshotId::TopSpeed);
+    advance(mixer, 2, 0.1F);
+    CHECK_NEAR(mixer.groupVolume(MixGroup::Speed, MixCategory::GameMusic), 1.15, 1e-6);
+    CHECK_NEAR(mixer.volume(MixCategory::GameMusic), 1.0, 1e-6);
+
+    // A snapshot without a known group changes nothing.
+    mixer.apply(MixSnapshotId::Video);
+    advance(mixer, 2, 0.1F);
+    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+    CHECK(mixer.current(MixGroup::Gameplay) == MixSnapshotId::FreeRoam);
+}
+
+TEST(discMixSnapshots)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const MixSnapshots snapshots = MixSnapshots::load(vfs);
+    std::size_t present = 0;
+    for (std::size_t s = 0; s < kMixSnapshotCount; ++s) {
+        const MixSnapshot& snapshot = snapshots.snapshot(static_cast<MixSnapshotId>(s));
+        if (!snapshot.present) {
+            continue;
+        }
+        ++present;
+        CHECK(snapshot.group.has_value());
+        std::size_t active = 0;
+        for (const MixSetting& setting : snapshot.settings) {
+            active += setting.active ? 1 : 0;
+        }
+        CHECK(active > 0);
+        CHECK(!snapshot.settings[static_cast<std::size_t>(MixCategory::RallyCoDriver)].active);
+    }
+    CHECK_EQ(present, std::size_t{39});
+    CHECK(!snapshots.snapshot(MixSnapshotId::LoadingRally).present);
+
+    const MixSnapshot& paused = snapshots.snapshot(MixSnapshotId::Paused);
+    CHECK(paused.group == MixGroup::Gameplay);
+    for (const MixCategory category : {MixCategory::FocusCar, MixCategory::OppCar, MixCategory::Tire,
+             MixCategory::Transmission, MixCategory::Backfire}) {
+        const MixSetting& setting = paused.settings[static_cast<std::size_t>(category)];
+        CHECK(setting.active);
+        CHECK_NEAR(setting.volume, 0.0, 1e-6);
+        CHECK_NEAR(setting.fadeTime, 0.2, 1e-6);
+        CHECK_NEAR(setting.returnFadeTime, 0.1, 1e-6);
+    }
+    CHECK_NEAR(paused.settings[static_cast<std::size_t>(MixCategory::GameMusic)].volume, 0.25, 1e-6);
+    CHECK_NEAR(paused.settings[static_cast<std::size_t>(MixCategory::GameUI)].volume, 1.0, 1e-6);
+    const MixSnapshot& freeRoam = snapshots.snapshot(MixSnapshotId::FreeRoam);
+    CHECK_NEAR(freeRoam.settings[static_cast<std::size_t>(MixCategory::FocusCar)].volume, 0.35, 1e-6);
+    CHECK_NEAR(freeRoam.settings[static_cast<std::size_t>(MixCategory::FocusCar)].fadeTime, 0.5, 1e-6);
+    CHECK(snapshots.snapshot(MixSnapshotId::Crash).group == MixGroup::Impact);
 }
 
 } // namespace

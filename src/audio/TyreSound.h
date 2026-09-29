@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Mixer.h"
+
 #include <glm/vec3.hpp>
 
 #include <array>
@@ -20,7 +22,6 @@ namespace fh::audio {
 class AudioLibrary;
 class EventInstance;
 class FevProject;
-class Mixer;
 
 /// Game path of the tyre event project and of its surface table.
 inline constexpr std::string_view kTiresProjectPath = "media/audio/cars/tires/tires.fev";
@@ -112,6 +113,8 @@ struct TyreSoundOptions {
     /// TyreCarInput::position for LOD2); otherwise they play centred.
     bool spatial = false;
     float volume = 1.0F;
+    /// The mixer bus the events play into.
+    BusId bus = kMasterBus;
     std::uint32_t seed = 1;
 };
 

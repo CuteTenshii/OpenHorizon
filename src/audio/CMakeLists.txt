@@ -20,6 +20,8 @@ add_library(fh1audio STATIC
     LeReader.h
     Mixer.cpp
     Mixer.h
+    MixSnapshots.cpp
+    MixSnapshots.h
     TyreSound.cpp
     TyreSound.h
     Wav.cpp

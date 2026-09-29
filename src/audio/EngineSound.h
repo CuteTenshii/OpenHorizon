@@ -39,6 +39,15 @@ struct EngineSoundOptions {
     /// Transmissions.fev.
     bool tyres = true;
     bool transmission = true;
+    /// The mixer buses the sounds feed: the engine's emitter buses and its
+    /// burbles, its backfires, the gear-shift event and the tyre events.
+    struct Buses {
+        BusId engine = kMasterBus;
+        BusId backfire = kMasterBus;
+        BusId transmission = kMasterBus;
+        BusId tyres = kMasterBus;
+    };
+    Buses buses;
     std::uint32_t seed = 1;
 };
 
@@ -85,6 +94,9 @@ public:
     /// forward), for spatial engines.
     void setTransform(const glm::vec3& position, const glm::mat3& basis);
     void setVolume(float volume);
+    /// The mixer gain from the engine's loudest emitter bus to the master,
+    /// through the bus it feeds (see Mixer::busGain); 0 without emitters.
+    float engineGain() const;
 
     /// Equal-power crossfade weights of `loops` (sorted by rpm_sample) at
     /// `rpm`: a loop fades in across the overlap of its range with the

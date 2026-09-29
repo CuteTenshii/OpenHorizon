@@ -168,6 +168,7 @@ std::unique_ptr<EventInstance> TyreSound::makeEvent(const std::string& path)
     EventSettings settings;
     settings.volume = m_options.volume;
     settings.spatial = m_options.spatial;
+    settings.bus = m_options.bus;
     settings.seed = m_nextSeed++;
     return std::make_unique<EventInstance>(
         m_mixer, *m_library, std::string(kTiresProjectPath), m_project, *event, settings);

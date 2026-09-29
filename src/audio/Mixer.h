@@ -115,11 +115,21 @@ public:
     bool isPlaying(VoiceId voice) const;
     std::size_t activeVoiceCount() const;
 
-    /// A new bus feeding the master; buses live until destroyBus().
-    BusId createBus();
-    /// Stops the bus's voices and releases it.
+    /// A new bus feeding `output` (the master unless given), after its own
+    /// filters and volume; buses live until destroyBus(). An output that is
+    /// not a live bus means the master.
+    BusId createBus(BusId output = kMasterBus);
+    /// Stops the bus's voices and releases it. Buses that fed it feed the
+    /// master from then on.
     void destroyBus(BusId bus);
     void setBusVolume(BusId bus, float volume);
+    /// The volume last set on the bus (1 for a bus never set, 0 for one that
+    /// does not exist).
+    float busVolume(BusId bus) const;
+    /// What a sample played into `bus` is multiplied by on its way to the
+    /// master: the volumes of the bus and of every bus it feeds through,
+    /// as last set. Filters and the master volume are not included.
+    float busGain(BusId bus) const;
     /// Replaces the bus's filter chain; filter state carries over while the
     /// chain keeps its shape, so parameters can change every game frame.
     void setBusFilters(BusId bus, std::span<const FilterSpec> filters);
@@ -154,6 +164,7 @@ private:
 
     struct Bus {
         bool active = false;
+        BusId output = kMasterBus;
         float volume = 1.0F;
         float appliedVolume = 1.0F;
         bool volumeSet = false;
@@ -175,12 +186,18 @@ private:
     void targetGains(const Voice& voice, float& left, float& right) const;
     void mixVoice(Voice& voice, float* bus, std::size_t frames);
     void renderBlock(float* out, std::size_t frames);
+    /// Rebuilds m_busOrder; the caller holds the lock.
+    void orderBuses();
 
     const int m_sampleRate;
     mutable std::mutex m_mutex;
     std::vector<Voice> m_voices;
     std::vector<float> m_streamScratch;
     std::vector<Bus> m_buses;
+    /// The live buses other than the master, those furthest from it first,
+    /// so every bus is mixed into its output before the output is mixed on;
+    /// rebuilt when buses are created or destroyed.
+    std::vector<BusId> m_busOrder;
     glm::vec3 m_listenerPosition{0.0F};
     glm::vec3 m_listenerRight{1.0F, 0.0F, 0.0F};
     float m_masterVolume = 1.0F;

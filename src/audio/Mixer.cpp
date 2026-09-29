@@ -219,22 +219,27 @@ std::size_t Mixer::activeVoiceCount() const
     }));
 }
 
-BusId Mixer::createBus()
+BusId Mixer::createBus(BusId output)
 {
     std::lock_guard lock(m_mutex);
-    for (std::size_t i = 1; i < m_buses.size(); ++i) {
-        if (!m_buses[i].active) {
-            m_buses[i] = Bus{};
-            m_buses[i].active = true;
-            m_buses[i].buffer.assign(kBlockFrames * 2, 0.0F);
-            return static_cast<BusId>(i);
-        }
-    }
     Bus bus;
     bus.active = true;
+    bus.output = output < m_buses.size() && m_buses[output].active ? output : kMasterBus;
     bus.buffer.assign(kBlockFrames * 2, 0.0F);
-    m_buses.push_back(std::move(bus));
-    return static_cast<BusId>(m_buses.size() - 1);
+    BusId id = 0;
+    for (std::size_t i = 1; i < m_buses.size() && id == 0; ++i) {
+        if (!m_buses[i].active) {
+            id = static_cast<BusId>(i);
+        }
+    }
+    if (id == 0) {
+        m_buses.push_back(std::move(bus));
+        id = static_cast<BusId>(m_buses.size() - 1);
+    } else {
+        m_buses[id] = std::move(bus);
+    }
+    orderBuses();
+    return id;
 }
 
 void Mixer::destroyBus(BusId bus)
@@ -250,7 +255,59 @@ void Mixer::destroyBus(BusId bus)
             v.stream.reset();
         }
     }
+    for (Bus& other : m_buses) {
+        if (other.active && other.output == bus) {
+            other.output = kMasterBus;
+        }
+    }
     m_buses[bus] = Bus{};
+    orderBuses();
+}
+
+void Mixer::orderBuses()
+{
+    // A bus can only be given an output that exists when it is created, and
+    // destroying a bus sends its inputs to the master, so the outputs never
+    // form a cycle.
+    const auto depth = [this](BusId bus) {
+        int d = 0;
+        while (bus != kMasterBus) {
+            bus = m_buses[bus].output;
+            ++d;
+        }
+        return d;
+    };
+    std::vector<std::pair<int, BusId>> order;
+    for (std::size_t b = 1; b < m_buses.size(); ++b) {
+        if (m_buses[b].active) {
+            order.emplace_back(depth(static_cast<BusId>(b)), static_cast<BusId>(b));
+        }
+    }
+    std::stable_sort(order.begin(), order.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    m_busOrder.clear();
+    for (const auto& [d, bus] : order) {
+        m_busOrder.push_back(bus);
+    }
+}
+
+float Mixer::busVolume(BusId bus) const
+{
+    std::lock_guard lock(m_mutex);
+    return bus < m_buses.size() && m_buses[bus].active ? m_buses[bus].volume : 0.0F;
+}
+
+float Mixer::busGain(BusId bus) const
+{
+    std::lock_guard lock(m_mutex);
+    if (bus >= m_buses.size() || !m_buses[bus].active) {
+        return 0.0F;
+    }
+    float gain = 1.0F;
+    while (bus != kMasterBus) {
+        gain *= m_buses[bus].volume;
+        bus = m_buses[bus].output;
+    }
+    return gain;
 }
 
 void Mixer::setBusVolume(BusId bus, float volume)
@@ -472,11 +529,9 @@ void Mixer::renderBlock(float* out, std::size_t frames)
     }
     float* master = m_buses[kMasterBus].buffer.data();
     const float inverse = 1.0F / static_cast<float>(frames);
-    for (std::size_t b = 1; b < m_buses.size(); ++b) {
+    for (const BusId b : m_busOrder) {
         Bus& bus = m_buses[b];
-        if (!bus.active) {
-            continue;
-        }
+        float* output = m_buses[bus.output].buffer.data();
         constexpr std::size_t kGlideFrames = 32;
         for (std::size_t start = 0; start < frames && !bus.left.empty(); start += kGlideFrames) {
             const std::size_t count = std::min(kGlideFrames, frames - start);
@@ -494,8 +549,8 @@ void Mixer::renderBlock(float* out, std::size_t frames)
         const float delta = (bus.volume - bus.appliedVolume) * inverse;
         for (std::size_t i = 0; i < frames; ++i) {
             gain += delta;
-            master[i * 2] += bus.buffer[i * 2] * gain;
-            master[i * 2 + 1] += bus.buffer[i * 2 + 1] * gain;
+            output[i * 2] += bus.buffer[i * 2] * gain;
+            output[i * 2 + 1] += bus.buffer[i * 2 + 1] * gain;
         }
         bus.appliedVolume = bus.volume;
     }

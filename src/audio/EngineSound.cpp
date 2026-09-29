@@ -169,7 +169,7 @@ void EngineSound::addEmitter(EmissionGroup group, const std::string& name)
     // Each side of a split exhaust plays one channel; anything else plays
     // whole samples, in stereo where the recording is.
     const bool splitExhaust = harmonic->loops.contains("ExhaustL") && harmonic->loops.contains("ExhaustR");
-    emitter.bus = m_mixer.createBus();
+    emitter.bus = m_mixer.createBus(m_options.buses.engine);
     m_emitters.push_back(emitter);
     Emitter& added = m_emitters.back();
     const std::size_t samples = bank->size();
@@ -259,8 +259,8 @@ void EngineSound::build()
 
 void EngineSound::startEvents()
 {
-    const auto prepare = [this](const char* projectPath, const char* eventPath, float volume)
-        -> std::unique_ptr<EventInstance> {
+    const auto prepare = [this](const char* projectPath, const char* eventPath, float volume,
+                             BusId bus) -> std::unique_ptr<EventInstance> {
         try {
             const std::shared_ptr<const FevProject> project = m_library->project(projectPath);
             const FevEvent* event = project->findEvent(eventPath);
@@ -281,6 +281,7 @@ void EngineSound::startEvents()
             }
             EventSettings settings;
             settings.volume = volume;
+            settings.bus = bus;
             settings.seed = m_random();
             settings.spatial = m_options.spatial;
             settings.position = m_position;
@@ -297,6 +298,7 @@ void EngineSound::startEvents()
         tyres.perWheel = !m_options.spatial;
         tyres.spatial = m_options.spatial;
         tyres.volume = otherVolume("TireVolume") * m_volume;
+        tyres.bus = m_options.buses.tyres;
         tyres.seed = m_random();
         try {
             m_tyres = std::make_unique<TyreSound>(m_mixer, m_library, tyres);
@@ -306,7 +308,7 @@ void EngineSound::startEvents()
     }
     if (m_options.transmission) {
         m_shift = prepare(kTransmissionsProject, kShiftEvent,
-            m_tuning.engine.shiftVolume * otherVolume("TransmissionVolume") * m_volume);
+            m_tuning.engine.shiftVolume * otherVolume("TransmissionVolume") * m_volume, m_options.buses.transmission);
         if (m_shift) {
             m_shift->setParameter("IsFocus", 1.0F);
         }
@@ -411,6 +413,7 @@ void EngineSound::playBurble(std::uint32_t index, float volume)
     }
     voice.position = m_position + m_basis * glm::vec3(0.0F, local.y, local.z);
     const bool backfire = index >= m_burble->burbles;
+    voice.bus = backfire ? m_options.buses.backfire : m_options.buses.engine;
     if (const auto rolloff = m_tuning.rolloffs.find(backfire ? "Backfire" : "Burble");
         rolloff != m_tuning.rolloffs.end()) {
         voice.rolloff = rolloff->second;
@@ -514,6 +517,15 @@ void EngineSound::setTransform(const glm::vec3& position, const glm::mat3& basis
     if (m_shift) {
         m_shift->setPosition(position);
     }
+}
+
+float EngineSound::engineGain() const
+{
+    float gain = 0.0F;
+    for (const Emitter& emitter : m_emitters) {
+        gain = std::max(gain, m_mixer.busGain(emitter.bus));
+    }
+    return gain;
 }
 
 void EngineSound::setVolume(float volume)
