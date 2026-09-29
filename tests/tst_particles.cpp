@@ -6,6 +6,7 @@
 
 #include "particles/Effect.h"
 #include "particles/GameRandom.h"
+#include "particles/ParticleEmitters.h"
 #include "particles/ParticleManager.h"
 #include "particles/ParticleSystem.h"
 #include "particles/SurfaceEffects.h"
@@ -16,9 +17,12 @@
 
 #include <glm/geometric.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <map>
 #include <numbers>
+#include <set>
 #include <string>
 
 namespace particles = fh::particles;
@@ -440,6 +444,200 @@ TEST(discEffects)
     if (texture) {
         const fh::world::RgbaImage image = fh::world::decodeXboxTexture(*texture);
         CHECK(image.width > 0 && image.height > 0);
+    }
+}
+
+/// A ParticleEmitters.xml in the disc's layout: an activation flare, a
+/// plane emitter with no Type and a zone that triggers it.
+constexpr const char* kEmittersXml = R"(<?xml version="1.0" encoding="utf-8"?>
+<ParticleEmitters>
+  <SimpleEmitter>
+    <GameplayID value="FR17_flare" />
+    <Name value="fx_activationzone_blue_1_Superspray_001" />
+    <Effect value="_Composite_Flare_2" />
+    <Type value="Superspray" />
+    <Position v.x="-1004.547" v.y="-10.16933" v.z="-643.2515" />
+    <Orientation>
+      <XAxis v.x="-0.707107" v.y="0" v.z="0.707107" />
+      <YAxis v.x="0" v.y="1" v.z="0" />
+      <ZAxis v.x="-0.707107" v.y="0" v.z="-0.707107" />
+    </Orientation>
+    <Spray offAxisSpread="90.0" planeSpread="90.0" />
+  </SimpleEmitter>
+  <TriggerableEmitter>
+    <Name value="leaves_Plane_001" />
+    <Effect value="AMB_Falling_Leaf_1" />
+    <Position v.x="1" v.y="2" v.z="3" />
+    <Orientation>
+      <XAxis v.x="1" v.y="0" v.z="0" />
+      <YAxis v.x="0" v.y="1" v.z="0" />
+      <ZAxis v.x="0" v.y="0" v.z="1" />
+    </Orientation>
+    <Spray offAxisSpread="0.0" planeSpread="0.0" />
+  </TriggerableEmitter>
+  <TriggerZone>
+    <Name value="leaves_Sphere_001" />
+    <Type value="Sphere" />
+    <Position v.x="1" v.y="2" v.z="3" />
+    <Radius value="150.0" />
+    <RetriggerDelay value="1.0" />
+    <Emitter name="leaves_Plane_001" />
+  </TriggerZone>
+</ParticleEmitters>)";
+
+// ParticleEmitters.xml as 0x82dcc748 and 0x82dc4eb8 read it: z of the
+// position negated, the axes kept as angles whose rotation gives them back.
+TEST(placedEmittersAreReadLikeTheGame)
+{
+    const particles::ParticleEmitterSet set = particles::ParticleEmitterSet::parse(kEmittersXml, "test");
+    CHECK_EQ(set.simpleEmitters().size(), std::size_t{1});
+    CHECK_EQ(set.triggerableEmitters().size(), std::size_t{1});
+    CHECK_EQ(set.zones().size(), std::size_t{1});
+    const particles::PlacedEmitter* flare = set.findSimple("FR17_flare");
+    CHECK(flare != nullptr);
+    if (flare != nullptr) {
+        CHECK(flare->composite());
+        CHECK(flare->type == particles::EmitterShape::SuperSpray);
+        CHECK_NEAR(flare->position.z, 643.2515, 1e-4);
+        CHECK_NEAR(flare->spray.x, 90.0, 1e-6);
+        const glm::mat3 m = particles::rollPitchYaw(flare->angles.x, flare->angles.y, flare->angles.z);
+        for (int row = 0; row < 3; ++row) {
+            CHECK_NEAR(glm::distance(m[row], flare->axes[row]), 0.0, 1e-5);
+        }
+    }
+    // No Type is a SuperSpray (the caller's 2), whatever the element.
+    CHECK(set.triggerableEmitters()[0].type == particles::EmitterShape::SuperSpray);
+    CHECK(set.triggerableEmitters()[0].gameplayId.empty());
+    CHECK_EQ(set.zones()[0].emitters.size(), std::size_t{1});
+    CHECK_NEAR(set.zones()[0].radius, 150.0, 1e-6);
+    const std::map<std::string, std::size_t> counts = set.countByEffect();
+    CHECK_EQ(counts.at("_Composite_Flare_2"), std::size_t{1});
+}
+
+// A Z axis pointing straight up has its z set to 1e-5 first (0x82dc5114),
+// which gives the speed cameras' flashes a heading.
+TEST(upwardAxisKeepsAHeading)
+{
+    const glm::mat3 axes{
+        glm::vec3(0.3980994F, 0.0F, 0.9173423F), glm::vec3(0.9173423F, 0.0F, -0.3980994F), glm::vec3(0.0F, 1.0F, 0.0F)};
+    const glm::vec3 angles = particles::placementAngles(axes, particles::EmitterShape::SuperSpray);
+    CHECK_NEAR(angles.x, -kPi / 2.0F, 1e-4);
+    CHECK_NEAR(angles.y, 0.0, 1e-6);
+    const glm::mat3 m = particles::rollPitchYaw(angles.x, angles.y, angles.z);
+    CHECK_NEAR(glm::distance(m[0], axes[0]), 0.0, 1e-3);
+}
+
+// Kept emitters (0x82414440): an infinite one emits at its rate until it is
+// stopped; a timed one waits for its start and goes at its end.
+TEST(keptEmittersRunAndStop)
+{
+    particles::ParticleManager manager = smokeManager();
+    particles::ParticleSystem& smoke = *manager.find("Smoke");
+    particles::GameRandom crt(1);
+    smoke.addEmitter(smoke.makeEmitter(7, glm::vec3(1.0F, 2.0F, 3.0F), glm::vec3(0.0F)));
+    CHECK(smoke.hasEmitter(7));
+    CHECK_NEAR(smoke.emitters()[0].rate, 30.0, 1e-6);
+    for (int i = 0; i < 3; ++i) {
+        smoke.update(0.1F, 1.0F);
+        smoke.updateEmitters(0.1F, crt);
+    }
+    // 30 per second: 3 in the first 0.1 s; then more than the 10-particle
+    // budget sustains (0.9 per 0.1 s) was spawned, so the budget scale
+    // falls by 0.95 each update: 2.85 (2, 0.85 carried), then 2.71 + 0.85
+    // (3).
+    CHECK_EQ(smoke.size(), std::size_t{8});
+    CHECK_NEAR(smoke.at(0).position.x, 1.0 + 2.0 * 0.2, 0.05);
+    smoke.stopEmitters(7, std::nullopt);
+    smoke.updateEmitters(0.1F, crt);
+    CHECK(!smoke.hasEmitter(7));
+    CHECK_EQ(smoke.size(), std::size_t{8});
+
+    std::string timedXml = kSmokeXml;
+    timedXml.replace(timedXml.find(R"(start="0.000000" end="0.000000" infinite="1")"),
+        std::string_view(R"(start="0.000000" end="0.000000" infinite="1")").size(),
+        R"(start="0.250000" end="0.550000" infinite="0")");
+    particles::ParticleManager timedManager = smokeManager(timedXml);
+    particles::ParticleSystem& timed = *timedManager.find("Smoke");
+    timed.addEmitter(timed.makeEmitter(1, glm::vec3(0.0F), glm::vec3(0.0F)));
+    for (int i = 0; i < 2; ++i) {
+        timed.updateEmitters(0.1F, crt);
+    }
+    CHECK_EQ(timed.size(), std::size_t{0});
+    timed.updateEmitters(0.1F, crt);
+    CHECK(timed.size() > 0);
+    for (int i = 0; i < 3; ++i) {
+        timed.updateEmitters(0.1F, crt);
+    }
+    CHECK(!timed.hasEmitter(1));
+}
+
+TEST(discParticleEmitters)
+{
+    const char* gameDir = std::getenv("FH1_GAME_DIR");
+    if (gameDir == nullptr || *gameDir == '\0') {
+        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(gameDir);
+    const particles::ParticleEmitterSet set = particles::ParticleEmitterSet::load(vfs, "colorado");
+    CHECK_EQ(set.simpleEmitters().size(), std::size_t{132});
+    CHECK_EQ(set.triggerableEmitters().size(), std::size_t{1305});
+    CHECK_EQ(set.zones().size(), std::size_t{930});
+    const std::map<std::string, std::size_t> counts = set.countByEffect();
+    CHECK_EQ(counts.at("AMB_HouseSmokeVent_Var_2"), std::size_t{597});
+    CHECK_EQ(counts.at("AMB_Chimney_Smoke_White"), std::size_t{299});
+    CHECK_EQ(counts.at("AMB_Birds_Flocking_NoOrient"), std::size_t{98});
+    CHECK_EQ(counts.at("AMB_Camera_Flash"), std::size_t{44});
+    CHECK_EQ(counts.at("_Composite_CampFire"), std::size_t{27});
+    std::size_t flares = 0;
+    std::size_t flareComposites = 0;
+    for (const particles::PlacedEmitter& e : set.simpleEmitters()) {
+        if (e.gameplayId.ends_with("_flare")) {
+            ++flares;
+            flareComposites += e.effect.starts_with("_Composite_Flare") ? 1 : 0;
+        }
+        const glm::mat3 m = particles::rollPitchYaw(e.angles.x, e.angles.y, e.angles.z);
+        CHECK_NEAR(glm::distance(m[0], e.axes[0]), 0.0, 1e-3);
+    }
+    CHECK_EQ(flares, std::size_t{88});
+    CHECK_EQ(flareComposites, std::size_t{88});
+    // Every triggerable emitter is named by a zone.
+    std::set<std::string> named;
+    for (const particles::EmitterTriggerZone& z : set.zones()) {
+        named.insert(z.emitters.begin(), z.emitters.end());
+    }
+    CHECK(std::ranges::all_of(
+        set.triggerableEmitters(), [&](const particles::PlacedEmitter& e) { return named.contains(e.name); }));
+
+    // The flares' member effects, which DefaultTrack.xml does not list,
+    // load by name; switching one on runs its four members.
+    particles::ParticleManager manager = particles::ParticleManager::load(vfs);
+    manager.placeSimpleEmitters(vfs, set);
+    CHECK_EQ(manager.simpleEmitters().size(), std::size_t{132});
+    CHECK(manager.find("AMB_Ground_Flare_2") != nullptr);
+    const particles::SimpleEmitterState* flare = manager.simpleEmitter("FR04_flare");
+    CHECK(flare != nullptr);
+    if (flare == nullptr) {
+        return;
+    }
+    CHECK(flare->composite != nullptr && flare->composite->members.size() == 4);
+    CHECK(manager.activateSimpleEmitter("FR04_flare"));
+    CHECK(flare->running);
+    for (int i = 0; i < 30; ++i) {
+        manager.update(1.0F / 30.0F);
+    }
+    std::size_t live = 0;
+    for (const particles::ParticleSystem* system : manager.systemsOf(*flare)) {
+        CHECK(system->hasEmitter(flare->id));
+        live += system->size();
+    }
+    CHECK(live > 0);
+    CHECK(manager.deactivateSimpleEmitter("FR04_flare"));
+    CHECK(!flare->running);
+    manager.update(1.0F / 30.0F);
+    for (const particles::ParticleSystem* system : manager.systemsOf(*flare)) {
+        CHECK(!system->hasEmitter(flare->id));
     }
 }
 

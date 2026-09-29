@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace fh::particles {
@@ -69,6 +70,35 @@ struct EmitRequest {
     glm::vec3 segment{0.0F};
 };
 
+/// An emitter the system keeps and runs by itself on every update: the
+/// 192-byte emitter objects the placed emitters of a track start
+/// (0x82dc3a60 builds them with 0x82dc31f0 and keeps them in the system's
+/// list at +76), where an EmitRequest is one frame's emission of an
+/// emitter that game code drives.
+struct SystemEmitter {
+    /// The placed emitter's id (+148), which stopping finds it by.
+    int id = -1;
+    /// +64.
+    glm::vec3 position{0.0F};
+    /// Pitch, yaw and roll of the emission (see rollPitchYaw()).
+    glm::vec3 angles{0.0F};
+    /// Particles per second (+128): the effect's quantity times the
+    /// system's budget scale when the emitter is made.
+    float rate = 0.0F;
+    /// Seconds until the emitter starts (+132) and until it ends (+136),
+    /// both counted down; neither matters to an infinite one.
+    float start = 0.0F;
+    float end = 0.0F;
+    /// +144, the effect's EmitTime infinite (the system's +532).
+    bool infinite = false;
+    /// +145: removed at its next update.
+    bool stopping = false;
+    /// +24: the fraction of a particle carried to the next update.
+    float accumulator = 0.0F;
+    /// +140: seconds since it was made.
+    float age = 0.0F;
+};
+
 /// Rotation matrices as the game's math library builds them (XNA math,
 /// row vectors: a point p maps to p * M). rollPitchYaw applies roll about Z,
 /// then pitch about X, then yaw about Y (XMMatrixRotationRollPitchYaw; the
@@ -100,7 +130,26 @@ public:
     void emit(const EmitRequest& request, float frameDt, GameRandom& crt);
     /// Advances particles by `dt` seconds (0x82416F58).
     void update(float dt, float rateScale);
+    /// Runs the kept emitters for `dt` seconds, after update() (the emitter
+    /// loop of 0x82416F58, each emitter through 0x82414440), drawing their
+    /// shapes from `crt` as emit() does.
+    void updateEmitters(float dt, GameRandom& crt);
+    /// Clears the particles; the kept emitters stay.
     void clear();
+
+    /// A kept emitter at `position` with `angles` for placed emitter `id`,
+    /// with the effect's rate and emit times (0x82dc31f0 as 0x82dc3a60
+    /// calls it).
+    SystemEmitter makeEmitter(int id, const glm::vec3& position, const glm::vec3& angles) const;
+    void addEmitter(const SystemEmitter& emitter);
+    /// Whether an emitter of placed emitter `id` runs (0x82dc2298).
+    bool hasEmitter(int id) const;
+    /// Stops the emitters of placed emitter `id` (0x82dc2330): an infinite
+    /// one goes at its next update; a timed one keeps running when
+    /// `finishTime` is empty (a single effect's), and otherwise starts again
+    /// and runs for `finishTime` seconds (a composite member's).
+    void stopEmitters(int id, std::optional<float> finishTime);
+    const std::vector<SystemEmitter>& emitters() const { return m_emitters; }
 
     std::size_t capacity() const { return m_capacity; }
     std::size_t size() const { return m_count; }
@@ -120,6 +169,10 @@ private:
     Particle& slot(std::size_t i) { return m_particles[(m_head + i) % m_capacity]; }
     BubbleState& bubbleSlot(std::size_t i) { return m_bubble[(m_head + i) % m_capacity]; }
     void spawn(std::size_t first, std::size_t count, const EmitRequest& request, GameRandom& crt);
+    /// Places `count` new particles from the effect's shape at `position`
+    /// turned by `angles` and adds them; false for shapes not decoded.
+    bool generate(std::size_t count, const glm::vec3& position, const glm::vec3& angles, const EmitRequest& request,
+        GameRandom& crt);
     glm::vec3 randomUnit();
     void applyBehaviours(float dt);
 
@@ -133,6 +186,7 @@ private:
     float m_rateAccumulator = 0.0F;
     float m_budgetScale = 1.0F;
     std::uint32_t m_spawnedThisFrame = 0;
+    std::vector<SystemEmitter> m_emitters;
 };
 
 } // namespace fh::particles

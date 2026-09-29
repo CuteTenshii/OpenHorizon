@@ -2,6 +2,8 @@ add_library(fh1particles STATIC
     Effect.cpp
     Effect.h
     GameRandom.h
+    ParticleEmitters.cpp
+    ParticleEmitters.h
     ParticleManager.cpp
     ParticleManager.h
     ParticleRenderer.cpp

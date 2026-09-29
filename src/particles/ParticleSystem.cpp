@@ -155,15 +155,20 @@ void ParticleSystem::emit(const EmitRequest& request, float frameDt, GameRandom&
     if (count == 0) {
         return;
     }
+    generate(count, request.position, emitterAngles(request.direction), request, crt);
+}
 
+bool ParticleSystem::generate(
+    std::size_t count, const glm::vec3& position, const glm::vec3& angles, const EmitRequest& request, GameRandom& crt)
+{
+    const EffectDefinition& d = *m_definition;
     // The shape generators (0x824A9B80 SuperSpray, 0x82DC1568 Plane) fill
     // position and direction; spawn() turns the direction into a velocity.
-    const glm::vec3 angles = emitterAngles(request.direction);
     const std::size_t first = m_count;
     if (d.shape == EmitterShape::SuperSpray) {
         for (std::size_t k = 0; k < count; ++k) {
             Particle& p = slot(first + k);
-            p.position = request.position + request.segment * crt.uniform();
+            p.position = position + request.segment * crt.uniform();
             const float axis = crt.range(d.offAxis.value - d.offAxis.variation, d.offAxis.value + d.offAxis.variation);
             const float plane
                 = crt.range(d.offPlane.value - d.offPlane.variation, d.offPlane.value + d.offPlane.variation);
@@ -180,16 +185,99 @@ void ParticleSystem::emit(const EmitRequest& request, float frameDt, GameRandom&
             const float z = crt.range(-halfWidth, halfWidth);
             const float x = crt.range(-halfLength, halfLength);
             const float r = crt.uniform();
-            p.position = request.position + request.segment * r + transformRow(glm::vec3(x, 0.0F, z), m);
+            p.position = position + request.segment * r + transformRow(glm::vec3(x, 0.0F, z), m);
         }
     } else {
         // Box emitters (0x82DC1398) are only used by debris effects and
         // their generator is not decoded.
-        return;
+        return false;
     }
     m_count += count;
     m_spawnedThisFrame += static_cast<std::uint32_t>(count);
     spawn(first, count, request, crt);
+    return true;
+}
+
+SystemEmitter ParticleSystem::makeEmitter(int id, const glm::vec3& position, const glm::vec3& angles) const
+{
+    const EffectDefinition& d = *m_definition;
+    SystemEmitter e;
+    e.id = id;
+    e.position = position;
+    e.angles = angles;
+    // 0x82dc3a60 passes quantity (+368) times the budget scale (+376), the
+    // emit times (+380, +384), and afterwards copies the infinite flag
+    // (+532) over the one 0x82dc31f0 derived from a negative end.
+    e.rate = d.quantity.value * m_budgetScale;
+    e.start = d.emitStart;
+    e.end = d.emitEnd;
+    e.infinite = d.emitInfinite;
+    return e;
+}
+
+void ParticleSystem::addEmitter(const SystemEmitter& emitter)
+{
+    m_emitters.push_back(emitter);
+}
+
+bool ParticleSystem::hasEmitter(int id) const
+{
+    return std::ranges::any_of(m_emitters, [id](const SystemEmitter& e) { return e.id == id; });
+}
+
+void ParticleSystem::stopEmitters(int id, std::optional<float> finishTime)
+{
+    for (SystemEmitter& e : m_emitters) {
+        if (e.id != id) {
+            continue;
+        }
+        if (e.infinite) {
+            e.stopping = true;
+        } else if (finishTime) {
+            e.start = 0.0F;
+            e.end = *finishTime;
+        }
+    }
+}
+
+void ParticleSystem::updateEmitters(float dt, GameRandom& crt)
+{
+    // 0x82414440, per emitter; `remove` is its out flag, which has the
+    // update loop delete the emitter. The emitters placed here are neither
+    // kept past their end (+154 clear) nor moving (their velocity, +96, is
+    // the zero vector 0x82001340 that 0x82dc3a60 passes).
+    constexpr float kMinimumRate = 0.5F;
+    // Particles take no velocity from these emitters: inferred, the vector
+    // the loop passes to the spawner (0x82417124) comes from VMX128 code the
+    // disassembler does not decode.
+    const EmitRequest request;
+    std::erase_if(m_emitters, [&](SystemEmitter& e) {
+        e.age += dt;
+        if (e.rate < kMinimumRate) {
+            return true;
+        }
+        if (!e.infinite) {
+            e.start -= dt;
+            e.end -= dt;
+            if (e.end <= 0.0F) {
+                return true;
+            }
+        }
+        if (e.stopping) {
+            return true;
+        }
+        if (!e.infinite && e.start > 0.0F) {
+            return false;
+        }
+        const float due = e.rate * dt * m_budgetScale + e.accumulator;
+        const float whole = std::trunc(due);
+        e.accumulator = due - whole;
+        const std::size_t count = std::min(m_capacity - m_count, static_cast<std::size_t>(whole));
+        if (count > 0) {
+            generate(count, e.position, e.angles, request, crt);
+        }
+        return false;
+    });
 }
 
 void ParticleSystem::spawn(std::size_t first, std::size_t count, const EmitRequest& request, GameRandom& crt)
