@@ -80,6 +80,11 @@ struct SurfaceType {
     float rearGripMultiplier = 1.0F;
     float minimumArcadeGrip = 0.0F;
     float handbrakeGripMultiplier = 0.5F;
+    /// Scales the chase camera's heading spring (Friction/Offroad; 0.8 on
+    /// dirt and grass, 0.55 on some loose types). The executable copies the
+    /// parsed entry from its byte 68 into a 284-byte table (0x82F16D38),
+    /// which puts this value at the offset CCamFollow reads (0x82902254).
+    float chaseCamSpringMultiplier = 1.0F;
     VelocityFriction velocityFriction;
     /// Aerodynamic drag of bodies on or in the surface.
     float linearDrag = 0.03F;

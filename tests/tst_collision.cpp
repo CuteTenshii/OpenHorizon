@@ -714,6 +714,8 @@ TEST(coloradoCollision)
     CHECK(surfaces.categoryOf(9) == "HardWorld");
     CHECK(surfaces.categoryOf(1) == "SoftWorld");
     CHECK_NEAR(surfaces.find(2)->frictionScale, 0.85, 1e-6);
+    CHECK_NEAR(surfaces.find(0)->chaseCamSpringMultiplier, 1.0, 1e-6);
+    CHECK_NEAR(surfaces.find(1)->chaseCamSpringMultiplier, 0.8, 1e-6);
 
     std::atomic<std::size_t> failures{0};
     std::atomic<std::size_t> triangles{0};

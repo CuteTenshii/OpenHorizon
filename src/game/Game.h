@@ -267,15 +267,25 @@ private:
     render::Camera m_camera;
     std::optional<CameraSettings> m_cameraSettings;
     CarCameras m_carCameras;
-    /// The chase camera's heading around the car and its rate, and its
-    /// vertical speed, for the springs camerasettings.ini tunes.
+    /// State of the chase cameras (CCamFollow): the angle of the camera
+    /// around the car and its rate, the sprung height and its rate, and the
+    /// time since three wheels last touched the ground.
     float m_chaseYaw = 0.0F;
     float m_chaseYawSpeed = 0.0F;
+    float m_followHeight = 0.0F;
     float m_chaseHeightSpeed = 0.0F;
-    /// Looking around from the driving cameras: offsets from where the
+    float m_followAirTime = 0.0F;
+    /// The height and target offsets after Init applied the ini's height
+    /// limits.
+    float m_followHeightOffset = 0.0F;
+    float m_followTargetYOffset = 0.0F;
+    /// The chase camera the state belongs to, and the eye it last placed;
+    /// a change of either starts it afresh.
+    std::optional<CameraMode> m_followMode;
+    glm::vec3 m_followEye{0.0F};
+    /// Looking around from the driving cameras: an angle from where the
     /// camera faces, eased back to zero when the stick is let go.
     float m_lookYaw = 0.0F;
-    float m_lookPitch = 0.0F;
     glm::vec3 m_chaseVelocity{0.0F};
     float m_freeYaw = 0.0F;
     float m_freePitch = -0.2F;

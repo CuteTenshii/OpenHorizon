@@ -53,43 +53,75 @@ float CameraSettings::get(std::string_view key, float fallback) const
     return it == m_values.end() ? fallback : it->second;
 }
 
-FollowCamera FollowCamera::load(
-    const CameraSettings& settings, std::string_view section, const Database& db, int carId, std::string_view prefix)
+FollowCamera FollowCamera::load(const CameraSettings& settings, std::string_view section, const Database& db, int carId,
+    std::string_view prefix, float baseHeight, float baseRadius)
 {
     const auto key = [&](std::string_view name) { return std::format("{}\\{}", section, name); };
     FollowCamera camera;
-    // Minimum and maximum height above the ground are equal in the file for
-    // both chase cameras: a fixed height.
-    camera.height = settings.get(key("HeightMinAboveGround"), camera.height);
+    camera.baseHeight = baseHeight;
+    camera.baseRadius = baseRadius;
+    camera.heightMinAboveGround = settings.get(key("HeightMinAboveGround"), camera.heightMinAboveGround);
+    camera.heightMaxAboveGround = settings.get(key("HeightMaxAboveGround"), camera.heightMaxAboveGround);
+    camera.nearClip = settings.get(key("CamNearClip"), camera.nearClip);
     camera.fovDegrees = settings.get(key("FOV"), camera.fovDegrees);
     camera.yawSpringK = settings.get(key("Spring\\YRotSpringK"), camera.yawSpringK);
     camera.yawSpringD = settings.get(key("Spring\\YRotSpringD"), camera.yawSpringD);
+    camera.yawCarDampScale = settings.get(key("Spring\\YRotCarDampScale"), camera.yawCarDampScale);
     camera.yawMaxSpeed = settings.get(key("Spring\\YRotMaxSpeed"), camera.yawMaxSpeed);
     camera.heightSpringK = settings.get(key("Spring\\HeightSpringK"), camera.heightSpringK);
+    camera.heightSpringKInAir = settings.get(key("Spring\\HeightSpringKInAir"), camera.heightSpringKInAir);
     camera.heightSpringD = settings.get(key("Spring\\HeightSpringD"), camera.heightSpringD);
+
+    // The override pass (0x828FE5E8) stores each non-zero column and, if it
+    // stored any, Init skips the pass that copies the ini's globals
+    // (0x828FE2D0) and the height limits; the untouched offsets stay 0.
     if (const std::optional<Row> row = overridesOf(db, carId)) {
-        camera.heightOffset = row->f(std::format("{}HeightOffset", prefix));
-        camera.radiusOffset = row->f(std::format("{}RadiusOffset", prefix));
-        camera.targetYOffset = row->f(std::format("{}TargetYOffset", prefix));
+        const float height = row->f(std::format("{}HeightOffset", prefix));
+        const float radius = row->f(std::format("{}RadiusOffset", prefix));
+        const float target = row->f(std::format("{}TargetYOffset", prefix));
+        if (height != 0.0F || radius != 0.0F || target != 0.0F) {
+            camera.overridden = true;
+            camera.heightOffset = height;
+            camera.radiusOffset = radius;
+            camera.targetYOffset = target;
+            return camera;
+        }
     }
+    camera.heightOffset = settings.get(key("HeightOffsetGlobal"), 0.0F);
+    camera.radiusOffset = settings.get(key("RadiusOffsetGlobal"), 0.0F);
+    camera.targetYOffset = settings.get(key("TargetYOffsetGlobal"), 0.0F);
     return camera;
 }
 
 CarCameras CarCameras::load(const CameraSettings& settings, const Database& db, int carId)
 {
     CarCameras cameras;
-    cameras.near = FollowCamera::load(settings, "FollowLowCam", db, carId, "CamFollowLow");
-    cameras.far = FollowCamera::load(settings, "FollowHighCam", db, carId, "CamFollowHigh");
+    cameras.near = FollowCamera::load(settings, "FollowLowCam", db, carId, "CamFollowLow", 0.35F, 2.95F);
+    cameras.far = FollowCamera::load(settings, "FollowHighCam", db, carId, "CamFollowHigh", 0.6F, 3.1F);
+
     cameras.hoodFovDegrees = settings.get("HoodCam\\FOV", cameras.hoodFovDegrees);
+    cameras.hoodNearClip = settings.get("HoodCam\\CamNearClip", cameras.hoodNearClip);
+    cameras.hoodHeight = settings.get("HoodCam\\CamYOffset", 0.0F);
+    cameras.hoodZ = settings.get("HoodCam\\CamZOffset", 0.0F);
+    cameras.hoodPitch = settings.get("HoodCam\\CamPitchOffset", 0.0F);
+
     cameras.bumperFovDegrees = settings.get("BumperHighCam\\FOV", cameras.bumperFovDegrees);
-    cameras.bumperHeight = settings.get("BumperHighCam\\RestHeightAboveGround", cameras.bumperHeight);
-    cameras.bumperZOffset = settings.get("BumperHighCam\\CamZOffset", cameras.bumperZOffset);
+    cameras.bumperNearClip = settings.get("BumperHighCam\\CamNearClip", cameras.bumperNearClip);
+    cameras.bumperRestHeight = settings.get("BumperHighCam\\RestHeightAboveGround", cameras.bumperRestHeight);
+    cameras.bumperZ = settings.get("BumperHighCam\\CamZOffset", 0.0F);
+
     if (const std::optional<Row> row = overridesOf(db, carId)) {
-        cameras.hoodHeight = row->f("CamHoodHeightOffset");
-        cameras.hoodZOffset = row->f("CamHoodZOffset");
-        cameras.hoodPitchDegrees = row->f("CamHoodPitchOffset");
-        cameras.bumperHeight += row->f("CamBumperHighHeightOffset");
-        cameras.bumperZOffset += row->f("CamBumperHighZOffset");
+        const float hoodHeight = row->f("CamHoodHeightOffset");
+        const float hoodZ = row->f("CamHoodZOffset");
+        const float hoodPitch = row->f("CamHoodPitchOffset");
+        if (hoodHeight != 0.0F || hoodZ != 0.0F || hoodPitch != 0.0F) {
+            cameras.hoodHeight = hoodHeight;
+            cameras.hoodZ = hoodZ;
+            cameras.hoodPitch = hoodPitch;
+        }
+        if (const float bumperZ = row->f("CamBumperHighZOffset"); bumperZ != 0.0F) {
+            cameras.bumperZ = bumperZ;
+        }
     }
     return cameras;
 }

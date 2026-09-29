@@ -68,6 +68,7 @@ void readParameters(const pugi::xml_node& element, SurfaceType& surface)
     readFloat(element, "Friction/RearGripMultiplier", surface.rearGripMultiplier);
     readFloat(element, "Friction/MinimumArcadeGripValue", surface.minimumArcadeGrip);
     readFloat(element, "Friction/HandbrakeGripMultiplier", surface.handbrakeGripMultiplier);
+    readFloat(element, "Friction/Offroad/ChaseCamSpringMultiplier", surface.chaseCamSpringMultiplier);
     readFloat(element, "Friction/VelDepFriction/VelPeak", surface.velocityFriction.velPeak);
     readFloat(element, "Friction/VelDepFriction/LateralCoeff", surface.velocityFriction.lateralCoeff);
     readFloat(element, "Friction/VelDepFriction/LongCoeff", surface.velocityFriction.longitudinalCoeff);

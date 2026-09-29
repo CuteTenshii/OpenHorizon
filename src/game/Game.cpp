@@ -1214,6 +1214,8 @@ void Game::updateCamera(float dt)
         m_camera.target = m_camera.position + forward;
         m_camera.up = glm::vec3(0.0F, 1.0F, 0.0F);
         m_camera.fov = 1.05F;
+        m_camera.nearPlane = render::Camera{}.nearPlane;
+        m_followMode.reset();
         return;
     }
 
@@ -1221,87 +1223,207 @@ void Game::updateCamera(float dt)
     const CarSpec& spec = *player().spec;
     const glm::mat4 transform = car.transform();
     const glm::vec3 carPosition = car.position();
-    const glm::vec3 forward = car.forward();
 
     // Looking around: the right stick, or the mouse while its right button
     // is held, turns the view; letting go eases it back. Clicking the stick
-    // (or holding V) looks behind.
+    // (or holding V) looks behind. This is this engine's own control; the
+    // game's look controller (0x829028D0) is not reproduced.
+    const float previousLookYaw = m_lookYaw;
     const bool lookBack = in.held(Button::RightStick) || in.held(Key::V);
-    float stickYaw = in.axis(Axis::RightX) * kPi * 0.75F;
-    float stickPitch = in.axis(Axis::RightY) * 0.5F;
+    const float stickYaw = in.axis(Axis::RightX) * kPi * 0.75F;
     if (in.mouseRight) {
         m_window.setMouseCaptured(true);
         m_lookYaw = std::clamp(m_lookYaw + in.mouseDx * 0.004F, -kPi, kPi);
-        m_lookPitch = std::clamp(m_lookPitch - in.mouseDy * 0.004F, -0.6F, 0.6F);
     } else {
         if (m_window.mouseCaptured() && m_cameraMode != CameraMode::Free) {
             m_window.setMouseCaptured(false);
         }
         const float ease = std::min(1.0F, dt * 8.0F);
         m_lookYaw += ((lookBack ? kPi : stickYaw) - m_lookYaw) * ease;
-        m_lookPitch += ((lookBack ? 0.0F : stickPitch) - m_lookPitch) * ease;
     }
-    const float boundsCentreY = 0.5F * (spec.boundsMin[1] + spec.boundsMax[1]);
+
+    // The car's box as the cameras see it (the body's slot 220 in
+    // CCarDynamics: centre, then half extents). Only its top, rear and
+    // front are used: centre.y + half.y, half.z - centre.z and
+    // centre.z + half.z.
+    const float boxTop = spec.boundsMax[1];
+    const float boxRear = -spec.boundsMin[2];
+    const float boxFront = spec.boundsMax[2];
+    // Height of the ground under a wheel in car space: the hub less the
+    // tyre radius (0x8290D52C for the chase cameras, 0x82901A40 for the
+    // bumper camera). The hub is taken from its rest point and compression
+    // rather than its world position, which is stale until the first
+    // physics step after a placement.
+    const auto groundUnderWheel = [&](int wheel) {
+        const auto index = static_cast<std::size_t>(wheel);
+        return car.wheelRestPosition(wheel).y + car.wheels()[index].compression - car.wheelRadius(wheel);
+    };
+
+    // The hood and bumper cameras share CCamHood/CCamBumperHigh::Update
+    // (0x8290CD80): the eye is a point fixed in car space and the view
+    // follows the car's axes, turned by the look angle.
     if (m_cameraMode == CameraMode::Hood || m_cameraMode == CameraMode::Bumper) {
         const bool hood = m_cameraMode == CameraMode::Hood;
-        // Hood: the car's CameraOverrides height above the middle of its
-        // body (the base is inferred), a quarter of the way along the bonnet.
-        // Bumper: the ini's rest height above the ground at the front bumper.
+        // Hood (0x82901AB8): (0, 0.45, 0.6) plus the car's offsets, plus a
+        // vector of the car's physics body (CCarDynamics slot 1128, filled
+        // from the body descriptor's bytes 100-111 at 0x82DEAE60) whose
+        // source was not traced; it is left out.
+        // Bumper (0x82901990): RestHeightAboveGround above the ground under
+        // front wheel 0, 0.6096 m back from the front of the box, plus the
+        // Z offset.
         const glm::vec3 eye = hood
-            ? glm::vec3(0.0F, boundsCentreY + m_carCameras.hoodHeight,
-                  spec.boundsMax[2] * 0.25F + m_carCameras.hoodZOffset)
-            : glm::vec3(0.0F, m_carCameras.bumperHeight, spec.boundsMax[2] + m_carCameras.bumperZOffset);
+            ? glm::vec3(0.0F, 0.45F + m_carCameras.hoodHeight, 0.6F + m_carCameras.hoodZ)
+            : glm::vec3(0.0F, groundUnderWheel(CarPhysics::FrontLeft) + m_carCameras.bumperRestHeight,
+                  boxFront - 0.6096F + m_carCameras.bumperZ);
         m_camera.position = glm::vec3(transform * glm::vec4(eye, 1.0F));
-        const float pitch = glm::radians(hood ? m_carCameras.hoodPitchDegrees : 0.0F) - m_lookPitch;
-        const glm::vec3 local(std::sin(m_lookYaw) * std::cos(pitch), -std::sin(pitch), std::cos(m_lookYaw) * std::cos(pitch));
-        const glm::vec3 look = glm::vec3(transform * glm::vec4(local, 0.0F));
-        m_camera.target = m_camera.position + look * 10.0F;
-        m_camera.up = car.up();
+        // Hood (0x82901B68): the car's forward axis turned about its right
+        // axis by minus the pitch offset, then about its up axis by the look
+        // angle. Bumper (0x82901810): forward and right mixed by the look
+        // angle, no pitch.
+        const glm::vec3 right = car.right();
+        const glm::vec3 up = car.up();
+        glm::vec3 look = car.forward();
+        if (hood) {
+            look = glm::vec3(glm::rotate(glm::mat4(1.0F), -m_carCameras.hoodPitch, right) * glm::vec4(look, 0.0F));
+        }
+        look = right * std::sin(m_lookYaw) + look * std::cos(m_lookYaw);
+        m_camera.target = m_camera.position + look;
+        m_camera.up = up;
         m_camera.fov = glm::radians(hood ? m_carCameras.hoodFovDegrees : m_carCameras.bumperFovDegrees);
+        m_camera.nearPlane = hood ? m_carCameras.hoodNearClip : m_carCameras.bumperNearClip;
+        m_followMode.reset();
         return;
     }
 
     const FollowCamera& cam = m_cameraMode == CameraMode::Far ? m_carCameras.far : m_carCameras.near;
-    // The yaw spring brings the camera round to where the car is heading
-    // (its velocity when it slides forward, else where it points), no
-    // faster than the ini's limit.
-    float targetYaw = std::atan2(forward.x, forward.z);
-    const glm::vec3 velocity = car.velocity();
-    if (glm::length(glm::vec2(velocity.x, velocity.z)) > 3.0F && glm::dot(velocity, forward) > 0.0F) {
-        targetYaw = std::atan2(velocity.x, velocity.z);
+    // CCamFollow::Init (0x8290D358) runs when the camera becomes active;
+    // here also when something else has moved the camera (a spawn or the
+    // start of a race placing it behind the car).
+    const bool reset = m_followMode != m_cameraMode || m_camera.position != m_followEye;
+    if (reset) {
+        m_followMode = m_cameraMode;
+        m_followHeightOffset = cam.heightOffset;
+        m_followTargetYOffset = cam.targetYOffset;
+        if (!cam.overridden) {
+            // Bring the rest height above the ground within the ini's limits
+            // by moving the height and the target together; the ground is
+            // read under rear wheel 2.
+            const float rest = -groundUnderWheel(CarPhysics::RearLeft) + boxTop + cam.baseHeight + cam.heightOffset;
+            const float shift
+                = std::min(cam.heightMaxAboveGround - rest, 0.0F) + std::max(cam.heightMinAboveGround - rest, 0.0F);
+            m_followHeightOffset += shift;
+            m_followTargetYOffset += shift;
+        }
+        m_followAirTime = 0.0F;
     }
-    float error = targetYaw - m_chaseYaw;
-    error = std::remainder(error, 2.0F * kPi);
-    m_chaseYawSpeed += (cam.yawSpringK * error - cam.yawSpringD * m_chaseYawSpeed) * dt;
-    m_chaseYawSpeed = std::clamp(m_chaseYawSpeed, -cam.yawMaxSpeed, cam.yawMaxSpeed);
-    // Well behind after a reset or a spin: snap rather than swing through.
-    if (std::abs(error) > 2.5F) {
-        m_chaseYaw = targetYaw;
-        m_chaseYawSpeed = 0.0F;
-    }
-    m_chaseYaw = std::remainder(m_chaseYaw + m_chaseYawSpeed * dt, 2.0F * kPi);
 
-    // The ini gives the height above the ground but not the distance
-    // behind, which the game derives from the car; a car length and a bit
-    // (more for the far camera) matches its framing.
-    const float length = spec.boundsMax[2] - spec.boundsMin[2];
-    const float radius = length * (m_cameraMode == CameraMode::Far ? 1.55F : 1.2F) + cam.radiusOffset;
-    const float orbit = m_chaseYaw + m_lookYaw;
-    const glm::vec3 behind(std::sin(orbit), 0.0F, std::cos(orbit));
-    glm::vec3 eye = carPosition - behind * radius;
-    const std::optional<float> ground = m_collision->groundHeight(eye.x, eye.z, carPosition.y + 10.0F);
-    const float wantedY = std::max(ground.value_or(carPosition.y), carPosition.y) + cam.height + cam.heightOffset;
-    float y = m_camera.position.y;
-    if (std::abs(y - wantedY) > 10.0F) {
-        y = wantedY;
-        m_chaseHeightSpeed = 0.0F;
+    int wheelsOnGround = 0;
+    float springScale = 0.0F;
+    const collision::SurfaceTable* surfaces = m_collision ? m_collision->surfaces() : nullptr;
+    for (const CarPhysics::WheelState& wheel : car.wheels()) {
+        if (!wheel.onGround) {
+            continue;
+        }
+        ++wheelsOnGround;
+        // Render geometry, which stands in where the game has collision
+        // meshes of its own, has no surface type; it counts as 1, the
+        // value of the paved types.
+        const collision::SurfaceType* type = surfaces && wheel.ground.surface >= 0
+            ? surfaces->find(static_cast<std::uint8_t>(wheel.ground.surface))
+            : nullptr;
+        springScale += type ? type->chaseCamSpringMultiplier : 1.0F;
     }
-    m_chaseHeightSpeed += (cam.heightSpringK * (wantedY - y) - cam.heightSpringD * m_chaseHeightSpeed) * dt;
-    eye.y = y + m_chaseHeightSpeed * dt + m_lookPitch * radius * 0.5F;
+
+    // Heading (0x82902128): the angle of the car's backward axis measured
+    // from +x towards +z, followed by a spring whose damping works against
+    // the camera's own rate plus YRotCarDampScale of the car's yaw rate. The
+    // yaw rate turns this angle the other way, hence the sum. The spring is
+    // scaled by the mean surface multiplier of the wheels on the ground.
+    const glm::vec3 forward = car.forward();
+    const float heading = std::atan2(-forward.z, -forward.x);
+    const float step = std::abs(dt);
+    if (reset) {
+        m_chaseYawSpeed = 0.0F;
+        m_chaseYaw = heading;
+    } else {
+        float springK = cam.yawSpringK;
+        float springD = cam.yawSpringD;
+        if (wheelsOnGround > 0) {
+            const float scale = springScale / static_cast<float>(wheelsOnGround);
+            springK *= scale;
+            springD *= scale;
+        }
+        const float error = std::remainder(heading - m_chaseYaw, 2.0F * kPi);
+        const float yawRate = car.angularVelocity().y * (dt >= 0.0F ? 1.0F : -1.0F);
+        m_chaseYawSpeed += step * (springK * error - springD * (yawRate * cam.yawCarDampScale + m_chaseYawSpeed));
+        m_chaseYawSpeed = std::clamp(m_chaseYawSpeed, -cam.yawMaxSpeed, cam.yawMaxSpeed);
+        m_chaseYaw = std::remainder(m_chaseYaw + step * m_chaseYawSpeed, 2.0F * kPi);
+    }
+
+    // Distance (0x828FE320): from the car's origin to the rear of its box,
+    // plus the class constant and the radius offset.
+    const float radius = boxRear + cam.baseRadius + cam.radiusOffset;
+    const float angle = m_chaseYaw - m_lookYaw;
+    const float previousAngle = m_chaseYaw - previousLookYaw;
+
+    // Where the plane of the car rises or falls along the camera's
+    // direction, the camera rises or falls with it (0x828FDC50): the slope
+    // of the car's up axis crossed with the horizontal at right angles to
+    // that direction, times the distance, within twice the distance either
+    // way. Behind a car going downhill the camera climbs; uphill it drops.
+    const glm::vec3 up = car.up();
+    const auto slopeRise = [&](float a) {
+        const glm::vec3 along = glm::cross(up, glm::vec3(-std::sin(a), 0.0F, std::cos(a)));
+        const float horizontal = std::sqrt(along.x * along.x + along.z * along.z);
+        const float rise = horizontal > 0.0F ? radius * along.y / horizontal : 0.0F;
+        return std::clamp(rise, -2.0F * radius, 2.0F * radius);
+    };
+
+    // Height (0x8290B220): a spring towards the top of the box plus the
+    // class constant, and the slope rise while three or more wheels have
+    // touched the ground within the last 0.2 s and the car is upright.
+    // Changes of the look angle move the spring's position with the rise so
+    // they do not set it swinging.
+    m_followAirTime = wheelsOnGround >= 3 ? 0.0F : m_followAirTime + step;
+    float wanted = boxTop + cam.baseHeight;
+    if (m_followAirTime < 0.2F && up.y > 0.7F) {
+        const float rise = slopeRise(angle);
+        m_followHeight += rise - slopeRise(previousAngle);
+        wanted += rise;
+    }
+    if (reset) {
+        m_chaseHeightSpeed = 0.0F;
+        m_followHeight = wanted;
+    } else {
+        const float springK = wheelsOnGround == 0 ? cam.heightSpringKInAir : cam.heightSpringK;
+        m_chaseHeightSpeed += step * (springK * (wanted - m_followHeight) - cam.heightSpringD * m_chaseHeightSpeed);
+        m_followHeight += step * m_chaseHeightSpeed;
+    }
+
+    glm::vec3 eye = carPosition
+        + glm::vec3(radius * std::cos(angle), m_followHeightOffset + m_followHeight, radius * std::sin(angle));
+    const glm::vec3 target = carPosition + glm::vec3(0.0F, boxTop + m_followTargetYOffset, 0.0F);
+
+    // Collision (CPhysicsWorld slot 136, 0x82E0E278): from the target
+    // towards the eye, the eye stops at the first surface hit, no nearer
+    // than 0.1 m. The game sweeps a 0.2 m sphere; WorldCollision offers a
+    // ray only, so the eye can come to rest on the surface itself.
+    const glm::vec3 toEye = eye - target;
+    const float reach = glm::length(toEye);
+    if (m_collision && reach > 0.0F) {
+        const glm::vec3 direction = toEye / reach;
+        GroundHit hit;
+        if (m_collision->raycast(target, direction, reach, hit)) {
+            eye = target + direction * std::clamp(hit.distance, 0.1F, reach);
+        }
+    }
+
     m_camera.position = eye;
-    m_camera.target = carPosition + glm::vec3(0.0F, spec.boundsMax[1] * 0.7F + cam.targetYOffset, 0.0F);
+    m_camera.target = target;
     m_camera.up = glm::vec3(0.0F, 1.0F, 0.0F);
     m_camera.fov = glm::radians(cam.fovDegrees);
+    m_camera.nearPlane = cam.nearClip;
+    m_followEye = eye;
 }
 
 render::FrameParams Game::frameParams() const
