@@ -1617,6 +1617,7 @@ render::CarPose Game::carPose(const Vehicle& vehicle) const
         pose.hubs[w] = glm::vec3(toCar * glm::vec4(wheel.hubWorld, 1.0F));
         pose.steer[w] = wheel.steerAngle;
         pose.spin[w] = wheel.spinAngle;
+        pose.spinRate[w] = wheel.spin;
     }
     pose.brakeLights = vehicle.controls.brake > 0.1F ? 1.0F : 0.0F;
     pose.headLights = m_timeOfDay->lights();

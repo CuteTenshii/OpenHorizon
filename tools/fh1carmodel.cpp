@@ -4,17 +4,28 @@
 // it loads every drivable car and reports how many load.
 
 #include "base/Log.h"
+#include "car/CarPhysics.h"
+#include "car/CarSpec.h"
 #include "carmodel/CarModel.h"
 #include "data/Database.h"
+#include "game/TimeOfDay.h"
+#include "platform/Window.h"
+#include "render/CarRenderer.h"
+#include "render/FrameRenderer.h"
+#include "render/Gl.h"
 #include "vfs/Vfs.h"
 #include "world/XboxTexture.h"
+
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <pugixml.hpp>
 #include <xds/xds.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -35,7 +46,9 @@ using carmodel::CarModel;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1carmodel DISC CAR [--obj OUT.obj] [--no-textures] [--all-parts]\n"
+        "usage: fh1carmodel DISC CAR [--obj OUT.obj] [--no-textures] [--all-parts] [--in-race-lods]\n"
+        "                            [--no-cockpit]\n"
+        "                            [--render PREFIX [--time HH:MM]]\n"
         "       fh1carmodel DISC --all [--textures]\n"
         "  DISC         the extracted disc (its root or its media folder)\n"
         "  CAR          a folder of media/cars, such as alf_8c_08\n"
@@ -43,6 +56,10 @@ int usage()
         "               right-handed, Y up, the car's front towards -Z\n"
         "  --no-textures  do not decode textures\n"
         "  --all-parts  include upgrade variants (race kits, aftermarket parts)\n"
+        "  --in-race-lods  use <car>.carbin (LOD 1) instead of <car>_lod0.carbin\n"
+        "  --no-cockpit leave out <car>_cockpit.carbin\n"
+        "  --render     draw the car offscreen from six sides under colorado's\n"
+        "               light at --time (default 13:00) into PREFIX_<view>.png\n"
         "  --all        load every drivable car and report which load\n");
     return 2;
 }
@@ -60,29 +77,6 @@ const char* formatName(fh::world::TextureSurface::Format format)
         return "BC5";
     case fh::world::TextureSurface::Format::Rgba8:
         return "RGBA8";
-    }
-    return "?";
-}
-
-const char* shadingName(carmodel::Shading shading)
-{
-    switch (shading) {
-    case carmodel::Shading::Plain:
-        return "plain";
-    case carmodel::Shading::Paint:
-        return "paint";
-    case carmodel::Shading::Glass:
-        return "glass";
-    case carmodel::Shading::Lights:
-        return "lights";
-    case carmodel::Shading::Metal:
-        return "metal";
-    case carmodel::Shading::Rubber:
-        return "rubber";
-    case carmodel::Shading::Interior:
-        return "interior";
-    case carmodel::Shading::Decal:
-        return "decal";
     }
     return "?";
 }
@@ -139,10 +133,10 @@ std::optional<std::pair<glm::vec3, glm::vec3>> maxDataBox(const fh::Vfs& vfs, co
     if (!box) {
         return std::nullopt;
     }
-    return std::pair{glm::vec3(box.attribute("MinX").as_float(), box.attribute("MinY").as_float(),
-                         box.attribute("MinZ").as_float()),
-        glm::vec3(box.attribute("MaxX").as_float(), box.attribute("MaxY").as_float(),
-            box.attribute("MaxZ").as_float())};
+    return std::pair{
+        glm::vec3(box.attribute("MinX").as_float(), box.attribute("MinY").as_float(), box.attribute("MinZ").as_float()),
+        glm::vec3(
+            box.attribute("MaxX").as_float(), box.attribute("MaxY").as_float(), box.attribute("MaxZ").as_float())};
 }
 
 void report(const fh::Vfs& vfs, const CarModel& model)
@@ -154,8 +148,8 @@ void report(const fh::Vfs& vfs, const CarModel& model)
     }
 
     std::printf("parts (%zu):\n", model.parts.size());
-    std::printf("  %-4s %-9s %-24s %-8s %-4s %8s %8s  %s\n", "#", "source", "name", "variant", "used", "verts",
-        "tris", "car-space box");
+    std::printf("  %-4s %-9s %-24s %-8s %-4s %8s %8s  %s\n", "#", "source", "name", "variant", "used", "verts", "tris",
+        "car-space box");
     for (std::size_t i = 0; i < model.parts.size(); ++i) {
         const CarModel::Part& part = model.parts[i];
         std::printf("  %-4zu %-9s %-24s %-8s %-4s %8u %8u  %s .. %s\n", i, sourceName(part.source), part.name.c_str(),
@@ -177,8 +171,7 @@ void report(const fh::Vfs& vfs, const CarModel& model)
     }
 
     struct MaterialUse {
-        carmodel::Shading shading = carmodel::Shading::Plain;
-        std::uint32_t texture = CarMesh::kNoTexture;
+        std::vector<std::string> textures;
         bool translucent = false;
         bool blur = false;
         std::uint32_t batches = 0;
@@ -186,9 +179,11 @@ void report(const fh::Vfs& vfs, const CarModel& model)
     };
     std::map<std::string, MaterialUse> materials;
     for (const CarMesh::Batch& batch : mesh.batches) {
-        MaterialUse& use = materials[batch.material];
-        use.shading = batch.shading;
-        use.texture = batch.texture;
+        MaterialUse& use = materials[batch.material + " -> " + batch.technique];
+        use.textures.clear();
+        for (const auto& [sampler, texture] : batch.textures) {
+            use.textures.push_back(std::format("{}={}", sampler, model.textures[texture].path));
+        }
         use.translucent = batch.translucent;
         use.blur = batch.motionBlur;
         ++use.batches;
@@ -196,11 +191,18 @@ void report(const fh::Vfs& vfs, const CarModel& model)
     }
     std::printf("materials (%zu):\n", materials.size());
     for (const auto& [name, use] : materials) {
-        const std::string texture
-            = use.texture == CarMesh::kNoTexture ? std::string("-") : model.textures[use.texture].path;
-        std::printf("  %-26s %-8s %-11s %4u batches %8u tris  %s\n", name.c_str(), shadingName(use.shading),
+        std::string passes = "no effect";
+        if (model.effect) {
+            const std::size_t count = model.effect->passes(name.substr(name.find(" -> ") + 4)).size();
+            passes = count > 0 ? std::format("{} pass{}", count, count > 1 ? "es" : "") : "NO TECHNIQUE";
+        }
+        std::string textures;
+        for (const std::string& texture : use.textures) {
+            textures += " " + texture;
+        }
+        std::printf("  %-44s %-12s %-11s %4u batches %8u tris %s\n", name.c_str(), passes.c_str(),
             use.translucent ? "translucent" : (use.blur ? "motion-blur" : "opaque"), use.batches, use.triangles,
-            texture.c_str());
+            textures.c_str());
     }
 
     std::printf("textures (%zu):\n", model.textures.size());
@@ -218,7 +220,8 @@ void report(const fh::Vfs& vfs, const CarModel& model)
 
     std::printf("mesh: %zu vertices, %zu triangles, %zu batches\n", mesh.vertexCount(), mesh.triangleCount(),
         mesh.batches.size());
-    std::printf("bounds (without blurred wheels): %s .. %s\n", vec(mesh.boundsMin).c_str(), vec(mesh.boundsMax).c_str());
+    std::printf(
+        "bounds (without blurred wheels): %s .. %s\n", vec(mesh.boundsMin).c_str(), vec(mesh.boundsMax).c_str());
     if (const auto box = maxDataBox(vfs, model.mediaName)) {
         std::printf("maxdata.xml collision box:     %s .. %s\n", vec(box->first).c_str(), vec(box->second).c_str());
     }
@@ -233,9 +236,9 @@ std::string pngName(const std::filesystem::path& obj, std::size_t texture)
 }
 
 /// Writes the mesh as OBJ with one group per batch. The OBJ is right-handed
-/// with the front towards -Z (car space with Z negated), so the index order
-/// of CarMesh, clockwise in car space, comes out counter-clockwise, as OBJ
-/// viewers expect.
+/// with the front towards -Z (car space with Z negated); faces keep the
+/// file's winding, counter-clockwise in that space where the placement does
+/// not mirror, and are rewound where it does.
 void writeObj(const CarModel& model, const std::filesystem::path& path)
 {
     const CarMesh& mesh = model.mesh;
@@ -246,12 +249,10 @@ void writeObj(const CarModel& model, const std::filesystem::path& path)
     for (std::size_t b = 0; b < mesh.batches.size(); ++b) {
         const CarMesh::Batch& batch = mesh.batches[b];
         mtl << std::format("newmtl m{}_{}\n", b, batch.material);
-        mtl << std::format("Kd {:.3f} {:.3f} {:.3f}\n", batch.colour.r, batch.colour.g, batch.colour.b);
-        if (batch.translucent) {
-            mtl << std::format("d {:.2f}\n", batch.colour.a);
-        }
-        if (batch.texture != CarMesh::kNoTexture && !model.textures[batch.texture].chain.levels.empty()) {
-            mtl << std::format("map_Kd {}\n", pngName(path, batch.texture));
+        for (const auto& [sampler, texture] : batch.textures) {
+            if (sampler == "baseSampler" && !model.textures[texture].chain.levels.empty()) {
+                mtl << std::format("map_Kd {}\n", pngName(path, texture));
+            }
         }
         mtl << "\n";
     }
@@ -259,31 +260,34 @@ void writeObj(const CarModel& model, const std::filesystem::path& path)
     std::ofstream obj(path);
     obj << std::format("# {} (FH1 carbin), right-handed, Y up, front towards -Z\n", model.mediaName);
     obj << std::format("mtllib {}\n", mtlPath.filename().string());
-    const std::size_t count = mesh.vertexCount();
-    for (std::size_t i = 0; i < count; ++i) {
-        const float* v = mesh.vertices.data() + i * CarMesh::kFloatsPerVertex;
-        obj << std::format("v {:.5f} {:.5f} {:.5f}\n", v[0], v[1], -v[2]);
-    }
-    for (std::size_t i = 0; i < count; ++i) {
-        const float* v = mesh.vertices.data() + i * CarMesh::kFloatsPerVertex;
-        obj << std::format("vn {:.4f} {:.4f} {:.4f}\n", v[CarMesh::kNormal], v[CarMesh::kNormal + 1],
-            -v[CarMesh::kNormal + 2]);
-    }
-    for (std::size_t i = 0; i < count; ++i) {
-        const float* v = mesh.vertices.data() + i * CarMesh::kFloatsPerVertex;
-        obj << std::format("vt {:.5f} {:.5f}\n", v[CarMesh::kTexcoord], 1.0F - v[CarMesh::kTexcoord + 1]);
-    }
+    std::size_t written = 0;
     for (std::size_t b = 0; b < mesh.batches.size(); ++b) {
         const CarMesh::Batch& batch = mesh.batches[b];
         const CarMesh::Node& node = mesh.nodes[batch.node];
+        const CarMesh::VertexRange& range = mesh.ranges[batch.range];
         obj << std::format("g {}_{}_{}\n", nodeName(node.kind),
             node.corner ? std::string(carmodel::cornerCode(*node.corner)) : std::string("car"), batch.material);
         obj << std::format("usemtl m{}_{}\n", b, batch.material);
+        const std::size_t first = written + 1;
+        for (std::uint32_t v = 0; v < range.count; ++v) {
+            const glm::vec3 p = mesh.position(batch, v);
+            const std::uint8_t* raw
+                = mesh.vertices.data() + range.byteOffset + std::size_t{v} * carmodel::carbin::kVertexStride;
+            const float u = static_cast<float>(fh::loadBe16(raw + 8)) / 65535.0F;
+            const float t = static_cast<float>(fh::loadBe16(raw + 10)) / 65535.0F;
+            obj << std::format("v {:.5f} {:.5f} {:.5f}\nvt {:.5f} {:.5f}\n", p.x, p.y, -p.z,
+                batch.uv0.x + batch.uv0.y * u, 1.0F - (batch.uv0.z + batch.uv0.w * t));
+        }
+        written += range.count;
+        const bool rewind = glm::determinant(glm::mat3(node.placement)) > 0.0F;
         for (std::uint32_t i = batch.firstIndex; i + 2 < batch.firstIndex + batch.indexCount; i += 3) {
-            const std::uint32_t a = mesh.indices[i] + 1;
-            const std::uint32_t c = mesh.indices[i + 1] + 1;
-            const std::uint32_t d = mesh.indices[i + 2] + 1;
-            obj << std::format("f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}\n", a, c, d);
+            const std::size_t a = first + mesh.indices[i];
+            std::size_t c = first + mesh.indices[i + 1];
+            std::size_t d = first + mesh.indices[i + 2];
+            if (rewind) {
+                std::swap(c, d);
+            }
+            obj << std::format("f {0}/{0} {1}/{1} {2}/{2}\n", a, c, d);
         }
     }
 
@@ -301,8 +305,8 @@ void writeObj(const CarModel& model, const std::filesystem::path& path)
         std::ofstream out(path.parent_path() / pngName(path, t), std::ios::binary);
         out.write(reinterpret_cast<const char*>(file.data()), static_cast<std::streamsize>(file.size()));
     }
-    std::printf("wrote %s, %s and %zu textures\n", path.string().c_str(), mtlPath.string().c_str(),
-        model.textures.size());
+    std::printf(
+        "wrote %s, %s and %zu textures\n", path.string().c_str(), mtlPath.string().c_str(), model.textures.size());
 }
 
 int loadAll(const fh::Vfs& vfs, const fh::Database& db, bool textures)
@@ -327,8 +331,8 @@ int loadAll(const fh::Vfs& vfs, const fh::Database& db, bool textures)
                 used += part.used ? 1 : 0;
             }
             std::printf("ok   %-28s %3zu/%-3zu parts %7zu verts %7zu tris %3zu textures %zu warnings\n", name.c_str(),
-                used, model.parts.size(), model.mesh.vertexCount(), model.mesh.triangleCount(),
-                model.textures.size(), model.warnings.size());
+                used, model.parts.size(), model.mesh.vertexCount(), model.mesh.triangleCount(), model.textures.size(),
+                model.warnings.size());
             for (const std::string& warning : model.warnings) {
                 std::printf("       warning: %s\n", warning.c_str());
             }
@@ -342,6 +346,150 @@ int loadAll(const fh::Vfs& vfs, const fh::Database& db, bool textures)
     return loaded == static_cast<int>(cars.size()) ? 0 : 1;
 }
 
+/// Factory colour `sequence` of the car, linear RGB, as the game picks it
+/// (Combo_Colors, RGB packed 0xRRGGBB in sRGB).
+std::optional<std::pair<glm::vec3, bool>> factoryPaint(const fh::Database& db, std::string_view mediaName)
+{
+    const std::optional<fh::Row> car
+        = db.queryOne("SELECT Id FROM Data_Car WHERE lower(MediaName) = lower(?)", {std::string(mediaName)});
+    if (!car) {
+        return std::nullopt;
+    }
+    const std::optional<fh::Row> paint
+        = db.queryOne("SELECT RGB, Metallic FROM Combo_Colors WHERE Ordinal = ? ORDER BY Sequence LIMIT 1",
+            {std::to_string(car->i("Id"))});
+    if (!paint) {
+        return std::nullopt;
+    }
+    const auto rgb = static_cast<std::uint32_t>(paint->integer("RGB"));
+    const auto linear
+        = [](std::uint32_t channel) { return std::pow(static_cast<float>(channel & 0xFFU) / 255.0F, 2.2F); };
+    return std::pair{glm::vec3(linear(rgb >> 16), linear(rgb >> 8), linear(rgb)), paint->i("Metallic") != 0};
+}
+
+bool savePng(const std::filesystem::path& path, int width, int height)
+{
+    xds::Image image;
+    image.width = static_cast<std::uint32_t>(width);
+    image.height = static_cast<std::uint32_t>(height);
+    image.rgba.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, image.rgba.data());
+    const std::size_t row = static_cast<std::size_t>(width) * 4;
+    for (int y = 0; y < height / 2; ++y) {
+        std::swap_ranges(image.rgba.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(y) * row),
+            image.rgba.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(y + 1) * row),
+            image.rgba.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(height - 1 - y) * row));
+    }
+    const std::vector<std::uint8_t> png = xds::writePng(image);
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+    return static_cast<bool>(out);
+}
+
+/// Draws the car standing at the world origin, facing north, from six
+/// directions, lit by colorado's time of day, and saves each view.
+int renderViews(
+    const fh::Vfs& vfs, const fh::Database* db, const CarModel& model, const std::string& prefix, float minutes)
+{
+    constexpr int kWidth = 1280;
+    constexpr int kHeight = 720;
+    fh::WindowOptions windowOptions;
+    windowOptions.title = "fh1carmodel";
+    windowOptions.width = kWidth;
+    windowOptions.height = kHeight;
+    windowOptions.vsync = false;
+    windowOptions.hidden = true;
+    fh::Window window(windowOptions);
+
+    fh::TimeOfDay timeOfDay(fh::TimeOfDayCurves::load(vfs, "colorado"));
+    timeOfDay.setSeconds(minutes * 60.0F);
+    const fh::PostEffectSettings post = fh::PostEffectSettings::load(vfs, "colorado");
+    fh::render::ToneSettings tone;
+    tone.shoulderStrength = post.shoulderStrength;
+    tone.linearStrength = post.linearStrength;
+    tone.linearAngle = post.linearAngle;
+    tone.toeStrength = post.toeStrength;
+    tone.toeNumerator = post.toeNumerator;
+    tone.toeDenominator = post.toeDenominator;
+    // As the game loop does: the game's white point of 1 assumes its own
+    // exposure scheme, which the automatic exposure here does not follow.
+    tone.white = std::max(post.white, 6.0F);
+    tone.vignettePower = post.vignettePower;
+
+    fh::render::FrameRenderer frameRenderer;
+    fh::render::CarRenderer car(model);
+    fh::render::CarPose pose;
+    for (std::size_t w = 0; w < model.wheels.size() && w < pose.hubs.size(); ++w) {
+        pose.hubs[w] = model.wheels[w].centre;
+    }
+    pose.headLights = timeOfDay.lights();
+    if (db) {
+        if (const auto paint = factoryPaint(*db, model.mediaName)) {
+            pose.paint = paint->first;
+            pose.metallic = paint->second;
+        }
+        // Stand the car on flat ground as the game's physics holds it, so
+        // body and wheels sit at their ride height: the pose Game::carPose
+        // takes from the settled model.
+        if (const std::optional<fh::Row> row
+            = db->queryOne("SELECT Id FROM Data_Car WHERE lower(MediaName) = lower(?)", {model.mediaName})) {
+            const fh::CarSpec spec = fh::loadCarSpec(*db, row->i("Id"), &vfs);
+            fh::CarPhysics physics(spec);
+            const fh::FlatGround ground;
+            physics.reset(glm::vec3(0.0F), 0.0F, ground);
+            constexpr int kSettleSteps = 360 * 4;
+            fh::CarControls controls;
+            controls.handbrake = 1.0F;
+            for (int i = 0; i < kSettleSteps; ++i) {
+                physics.step(controls, ground);
+            }
+            pose.body = physics.transform();
+            const glm::mat4 toCar = glm::inverse(pose.body);
+            for (std::size_t w = 0; w < fh::CarPhysics::kWheels; ++w) {
+                const fh::CarPhysics::WheelState& wheel = physics.wheels()[w];
+                pose.hubs[w] = glm::vec3(toCar * glm::vec4(wheel.hubWorld, 1.0F));
+                pose.steer[w] = wheel.steerAngle;
+                pose.spin[w] = wheel.spinAngle;
+            }
+        }
+    }
+
+    const glm::vec3 centre
+        = glm::vec3(pose.body * glm::vec4((model.mesh.boundsMin + model.mesh.boundsMax) * 0.5F, 1.0F));
+    struct View {
+        const char* name;
+        glm::vec3 direction;
+    };
+    const std::array<View, 6> views{View{"front", {0.0F, 0.15F, 1.0F}}, View{"side", {-1.0F, 0.1F, 0.0F}},
+        View{"rear", {0.0F, 0.15F, -1.0F}}, View{"front34", {-0.8F, 0.3F, 0.8F}}, View{"rear34", {0.8F, 0.3F, -0.8F}},
+        View{"top", {0.0F, 1.0F, 0.05F}}};
+    for (const View& view : views) {
+        fh::render::Camera camera;
+        camera.fov = 0.36F;
+        camera.target = centre;
+        camera.position = centre + glm::normalize(view.direction) * 8.5F;
+        fh::render::FrameParams frame;
+        frame.view = camera.view();
+        frame.projection = camera.projection(static_cast<float>(kWidth) / static_cast<float>(kHeight));
+        frame.cameraPosition = camera.position;
+        frame.lighting = timeOfDay.lighting();
+        frameRenderer.begin(kWidth, kHeight);
+        car.draw(frame, pose, false);
+        frameRenderer.sky(frame);
+        car.draw(frame, pose, true);
+        frameRenderer.finish(tone);
+        const std::string path = std::format("{}_{}.png", prefix, view.name);
+        if (!savePng(path, kWidth, kHeight)) {
+            std::fprintf(stderr, "fh1carmodel: cannot write %s\n", path.c_str());
+            return 1;
+        }
+        std::printf("wrote %s\n", path.c_str());
+        window.swapBuffers();
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -353,6 +501,10 @@ int main(int argc, char** argv)
     std::optional<std::filesystem::path> objPath;
     bool textures = target != "--all";
     bool allParts = false;
+    bool inRaceLods = false;
+    bool noCockpit = false;
+    std::optional<std::string> renderPrefix;
+    float renderMinutes = 13.0F * 60.0F;
     for (int i = 3; i < argc; ++i) {
         const std::string_view arg = argv[i];
         if (arg == "--obj" && i + 1 < argc && target != "--all") {
@@ -363,6 +515,19 @@ int main(int argc, char** argv)
             textures = true;
         } else if (arg == "--all-parts") {
             allParts = true;
+        } else if (arg == "--in-race-lods") {
+            inRaceLods = true;
+        } else if (arg == "--no-cockpit") {
+            noCockpit = true;
+        } else if (arg == "--render" && i + 1 < argc && target != "--all") {
+            renderPrefix = argv[++i];
+        } else if (arg == "--time" && i + 1 < argc) {
+            int hours = 0;
+            int mins = 0;
+            if (std::sscanf(argv[++i], "%d:%d", &hours, &mins) != 2) {
+                return usage();
+            }
+            renderMinutes = static_cast<float>(hours * 60 + mins);
         } else {
             return usage();
         }
@@ -383,12 +548,17 @@ int main(int argc, char** argv)
             return loadAll(vfs, *db, textures);
         }
         carmodel::CarModelOptions options;
-        options.textures = textures || objPath.has_value();
+        options.textures = textures || objPath.has_value() || renderPrefix.has_value();
         options.stockOnly = !allParts;
+        options.inRaceLods = inRaceLods;
+        options.cockpit = !noCockpit;
         const CarModel model = CarModel::load(vfs, db ? &*db : nullptr, target, options);
         report(vfs, model);
         if (objPath) {
             writeObj(model, *objPath);
+        }
+        if (renderPrefix) {
+            return renderViews(vfs, db ? &*db : nullptr, model, *renderPrefix, renderMinutes);
         }
     } catch (const std::exception& e) {
         std::fprintf(stderr, "fh1carmodel: %s\n", e.what());

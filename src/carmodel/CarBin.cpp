@@ -420,14 +420,11 @@ Vertex decodeVertex(const CarBin::Part& part, const CarBin::VertexBuffer& buffer
         return v;
     }
     const std::uint8_t* p = buffer.data.data() + static_cast<std::size_t>(index) * kVertexStride;
-    const auto s16 = [p](int offset) {
-        return static_cast<float>(static_cast<std::int16_t>(loadBe16(p + offset))) * kS16;
-    };
+    const auto s16
+        = [p](int offset) { return static_cast<float>(static_cast<std::int16_t>(loadBe16(p + offset))) * kS16; };
     const auto u16 = [p](int offset) { return static_cast<float>(loadBe16(p + offset)) * kU16; };
 
-    const glm::vec3 direction(s16(0), s16(2), s16(4));
-    const float length = s16(6) * glm::length(part.halfExtent);
-    const glm::vec3 file = direction * length + part.position;
+    const glm::vec3 file = decodeFilePosition(p, glm::vec4(part.position, glm::length(part.halfExtent)));
     v.position = glm::vec3(file.x, file.y, -file.z);
 
     v.rawUv0 = glm::vec2(u16(8), u16(10));
@@ -448,6 +445,15 @@ Vertex decodeVertex(const CarBin::Part& part, const CarBin::VertexBuffer& buffer
     v.tangent = toCar(tangent);
     std::copy(p + 24, p + 28, v.lighting.begin());
     return v;
+}
+
+glm::vec3 decodeFilePosition(const std::uint8_t* vertex, const glm::vec4& packed)
+{
+    const auto s16 = [vertex](int offset) {
+        return static_cast<float>(static_cast<std::int16_t>(loadBe16(vertex + offset))) * kS16;
+    };
+    const glm::vec3 direction(s16(0), s16(2), s16(4));
+    return direction * (s16(6) * packed.w) + glm::vec3(packed);
 }
 
 glm::vec2 meshUv0(const CarBin::Mesh& mesh, const Vertex& vertex)

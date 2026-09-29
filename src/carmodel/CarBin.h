@@ -46,7 +46,7 @@ namespace fh::carmodel {
 ///                u32 3 + 256 bytes (steering wheel and hand positions in
 ///                cockpits, inferred), s32, s32,
 ///                15 × (f32[4], f32[4], f32),
-///                f32 lighting minimum, f32 lighting range (inferred, see
+///                f32 lighting minimum, f32 lighting range (see
 ///                Vertex::lighting),
 ///                s32, array of strings
 ///     model      u32 4,
@@ -79,9 +79,10 @@ namespace fh::carmodel {
 ///                0xFFFFFF
 ///
 /// A mesh of LOD 0 indexes the part's LOD 0 vertex buffer, any other mesh
-/// the first one (verified on data: wheels carry both). The material name is
-/// the shader: `media/shaders/cars/<name>.fxobj`, or a technique of the
-/// shared `shaders_v16.fxobj`.
+/// the first one (verified on data: wheels carry both). The material name
+/// becomes a technique of `media/shaders/cars/shaders_v16.fxobj` (see
+/// carmodel::techniqueName); the separate `<name>.fxobj` effects are loaded
+/// only by the showroom (`CustomCarShaders.xml`, `inraceload="false"`).
 ///
 /// Positions are stored with the front of the car towards -Z, right-handed.
 /// The engine's car space puts the front at +Z with X to the right, so
@@ -201,7 +202,7 @@ struct CarBin {
     std::vector<Node> nodes;
     /// The header's 256-byte block as 64 floats.
     std::array<float, 64> steeringInfo{};
-    /// Minimum and range of the per-vertex lighting bytes (inferred).
+    /// Minimum and range of the per-vertex lighting bytes (see Vertex).
     glm::vec2 lightingRange{0.0F, 1.0F};
     std::uint32_t lodCount = 0;
     /// Per LOD, translucent and opaque draw lists.
@@ -219,17 +220,23 @@ struct CarBin {
 ///                                        · length / 32767 · |halfExtent|
 ///                                        + part position (verified: the
 ///                                        directions are unit length and
-///                                        the result fills the part box)
+///                                        the result fills the part box;
+///                                        the car vertex shaders compute
+///                                        the same with pack_partPosition)
 ///     8   u16[2] first texture coordinates (Mesh::uv0)
 ///     12  u16[2] second texture coordinates (Mesh::uv1)
 ///     16  s16[4] tangent frame as a quaternion (x, y, z, w) / 32767:
 ///                it turns +X into the normal and +Y into the tangent along
 ///                u (verified against face normals and texture gradients)
-///     24  u8[4]  lighting (inferred: byte 0 is high on open surfaces and
-///                low in crevices, bytes 1 to 3 sit around 127 and follow
-///                the surface direction, like spherical harmonic
-///                coefficients quantised between the header's minimum and
-///                minimum + range; about 5% of vertices hold 255 in byte 0)
+///     24  s8[4]  lighting transfer: order-2 spherical harmonic
+///                coefficients in D3DX order, byte n being coefficient n
+///                (the shaders fetch the element as signed 8_8_8_8 and read
+///                its components reversed). Each is decompressed as
+///                (b / 127 · 0.5 + 0.5) · range + minimum with the header's
+///                lighting minimum and range (shCompressionFactors) and
+///                dotted with the scene's lighting coefficients. Verified:
+///                byte 0, the constant term, stays near 105 over a body
+///                while byte 1 follows -y of the normal.
 struct Vertex {
     /// Car space (Z negated from the file).
     glm::vec3 position{0.0F};
@@ -258,6 +265,11 @@ CarBin::Kind kindFromPath(std::string_view path);
 /// default vertex if the buffer's stride is not kVertexStride or the index is
 /// out of range.
 Vertex decodeVertex(const CarBin::Part& part, const CarBin::VertexBuffer& buffer, std::uint32_t index);
+
+/// File space position of the stored vertex at `vertex` (28 bytes) of a
+/// part whose position and half diagonal length are `packed` (xyz, w), as
+/// the car vertex shaders compute it: direction · length · w + xyz.
+glm::vec3 decodeFilePosition(const std::uint8_t* vertex, const glm::vec4& packed);
 
 /// Texture coordinates of a decoded vertex through a mesh's factors.
 glm::vec2 meshUv0(const CarBin::Mesh& mesh, const Vertex& vertex);

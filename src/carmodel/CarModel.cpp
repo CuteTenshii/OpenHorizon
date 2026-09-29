@@ -6,6 +6,7 @@
 
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <pugixml.hpp>
 #include <xds/xds.h>
 
@@ -24,9 +25,6 @@ namespace fh::carmodel {
 
 namespace {
 
-/// The lighting byte's value on open surfaces (the peak of its
-/// distribution over the cars), mapped to white.
-constexpr float kOpenLighting = 106.0F;
 constexpr float kMillimetre = 0.001F;
 constexpr float kInch = 0.0254F;
 constexpr float kPercent = 0.01F;
@@ -34,11 +32,14 @@ constexpr std::uint32_t kUnused = std::numeric_limits<std::uint32_t>::max();
 /// A `_lod0` exterior whose stock parts have fewer vertices than this is a
 /// stand-in (real ones have tens of thousands).
 constexpr std::size_t kPlaceholderVertices = 5000;
+/// The effect in-race cars are drawn with.
+constexpr const char* kCarEffect = "media/shaders/cars/shaders_v16.fxobj";
 /// Wheel models with a smaller tyre radius are stand-ins, metres.
 constexpr float kMinWheelRadius = 0.15F;
 
-/// Where a mesh's vertices go: car = origin + scale · (vertex - centre),
-/// with X negated afterwards when mirrored.
+/// Where a part's vertices go: car = origin + scale · (vertex - centre),
+/// with X negated afterwards when mirrored, for a vertex in car space (the
+/// file's Z negated).
 struct Placement {
     glm::vec3 origin{0.0F};
     glm::vec3 centre{0.0F};
@@ -54,29 +55,15 @@ struct Placement {
         return origin + q;
     }
 
-    glm::vec3 direction(const glm::vec3& n) const
+    /// File space to car space.
+    glm::mat4 matrix() const
     {
-        glm::vec3 q = n / scale;
-        if (mirror) {
-            q.x = -q.x;
-        }
-        const float length = glm::length(q);
-        return length > 0.0F ? q / length : glm::vec3(0.0F, 1.0F, 0.0F);
+        const glm::mat4 flipZ = glm::scale(glm::mat4(1.0F), glm::vec3(1.0F, 1.0F, -1.0F));
+        const glm::vec3 mirrorScale(mirror ? -scale.x : scale.x, scale.y, scale.z);
+        return glm::translate(glm::mat4(1.0F), origin) * glm::scale(glm::mat4(1.0F), mirrorScale)
+            * glm::translate(glm::mat4(1.0F), -centre) * flipZ;
     }
 };
-
-std::uint32_t packColour(const Vertex& v)
-{
-    std::uint8_t grey = 255;
-    const bool hasLighting = v.lighting[0] != 0 || v.lighting[1] != 0 || v.lighting[2] != 0 || v.lighting[3] != 0;
-    if (hasLighting) {
-        grey = static_cast<std::uint8_t>(std::min(255.0F, std::round(v.lighting[0] * 255.0F / kOpenLighting)));
-    }
-    const std::array<std::uint8_t, 4> rgba{grey, grey, grey, 255};
-    std::uint32_t bits = 0;
-    std::memcpy(&bits, rgba.data(), sizeof(bits));
-    return bits;
-}
 
 std::uint32_t lowestLod(const CarBin::Part& part)
 {
@@ -272,6 +259,15 @@ world::TextureSurface::Format blockFormat(std::uint32_t format, bool& isBlock)
     return world::TextureSurface::Format::Rgba8;
 }
 
+/// How the samplers of one file's batches find their textures: samplers the
+/// executable binds in code, by name, and the flag sets tried, in order, on
+/// the entries of `media/cars/shared/textures.xml`.
+struct TextureContext {
+    std::map<std::string, std::string> fixed;
+    std::vector<std::vector<std::string>> flagSets;
+    TextureFolders folders;
+};
+
 /// Merges parsed files into a CarMesh and collects their textures.
 class MeshBuilder {
 public:
@@ -282,23 +278,32 @@ public:
     {
     }
 
-    /// Folders searched for TextureFolder::Wheel files, in order.
-    void setWheelFolders(std::vector<std::string> folders) { m_wheelFolders = std::move(folders); }
+    /// The effect whose techniques the batches name; techniques missing
+    /// from it fall back as the executable does.
+    void setEffect(std::shared_ptr<const CarEffect> effect) { m_effect = std::move(effect); }
+    void setTextureTable(const CarTextureTable* table) { m_textureTable = table; }
 
-    void beginNode(CarMesh::NodeKind kind, std::optional<Corner> corner, glm::vec3 pivot)
+    /// Starts a group of batches from one file. `file` is the carbin's
+    /// header (its lighting range) and `textures` how its samplers resolve.
+    void beginNode(CarMesh::NodeKind kind, std::optional<Corner> corner, glm::vec3 pivot, const Placement& placement,
+        const CarBin& file, TextureContext textures)
     {
         CarMesh::Node node;
         node.kind = kind;
         node.corner = corner;
         node.pivot = pivot;
+        node.shCompression = file.lightingRange;
+        node.placement = placement.matrix();
+        m_textures = std::move(textures);
         node.firstBatch = static_cast<std::uint32_t>(m_model.mesh.batches.size());
         m_model.mesh.nodes.push_back(node);
+        m_placement = placement;
     }
 
     /// Adds the chosen meshes of `part` to the current node and records the
     /// part.
-    void addPart(const std::string& file, const CarBin::Part& part, ModelSource source,
-        const std::vector<std::size_t>& meshes, const Placement& placement)
+    void addPart(
+        const std::string& file, const CarBin::Part& part, ModelSource source, const std::vector<std::size_t>& meshes)
     {
         CarModel::Part info;
         info.file = file;
@@ -309,8 +314,9 @@ public:
         info.boundsMin = glm::vec3(std::numeric_limits<float>::max());
         info.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
         const auto partIndex = static_cast<std::uint32_t>(m_model.parts.size());
+        m_ranges.clear();
         for (const std::size_t m : meshes) {
-            addMesh(part, part.meshes[m], source, partIndex, placement, info);
+            addMesh(part, part.meshes[m], partIndex, info);
         }
         if (info.vertexCount == 0) {
             info.boundsMin = info.boundsMax = glm::vec3(0.0F);
@@ -337,12 +343,9 @@ public:
     void finish(bool decodeTextures)
     {
         CarMesh& mesh = m_model.mesh;
-        for (CarMesh::Node& node : mesh.nodes) {
-            node.batchCount = 0;
-        }
         for (std::size_t n = 0; n < mesh.nodes.size(); ++n) {
-            const std::uint32_t end
-                = n + 1 < mesh.nodes.size() ? mesh.nodes[n + 1].firstBatch : static_cast<std::uint32_t>(mesh.batches.size());
+            const std::uint32_t end = n + 1 < mesh.nodes.size() ? mesh.nodes[n + 1].firstBatch
+                                                                : static_cast<std::uint32_t>(mesh.batches.size());
             mesh.nodes[n].batchCount = end - mesh.nodes[n].firstBatch;
         }
         computeBounds();
@@ -352,8 +355,27 @@ public:
     }
 
 private:
-    void addMesh(const CarBin::Part& part, const CarBin::Mesh& source, ModelSource from, std::uint32_t partIndex,
-        const Placement& placement, CarModel::Part& info)
+    /// The range holding `buffer`'s vertices, copied in on first use.
+    std::uint32_t range(const CarBin::Part& part, const CarBin::VertexBuffer& buffer)
+    {
+        for (const auto& [known, index] : m_ranges) {
+            if (known == &buffer) {
+                return index;
+            }
+        }
+        CarMesh& mesh = m_model.mesh;
+        CarMesh::VertexRange range;
+        range.byteOffset = static_cast<std::uint32_t>(mesh.vertices.size());
+        range.count = buffer.count;
+        range.packedPosition = glm::vec4(part.position, glm::length(part.halfExtent));
+        mesh.vertices.insert(mesh.vertices.end(), buffer.data.begin(), buffer.data.end());
+        const auto index = static_cast<std::uint32_t>(mesh.ranges.size());
+        mesh.ranges.push_back(range);
+        m_ranges.emplace_back(&buffer, index);
+        return index;
+    }
+
+    void addMesh(const CarBin::Part& part, const CarBin::Mesh& source, std::uint32_t partIndex, CarModel::Part& info)
     {
         const CarBin::VertexBuffer& buffer = part.verticesFor(source);
         if (source.triangles.empty() || buffer.stride != carbin::kVertexStride || buffer.data.empty()) {
@@ -362,88 +384,88 @@ private:
         CarMesh& mesh = m_model.mesh;
         CarMesh::Batch batch;
         batch.material = source.name;
+        batch.technique = techniqueName(source.name, part.name);
+        if (!m_effect || !m_effect->hasTechnique(batch.technique)) {
+            batch.technique = missingTechnique(source.name);
+        }
+        batch.uv0 = source.uv0;
+        batch.uv1 = source.uv1;
         batch.translucent = source.translucent;
-        batch.shading = classifyMaterial(source.name, from, source.translucent);
         batch.motionBlur = isMotionBlurMaterial(source.name);
-        batch.texture = texture(diffuseTextures(source.name, from));
-        batch.colour = baseColour(source.name, batch.shading, batch.texture != CarMesh::kNoTexture);
+        bindSamplers(batch);
         batch.node = static_cast<std::uint32_t>(mesh.nodes.size() - 1);
         batch.part = partIndex;
+        batch.range = range(part, buffer);
         batch.firstIndex = static_cast<std::uint32_t>(mesh.indices.size());
-
-        m_remap.assign(buffer.count, kUnused);
-        for (std::size_t i = 0; i < source.triangles.size(); i += 3) {
-            std::array<std::uint32_t, 3> corners{};
-            for (std::size_t k = 0; k < 3; ++k) {
-                corners[k] = vertexIndex(part, buffer, source, source.triangles[i + k], placement, info);
-            }
-            // A mirror reverses the winding; swapping two corners restores it.
-            if (placement.mirror) {
-                std::swap(corners[1], corners[2]);
-            }
-            mesh.indices.insert(mesh.indices.end(), corners.begin(), corners.end());
-        }
-        batch.indexCount = static_cast<std::uint32_t>(mesh.indices.size()) - batch.firstIndex;
+        mesh.indices.insert(mesh.indices.end(), source.triangles.begin(), source.triangles.end());
+        batch.indexCount = static_cast<std::uint32_t>(source.triangles.size());
         info.triangleCount += batch.indexCount / 3;
+
+        m_seen.assign(buffer.count, false);
+        for (const std::uint32_t index : source.triangles) {
+            if (m_seen[index]) {
+                continue;
+            }
+            m_seen[index] = true;
+            const glm::vec3 position = m_placement.point(carbin::decodeVertex(part, buffer, index).position);
+            info.boundsMin = glm::min(info.boundsMin, position);
+            info.boundsMax = glm::max(info.boundsMax, position);
+            ++info.vertexCount;
+        }
         mesh.batches.push_back(std::move(batch));
     }
 
-    std::uint32_t vertexIndex(const CarBin::Part& part, const CarBin::VertexBuffer& buffer, const CarBin::Mesh& source,
-        std::uint32_t index, const Placement& placement, CarModel::Part& info)
+    /// Finds the texture of every sampler the batch's technique reads.
+    void bindSamplers(CarMesh::Batch& batch)
     {
-        std::uint32_t& mapped = m_remap[index];
-        if (mapped != kUnused) {
-            return mapped;
+        if (!m_effect) {
+            return;
         }
-        CarMesh& mesh = m_model.mesh;
-        mapped = static_cast<std::uint32_t>(mesh.vertexCount());
-        const Vertex v = carbin::decodeVertex(part, buffer, index);
-        const glm::vec3 position = placement.point(v.position);
-        const glm::vec3 normal = placement.direction(v.normal);
-        const glm::vec2 uv0 = carbin::meshUv0(source, v);
-        const glm::vec2 uv1 = carbin::meshUv1(source, v);
-        const float colour = std::bit_cast<float>(packColour(v));
-        const std::array<float, CarMesh::kFloatsPerVertex> floats{position.x, position.y, position.z, normal.x,
-            normal.y, normal.z, uv0.x, uv0.y, uv1.x, uv1.y, colour};
-        mesh.vertices.insert(mesh.vertices.end(), floats.begin(), floats.end());
-        info.boundsMin = glm::min(info.boundsMin, position);
-        info.boundsMax = glm::max(info.boundsMax, position);
-        ++info.vertexCount;
-        return mapped;
-    }
-
-    std::vector<std::string> folderPaths(TextureFolder folder) const
-    {
-        switch (folder) {
-        case TextureFolder::Car:
-            return {m_carFolder};
-        case TextureFolder::Shared:
-            return {"media/cars/shared/"};
-        case TextureFolder::Wheel:
-            return m_wheelFolders;
-        }
-        return {m_carFolder};
-    }
-
-    std::uint32_t texture(const std::vector<TextureCandidate>& candidates)
-    {
-        for (const TextureCandidate& candidate : candidates) {
-            for (const std::string& folder : folderPaths(candidate.folder)) {
-                const std::string path = folder + candidate.file;
-                const auto known = m_textureIndex.find(path);
-                if (known != m_textureIndex.end()) {
-                    return known->second;
-                }
-                if (!m_vfs.exists(path)) {
+        for (const auto& pass : m_effect->passes(batch.technique)) {
+            for (const xenos::SamplerBinding& sampler : pass->program.samplers) {
+                if (sampler.name.empty()) {
                     continue;
                 }
-                const auto index = static_cast<std::uint32_t>(m_model.textures.size());
-                m_model.textures.push_back({path, {}});
-                m_textureIndex.emplace(path, index);
-                return index;
+                const bool known = std::any_of(batch.textures.begin(), batch.textures.end(),
+                    [&](const auto& t) { return t.first == sampler.name; });
+                if (known) {
+                    continue;
+                }
+                if (const std::optional<std::string> path = resolveSampler(sampler.name)) {
+                    batch.textures.emplace_back(sampler.name, texture(*path));
+                }
             }
         }
-        return CarMesh::kNoTexture;
+    }
+
+    std::optional<std::string> resolveSampler(const std::string& sampler) const
+    {
+        if (const auto fixed = m_textures.fixed.find(sampler); fixed != m_textures.fixed.end()) {
+            return m_vfs.exists(fixed->second) ? std::optional<std::string>(fixed->second) : std::nullopt;
+        }
+        if (m_textureTable == nullptr) {
+            return std::nullopt;
+        }
+        for (const std::vector<std::string>& flags : m_textures.flagSets) {
+            if (std::optional<std::string> path = m_textureTable->resolve(sampler, flags, m_textures.folders)) {
+                if (m_vfs.exists(*path)) {
+                    return path;
+                }
+            }
+        }
+        return std::nullopt;
+    }
+
+    std::uint32_t texture(const std::string& path)
+    {
+        const auto known = m_textureIndex.find(path);
+        if (known != m_textureIndex.end()) {
+            return known->second;
+        }
+        const auto index = static_cast<std::uint32_t>(m_model.textures.size());
+        m_model.textures.push_back({path, {}});
+        m_textureIndex.emplace(path, index);
+        return index;
     }
 
     void computeBounds()
@@ -452,18 +474,15 @@ private:
         glm::vec3 lo(std::numeric_limits<float>::max());
         glm::vec3 hi(std::numeric_limits<float>::lowest());
         bool any = false;
-        for (const CarMesh::Node& node : mesh.nodes) {
-            for (std::uint32_t b = node.firstBatch; b < node.firstBatch + node.batchCount; ++b) {
-                const CarMesh::Batch& batch = mesh.batches[b];
-                if (batch.motionBlur) {
-                    continue;
-                }
-                for (std::uint32_t i = batch.firstIndex; i < batch.firstIndex + batch.indexCount; ++i) {
-                    const float* v = mesh.vertices.data() + static_cast<std::size_t>(mesh.indices[i]) * CarMesh::kFloatsPerVertex;
-                    lo = glm::min(lo, glm::vec3(v[0], v[1], v[2]));
-                    hi = glm::max(hi, glm::vec3(v[0], v[1], v[2]));
-                    any = true;
-                }
+        for (const CarMesh::Batch& batch : mesh.batches) {
+            if (batch.motionBlur) {
+                continue;
+            }
+            for (std::uint32_t i = batch.firstIndex; i < batch.firstIndex + batch.indexCount; ++i) {
+                const glm::vec3 p = mesh.position(batch, mesh.indices[i]);
+                lo = glm::min(lo, p);
+                hi = glm::max(hi, p);
+                any = true;
             }
         }
         mesh.boundsMin = any ? lo : glm::vec3(0.0F);
@@ -475,7 +494,8 @@ private:
         std::vector<std::future<std::optional<world::TextureMipChain>>> jobs;
         jobs.reserve(m_model.textures.size());
         for (const CarModel::Texture& texture : m_model.textures) {
-            jobs.push_back(std::async(std::launch::async, [this, path = texture.path]() -> std::optional<world::TextureMipChain> {
+            jobs.push_back(
+                std::async(std::launch::async, [this, path = texture.path]() -> std::optional<world::TextureMipChain> {
                 const std::optional<Bytes> data = m_vfs.read(path);
                 if (!data) {
                     return std::nullopt;
@@ -501,9 +521,14 @@ private:
     CarModel& m_model;
     const Vfs& m_vfs;
     std::string m_carFolder;
-    std::vector<std::string> m_wheelFolders;
+    std::shared_ptr<const CarEffect> m_effect;
+    const CarTextureTable* m_textureTable = nullptr;
+    TextureContext m_textures;
     std::map<std::string, std::uint32_t> m_textureIndex;
-    std::vector<std::uint32_t> m_remap;
+    Placement m_placement;
+    /// Vertex buffers of the current part already in the mesh.
+    std::vector<std::pair<const CarBin::VertexBuffer*, std::uint32_t>> m_ranges;
+    std::vector<bool> m_seen;
 };
 
 std::optional<CarBin> tryLoad(const Vfs& vfs, const std::string& path, CarBin::Kind kind, CarModel& model)
@@ -568,7 +593,83 @@ std::vector<bool> stockParts(const CarBin& exterior)
     return stock;
 }
 
+/// Notes batches whose technique the effect lacks, which draw with the
+/// executable's `missing` fallback, and translates every technique used so
+/// the renderer only has to compile them.
+void checkTechniques(CarModel& model)
+{
+    if (!model.effect) {
+        return;
+    }
+    std::vector<std::string> done;
+    for (const CarMesh::Batch& batch : model.mesh.batches) {
+        if (std::find(done.begin(), done.end(), batch.technique) != done.end()) {
+            continue;
+        }
+        done.push_back(batch.technique);
+        if (batch.technique.starts_with("missing")) {
+            model.warnings.push_back(
+                std::format("material {}: {} has no technique for it", batch.material, kCarEffect));
+        }
+        if (model.effect->passes(batch.technique).empty()) {
+            model.warnings.push_back(model.effect->error(batch.technique));
+        }
+    }
+}
+
+/// The shader settings files layered for a car, as CCarShaderDef:Load does:
+/// the shared base, the paint finish's differences, the car's own file.
+ShaderSettings loadSettings(const Vfs& vfs, const std::string& folder, std::string_view finish)
+{
+    ShaderSettings settings
+        = ShaderSettings::load(vfs, "media/cars/shared/shadersettings/normal.xml").value_or(ShaderSettings{});
+    if (toLower(finish) != "normal") {
+        if (const auto finishSettings
+            = ShaderSettings::load(vfs, std::format("media/cars/shared/shadersettings/{}.xml", toLower(finish)))) {
+            settings.overlay(*finishSettings);
+        }
+    }
+    if (const auto own = ShaderSettings::load(vfs, folder + "shadersettings.xml")) {
+        settings.overlay(*own);
+    }
+    return settings;
+}
+
+std::optional<CarModel::BlurRim> readBlurRim(const Vfs& vfs)
+{
+    const std::optional<std::string> text = vfs.readText("media/cars/shared/globalcarattribs.xml");
+    if (!text) {
+        return std::nullopt;
+    }
+    pugi::xml_document doc;
+    if (!doc.load_buffer(text->data(), text->size())) {
+        return std::nullopt;
+    }
+    const pugi::xml_node node = doc.child("GlobalCarAttributes").child("BlurRim");
+    if (!node) {
+        return std::nullopt;
+    }
+    return CarModel::BlurRim{node.attribute("MaxRPM").as_float(), node.attribute("GeomBlendStart").as_float(),
+        node.attribute("GeomBlendEnd").as_float()};
+}
+
+/// The paint finishes of List_ColorFinish that have their own settings file
+/// (0 Normal, 1 Metallic; CarbonFiber has none on the disc).
+constexpr std::array<std::string_view, 2> kFinishes{"Normal", "Metallic"};
+
 } // namespace
+
+glm::vec3 CarMesh::position(const Batch& batch, std::uint32_t index) const
+{
+    const VertexRange& range = ranges.at(batch.range);
+    if (index >= range.count) {
+        return glm::vec3(0.0F);
+    }
+    const glm::vec3 file = carbin::decodeFilePosition(
+        vertices.data() + range.byteOffset + static_cast<std::size_t>(index) * carbin::kVertexStride,
+        range.packedPosition);
+    return glm::vec3(nodes.at(batch.node).placement * glm::vec4(file, 1.0F));
+}
 
 std::string_view cornerCode(Corner corner)
 {
@@ -621,13 +722,22 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
     const std::string car = model.mediaName;
     const std::string folder = std::format("media/cars/{}/", car);
     MeshBuilder builder(model, vfs, folder);
+    try {
+        model.effect = CarEffect::load(vfs, kCarEffect);
+    } catch (const DataError& e) {
+        model.warnings.emplace_back(e.what());
+    }
+    builder.setEffect(model.effect);
+    const CarTextureTable textureTable = CarTextureTable::load(vfs);
+    builder.setTextureTable(&textureTable);
 
-    std::string exteriorFile = folder + car + "_lod0.carbin";
+    std::string exteriorFile = folder + car + (options.inRaceLods ? ".carbin" : "_lod0.carbin");
     std::optional<CarBin> exterior = tryLoad(vfs, exteriorFile, CarBin::Kind::Car, model);
+    bool exteriorIsLod0 = !options.inRaceLods;
     // Some traffic vehicles made drivable ship a `_lod0` of 4- to 17-vertex
     // stand-ins for their stock parts; their real geometry is in the plain
     // file.
-    if (!exterior || stockVertexCount(*exterior) < kPlaceholderVertices) {
+    if (!options.inRaceLods && (!exterior || stockVertexCount(*exterior) < kPlaceholderVertices)) {
         const std::string plainFile = folder + car + ".carbin";
         std::optional<CarBin> plain = tryLoad(vfs, plainFile, CarBin::Kind::Car, model);
         if (plain && (!exterior || stockVertexCount(*plain) > stockVertexCount(*exterior))) {
@@ -636,6 +746,7 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
             }
             exterior = std::move(plain);
             exteriorFile = plainFile;
+            exteriorIsLod0 = false;
         } else if (plain) {
             model.files.pop_back();
         }
@@ -650,12 +761,40 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
         row = readCarRow(*db, car);
     }
     model.wheelMediaName = toLower(row.wheelMediaName.empty() ? car : row.wheelMediaName);
+    for (const std::string_view finish : kFinishes) {
+        model.settings.emplace(std::string(finish), loadSettings(vfs, folder, finish));
+    }
+    model.tyreSettings
+        = ShaderSettings::load(vfs, "media/cars/shared/shadersettings/tire/normal.xml").value_or(ShaderSettings{});
+    model.blurRim = readBlurRim(vfs);
 
     const std::optional<Chassis> chassisRead = readChassis(vfs, folder);
     if (!chassisRead) {
         model.warnings.push_back(std::format("{}physics/maxdata.xml: missing; wheel positions guessed", folder));
     }
     const Chassis chassis = chassisRead.value_or(Chassis{});
+
+    const std::string wheelFolder = std::format("media/wheels/{}/", model.wheelMediaName);
+    const std::string rightFolder = std::format("media/wheels/{}_rightside/", model.wheelMediaName);
+
+    // baseSampler and damageSampler are bound in code (0x82E5FEA0): the
+    // car's nodamage and damage textures, `_LOD0.xds` for the most detailed
+    // model and `.xds` for the in-race LODs. Every other sampler comes from
+    // textures.xml. Which load flags the in-race car sets is not traced:
+    // LOD0 with Cockpit is tried first (the only set under which the cockpit
+    // and lamp samplers of these models resolve), then LOD15, whose entries
+    // (number plates) have no LOD0 counterpart.
+    const auto carTextures = [&](bool lod0) {
+        TextureContext context;
+        const std::string suffix = lod0 ? "_lod0.xds" : ".xds";
+        context.fixed["baseSampler"] = folder + "nodamage" + suffix;
+        context.fixed["damageSampler"] = folder + "damage" + suffix;
+        context.flagSets = {{lod0 ? "LOD0" : "LOD15", "Cockpit", "InGameTextures", "CarCommon"},
+            {"LOD15", "Cockpit", "InGameTextures", "CarCommon"}};
+        context.folders.car = folder;
+        context.folders.wheel = wheelFolder;
+        return context;
+    };
 
     // Models are centred on their own box; BottomCenterWheelbasePos (car
     // space) is where the wheelbase centre on the ground lies in the model
@@ -666,7 +805,8 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
     // the axles at half the wheelbase either side.
     Placement body;
     body.origin = -chassis.wheelbaseCentre;
-    builder.beginNode(CarMesh::NodeKind::Body, std::nullopt, glm::vec3(0.0F));
+    builder.beginNode(
+        CarMesh::NodeKind::Body, std::nullopt, glm::vec3(0.0F), body, *exterior, carTextures(exteriorIsLod0));
     const std::vector<bool> stock = stockParts(*exterior);
     const CarBin::Part* builtInWheel = nullptr;
     for (std::size_t p = 0; p < exterior->parts.size(); ++p) {
@@ -682,19 +822,20 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
             builder.skipPart(exteriorFile, part, ModelSource::Exterior);
             continue;
         }
-        builder.addPart(exteriorFile, part, ModelSource::Exterior, meshesToDraw(part, ModelSource::Exterior), body);
+        builder.addPart(exteriorFile, part, ModelSource::Exterior, meshesToDraw(part, ModelSource::Exterior));
     }
 
     if (options.cockpit) {
         const std::string file = folder + car + "_cockpit.carbin";
         if (const std::optional<CarBin> cockpit = tryLoad(vfs, file, CarBin::Kind::Car, model)) {
-            builder.beginNode(CarMesh::NodeKind::Cockpit, std::nullopt, glm::vec3(0.0F));
+            builder.beginNode(
+                CarMesh::NodeKind::Cockpit, std::nullopt, glm::vec3(0.0F), body, *cockpit, carTextures(true));
             for (const CarBin::Part& part : cockpit->parts) {
                 if (options.stockOnly && !partVariant(part.name).stock) {
                     builder.skipPart(file, part, ModelSource::Cockpit);
                     continue;
                 }
-                builder.addPart(file, part, ModelSource::Cockpit, meshesToDraw(part, ModelSource::Cockpit), body);
+                builder.addPart(file, part, ModelSource::Cockpit, meshesToDraw(part, ModelSource::Cockpit));
             }
         } else {
             model.warnings.push_back(std::format("{}: no cockpit model", file));
@@ -703,13 +844,12 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
 
     if (!options.wheels && !options.brakes) {
         builder.finish(options.textures);
+        checkTechniques(model);
         return model;
     }
 
     // The wheel: its own archive, else the exterior's built-in rim.
-    const std::string wheelFolder = std::format("media/wheels/{}/", model.wheelMediaName);
     const std::string wheelFile = wheelFolder + model.wheelMediaName + ".carbin";
-    const std::string rightFolder = std::format("media/wheels/{}_rightside/", model.wheelMediaName);
     const std::string rightFile = rightFolder + model.wheelMediaName + "_rightside.carbin";
     std::optional<CarBin> wheel;
     std::optional<CarBin> rightWheel;
@@ -722,6 +862,7 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
     }
     const CarBin::Part* leftPart = wheel && !wheel->parts.empty() ? &wheel->parts.front() : builtInWheel;
     const CarBin::Part* rightPart = rightWheel && !rightWheel->parts.empty() ? &rightWheel->parts.front() : nullptr;
+    const CarBin* leftBin = wheel ? &*wheel : &*exterior;
     std::string leftFile = wheel ? wheelFile : exteriorFile;
     std::vector<std::size_t> leftMeshes
         = leftPart ? meshesToDraw(*leftPart, ModelSource::Wheel) : std::vector<std::size_t>{};
@@ -731,6 +872,7 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
     if (wheel && leftShape.radius < kMinWheelRadius && builtInWheel) {
         model.warnings.push_back(std::format("{}: stand-in wheel model; using the exterior's wheel", wheelFile));
         leftPart = builtInWheel;
+        leftBin = &*exterior;
         rightPart = nullptr;
         leftFile = exteriorFile;
         leftMeshes = meshesToDraw(*leftPart, ModelSource::Wheel);
@@ -739,6 +881,28 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
     const std::vector<std::size_t> rightMeshes
         = rightPart ? meshesToDraw(*rightPart, ModelSource::Wheel) : std::vector<std::size_t>{};
     const WheelShape rightShape = rightPart ? measureWheel(*rightPart, rightMeshes) : leftShape;
+
+    // Wheel textures (0x82E68398): `wheel_LOD0.xds` for the rim, the blurred
+    // rims `wheel<n>.xds` (`%swheel%d.xds`) and the blurred tyres of the
+    // shared `tire<compound><n>.xds`. The stock compound letter is `a` (the
+    // executable picks a for compound levels up to 1; stock cars have 0).
+    // Inferred: blurRimSampler<n> and blurTireSampler<n> take the files in
+    // numeric order (sampler 1 the file numbered 0).
+    const auto wheelTextures = [&](const std::string& ownFolder) {
+        TextureContext context;
+        context.fixed["baseSampler"] = ownFolder + "wheel_lod0.xds";
+        const std::array<std::string_view, 4> rimSamplers{
+            "blurRimSampler1", "blurRimSampler2", "blurRimSampler3", "blurRimSampler4"};
+        const std::array<std::string_view, 4> tyreSamplers{
+            "blurTireSampler", "blurTireSampler2", "blurTireSampler3", "blurTireSampler4"};
+        for (std::size_t i = 0; i < rimSamplers.size(); ++i) {
+            context.fixed[std::string(rimSamplers[i])] = std::format("{}wheel{}.xds", ownFolder, i);
+            context.fixed[std::string(tyreSamplers[i])] = std::format("media/cars/shared/tirea{}.xds", i);
+        }
+        context.folders.car = folder;
+        context.folders.wheel = ownFolder;
+        return context;
+    };
 
     for (const Corner corner : kCorners) {
         const bool front = isFront(corner);
@@ -764,17 +928,11 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
             placement.centre = glm::vec3(shape.centreX, 0.0F, 0.0F);
             placement.scale = glm::vec3(mount.axialScale, mount.radialScale, mount.radialScale);
             placement.mirror = mount.mirrored;
-            std::vector<std::string> textureFolders;
-            if (ownRight) {
-                textureFolders.push_back(rightFolder);
-            }
-            if (wheel) {
-                textureFolders.push_back(wheelFolder);
-            }
-            builder.setWheelFolders(std::move(textureFolders));
-            builder.beginNode(CarMesh::NodeKind::Wheel, corner, mount.centre);
-            builder.addPart(ownRight ? rightFile : leftFile, part, ModelSource::Wheel,
-                ownRight ? rightMeshes : leftMeshes, placement);
+            TextureContext textures = wheelTextures(ownRight ? rightFolder : (wheel ? wheelFolder : folder));
+            builder.beginNode(CarMesh::NodeKind::Wheel, corner, mount.centre, placement,
+                ownRight ? *rightWheel : *leftBin, std::move(textures));
+            builder.addPart(
+                ownRight ? rightFile : leftFile, part, ModelSource::Wheel, ownRight ? rightMeshes : leftMeshes);
         }
         if (options.brakes) {
             const std::string code(cornerCode(corner));
@@ -788,15 +946,16 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
                     model.warnings.push_back(std::format("{}: no {} {}", file, name, upperCorner(corner)));
                     continue;
                 }
-                builder.beginNode(kind, corner, mount.centre);
+                builder.beginNode(kind, corner, mount.centre, placement, *brake, carTextures(true));
                 for (const CarBin::Part& part : brake->parts) {
-                    builder.addPart(file, part, ModelSource::Brake, meshesToDraw(part, ModelSource::Brake), placement);
+                    builder.addPart(file, part, ModelSource::Brake, meshesToDraw(part, ModelSource::Brake));
                 }
             }
         }
         model.wheels.push_back(mount);
     }
     builder.finish(options.textures);
+    checkTechniques(model);
     return model;
 }
 

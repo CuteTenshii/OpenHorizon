@@ -10,6 +10,7 @@
 #include "data/Database.h"
 #include "vfs/Vfs.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdlib>
@@ -353,8 +354,7 @@ TEST(parseReadsCarPreambleLights)
 TEST(kindFromPathFollowsFolders)
 {
     CHECK(carmodel::carbin::kindFromPath("media/wheels/alf_8c_08/alf_8c_08.carbin") == CarBin::Kind::Wheel);
-    CHECK(carmodel::carbin::kindFromPath("media/cars/alf_8c_08/alf_8c_08_rotorlf_lod0.carbin")
-        == CarBin::Kind::Brake);
+    CHECK(carmodel::carbin::kindFromPath("media/cars/alf_8c_08/alf_8c_08_rotorlf_lod0.carbin") == CarBin::Kind::Brake);
     CHECK(carmodel::carbin::kindFromPath("media/brakes/10_rotor_steel.rmb.carbin") == CarBin::Kind::Brake);
     CHECK(carmodel::carbin::kindFromPath("media/cars/alf_8c_08/alf_8c_08_lod0.carbin") == CarBin::Kind::Car);
 }
@@ -374,31 +374,43 @@ TEST(partVariantsFollowUpgradeNames)
     CHECK(!carmodel::partVariant("lexanLHL").stock);
 }
 
-TEST(materialsClassifyByName)
+TEST(techniqueNamesFollowTheExecutable)
 {
-    using carmodel::ModelSource;
-    using carmodel::Shading;
-    CHECK(carmodel::classifyMaterial("body", ModelSource::Exterior, false) == Shading::Paint);
-    CHECK(carmodel::classifyMaterial("window", ModelSource::Exterior, true) == Shading::Glass);
-    CHECK(carmodel::classifyMaterial("indicator_left", ModelSource::Exterior, false) == Shading::Lights);
-    CHECK(carmodel::classifyMaterial("chrome", ModelSource::Exterior, false) == Shading::Metal);
-    CHECK(carmodel::classifyMaterial("tire", ModelSource::Wheel, false) == Shading::Rubber);
-    CHECK(carmodel::classifyMaterial("leather", ModelSource::Cockpit, false) == Shading::Interior);
-    CHECK(carmodel::classifyMaterial("emblem", ModelSource::Exterior, false) == Shading::Decal);
+    CHECK_EQ(carmodel::techniqueName("body", "bumperFa"), std::string("body"));
+    // Brake parts draw as rotor or caliper whatever their material.
+    CHECK_EQ(carmodel::techniqueName("chrome", "rotorLF"), std::string("rotor"));
+    CHECK_EQ(carmodel::techniqueName("metal", "caliperRR"), std::string("caliper"));
+    CHECK_EQ(carmodel::techniqueName("brake_badge", "caliperRR"), std::string("brake_badge"));
+    // Cockpit parts, matched without regard to case.
+    CHECK_EQ(carmodel::techniqueName("leather", "interior"), std::string("cockpit_leather"));
+    CHECK_EQ(carmodel::techniqueName("plastic", "doorcardLF"), std::string("cockpit_plastic"));
+    CHECK_EQ(carmodel::techniqueName("leather", "headlightL"), std::string("leather"));
+    // Tyres and rims get _V2 only with the builder's flag clear.
+    CHECK_EQ(carmodel::techniqueName("rim", "wheel"), std::string("rim"));
+    CHECK_EQ(carmodel::techniqueName("rim", "wheel", false), std::string("rim_V2"));
+    CHECK_EQ(carmodel::techniqueName("wheel_black", "wheel", false), std::string("wheel_black_V2"));
+    CHECK_EQ(carmodel::techniqueName("window", "glassF"), std::string("frontwindow"));
+    CHECK_EQ(carmodel::techniqueName("window_2", "lexanF"), std::string("frontwindow_2"));
+    CHECK_EQ(carmodel::techniqueName("window", "glassLF"), std::string("window"));
+    CHECK_EQ(carmodel::missingTechnique("tire"), std::string("missingTire"));
+    CHECK_EQ(carmodel::missingTechnique("tire", false), std::string("missingTire_V2"));
+    CHECK_EQ(carmodel::missingTechnique("body"), std::string("missing"));
+    CHECK(carmodel::isTyreMaterial("sidewall"));
+    CHECK(carmodel::isTyreMaterial("ghostTire_x"));
+    CHECK(carmodel::isRimMaterial("blur_lip"));
+    CHECK(!carmodel::isRimMaterial("chrome"));
     CHECK(carmodel::isMotionBlurMaterial("blur_rim"));
+}
 
-    const auto first = [](std::string_view material, ModelSource source) {
-        const std::vector<carmodel::TextureCandidate> candidates = carmodel::diffuseTextures(material, source);
-        return candidates.empty() ? std::string() : candidates.front().file;
-    };
-    CHECK_EQ(first("body", ModelSource::Exterior), std::string("nodamage_lod0.xds"));
-    CHECK_EQ(first("taillight2S", ModelSource::Exterior), std::string("lights_lod0.xds"));
-    CHECK_EQ(first("detail_glass_red", ModelSource::Exterior), std::string("lights_lod0.xds"));
-    CHECK_EQ(first("window", ModelSource::Exterior), std::string());
-    CHECK_EQ(first("leather", ModelSource::Cockpit), std::string("interior_lod0.xds"));
-    CHECK_EQ(first("body", ModelSource::Cockpit), std::string("nodamage_lod0.xds"));
-    CHECK_EQ(first("rim", ModelSource::Wheel), std::string("wheel_lod0.xds"));
-    CHECK_EQ(first("undercarriage", ModelSource::Exterior), std::string("undercarriage.xds"));
+TEST(loadFlagsEvaluateTextureTableExpressions)
+{
+    const std::vector<std::string> set{"LOD0", "Cockpit"};
+    CHECK(carmodel::loadFlagsMatch("", set));
+    CHECK(carmodel::loadFlagsMatch("LOD0", set));
+    CHECK(carmodel::loadFlagsMatch("Cockpit & !SuperLOD", set));
+    CHECK(!carmodel::loadFlagsMatch("Cockpit & SuperLOD", set));
+    CHECK(!carmodel::loadFlagsMatch("LOD15", set));
+    CHECK(carmodel::loadFlagsMatch("!SuperLOD", set));
 }
 
 TEST(realCarsLoad)
@@ -425,9 +437,12 @@ TEST(realCarsLoad)
 
     const carmodel::CarModel alfa = carmodel::CarModel::load(vfs, db ? &*db : nullptr, "ALF_8C_08");
     CHECK(alfa.warnings.empty());
+    for (const std::string& warning : alfa.warnings) {
+        std::fprintf(stderr, "warning: %s\n", warning.c_str());
+    }
     CHECK(alfa.mesh.triangleCount() > 150000);
     CHECK_EQ(alfa.wheels.size(), std::size_t{4});
-    CHECK_EQ(alfa.mesh.vertices.size() % carmodel::CarMesh::kFloatsPerVertex, std::size_t{0});
+    CHECK_EQ(alfa.mesh.vertices.size() % carmodel::carbin::kVertexStride, std::size_t{0});
     // The collision box of maxdata.xml, less the door mirrors.
     CHECK_NEAR(alfa.mesh.boundsMin.y, -0.030, 0.02);
     CHECK_NEAR(alfa.mesh.boundsMax.y, 1.228, 0.02);
@@ -440,6 +455,27 @@ TEST(realCarsLoad)
     for (const carmodel::WheelMount& wheel : alfa.wheels) {
         CHECK_NEAR(std::abs(wheel.centre.z), 2.654 / 2.0, 0.01);
         CHECK(wheel.radius > 0.3F && wheel.radius < 0.4F);
+    }
+    // Every batch draws with a technique of the car effect, and the
+    // samplers it reads find their files.
+    CHECK(alfa.effect != nullptr);
+    for (const carmodel::CarMesh::Batch& batch : alfa.mesh.batches) {
+        CHECK(!batch.technique.starts_with("missing"));
+        if (alfa.effect) {
+            CHECK(!alfa.effect->passes(batch.technique).empty());
+        }
+        if (batch.technique == "body") {
+            CHECK(std::any_of(batch.textures.begin(), batch.textures.end(), [&](const auto& t) {
+                return t.first == "baseSampler" && alfa.textures[t.second].path.ends_with("nodamage_lod0.xds");
+            }));
+        }
+    }
+    CHECK(alfa.settings.contains("Metallic"));
+    const carmodel::ShaderSettings::Parameters* body = alfa.settings.at("Metallic").technique("body");
+    CHECK(body != nullptr);
+    if (body != nullptr) {
+        // metallic.xml's PaintScale over normal.xml's.
+        CHECK_NEAR(body->at("PaintScale").x, 0.5, 1e-6);
     }
 
     carmodel::CarModelOptions geometryOnly;

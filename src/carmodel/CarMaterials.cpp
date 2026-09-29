@@ -1,6 +1,9 @@
 #include "CarMaterials.h"
 
 #include "base/Bytes.h"
+#include "vfs/Vfs.h"
+
+#include <pugixml.hpp>
 
 #include <algorithm>
 #include <array>
@@ -11,178 +14,248 @@ namespace fh::carmodel {
 
 namespace {
 
+/// Case-insensitive search, as the executable's 0x82CC0AE0 does for part
+/// names.
+bool containsNoCase(std::string_view text, std::string_view word)
+{
+    return toLower(text).find(toLower(word)) != std::string::npos;
+}
+
 bool contains(std::string_view text, std::string_view word)
 {
     return text.find(word) != std::string_view::npos;
 }
 
-bool containsAny(std::string_view text, std::span<const std::string_view> words)
+bool startsWithAny(std::string_view text, std::span<const std::string_view> prefixes)
 {
-    for (const std::string_view word : words) {
-        if (contains(text, word)) {
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(prefixes.begin(), prefixes.end(), [&](std::string_view p) { return text.starts_with(p); });
 }
 
-// Material names of lamps: head, tail, indicator, fog, reverse, brake and
-// side lights and daytime running lights, their reflectors and the
-// `lights_*` techniques.
-constexpr std::array<std::string_view, 19> kLightWords{"light", "indicator", "fog", "reverse", "reflector", "drl",
-    "xenon", "hidhead", "oldhead", "fullbeam", "beam", "orange", "brk", "brin", "linred", "rinred", "redsec",
-    "tailside", "taillight"};
-constexpr std::array<std::string_view, 7> kMetalWords{
-    "chrome", "metal", "rim", "hub", "rotor", "caliper", "aluminum"};
-constexpr std::array<std::string_view, 4> kRubberWords{"tire", "tyre", "rubber", "weatherstrip"};
-constexpr std::array<std::string_view, 3> kPaintWords{"body", "bottom", "paint"};
-constexpr std::array<std::string_view, 9> kDecalWords{
-    "badge", "emblem", "numplate", "numberplate", "grille", "stripe", "decal", "sticker", "logo"};
-constexpr std::array<std::string_view, 11> kInteriorWords{"leather", "cloth", "gauge", "suede", "headliner",
-    "wood", "stitch", "interior", "mottled", "digital", "needle"};
-constexpr std::array<std::string_view, 3> kGlassWords{"glass", "window", "lexan"};
+bool containsAny(std::string_view text, std::span<const std::string_view> words)
+{
+    return std::any_of(words.begin(), words.end(), [&](std::string_view w) { return contains(text, w); });
+}
+
+/// Part names of the cockpit rule, in the order 0x82E62700 onwards tests
+/// them.
+constexpr std::array<std::string_view, 19> kCockpitParts{"interior", "seat", "steering_wheel", "speed", "fuel", "boost",
+    "oiltemp", "oilpressure", "watertemp", "volt", "gaugea", "gaugeb", "gaugec", "gauged", "gaugee", "gaugef", "power",
+    "doorCard", "tach"};
+/// The rule's last name, tested after "tach" at 0x82E62A18 and on.
+constexpr std::string_view kCockpitBoot = "boot";
+
+/// Materials the brake rule keeps (0x82E62590 to 0x82E626C0).
+constexpr std::array<std::string_view, 6> kBrakeKeep{
+    "ghost", "geoShadowBrake", "shadowMap", "SMask", "dropShadowBrake", "brake_badge"};
 
 /// Slots whose parts come in upgrade variants, longest first so that
 /// "exhaustL" wins over "exhaust".
-constexpr std::array<std::string_view, 11> kVariantSlots{"undercarriage", "exhaustL", "exhaustR", "bumperF",
-    "bumperR", "exhaust", "skirtL", "skirtR", "wheel", "hood", "wing"};
+constexpr std::array<std::string_view, 11> kVariantSlots{"undercarriage", "exhaustL", "exhaustR", "bumperF", "bumperR",
+    "exhaust", "skirtL", "skirtR", "wheel", "hood", "wing"};
 
-/// Cockpit materials drawn with the interior atlas; the others in the
-/// cockpit file (paint, trim and lamps of the bonnet, headlights and
-/// mirrors it shares with the outside) use the exterior's textures.
-bool isInteriorMaterial(std::string_view name)
+bool isCockpitPart(std::string_view partName)
 {
-    constexpr std::array<std::string_view, 5> kExact{"plastic", "metal", "metal2", "solid", "rubber"};
-    return containsAny(name, kInteriorWords) || name.starts_with("bump_") || name.starts_with("mirror")
-        || std::find(kExact.begin(), kExact.end(), name) != kExact.end();
+    return std::any_of(kCockpitParts.begin(), kCockpitParts.end(), [&](std::string_view p) {
+        return containsNoCase(partName, p);
+    }) || containsNoCase(partName, kCockpitBoot);
 }
 
-std::vector<TextureCandidate> carTextures(std::string_view stem)
+/// The brake rule: a rotor or caliper part draws with the technique of that
+/// name unless its material is one of the kept ones.
+std::optional<std::string> brakeTechnique(std::string_view material, std::string_view partName)
 {
-    const std::string name(stem);
-    return {{TextureFolder::Car, name + "_lod0.xds"}, {TextureFolder::Car, name + ".xds"}};
+    for (const std::string_view kind : {std::string_view("rotor"), std::string_view("caliper")}) {
+        if (!containsNoCase(partName, kind)) {
+            continue;
+        }
+        const bool kept = std::any_of(kBrakeKeep.begin(), kBrakeKeep.end(),
+            [&](std::string_view word) { return containsNoCase(material, word); });
+        if (!kept) {
+            return std::string(kind);
+        }
+    }
+    return std::nullopt;
 }
 
-std::vector<TextureCandidate> sharedTexture(std::string_view file)
+std::string_view searchFolder(std::string_view searchPath, const TextureFolders& folders)
 {
-    return {{TextureFolder::Shared, std::string(file)}};
+    if (searchPath == "%CARFOLDER%") {
+        return folders.car;
+    }
+    if (searchPath == "%WHEELFOLDER%") {
+        return folders.wheel;
+    }
+    return folders.shared;
+}
+
+std::string trim(std::string_view text)
+{
+    const std::size_t first = text.find_first_not_of(" \t");
+    if (first == std::string_view::npos) {
+        return {};
+    }
+    const std::size_t last = text.find_last_not_of(" \t");
+    return std::string(text.substr(first, last - first + 1));
 }
 
 } // namespace
 
-Shading classifyMaterial(std::string_view material, ModelSource source, bool translucent)
+bool isTyreMaterial(std::string_view material)
 {
-    const std::string name = toLower(material);
-    if (translucent) {
-        return Shading::Glass;
-    }
-    if (source == ModelSource::Wheel && contains(name, "tire")) {
-        return Shading::Rubber;
-    }
-    if (containsAny(name, kDecalWords)) {
-        return Shading::Decal;
-    }
-    if (containsAny(name, kLightWords)) {
-        return Shading::Lights;
-    }
-    if (containsAny(name, kRubberWords)) {
-        return Shading::Rubber;
-    }
-    if (containsAny(name, kMetalWords)) {
-        return Shading::Metal;
-    }
-    if (isInteriorMaterial(name)) {
-        return Shading::Interior;
-    }
-    if (containsAny(name, kPaintWords)) {
-        return Shading::Paint;
-    }
-    return Shading::Plain;
+    constexpr std::array<std::string_view, 6> kPrefixes{
+        "tire", "dropShadowTire", "sidewall", "tread", "scaling_text", "wheel_black"};
+    constexpr std::array<std::string_view, 5> kWords{"ghostTire", "geoShadowTire", "tire_", "sidewall", "tread"};
+    return startsWithAny(material, kPrefixes) || containsAny(material, kWords);
 }
 
-std::vector<TextureCandidate> diffuseTextures(std::string_view material, ModelSource source)
+bool isRimMaterial(std::string_view material)
 {
-    const std::string name = toLower(material);
-    if (source == ModelSource::Brake) {
-        return carTextures("nodamage");
-    }
-    if (source == ModelSource::Wheel) {
-        if (contains(name, "tire")) {
-            return sharedTexture("tirea0.xds");
-        }
-        if (isMotionBlurMaterial(name)) {
-            return {{TextureFolder::Wheel, "wheel0_lod0.xds"}, {TextureFolder::Wheel, "wheel0.xds"}};
-        }
-        return {{TextureFolder::Wheel, "wheel_lod0.xds"}, {TextureFolder::Wheel, "wheel.xds"}};
-    }
-    if (contains(name, "undercarriage")) {
-        return sharedTexture("undercarriage.xds");
-    }
-    if (contains(name, "bumper_frame")) {
-        return sharedTexture("bumper_frame.xds");
-    }
-    if (contains(name, "grille1")) {
-        return sharedTexture("grille1_alpha.xds");
-    }
-    if (contains(name, "grille2")) {
-        return sharedTexture("grille2_alpha.xds");
-    }
-    if (contains(name, "numplate") || contains(name, "numberplate")) {
-        return sharedTexture("traffic_numplates_dxt1.xds");
-    }
-    if (contains(name, "carbon_fiber")) {
-        return sharedTexture("carbonfiber.xds");
-    }
-    if (name.starts_with("detail_glass") || name.starts_with("lights_gls")) {
-        return carTextures("lights");
-    }
-    // Window glass and the black paint spread their coordinates over the
-    // whole atlas, crossing unrelated images: they are shaded without it.
-    if (containsAny(name, kGlassWords) || name == "black") {
-        return {};
-    }
-    if (containsAny(name, kLightWords)) {
-        return carTextures("lights");
-    }
-    if (contains(name, "gauge") || contains(name, "digital")) {
-        return {{TextureFolder::Car, "interior_emissive_lod0.xds"}, {TextureFolder::Car, "interior_lod0.xds"}};
-    }
-    if (isInteriorMaterial(name)) {
-        std::vector<TextureCandidate> candidates = carTextures("interior");
-        const std::vector<TextureCandidate> exterior = carTextures("nodamage");
-        candidates.insert(candidates.end(), exterior.begin(), exterior.end());
-        return candidates;
-    }
-    return carTextures("nodamage");
+    constexpr std::array<std::string_view, 13> kPrefixes{"rim", "ghostRim", "inner_rim", "outer_rim", "chrome_rim",
+        "chrome_blur_rim", "chrome_blur_lip", "wheel_emblem", "wheel_black", "blur_rim", "blur_lip", "dropShadowRim",
+        "geoShadowRim"};
+    return startsWithAny(material, kPrefixes) || contains(material, "rim_");
 }
 
-glm::vec4 baseColour(std::string_view material, Shading shading, bool textured)
+std::string techniqueName(std::string_view material, std::string_view partName, bool cockpitFlag)
 {
-    const std::string name = toLower(material);
-    switch (shading) {
-    case Shading::Glass:
-        return textured ? glm::vec4(1.0F, 1.0F, 1.0F, 0.5F) : glm::vec4(0.08F, 0.09F, 0.1F, 0.35F);
-    case Shading::Rubber:
-        return textured ? glm::vec4(1.0F) : glm::vec4(0.05F, 0.05F, 0.05F, 1.0F);
-    case Shading::Metal:
-        return textured ? glm::vec4(1.0F) : glm::vec4(0.7F, 0.7F, 0.72F, 1.0F);
-    case Shading::Paint:
-    case Shading::Lights:
-    case Shading::Interior:
-    case Shading::Decal:
-    case Shading::Plain:
-        break;
+    if (std::optional<std::string> brake = brakeTechnique(material, partName)) {
+        return *brake;
     }
-    if (contains(name, "black")) {
-        return glm::vec4(0.03F, 0.03F, 0.03F, 1.0F);
+    if (cockpitFlag && isCockpitPart(partName) && !contains(material, "shadowMap")) {
+        return "cockpit_" + std::string(material);
     }
-    return textured ? glm::vec4(1.0F) : glm::vec4(0.5F, 0.5F, 0.5F, 1.0F);
+    if (!cockpitFlag && (isTyreMaterial(material) || isRimMaterial(material))) {
+        return std::string(material) + "_V2";
+    }
+    if (partName == "glassF" || partName == "lexanF") {
+        if (material == "window") {
+            return "frontwindow";
+        }
+        if (material == "window_2") {
+            return "frontwindow_2";
+        }
+    }
+    return std::string(material);
+}
+
+std::string missingTechnique(std::string_view material, bool cockpitFlag)
+{
+    if (isTyreMaterial(material)) {
+        return cockpitFlag ? "missingTire" : "missingTire_V2";
+    }
+    return "missing";
 }
 
 bool isMotionBlurMaterial(std::string_view material)
 {
-    const std::string name = toLower(material);
-    return contains(name, "blur");
+    return contains(toLower(material), "blur");
+}
+
+bool loadFlagsMatch(std::string_view flags, const std::vector<std::string>& set)
+{
+    std::size_t start = 0;
+    while (start <= flags.size()) {
+        const std::size_t end = std::min(flags.find('&', start), flags.size());
+        std::string term = trim(flags.substr(start, end - start));
+        if (!term.empty()) {
+            const bool negated = term.front() == '!';
+            if (negated) {
+                term = trim(std::string_view(term).substr(1));
+            }
+            const bool isSet = std::any_of(
+                set.begin(), set.end(), [&](const std::string& f) { return toLower(f) == toLower(term); });
+            if (isSet == negated) {
+                return false;
+            }
+        }
+        start = end + 1;
+    }
+    return true;
+}
+
+CarTextureTable CarTextureTable::load(const Vfs& vfs)
+{
+    CarTextureTable table;
+    const std::optional<std::string> text = vfs.readText("media/cars/shared/textures.xml");
+    if (!text) {
+        return table;
+    }
+    pugi::xml_document doc;
+    if (!doc.load_buffer(text->data(), text->size())) {
+        return table;
+    }
+    for (const pugi::xml_node sampler : doc.child("TextureDefinitions").children()) {
+        std::vector<Entry>& entries = table.m_samplers[sampler.name()];
+        for (const pugi::xml_node texture : sampler.children("Texture")) {
+            entries.push_back({texture.attribute("value").as_string(), texture.attribute("searchPath").as_string(),
+                texture.attribute("loadFlags").as_string()});
+        }
+    }
+    return table;
+}
+
+std::optional<std::string> CarTextureTable::resolve(
+    std::string_view sampler, const std::vector<std::string>& flags, const TextureFolders& folders) const
+{
+    const auto found = m_samplers.find(sampler);
+    if (found == m_samplers.end()) {
+        return std::nullopt;
+    }
+    for (const Entry& entry : found->second) {
+        if (loadFlagsMatch(entry.loadFlags, flags)) {
+            return std::string(searchFolder(entry.searchPath, folders)) + toLower(entry.file);
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<ShaderSettings> ShaderSettings::load(const Vfs& vfs, const std::string& path)
+{
+    const std::optional<std::string> text = vfs.readText(path);
+    if (!text) {
+        return std::nullopt;
+    }
+    pugi::xml_document doc;
+    if (!doc.load_buffer(text->data(), text->size())) {
+        return std::nullopt;
+    }
+    ShaderSettings settings;
+    for (const pugi::xml_node technique : doc.child("ShaderSettings").children()) {
+        if (technique.type() != pugi::node_element) {
+            continue;
+        }
+        Parameters& parameters = settings.m_techniques[technique.name()];
+        for (const pugi::xml_node parameter : technique.children()) {
+            const std::string_view name = parameter.name();
+            if (parameter.type() != pugi::node_element || name.starts_with("D3DRS_")) {
+                continue;
+            }
+            if (const pugi::xml_attribute value = parameter.attribute("value")) {
+                parameters[std::string(name)] = glm::vec4(value.as_float(), 0.0F, 0.0F, 0.0F);
+            } else if (parameter.attribute("r")) {
+                parameters[std::string(name)]
+                    = glm::vec4(parameter.attribute("r").as_float(), parameter.attribute("g").as_float(),
+                        parameter.attribute("b").as_float(), parameter.attribute("a").as_float());
+            }
+        }
+    }
+    return settings;
+}
+
+void ShaderSettings::overlay(const ShaderSettings& other)
+{
+    for (const auto& [technique, parameters] : other.m_techniques) {
+        Parameters& mine = m_techniques[technique];
+        for (const auto& [name, value] : parameters) {
+            mine[name] = value;
+        }
+    }
+}
+
+const ShaderSettings::Parameters* ShaderSettings::technique(std::string_view technique) const
+{
+    const auto found = m_techniques.find(technique);
+    return found == m_techniques.end() ? nullptr : &found->second;
 }
 
 PartVariant partVariant(std::string_view partName)

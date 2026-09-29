@@ -3,92 +3,125 @@
 #include <glm/vec4.hpp>
 
 #include <cstdint>
+#include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+namespace fh {
+class Vfs;
+} // namespace fh
+
 namespace fh::carmodel {
 
-/// How a batch should be lit and blended, from its material name.
-enum class Shading : std::uint8_t {
-    /// Opaque, lit with the diffuse texture (trim, frame, plastics).
-    Plain,
-    /// Car paint: the diffuse texture tinted with the body colour.
-    Paint,
-    /// Translucent glass, drawn after the opaque batches.
-    Glass,
-    /// Lamps and their reflectors, which glow when switched on.
-    Lights,
-    /// Chrome and bare metal: mostly reflection.
-    Metal,
-    /// Tyres, rubber seals.
-    Rubber,
-    /// Cockpit trim.
-    Interior,
-    /// Alpha-tested overlays: badges, number plates, grilles.
-    Decal,
-};
-
-/// Folder a texture is looked up in.
-enum class TextureFolder : std::uint8_t {
-    /// `media/cars/<car>/`.
-    Car,
-    /// `media/cars/shared/`.
-    Shared,
-    /// `media/wheels/<wheel>/`.
-    Wheel,
-};
-
-/// A texture file a material may use, in order of preference.
-struct TextureCandidate {
-    TextureFolder folder = TextureFolder::Car;
-    std::string file;
-};
-
-/// Where a material's mesh comes from, which decides the default texture of
-/// materials that do not name one.
+/// Which carbin a mesh comes from.
 enum class ModelSource : std::uint8_t { Exterior, Cockpit, Wheel, Brake };
 
-/// Shading of a material. `translucent` is the model's own verdict (its draw
-/// lists), which wins over the name: opaque meshes named after glass, such as
-/// the blackened `black_glass` border, stay opaque.
+/// The technique of `media/shaders/cars/shaders_v16.fxobj` that draws a
+/// mesh, built from its material name the way the executable's name builder
+/// does (0x82E62418, called per mesh from 0x82E63204):
 ///
-/// The game binds every in-race material to a technique of
-/// `media/shaders/cars/shaders_v16.fxobj` (the separate `<name>.fxobj`
-/// shaders are listed in `customcarshaders.xml` as showroom-only). That
-/// effect's technique table is not decoded, so the classification is by
-/// name; the word lists come from the material names used by the 176 cars.
-Shading classifyMaterial(std::string_view material, ModelSource source, bool translucent);
-
-/// Diffuse texture files for a material, best first; empty for materials
-/// drawn without one (chrome, rubber, calipers, which the game tints).
+/// - parts whose names contain rotor or caliper draw with the techniques
+///   `rotor` and `caliper`, whatever their material (unless it is a shadow,
+///   ghost or brake badge material);
+/// - with the builder's flag set, parts whose names contain interior, seat,
+///   steering_wheel, a gauge name (speed, tach, fuel, boost, oiltemp,
+///   oilpressure, watertemp, volt, gaugea to gaugef, power), doorCard or boot
+///   get `cockpit_` before the material; with it clear, tyre and rim
+///   materials (the tests at 0x82E54180 and 0x82E542C0) get `_V2` after it;
+/// - the windscreen parts `glassF` and `lexanF` turn `window` into
+///   `frontwindow` and `window_2` into `frontwindow_2`.
 ///
-/// Sampler bindings are those of `media/cars/shared/textures.xml` for the
-/// in-race (non-"SuperLOD") entries, plus the executable's fixed `nodamage`
-/// for baseSampler. The choice of sampler per material is by name, checked
-/// by laying each material's texture coordinates over the candidate
-/// textures: exterior materials and brakes use the car's
-/// `nodamage_lod0.xds` atlas (which holds the brake disc and caliper
-/// badge), lamps and lamp lenses (`detail_glass_*`) `lights_lod0.xds`,
-/// cockpit trim `interior_lod0.xds`, wheel rims the wheel's
-/// `wheel_lod0.xds`, blurred rims `wheel0.xds`, tyres the shared
-/// `tirea0.xds`, and shared-texture materials (undercarriage, bumper frame,
-/// grilles, number plates, carbon fibre) their files in `media/cars/shared`.
-/// Window glass and `black` have none: their coordinates cross the atlas
-/// without following its images.
-std::vector<TextureCandidate> diffuseTextures(std::string_view material, ModelSource source);
+/// Verified: those rules and the strings they test. Not traced: where the
+/// flag comes from. It is taken as set: that is the only setting under which
+/// every material of the disc's models names a technique of the effect (the
+/// cockpit materials exist only as `cockpit_` techniques, and 272 of the 290
+/// wheel models use `outer_rim` and `wheel_black`, which have no `_V2`
+/// technique). The executable's ghost, engine bay and SuperLOD variants are
+/// not applied: they belong to modes this renderer does not draw.
+std::string techniqueName(std::string_view material, std::string_view partName, bool cockpitFlag = true);
 
-/// A colour to multiply the diffuse texture by (or to use alone when
-/// `textured` is false), RGBA 0 to 1: dark tinted translucent glass, near
-/// black for rubber and black trim, light grey metal, white otherwise; paint
-/// is white for the renderer to tint with the body colour. Chosen by name;
-/// the game's own material constants are not decoded.
-glm::vec4 baseColour(std::string_view material, Shading shading, bool textured);
+/// The technique the executable falls back to when an effect lacks the
+/// named one (0x82E75BB8 and 0x82E763C0): a tyre technique for tyre
+/// materials (`missingTire` with the flag above set, `missingTire_V2`
+/// without), `missing` otherwise.
+std::string missingTechnique(std::string_view material, bool cockpitFlag = true);
+
+/// True for tyre materials (0x82E54180).
+bool isTyreMaterial(std::string_view material);
+/// True for rim materials (0x82E542C0).
+bool isRimMaterial(std::string_view material);
 
 /// True for meshes that stand in for a spinning wheel at speed (blurred
 /// rims and tyre lips); a renderer shows them instead of the sharp ones
 /// above some wheel speed.
 bool isMotionBlurMaterial(std::string_view material);
+
+/// Folders a car's textures are looked up in, as `media/cars/shared/
+/// textures.xml` names them.
+struct TextureFolders {
+    /// %CARFOLDER%: `media/cars/<car>/`.
+    std::string car;
+    /// %SHAREDCARFOLDER%: `media/cars/shared/`.
+    std::string shared = "media/cars/shared/";
+    /// %WHEELFOLDER%: `media/wheels/<wheel>/`.
+    std::string wheel;
+};
+
+/// The sampler-to-file table of `media/cars/shared/textures.xml`: for each
+/// sampler name of the car effects, texture files with a search folder and
+/// the load flags that select them (LOD0, LOD15, SuperLOD, Cockpit,
+/// InGameTextures, CarCommon, combined with `&` and `!`).
+class CarTextureTable {
+public:
+    struct Entry {
+        std::string file;
+        /// "%CARFOLDER%", "%SHAREDCARFOLDER%" or "%WHEELFOLDER%".
+        std::string searchPath;
+        std::string loadFlags;
+    };
+
+    /// Reads the table; empty when the file is missing.
+    static CarTextureTable load(const Vfs& vfs);
+
+    /// The game path of the texture for `sampler` in a model loaded with
+    /// `flags` set (every other flag clear), or nothing when no entry of the
+    /// sampler matches or the table does not list it.
+    std::optional<std::string> resolve(
+        std::string_view sampler, const std::vector<std::string>& flags, const TextureFolders& folders) const;
+
+    const std::map<std::string, std::vector<Entry>, std::less<>>& samplers() const { return m_samplers; }
+
+private:
+    std::map<std::string, std::vector<Entry>, std::less<>> m_samplers;
+};
+
+/// Whether `flags` (a textures.xml loadFlags expression: names joined by
+/// `&`, each optionally negated with `!`) holds for the set flags `set`.
+bool loadFlagsMatch(std::string_view flags, const std::vector<std::string>& set);
+
+/// Material parameters from the game's shader settings files: per technique,
+/// parameter values by name. `<Name value="v"/>` is (v, 0, 0, 0), `<Name r=
+/// g= b= a=/>` a colour. Render state entries (`D3DRS_...`) and sampler
+/// entries (no value) are left out.
+class ShaderSettings {
+public:
+    using Parameters = std::map<std::string, glm::vec4, std::less<>>;
+
+    /// Reads one settings file; nothing when it is missing or malformed.
+    static std::optional<ShaderSettings> load(const Vfs& vfs, const std::string& path);
+
+    /// Adds `other`'s values over these, technique by technique.
+    void overlay(const ShaderSettings& other);
+
+    /// The parameters of `technique`, or nullptr.
+    const Parameters* technique(std::string_view technique) const;
+    bool empty() const { return m_techniques.empty(); }
+
+private:
+    std::map<std::string, Parameters, std::less<>> m_techniques;
+};
 
 /// Upgrade variant of a part, from its name: exterior parts that the game
 /// swaps for upgrades are named `<slot><letter>`, where `a` is the stock part
