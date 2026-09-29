@@ -9,6 +9,7 @@
 #include <cmath>
 #include <functional>
 #include <numbers>
+#include <utility>
 
 namespace fh::ui {
 
@@ -156,6 +157,9 @@ Presentation::Presentation(SceneFiles files)
             elements.erase(std::unique(elements.begin(), elements.end()), elements.end());
             timeline.listed.push_back(std::move(elements));
         }
+        for (const int s : timeline.slides) {
+            timeline.eventBehaviours.push_back(eventBehavioursOf(bgf.slides[static_cast<std::size_t>(s)]));
+        }
         enterSlide(timeline, timeline.slides.size() > 1 ? 1 : 0);
     }
 
@@ -269,6 +273,70 @@ const Slide& Presentation::slideOf(const Timeline& timeline) const
     return m_files.bgf.slides[static_cast<std::size_t>(timeline.slides[static_cast<std::size_t>(timeline.current)])];
 }
 
+std::vector<Presentation::EventBehaviour> Presentation::eventBehavioursOf(const Slide& slide) const
+{
+    const BgfFile& bgf = m_files.bgf;
+    static const std::uint32_t kEventName = anarkHash("eventName");
+    static const std::uint32_t kTarget = anarkHash("TARGET");
+    static const std::uint32_t kTimeOffset = anarkHash("timeoffset");
+    std::vector<EventBehaviour> behaviours;
+    for (const SlideEntry& entry : slide.entries) {
+        if (!entry.active || bgf.elements[entry.element].kind != ElementKind::Behavior) {
+            continue;
+        }
+        // The slide's values first, then the element's own.
+        EventBehaviour behaviour;
+        behaviour.element = static_cast<int>(entry.element);
+        bool hasEvent = false;
+        bool hasTime = false;
+        for (const std::vector<Attribute>* attributes : {&entry.attributes, &bgf.elements[entry.element].attributes}) {
+            for (const Attribute& attribute : *attributes) {
+                const bool text = attribute.type == static_cast<std::uint8_t>(AttributeType::ContractPath)
+                    || attribute.type == static_cast<std::uint8_t>(AttributeType::ContractString);
+                if (text && attribute.raw < bgf.strings.size()) {
+                    if (attribute.hash == kEventName && !hasEvent) {
+                        behaviour.event = bgf.strings[attribute.raw];
+                        hasEvent = true;
+                    } else if (attribute.hash == kTarget && behaviour.target.empty()) {
+                        behaviour.target = bgf.strings[attribute.raw];
+                    }
+                } else if (attribute.hash == kTimeOffset && !hasTime) {
+                    behaviour.timeMs = static_cast<float>(static_cast<std::int32_t>(attribute.raw));
+                    hasTime = true;
+                }
+            }
+        }
+        if (hasEvent && !behaviour.target.empty()) {
+            behaviours.push_back(std::move(behaviour));
+        }
+    }
+    return behaviours;
+}
+
+void Presentation::fireEventBehaviours(Timeline& timeline, float fromMs, float toMs)
+{
+    const std::size_t slide = static_cast<std::size_t>(timeline.current);
+    if (slide >= timeline.eventBehaviours.size()) {
+        return;
+    }
+    // Copied: an event can change the slide and so the list.
+    const std::vector<EventBehaviour> behaviours = timeline.eventBehaviours[slide];
+    for (const EventBehaviour& behaviour : behaviours) {
+        if (behaviour.timeMs > fromMs && behaviour.timeMs <= toMs) {
+            const int target = resolvePath(behaviour.element, behaviour.target);
+            if (target >= 0) {
+                m_firedEvents.push_back({target, behaviour.event});
+                fireEvent(target, behaviour.event);
+            }
+        }
+    }
+}
+
+std::vector<Presentation::FiredEvent> Presentation::takeFiredEvents()
+{
+    return std::exchange(m_firedEvents, {});
+}
+
 void Presentation::enterSlide(Timeline& timeline, int slideIndex)
 {
     timeline.current = slideIndex;
@@ -379,6 +447,16 @@ bool Presentation::goToSlide(int component, std::string_view slide)
     return false;
 }
 
+bool Presentation::goToSlideIndex(int component, int index)
+{
+    const auto it = m_timelines.find(component);
+    if (it == m_timelines.end() || index < 0 || static_cast<std::size_t>(index) >= it->second.slides.size()) {
+        return false;
+    }
+    enterSlide(it->second, index);
+    return true;
+}
+
 std::string Presentation::currentSlide(int component) const
 {
     const auto it = m_timelines.find(component);
@@ -486,11 +564,13 @@ int Presentation::contractParameter(int contractElement, std::string_view parame
         return -1;
     }
     const std::string* path = stringAttribute(contractElement, anarkHash(parameter));
-    if (!path) {
-        return -1;
-    }
-    int current = contractElement;
-    std::string_view rest = *path;
+    return path ? resolvePath(contractElement, *path) : -1;
+}
+
+int Presentation::resolvePath(int from, std::string_view path) const
+{
+    int current = from;
+    std::string_view rest = path;
     while (!rest.empty() && current >= 0) {
         const std::size_t dot = rest.find('.');
         const std::string_view step = rest.substr(0, dot);
@@ -685,8 +765,17 @@ void Presentation::update(float dtSeconds)
         if (timeline.paused || timeline.stopped) {
             continue;
         }
+        const int slideBefore = timeline.current;
+        // A slide just entered has not passed its start yet.
+        const float before = timeline.elapsedMs > 0.0F ? timeline.timeMs : -1.0F;
         timeline.elapsedMs += dtMs;
         resolveTime(timeline);
+        if (timeline.timeMs >= before) {
+            fireEventBehaviours(timeline, before, timeline.timeMs);
+        }
+        if (timeline.current != slideBefore) {
+            continue;
+        }
         const Slide& slide = slideOf(timeline);
         if (timeline.stopped && slide.nextAtEnd && !slide.pingPong
             && static_cast<std::size_t>(timeline.current) + 1 < timeline.slides.size()) {

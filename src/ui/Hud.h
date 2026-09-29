@@ -13,6 +13,33 @@ class Vfs;
 
 namespace fh::ui {
 
+/// A request to show the radio panel (the HUD_RADIO control), as the game's
+/// radio status (CHudStatusRadio) carries it.
+struct HudRadioRequest {
+    /// The station's index in the radio's tunable order, the off station
+    /// last: the panel shows the logo of slide `station + 1` of the scene's
+    /// RSLogos component (BASSARENA, PULSE, 2ELEVEN, OFF).
+    int station = 0;
+    /// Empty hides the line (SHOW_/HIDE_TRACK_NAME, SHOW_/HIDE_ARTIST_NAME).
+    std::string title;
+    std::string artist;
+};
+
+/// Something the minimap marks, matched against the map profile's group
+/// filters (media/ui/MapProfileMinimap.xml). The track's fixed activities
+/// (festival buildings, street race hubs) are loaded by the HUD itself.
+struct HudMapMarker {
+    /// The tag and value, such as {"activity_type", "race"} for a race start
+    /// (see careerEventActivityType in Minimap.h) or {"vehicle_type", "ai"}
+    /// for an opponent in a race.
+    std::string key;
+    std::string value;
+    /// World x and z.
+    glm::vec2 position{0.0F};
+    /// Radians, 0 facing +z, increasing towards +x.
+    float heading = 0.0F;
+};
+
 /// What the HUD shows in one frame. Each field feeds the HUD control the
 /// game itself drives with it; the comments name that control.
 struct HudState {
@@ -80,6 +107,16 @@ struct HudState {
     glm::vec2 playerMapPosition{0.0F};
     float playerHeading = 0.0F;
     float speedMetresPerSecond = 0.0F;
+    /// Race starts and other cars for the minimap.
+    std::vector<HudMapMarker> mapMarkers;
+
+    /// Set on the frame a radio panel request arrives (for the radio module,
+    /// on the frame Radio::takeHudRequest() returns one), empty otherwise.
+    std::optional<HudRadioRequest> radio;
+    /// Shows the "tuning" note (HUD_RADIO_TUNING) while true. The game
+    /// raises it through a status of its own (CHudStatusRadioTuning) whose
+    /// trigger was not found; leave it false unless the radio says so.
+    bool radioTuning = false;
 
     /// Seconds since the previous frame.
     float dt = 0.0F;

@@ -137,6 +137,28 @@ glm::vec4 colorOf(const MapSymbolizer& symbolizer)
     return symbolizer.primary.value_or(glm::vec4(255.0F)) / 255.0F;
 }
 
+enum class IconOrientation : std::uint8_t { None, Entity, Facing };
+
+/// How an icon symbolizer turns, as the symbolizer factories set it: the
+/// engine's (0x82d98710: "icon" 0, "icon_facing" 1) and the game's
+/// (0x826cdfa0: the vehicle icons are built facing, the career icons with
+/// the orientation their name gives). Only the career icons' base variant
+/// is drawn: the ring colour, the finished wreath, the note and the "new"
+/// badge (variants 0, 2, 3, 4) follow career progress this game does not
+/// keep, and the "up" orientation takes an angle whose source was not
+/// traced.
+IconOrientation iconOrientation(std::string_view type)
+{
+    if (type == "icon") {
+        return IconOrientation::Entity;
+    }
+    if (type == "icon_facing" || type == "icon_facing_career" || type == "icon_ai_vehicle"
+        || type == "icon_festival_vehicle" || type == "icon_online_vehicle") {
+        return IconOrientation::Facing;
+    }
+    return IconOrientation::None;
+}
+
 std::string lower(std::string text)
 {
     std::transform(
@@ -145,6 +167,73 @@ std::string lower(std::string text)
 }
 
 } // namespace
+
+std::string_view careerEventActivityType(int careerEventStyle)
+{
+    switch (careerEventStyle) {
+    case 1:
+    case 4:
+    case 6:
+        return "race";
+    case 2:
+        return "streetrace";
+    case 3:
+        return "exhibition";
+    case 5:
+        return "nemesisrace";
+    default:
+        return {};
+    }
+}
+
+std::vector<MapMarker> loadActivityMarkers(const Vfs& vfs, const std::string& track)
+{
+    const std::string objectsPath = std::format("media/tracks/{}/Ribbon_00/GameObjs.xml", track);
+    const Bytes objects = vfs.readOrThrow(objectsPath);
+    pugi::xml_document objectDocument;
+    if (!objectDocument.load_buffer(objects.data(), objects.size())) {
+        throw DataError("{}: not XML", objectsPath);
+    }
+    std::unordered_map<std::string, glm::vec2> positions;
+    for (const pugi::xml_node object : objectDocument.child("GameObjs").children()) {
+        const pugi::xml_node pos = object.child("Pos");
+        positions.emplace(object.attribute("GameplayID").as_string(),
+            glm::vec2(pos.attribute("x").as_float(), pos.attribute("z").as_float()));
+    }
+
+    std::vector<MapMarker> markers;
+    std::vector<std::string> seen;
+    for (const std::string& path : vfs.list(std::format("media/gamemodes/{}", track))) {
+        if (!endsWithNoCase(path, ".xml") || path.find("/cutscenes/") != std::string::npos) {
+            continue;
+        }
+        const std::optional<Bytes> data = vfs.read(path);
+        pugi::xml_document document;
+        if (!data || !document.load_buffer(data->data(), data->size())) {
+            continue;
+        }
+        for (const pugi::xml_node activity : document.child("ActivityManager").children("Activity")) {
+            if (std::string_view(activity.attribute("type").as_string()) == "ActivityBarnFind") {
+                continue;
+            }
+            for (const pugi::xml_node zone : activity.children("TriggerZone")) {
+                const std::string tag = zone.attribute("mapTag").as_string();
+                const std::string object = zone.attribute("object").as_string();
+                const auto it = positions.find(object);
+                if (tag.empty() || it == positions.end()) {
+                    continue;
+                }
+                const std::string key = std::format("{}/{}", object, tag);
+                if (std::find(seen.begin(), seen.end(), key) != seen.end()) {
+                    continue;
+                }
+                seen.push_back(key);
+                markers.push_back({"activity_type", tag, it->second, 0.0F});
+            }
+        }
+    }
+    return markers;
+}
 
 std::string_view NavWay::tag(std::string_view key) const
 {
@@ -390,6 +479,7 @@ MinimapRenderer::MinimapRenderer(const Vfs& vfs, UiRenderer& renderer, const std
     m_profile = MapProfile::parse(
         std::string_view(reinterpret_cast<const char*>(profile.data()), profile.size()), kProfilePath, kProfileName);
     m_tuning = SatNavTuning::load(vfs);
+    m_activityMarkers = loadActivityMarkers(vfs, track);
     m_program = UiProgram("minimap", kVertexShader, kFragmentShader);
     buildRoads();
     m_viewProjection = m_program.location("uViewProjection");
@@ -482,25 +572,18 @@ void MinimapRenderer::appendLine(
     }
 }
 
-void MinimapRenderer::appendIcon(
-    glm::vec2 centre, glm::vec2 direction, float halfSize, const MapSymbolizer& symbolizer, const glm::vec4& color)
+void MinimapRenderer::appendIcon(const glm::vec3& centre, const glm::vec3& across, const glm::vec3& up,
+    const MapSymbolizer& symbolizer, const glm::vec4& color)
 {
-    // An "icon" symbolizer lies on the ground, turned along its entity's
-    // direction (0x82da76a0, orientation mode 0), with its corners the size
-    // away along both axes. Which corner of the atlas cell faces forward
-    // is not traced: the cell's top is put forward.
-    const glm::vec2 forward = direction * halfSize;
-    const glm::vec2 side = glm::vec2(direction.y, -direction.x) * halfSize;
     const float u0 = static_cast<float>(symbolizer.atlasX) / static_cast<float>(symbolizer.atlasColumns);
     const float u1 = static_cast<float>(symbolizer.atlasX + 1) / static_cast<float>(symbolizer.atlasColumns);
     const float v0 = static_cast<float>(symbolizer.atlasY) / static_cast<float>(symbolizer.atlasRows);
     const float v1 = static_cast<float>(symbolizer.atlasY + 1) / static_cast<float>(symbolizer.atlasRows);
-    const auto ground = [](glm::vec2 p) { return glm::vec3(p.x, 0.0F, p.y); };
-    const Vertex frontLeft{ground(centre + forward - side), glm::vec2(u0, v0), color};
-    const Vertex frontRight{ground(centre + forward + side), glm::vec2(u1, v0), color};
-    const Vertex backLeft{ground(centre - forward - side), glm::vec2(u0, v1), color};
-    const Vertex backRight{ground(centre - forward + side), glm::vec2(u1, v1), color};
-    m_vertices.insert(m_vertices.end(), {frontLeft, frontRight, backLeft, frontRight, backRight, backLeft});
+    const Vertex topLeft{centre + up - across, glm::vec2(u0, v0), color};
+    const Vertex topRight{centre + up + across, glm::vec2(u1, v0), color};
+    const Vertex bottomLeft{centre - up - across, glm::vec2(u0, v1), color};
+    const Vertex bottomRight{centre - up + across, glm::vec2(u1, v1), color};
+    m_vertices.insert(m_vertices.end(), {topLeft, topRight, bottomLeft, topRight, bottomRight, bottomLeft});
 }
 
 void MinimapRenderer::buildRoads()
@@ -543,7 +626,8 @@ void MinimapRenderer::buildRoads()
     m_roadVertexCount = m_vertices.size();
 }
 
-GLuint MinimapRenderer::render(glm::vec2 position, float heading, float speedMetresPerSecond, int size)
+GLuint MinimapRenderer::render(
+    glm::vec2 position, float heading, float speedMetresPerSecond, int size, const std::vector<MapMarker>& markers)
 {
     size = std::max(8, size);
     ensureTarget(size);
@@ -551,19 +635,25 @@ GLuint MinimapRenderer::render(glm::vec2 position, float heading, float speedMet
 
     m_vertices.resize(m_roadVertexCount);
     m_batches = m_roadBatches;
-    const glm::vec2 playerDirection(std::sin(heading), std::cos(heading));
+
+    std::vector<MapMarker> all = m_activityMarkers;
+    all.insert(all.end(), markers.begin(), markers.end());
+    all.push_back({kPlayerFilterTag, kPlayerFilterValue, position, heading});
     for (const MapGroup& group : m_profile.groups) {
-        if (group.filterTag != kPlayerFilterTag || group.filterValue != kPlayerFilterValue) {
+        std::vector<const MapMarker*> matched;
+        for (const MapMarker& marker : all) {
+            if (!group.filterTag.empty() && marker.key == group.filterTag && marker.value == group.filterValue) {
+                matched.push_back(&marker);
+            }
+        }
+        if (matched.empty()) {
             continue;
         }
         for (const MapSymbolizer& symbolizer : group.symbolizers) {
-            if (symbolizer.type != "icon" || symbolizer.texture.empty()) {
+            const IconOrientation orientation = iconOrientation(symbolizer.type);
+            if (orientation == IconOrientation::None || symbolizer.texture.empty()) {
                 continue;
             }
-            const float scale = symbolizer.dynamicSize ? kDynamicSizeBase : 1.0F;
-            const float reference = symbolizer.dynamicSize ? kDynamicSizeReference : 1.0F;
-            const float depth = camera.depth(glm::vec3(position.x, 0.0F, position.y));
-            const float halfSize = symbolizer.size * (scale + (1.0F - scale) * depth / reference);
             std::string path = lower("media/ui/textures/" + symbolizer.texture);
             std::replace(path.begin(), path.end(), '\\', '/');
             Batch batch;
@@ -571,8 +661,27 @@ GLuint MinimapRenderer::render(glm::vec2 position, float heading, float speedMet
             batch.technique = 2;
             batch.texture = m_renderer.texture(texturePathForScene(path));
             batch.first = m_vertices.size();
-            if (batch.texture) {
-                appendIcon(position, playerDirection, halfSize, symbolizer, colorOf(symbolizer));
+            if (!batch.texture) {
+                continue;
+            }
+            const float scale = symbolizer.dynamicSize ? kDynamicSizeBase : 1.0F;
+            const float reference = symbolizer.dynamicSize ? kDynamicSizeReference : 1.0F;
+            for (const MapMarker* marker : matched) {
+                const glm::vec3 centre(marker->position.x, 0.0F, marker->position.y);
+                const float depth = camera.depth(centre);
+                const float halfSize = symbolizer.size * (scale + (1.0F - scale) * depth / reference);
+                if (orientation == IconOrientation::Entity) {
+                    // "icon" (mode 0, 0x82da76a0) lies on the ground turned
+                    // with its entity. Which way the atlas cell faces is not
+                    // traced: its top is put forward.
+                    const glm::vec3 forward(std::sin(marker->heading), 0.0F, std::cos(marker->heading));
+                    const glm::vec3 side(forward.z, 0.0F, -forward.x);
+                    appendIcon(centre, side * halfSize, forward * halfSize, symbolizer, colorOf(symbolizer));
+                } else {
+                    // Facing (mode 1): upright on screen, along the camera's
+                    // right and up vectors.
+                    appendIcon(centre, camera.right * halfSize, camera.up * halfSize, symbolizer, colorOf(symbolizer));
+                }
             }
             batch.count = m_vertices.size() - batch.first;
             if (batch.count > 0) {

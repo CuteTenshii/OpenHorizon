@@ -26,6 +26,7 @@
 #include <format>
 #include <fstream>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -45,14 +46,16 @@ int usage()
         "       fh1ui DISC render OUT.png [--race] [--sprint] [--countdown S] [--prompt] [--assists]\n"
         "                                 [--size WxH] [--time S] [--rpm R] [--rpm-rate R]\n"
         "                                 [--speed S] [--metric] [--at X,Z] [--heading DEG]\n"
-        "                                 [--track NAME]\n"
+        "                                 [--track NAME] [--radio STATION[,TITLE[,ARTIST]]] [--radio-tuning]\n"
+        "                                 [--marker KEY=VALUE@X,Z[,DEG]]...\n"
         "  DISC      the extracted disc (its root or its media folder)\n"
         "  PATH      a scene without extension, such as 947_HUD or\n"
         "            media/cars/<car>/digitalgauge/dash_<car>_p; a texture's game path\n"
         "  string    prints the text of a string id (such as IDS_Best) in every table that has it\n"
         "  render    draws the HUD for a sample free-roam state, or a circuit race with --race\n"
         "            (a point-to-point one with --sprint), --countdown S seconds into the start countdown,\n"
-        "            the player at world X,Z facing DEG (0 north, 90 east),\n"
+        "            the player at world X,Z facing DEG (0 north, 90 east), a radio panel request on the\n"
+        "            first frame (station index, the off station last),\n"
         "            run for --time seconds (with the revs changing by --rpm-rate per second);\n"
         "            set SDL_VIDEO_DRIVER=offscreen to render without a window\n");
     return 2;
@@ -381,6 +384,10 @@ struct RenderOptions {
     float speed = 87.0F;
     bool metric = false;
     std::string track = "colorado";
+    /// A radio panel request on the first frame.
+    std::optional<HudRadioRequest> radio;
+    bool radioTuning = false;
+    std::vector<HudMapMarker> markers;
     glm::vec2 at{-1500.0F, 800.0F};
     float headingDegrees = 35.0F;
     int width = 1280;
@@ -434,6 +441,8 @@ HudState sampleState(const RenderOptions& options)
         }
     }
     state.speedMetresPerSecond = state.speedKmh / 3.6F;
+    state.radioTuning = options.radioTuning;
+    state.mapMarkers = options.markers;
     return state;
 }
 
@@ -452,6 +461,7 @@ int renderHud(const fh::Vfs& vfs, const std::string& out, const RenderOptions& o
     double hudSeconds = 0.0;
     for (int frame = 0; frame < frames; ++frame) {
         state.dt = kStep;
+        state.radio = frame == 0 ? options.radio : std::nullopt;
         state.rpm += options.rpmRate * kStep;
         if (options.countdown >= 0.0F) {
             state.countdownElapsed = options.countdown - kStep * static_cast<float>(frames - 1 - frame);
@@ -551,6 +561,43 @@ int main(int argc, char** argv)
                         return usage();
                     }
                     options.at = {std::stof(at.substr(0, comma)), std::stof(at.substr(comma + 1))};
+                } else if (arg == "--radio") {
+                    // STATION[,TITLE[,ARTIST]]
+                    const std::string spec = value();
+                    HudRadioRequest request;
+                    const std::size_t first = spec.find(',');
+                    request.station = std::stoi(spec.substr(0, first));
+                    if (first != std::string::npos) {
+                        const std::size_t second = spec.find(',', first + 1);
+                        request.title = spec.substr(
+                            first + 1, second == std::string::npos ? std::string::npos : second - first - 1);
+                        if (second != std::string::npos) {
+                            request.artist = spec.substr(second + 1);
+                        }
+                    }
+                    options.radio = request;
+                } else if (arg == "--marker") {
+                    // KEY=VALUE@X,Z[,HEADING_DEG]
+                    const std::string spec = value();
+                    const std::size_t equals = spec.find('=');
+                    const std::size_t at = spec.find('@');
+                    const std::size_t comma = spec.find(',', at);
+                    if (equals == std::string::npos || at == std::string::npos || comma == std::string::npos) {
+                        return usage();
+                    }
+                    HudMapMarker marker;
+                    marker.key = spec.substr(0, equals);
+                    marker.value = spec.substr(equals + 1, at - equals - 1);
+                    const std::size_t second = spec.find(',', comma + 1);
+                    marker.position = {std::stof(spec.substr(at + 1, comma - at - 1)),
+                        std::stof(spec.substr(
+                            comma + 1, second == std::string::npos ? std::string::npos : second - comma - 1))};
+                    if (second != std::string::npos) {
+                        marker.heading = glm::radians(std::stof(spec.substr(second + 1)));
+                    }
+                    options.markers.push_back(marker);
+                } else if (arg == "--radio-tuning") {
+                    options.radioTuning = true;
                 } else if (arg == "--track") {
                     options.track = value();
                 } else if (arg == "--heading") {

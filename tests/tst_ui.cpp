@@ -775,7 +775,15 @@ SceneFiles buildTimelineScene()
     box.nameHash = anarkHash("Box");
     box.parent = 0;
     box.id = 2;
-    files.bgf.elements = {root, box};
+    // An event behaviour on the box that fires PING at its parent 500 ms
+    // into "Once".
+    BgfElement ping;
+    ping.nameHash = anarkHash("Ping");
+    ping.parent = 1;
+    ping.id = 3;
+    ping.kind = ElementKind::Behavior;
+    files.bgf.strings = {"PING", "parent.parent"};
+    files.bgf.elements = {root, box, ping};
     const auto slide = [&](std::string name, std::uint8_t flags) {
         Slide s;
         s.name = std::move(name);
@@ -793,6 +801,15 @@ SceneFiles buildTimelineScene()
     };
     slide("Master Slide", 9);
     slide("Once", 9);
+    {
+        SlideEntry entry;
+        entry.element = 2;
+        entry.active = true;
+        entry.attributes.push_back({anarkHash("eventName"), 21, 0});
+        entry.attributes.push_back({anarkHash("TARGET"), 21, 1});
+        entry.attributes.push_back({anarkHash("timeoffset"), 1, 500});
+        files.bgf.slides.back().entries.push_back(entry);
+    }
     slide("Loop", 0);
     slide("PingPong", 8);
     slide("Paused", 13);
@@ -821,7 +838,16 @@ TEST(timelines_follow_the_play_flags)
     CHECK_EQ(scene.currentSlide(0), std::string("Once"));
     scene.update(0.4F);
     CHECK_NEAR(scene.time(0), 400.0, 1e-3);
+    CHECK(scene.takeFiredEvents().empty());
+    scene.update(0.2F);
+    const std::vector<Presentation::FiredEvent> fired = scene.takeFiredEvents();
+    CHECK_EQ(fired.size(), std::size_t{1});
+    if (!fired.empty()) {
+        CHECK_EQ(fired[0].target, 0);
+        CHECK_EQ(fired[0].event, std::string("PING"));
+    }
     scene.update(1.0F);
+    CHECK(scene.takeFiredEvents().empty());
     CHECK_NEAR(scene.time(0), 1000.0, 1e-3);
 
     CHECK(scene.goToSlide(0, "Loop"));
@@ -853,6 +879,10 @@ TEST(timelines_follow_the_play_flags)
     CHECK(scene.goToSlide(0, "Next"));
     scene.update(1.1F);
     CHECK_EQ(scene.currentSlide(0), std::string("After"));
+
+    CHECK(scene.goToSlideIndex(0, 3));
+    CHECK_EQ(scene.currentSlide(0), std::string("PingPong"));
+    CHECK(!scene.goToSlideIndex(0, 99));
 
     scene.reset();
     CHECK_EQ(scene.currentSlide(0), std::string("Once"));
@@ -975,6 +1005,17 @@ TEST(map_profile_reads_groups)
         CHECK_EQ(group.symbolizers[1].texture, std::string("horizon\\map\\icons\\sheet.tga"));
     }
     CHECK_THROWS(MapProfile::parse(xml, "test.xml", "missing"));
+}
+
+TEST(career_event_styles_name_map_activities)
+{
+    CHECK_EQ(careerEventActivityType(1), std::string_view("race"));
+    CHECK_EQ(careerEventActivityType(2), std::string_view("streetrace"));
+    CHECK_EQ(careerEventActivityType(3), std::string_view("exhibition"));
+    CHECK_EQ(careerEventActivityType(4), std::string_view("race"));
+    CHECK_EQ(careerEventActivityType(5), std::string_view("nemesisrace"));
+    CHECK_EQ(careerEventActivityType(6), std::string_view("race"));
+    CHECK(careerEventActivityType(0).empty());
 }
 
 TEST(minimap_camera_follows_the_car)
@@ -1240,6 +1281,35 @@ TEST(disc_hud_scene_structure)
     CHECK_EQ(hud.currentSlide(countdown), std::string("DONE"));
     CHECK(!hud.fireEvent(countdownContract, "NOT_AN_EVENT"));
 
+    // The radio panel: its slides fire START_HIDE and HIDE_COMPLETE at the
+    // HUD_RADIO contract near their end.
+    const int radio = hud.contractParameter(hudContract, "COMPONENT_RADIO");
+    const int radioContract = hud.contract(radio, "HUD_RADIO");
+    CHECK(radioContract >= 0);
+    const int radioControl = hud.contractParameter(radioContract, "RADIO_CONTROL");
+    CHECK(hud.fireEvent(radioContract, "SHOW_INFO"));
+    CHECK_EQ(hud.currentSlide(radioControl), std::string("CHANGETRACK"));
+    hud.takeFiredEvents();
+    hud.update(2.8F);
+    std::vector<std::string> radioEvents;
+    for (const Presentation::FiredEvent& fired : hud.takeFiredEvents()) {
+        if (fired.target == radioContract) {
+            radioEvents.push_back(fired.event);
+        }
+    }
+    CHECK_EQ(radioEvents.size(), std::size_t{2});
+    if (radioEvents.size() == 2) {
+        CHECK_EQ(radioEvents[0], std::string("START_HIDE"));
+        CHECK_EQ(radioEvents[1], std::string("HIDE_COMPLETE"));
+    }
+    CHECK(hud.fireEvent(radioContract, "HIDE_INFO"));
+    CHECK_EQ(hud.currentSlide(radioControl), std::string("OFF"));
+    CHECK(hud.fireEvent(radioContract, "SHOW_STATION"));
+    CHECK_EQ(hud.currentSlide(radioControl), std::string("CHANGESTATION"));
+    const int icons = hud.contractParameter(radioContract, "COMPONENT_RADIO_ICONS");
+    CHECK(hud.goToSlideIndex(icons, 4));
+    CHECK_EQ(hud.currentSlide(icons), std::string("OFF"));
+
     const std::optional<fh::Bytes> table = vfs.read("media/stringtables/en/ingame.str");
     CHECK(table.has_value());
 }
@@ -1266,6 +1336,17 @@ TEST(disc_minimap_data_loads)
     const MapProfile profile = MapProfile::parse(
         std::string_view(reinterpret_cast<const char*>(xml.data()), xml.size()), "MapProfileMinimap.xml", "minimap");
     CHECK(profile.groups.size() > 20);
+    const std::vector<MapMarker> activities = loadActivityMarkers(vfs, "colorado");
+    const auto count = [&](std::string_view tag) {
+        return std::count_if(
+            activities.begin(), activities.end(), [&](const MapMarker& marker) { return marker.value == tag; });
+    };
+    for (const char* tag : {"workshop", "paintshop", "autoshow", "carclub", "dlccenter", "racecentral"}) {
+        CHECK_EQ(count(tag), 1);
+    }
+    CHECK_EQ(count("streetrace"), 3);
+    CHECK_EQ(count("barnfind"), 0);
+    CHECK_EQ(count("race"), 0);
     const SatNavTuning tuning = SatNavTuning::load(vfs);
     CHECK_NEAR(tuning.distanceMin, 500.0, 1e-3);
     CHECK_NEAR(tuning.playerViewportY, -0.3, 1e-5);

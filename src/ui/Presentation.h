@@ -122,6 +122,10 @@ public:
     /// Returns false if the component has no such slide.
     bool goToSlide(int component, std::string_view slide);
     std::string currentSlide(int component) const;
+    /// Shows a slide by its index, the master slide counting as 0 (the
+    /// game's slide-by-index call, 0x82f36588). Returns false when out of
+    /// range.
+    bool goToSlideIndex(int component, int index);
     /// Puts a component's timeline at `ms` (COMMAND_GOTOTIME); a paused
     /// timeline stays there, a playing one carries on from there.
     void seek(int component, float ms);
@@ -155,6 +159,23 @@ public:
     int contractParameter(int contractElement, std::string_view parameter) const;
     /// The value of a contract's numeric parameter (types 17 and 19).
     std::optional<float> contractNumber(int contractElement, std::string_view parameter) const;
+    /// The element a path such as "parent.parent.HUD_RADIO_CONTRACT" names,
+    /// walked from `from` as contract paths are. -1 if missing.
+    int resolvePath(int from, std::string_view path) const;
+
+    /// An event an event behaviour fired at an element.
+    struct FiredEvent {
+        int target = -1;
+        std::string event;
+    };
+    /// The events the scene's event behaviours (the "eventfire" script in
+    /// media/ui/behaviors/ui4, which fires its eventName at its TARGET when
+    /// it activates) fired since the last call, in order. They also run the
+    /// target's logic handlers; the host handles the rest, as the game's
+    /// controls do. A behaviour activates when its slide's timeline reaches
+    /// its timeoffset (inferred from Anark's time ranges: the radio panel's
+    /// START_HIDE at 2.3 s and HIDE_COMPLETE at 2.7 s of a 3 s slide).
+    std::vector<FiredEvent> takeFiredEvents();
 
     void setText(int element, std::string text);
     void setAttribute(int element, std::uint32_t hash, float value);
@@ -256,6 +277,12 @@ private:
         std::optional<std::string> textOverride;
         bool hidden = false;
     };
+    struct EventBehaviour {
+        int element = -1;
+        float timeMs = 0.0F;
+        std::string event;
+        std::string target;
+    };
     struct Timeline {
         /// Indices into BgfFile::slides, the master slide first.
         std::vector<int> slides;
@@ -278,6 +305,8 @@ private:
             int curve = 1;
         };
         std::optional<ProgressAnimation> animation;
+        /// Per slide, the event behaviours active in it.
+        std::vector<std::vector<EventBehaviour>> eventBehaviours;
     };
     struct State {
         std::vector<Values> values;
@@ -292,6 +321,8 @@ private:
     /// Recomputes timeMs from elapsedMs as the runtime's tick does.
     void resolveTime(Timeline& timeline);
     const Slide& slideOf(const Timeline& timeline) const;
+    std::vector<EventBehaviour> eventBehavioursOf(const Slide& slide) const;
+    void fireEventBehaviours(Timeline& timeline, float fromMs, float toMs);
     /// String value of a behaviour element's attribute, or nullptr.
     const std::string* stringAttribute(int element, std::uint32_t hash) const;
     State computeState() const;
@@ -305,6 +336,7 @@ private:
     std::vector<int> m_layers;
     /// Logic owners by element index.
     std::unordered_map<int, const LogicOwner*> m_logic;
+    std::vector<FiredEvent> m_firedEvents;
     mutable std::vector<glm::mat4> m_world;
     mutable std::vector<char> m_present;
 };

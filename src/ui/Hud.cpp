@@ -112,6 +112,11 @@ struct Hud::Impl {
     void updatePositions(const HudState& state);
     void updateCountdown(const HudState& state);
     void updatePrompt(const HudState& state);
+    void updateRadio(const HudState& state);
+    void handleFiredEvents();
+    void setRadioStation(int station);
+    void setRadioTrack(const std::string& title, const std::string& artist);
+    void showRadio();
     void drawMinimap(const HudState& state, int width, int height);
     std::string formatElapsed(float seconds);
 
@@ -203,6 +208,23 @@ struct Hud::Impl {
     int mapMaterial = -1;
 
     std::optional<bool> sessionRace;
+
+    int radioContract = -1;
+    int radioControl = -1;
+    int radioIcons = -1;
+    int radioTrackText = -1;
+    int radioArtistText = -1;
+    int radioOffText = -1;
+    int radioTuningContract = -1;
+    /// The HUD_RADIO control's state, as its constructor (0x828b8988) sets
+    /// it up: station (+244, none), whether the last station set changed it
+    /// (+248), and whether the title and artist lines are showing (+321 and
+    /// +320, both at first).
+    int radioStation = -1;
+    bool radioStationChanged = false;
+    bool radioTrackShown = true;
+    bool radioArtistShown = true;
+    bool radioTuningShown = false;
 };
 
 Hud::Impl::Impl(const Vfs& vfs, const std::string& track, const std::string& language)
@@ -303,6 +325,15 @@ void Hud::Impl::bind()
     const int lockedText = parameter(promptContract, "TEXT_LOCKED");
     promptLocked = lockedText >= 0 ? scene.parent(lockedText) : -1;
 
+    const int radio = parameter(hudContract, "COMPONENT_RADIO");
+    radioContract = scene.contract(radio, "HUD_RADIO");
+    radioControl = parameter(radioContract, "RADIO_CONTROL");
+    radioIcons = parameter(radioContract, "COMPONENT_RADIO_ICONS");
+    radioTrackText = parameter(radioContract, "TEXT_TRACK");
+    radioArtistText = parameter(radioContract, "TEXT_ARTIST");
+    radioOffText = parameter(radioContract, "TEXT_RADIO_OFF");
+    radioTuningContract = scene.contract(parameter(hudContract, "COMPONENT_RADIO_TUNING"), "HUD_RADIO_TUNING");
+
     // The map renderer's contract (CUSTREND_MAPRENDERER) names the model
     // whose screen rectangle sizes the map and the material that shows it.
     int mapContract = -1;
@@ -328,6 +359,15 @@ void Hud::Impl::startSession(bool race)
     promptTitleShown.reset();
     promptIconShown.clear();
     sessionRace = race;
+    radioStation = -1;
+    radioStationChanged = false;
+    radioTrackShown = true;
+    radioArtistShown = true;
+    radioTuningShown = false;
+    // HUD_RADIO's attach (0x828b0300) and HUD_RADIO_TUNING's (0x82667e58)
+    // fill their fixed texts.
+    text(radioOffText, strings.get(kInGame, "IDS_RadioOff"));
+    text(parameter(radioTuningContract, "TEXT_RADIO_TUNING"), strings.get("Main", "IDS_RadioTuning"));
 
     // The map renderer draws into a target the material shows; the model
     // only gives it its size (with USE_MATERIAL_VIEWPORT set, 0x826e2e20),
@@ -639,9 +679,84 @@ void Hud::Impl::drawMinimap(const HudState& state, int width, int height)
     const glm::mat4& world = scene.worldTransform(mapModelViewport);
     const float units = glm::length(glm::vec3(world[0])) * 100.0F;
     const int size = std::max(8, static_cast<int>(units * scale) / 8 * 8);
+    std::vector<MapMarker> markers;
+    markers.reserve(state.mapMarkers.size());
+    for (const HudMapMarker& marker : state.mapMarkers) {
+        markers.push_back({marker.key, marker.value, marker.position, marker.heading});
+    }
     const GLuint texture
-        = minimap->render(state.playerMapPosition, state.playerHeading, state.speedMetresPerSecond, size);
+        = minimap->render(state.playerMapPosition, state.playerHeading, state.speedMetresPerSecond, size, markers);
     renderer.setTextureOverride("@minimap", texture);
+}
+
+void Hud::Impl::setRadioStation(int station)
+{
+    // 0x828ad930: the logo is slide station + 1 of the icons; a different
+    // station shows the panel with the station change.
+    radioStationChanged = false;
+    scene.goToSlideIndex(radioIcons, station + 1);
+    if (station != radioStation) {
+        radioStation = station;
+        radioStationChanged = true;
+        showRadio();
+    }
+}
+
+void Hud::Impl::setRadioTrack(const std::string& title, const std::string& artist)
+{
+    // 0x828b0488. The game skips this when handed the very same strings,
+    // which a new request never carries.
+    const auto line = [&](const std::string& value, int element, bool& shown, std::string_view showEvent,
+                          std::string_view hideEvent) {
+        if (!value.empty()) {
+            if (!shown) {
+                fire(radioContract, showEvent);
+                shown = true;
+            }
+            text(element, value);
+        } else if (shown) {
+            fire(radioContract, hideEvent);
+            shown = false;
+        }
+    };
+    line(title, radioTrackText, radioTrackShown, "SHOW_TRACK_NAME", "HIDE_TRACK_NAME");
+    line(artist, radioArtistText, radioArtistShown, "SHOW_ARTIST_NAME", "HIDE_ARTIST_NAME");
+    showRadio();
+}
+
+void Hud::Impl::showRadio()
+{
+    // 0x828ab530: back to the start of the panel's timeline, then the
+    // station-change or track-change slide.
+    scene.goToProgress(radioControl, 0.0F);
+    fire(radioContract, radioStationChanged ? "SHOW_STATION" : "SHOW_INFO");
+}
+
+void Hud::Impl::updateRadio(const HudState& state)
+{
+    if (state.radio) {
+        // The radio status handler (0x826fc568) sets the station and the
+        // track lines; both show the panel again.
+        setRadioStation(state.radio->station);
+        setRadioTrack(state.radio->title, state.radio->artist);
+    }
+    if (state.radioTuning != radioTuningShown) {
+        fire(radioTuningContract, state.radioTuning ? "SHOW" : "HIDE");
+        radioTuningShown = state.radioTuning;
+    }
+}
+
+void Hud::Impl::handleFiredEvents()
+{
+    for (const Presentation::FiredEvent& fired : scene.takeFiredEvents()) {
+        // HUD_RADIO's event hook (0x828b0400): the panel's slides fire
+        // HIDE_COMPLETE near their end, and the control then hides the panel
+        // (0x828ae540). What it does with START_HIDE (a call through its
+        // vtable at +68) was not traced.
+        if (fired.target == radioContract && fired.event == "HIDE_COMPLETE") {
+            fire(radioContract, "HIDE_INFO");
+        }
+    }
 }
 
 Hud::Hud(const Vfs& vfs, const std::string& track, const std::string& language)
@@ -664,7 +779,9 @@ void Hud::draw(const HudState& state, int width, int height)
     impl.updatePositions(state);
     impl.updateCountdown(state);
     impl.updatePrompt(state);
+    impl.updateRadio(state);
     impl.scene.update(state.dt);
+    impl.handleFiredEvents();
     std::vector<DrawItem> items = impl.scene.evaluate();
     impl.drawMinimap(state, width, height);
     // The material's first image is where the game points the map's render

@@ -116,6 +116,35 @@ struct SatNavTuning {
     static SatNavTuning load(const Vfs& vfs);
 };
 
+/// Something the map shows at a place: an entity whose tag `key` has the
+/// value `value`, which the profile's group filters match (activity_type
+/// "race", vehicle_type "ai", ...).
+struct MapMarker {
+    std::string key;
+    std::string value;
+    /// World x and z.
+    glm::vec2 position{0.0F};
+    /// Radians, 0 facing +z, increasing towards +x: the direction "icon"
+    /// symbolizers turn with (vehicles).
+    float heading = 0.0F;
+};
+
+/// The activity_type a career event's map entity carries, by its
+/// Events.CareerEventStyle (0x8250b9c8 via 0x82534cb0): 1, 4 and 6 "race",
+/// 2 "streetrace", 3 "exhibition", 5 "nemesisrace"; empty for the others.
+std::string_view careerEventActivityType(int careerEventStyle);
+
+/// The fixed places the activity system puts on the map: every
+/// `<TriggerZone>` with a mapTag in the track's media/gamemodes/<track>/*.xml
+/// activities, at its object's position in Ribbon_00/GameObjs.xml, tagged
+/// activity_type = mapTag (the profile's filter values are the mapTag
+/// values: workshop, paintshop, autoshow, carclub, dlccenter, racecentral,
+/// streetrace). Commented-out activities are skipped, as the game's parser
+/// does; so are barn finds, which the game only marks once a hint has named
+/// them (CMapEntitySourceBarnFindHint). Zones sharing an object and tag
+/// appear once. Throws DataError when GameObjs.xml cannot be read.
+std::vector<MapMarker> loadActivityMarkers(const Vfs& vfs, const std::string& track);
+
 /// The camera the map is drawn through for one frame.
 struct MinimapCamera {
     glm::vec3 eye{0.0F};
@@ -152,8 +181,14 @@ public:
     MinimapRenderer& operator=(const MinimapRenderer&) = delete;
 
     /// Renders the map around the player into a `size` x `size` texture and
-    /// returns it. Leaves the framebuffer and viewport as it found them.
-    GLuint render(glm::vec2 position, float heading, float speedMetresPerSecond, int size);
+    /// returns it, with the track's activity markers and `markers` (race
+    /// starts, other cars) drawn by the profile's icon symbolizers. Leaves
+    /// the framebuffer and viewport as it found them.
+    GLuint render(glm::vec2 position, float heading, float speedMetresPerSecond, int size,
+        const std::vector<MapMarker>& markers = {});
+
+    /// The activity markers loaded for the track.
+    const std::vector<MapMarker>& activityMarkers() const { return m_activityMarkers; }
 
 private:
     struct Vertex {
@@ -172,13 +207,16 @@ private:
     };
 
     void appendLine(const std::vector<glm::vec2>& points, float halfWidth, const glm::vec4& color, bool caps);
-    void appendIcon(
-        glm::vec2 centre, glm::vec2 direction, float halfSize, const MapSymbolizer& symbolizer, const glm::vec4& color);
+    /// A quad centred on `centre` spanning `across` and `up` (half extents)
+    /// with the symbolizer's atlas cell, the cell's top towards `up`.
+    void appendIcon(const glm::vec3& centre, const glm::vec3& across, const glm::vec3& up,
+        const MapSymbolizer& symbolizer, const glm::vec4& color);
     void ensureTarget(int size);
     void buildRoads();
 
     UiRenderer& m_renderer;
     NavFile m_nav;
+    std::vector<MapMarker> m_activityMarkers;
     MapProfile m_profile;
     SatNavTuning m_tuning;
     UiProgram m_program;
