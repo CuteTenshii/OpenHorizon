@@ -4,6 +4,7 @@
 
 #include "base/Error.h"
 #include "base/Log.h"
+#include "world/TrackSettings.h"
 
 #include <glm/gtc/matrix_access.hpp>
 
@@ -41,11 +42,16 @@ constexpr std::array kFrameNames{
     FrameName{"CamPos", 158},
     FrameName{"skyColor", 196},
     FrameName{"groundColor", 197},
+    FrameName{"EmissiveSwitchOnThreshold", 213},
     FrameName{"FogConsts2", 214},
     FrameName{"FogColor2", 215},
     FrameName{"ambColor", 221},
+    FrameName{"SkyScale", 222},
+    FrameName{"RoadSpecularParams2", 224},
     FrameName{"FogConsts", 241},
     FrameName{"FogColor", 242},
+    FrameName{"V2LightmapColor1", 247},
+    FrameName{"V2LightmapColor2", 248},
     FrameName{"TimeGain", 249},
     FrameName{"ViewInvMatrix", 243},
     FrameName{"viewInv", 243},
@@ -140,9 +146,9 @@ std::string materialDeclarations(bool bindless, xenos::ShaderStage stage)
 }
 
 /// Turns the translator's texture units into samplers built from the handle
-/// table: a pixel sampler takes its batch's texture for its register, or the
-/// engine's; vertex, cube and volume samplers always take the engine's, as
-/// WorldRenderer binds them without bindless textures.
+/// table: a pixel sampler, 2D or cube, takes its batch's texture for its
+/// register, or the engine's; vertex and volume samplers always take the
+/// engine's, as WorldRenderer binds them without bindless textures.
 std::string bindlessSamplers(
     std::string glsl, const std::vector<xenos::SamplerBinding>& samplers, xenos::ShaderStage stage)
 {
@@ -171,7 +177,11 @@ std::string bindlessSamplers(
                                                                       : "sampler2D";
         std::string handle;
         if (s.dimension == xenos::TextureDimension::Cube) {
-            handle = std::format("xe_handles[{}u]", texturehandle::kBlackCube);
+            // A pixel cube sampler takes its batch's cube map (the track's
+            // own, see WorldRenderer), black where it has none.
+            handle = stage == xenos::ShaderStage::Pixel && s.unit < TrackMaterial{}.textures.size()
+                ? std::format("xe_handle({}u, {}u)", s.unit, texturehandle::kBlackCube)
+                : std::format("xe_handles[{}u]", texturehandle::kBlackCube);
         } else if (s.dimension == xenos::TextureDimension::D3) {
             handle = std::format("xe_handles[{}u]", texturehandle::kBlack3D);
         } else if (stage != xenos::ShaderStage::Pixel || s.unit >= TrackMaterial{}.textures.size()) {
@@ -298,8 +308,17 @@ glm::vec4 TrackFrameConstants::timeGain(float presentationSeconds)
     return {clock, 0.0F, 1.0F, 1.0F};
 }
 
+glm::vec4 TrackFrameConstants::emissiveSwitchOn(float switchOnLights, float lightmapScale, float presentationSeconds)
+{
+    const float lights = switchOnLights < kSwitchOnLightsFloor ? 0.0F : switchOnLights;
+    const float threshold = lights == 0.0F ? -1.0F : lights;
+    const float lightmap = std::min(std::max(threshold - 0.5F, 0.0F) * 4.0F, 1.0F) * lightmapScale;
+    return {threshold, lightmap, 1.0F, timeGain(presentationSeconds).x};
+}
+
 TrackFrameConstants TrackFrameConstants::make(const glm::mat4& viewProjection, const glm::mat4& inverseView,
-    const glm::vec3& camera, const SceneLighting& lighting, float presentationSeconds, const glm::mat4& model)
+    const glm::vec3& camera, const SceneLighting& lighting, float presentationSeconds, const glm::mat4& model,
+    const world::TrackSettings* settings)
 {
     TrackFrameConstants f;
     // The shaders compute dp4(register, position) per clip component, so
@@ -340,6 +359,16 @@ TrackFrameConstants TrackFrameConstants::make(const glm::mat4& viewProjection, c
         lighting.fogHeightFadeStart, lighting.fogHeightFadeEnd, lighting.fogHeightFadeAmount, lighting.fogScatterPower);
     f.c[215] = glm::vec4(lighting.fogScatterColour, lighting.fogScatterRamp);
     f.c[249] = timeGain(presentationSeconds);
+    f.c[213] = emissiveSwitchOn(
+        lighting.switchOnLights, settings != nullptr ? settings->trackLightMap.z : 0.0F, presentationSeconds);
+    // The scene writer's uploads from the track's settings (0x824442AC,
+    // 0x824443CC, 0x82444620, 0x82444680; see world::TrackSettings).
+    if (settings != nullptr) {
+        f.c[222] = settings->skyScale;
+        f.c[224] = settings->roadSpecular2;
+        f.c[247] = settings->darkColor;
+        f.c[248] = settings->lightColor;
+    }
     return f;
 }
 

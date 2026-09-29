@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CubeMap.h"
 #include "Gl.h"
 #include "ScatterPass.h"
 #include "Shader.h"
@@ -10,6 +11,7 @@
 #include "world/ShadedTiles.h"
 #include "world/TrackWorld.h"
 #include "world/WorldTiles.h"
+#include "world/XboxCube.h"
 
 #include <glm/glm.hpp>
 
@@ -99,6 +101,10 @@ struct SceneLighting {
     float sunObjectMoon = 0.0F;
     /// The stars' opacity (the StarFade curve).
     float starFade = 0.0F;
+    /// The SwitchOnLights curve as sampled (0 by day, 1 by night), from
+    /// which the scene takes when lit models and lightmaps switch on (see
+    /// TrackFrameConstants::emissiveSwitchOn).
+    float switchOnLights = 0.0F;
 
     glm::vec3 fogColour{};
     glm::vec3 fogScatterColour{};
@@ -163,7 +169,14 @@ void setSceneLighting(Shader& shader, const SceneLighting& lighting);
 /// shadow mask (ShadowMaskSamp, which the game fills from its cascaded
 /// shadow maps) white, so every surface counts as sunlit; other samplers a
 /// material leaves to the engine (lightmaps it did not bake) black; cube
-/// maps (reflections the game renders at run time) black.
+/// maps other than the track's own (below) black.
+///
+/// Cube samplers take the cube map their material names: the reflective
+/// materials' Cube_MapSampler names one of the track's own cube textures
+/// (world::loadTrackCube; in Colorado three, used by 964, 20 and 3
+/// materials). Where the material names none, or its cube has no data on
+/// the disc (one texture, used by 41 materials, exists only as a bundle
+/// copy, which holds no cube), the sampler reads black.
 ///
 /// A few ambient occlusion and lightmap textures (56 of Colorado's, all in
 /// AO_Sampler, AOMapSampler or Light_MapSampler slots, none of them diffuse)
@@ -210,6 +223,11 @@ public:
     std::size_t eventChunksIncluded() const { return m_eventChunksIncluded; }
     /// TimeGain (TrackFrameConstants::timeGain) as the last draw() set it.
     glm::vec4 timeGain() const { return m_timeGain; }
+    /// EmissiveSwitchOnThreshold (TrackFrameConstants::emissiveSwitchOn) as
+    /// the last draw() set it.
+    glm::vec4 emissiveSwitchOn() const { return m_emissiveSwitchOn; }
+    /// Cube maps the materials name that are on the GPU.
+    std::size_t cubeMapsLoaded() const;
     /// Starts drawing `chunks` as one movable object, built in the
     /// background; returns its handle.
     int addDynamic(std::vector<std::uint32_t> chunks);
@@ -278,6 +296,18 @@ private:
         std::uint32_t id = 0;
         std::unique_ptr<world::TextureMipChain> chain;
     };
+    struct LoadedCube {
+        std::uint32_t id = 0;
+        std::unique_ptr<world::CubeTexture> cube;
+    };
+    /// A cube map a material samples through a cube sampler. The few there
+    /// are stay loaded for the renderer's life.
+    struct CubeSlot {
+        CubeMap map;
+        bool ready = false;
+        /// The resident bindless handle, 0 without one.
+        GLuint64 handle = 0;
+    };
     struct TextureSlot {
         Texture texture;
         bool requested = false;
@@ -309,6 +339,12 @@ private:
     std::shared_ptr<GpuMesh> upload(const TileBuild& build);
     static void destroy(GpuMesh& mesh);
     void requestTexture(std::uint32_t id, float priority);
+    /// Loads cube texture `id` in the background, once.
+    void requestCube(std::uint32_t id);
+    /// The handle table entry of cube texture `id`, black until it loads.
+    std::uint32_t cubeEntry(std::uint32_t id);
+    /// The cube map of `id` if it is loaded, else the black one.
+    GLuint cubeTexture(std::uint32_t id) const;
     bool texturesReady(const TileBuild& build) const;
     const Texture* texture(std::uint32_t id);
     /// The texture handle table entry of texture `id`, assigned on first
@@ -340,6 +376,7 @@ private:
     std::vector<bool> m_hiddenChunks;
     std::size_t m_eventChunksIncluded = 0;
     glm::vec4 m_timeGain{0.0F};
+    glm::vec4 m_emissiveSwitchOn{0.0F};
     world::WorldTileGrid m_grid;
     std::vector<TileState> m_tiles;
     std::unordered_map<std::uint32_t, TextureSlot> m_textures;
@@ -349,6 +386,9 @@ private:
     std::deque<BuiltDynamic> m_builtDynamics;
     std::deque<LoadedTexture> m_loadedTextures;
     std::vector<std::uint32_t> m_failedTextures;
+    std::deque<LoadedCube> m_loadedCubes;
+    std::unordered_map<std::uint32_t, CubeSlot> m_cubes;
+    std::unordered_map<std::uint32_t, std::uint32_t> m_cubeEntries;
     std::shared_ptr<std::atomic<bool>> m_alive;
 
     std::unordered_map<int, Dynamic> m_dynamics;

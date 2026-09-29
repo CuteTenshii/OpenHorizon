@@ -220,6 +220,8 @@ render::SceneLighting TimeOfDay::lighting() const
     l.sunObjectSize = m_curves.sampleScalar("SunObjectSize", t);
     l.sunObjectMoon = m_curves.sampleScalar("SunObjectMoon", t);
     l.starFade = m_curves.sampleScalar("StarFade", t);
+    // Sampled with the others (0x8265AF60), unclamped.
+    l.switchOnLights = m_curves.sampleScalar("SwitchOnLights", t);
 
     const TimeOfDayCurves::FogTemplate fog = m_curves.fogTemplate().value_or(TimeOfDayCurves::FogTemplate{});
     l.fogColour = m_curves.sample("FogColour", t) * fog.colour;

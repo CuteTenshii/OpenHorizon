@@ -85,6 +85,14 @@ target_link_libraries(tst_render PRIVATE fh1platform)
 # goes to a folder of their own under the temporary directory.
 add_test(NAME tst_render COMMAND tst_render)
 
+add_executable(tst_shading TestHarness.h tst_shading.cpp)
+target_compile_options(tst_shading PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_shading PRIVATE fh1engine)
+# The cube decoder and the track's scene constants on synthetic data; the
+# disc's cube maps and settings only when FH1_GAME_DIR names an extracted
+# disc.
+add_test(NAME tst_shading COMMAND tst_shading)
+
 add_executable(tst_car TestHarness.h tst_car.cpp)
 target_compile_options(tst_car PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_car PRIVATE fh1data)

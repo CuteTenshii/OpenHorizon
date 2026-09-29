@@ -21,6 +21,10 @@
 #include <string>
 #include <vector>
 
+namespace fh::world {
+struct TrackSettings;
+} // namespace fh::world
+
 namespace fh::render {
 
 struct SceneLighting;
@@ -85,9 +89,46 @@ struct TrackFrameConstants {
     /// `presentationSeconds`, the seconds the world has run unpaused since
     /// the track was loaded (see timeGain()). `model` places moving objects:
     /// it becomes WorldMatrix and joins WorldViewProjMatrix.
+    /// `settings`, the track's TrackSettings.xml values, gives SkyScale,
+    /// RoadSpecularParams2 and V2LightmapColor1 and 2; without it they are
+    /// 0.
     static TrackFrameConstants make(const glm::mat4& viewProjection, const glm::mat4& inverseView,
         const glm::vec3& camera, const SceneLighting& lighting, float presentationSeconds,
-        const glm::mat4& model = glm::mat4(1.0F));
+        const glm::mat4& model = glm::mat4(1.0F), const world::TrackSettings* settings = nullptr);
+
+    /// Below this the SwitchOnLights curve counts as 0 (the constant at
+    /// 0x82000CD0 the time-of-day sampler compares with at 0x8265AF78).
+    static constexpr float kSwitchOnLightsFloor = 0.05F;
+
+    /// EmissiveSwitchOnThreshold (c213) for the sampled SwitchOnLights
+    /// curve, the third lane of the track's TrackLightMapParams vector (see
+    /// world::TrackSettings::trackLightMap) and the presentation's clock.
+    ///
+    /// Verified in the executable:
+    ///  - x: the time-of-day sampler (0x8265AF60) takes the curve, sets it
+    ///    to 0 below kSwitchOnLightsFloor (0x8265AF78) and hands it to the
+    ///    track presentation (slot 32, 0x82E113F0), which keeps -1 in its
+    ///    place when it is 0; the caller of the scene writer copies that
+    ///    (0x82469E68). Effects with emissive maps light them where x is at
+    ///    least their ModelData.x (`sge r, c213.x, c148.x`), so they are off
+    ///    by day and on by night.
+    ///  - y: min(max(x - 0.5, 0) * 4, 1) times the lane (0x82443FE8-
+    ///    0x82444058, constants 0.5, 0, 4 and 1 at 0x82000D38, 0x82000E40,
+    ///    0x82000D70, 0x82000D28). The lightmapped effects light their
+    ///    lightmap by max(c213.y, the material's c6.z).
+    ///  - z: 1 (0x82000D28), the scale of the emissive maps.
+    ///  - w: the presentation's second clock (+10152), advanced with the
+    ///    TimeGain clock and wrapped the same way (0x82491660), read by the
+    ///    countdown effect's vertex shader.
+    /// Missing: the draw loop (0x82444B40) replaces c213 per model when the
+    /// model's instance record holds a non-negative value at +48, with (10,
+    /// y, that value, w), which forces its emissive maps on at that
+    /// strength; where those records come from was not traced, so models
+    /// keep the scene's value. The second clock's reset to 0 (0x82E11418)
+    /// and raise to 3600 s (0x82E11450) are not done, as their callers
+    /// were not traced. The front end's background scene forces x to 1
+    /// (0x8265AF94), which does not apply to the world.
+    static glm::vec4 emissiveSwitchOn(float switchOnLights, float lightmapScale, float presentationSeconds);
 
     /// TimeGain (c249) for `presentationSeconds`, which every animated
     /// track effect (flags, water, waterfalls, flipbook screens, swaying

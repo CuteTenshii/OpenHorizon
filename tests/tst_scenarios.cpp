@@ -1141,6 +1141,48 @@ TEST(trackAnimationClockStopsWhilePaused)
     CHECK_NEAR(fh::render::TrackFrameConstants::timeGain(28800.0F + 5.0F).x, 5.0, 0.01);
 }
 
+// "The world still feels horrible": the track effects read scene
+// constants that were never set. Night lights the emissive maps (signs,
+// windows) and day leaves them off, as SwitchOnLights says, and the
+// festival's reflective materials sample the track's own cube maps.
+TEST(trackShadingSwitchesLightsAndReflects)
+{
+    if (!gameDir()) {
+        return;
+    }
+    struct Shot {
+        const char* name;
+        float seconds;
+        bool lit;
+    };
+    const Shot shots[] = {
+        {"shading_noon", 12.0F * 3600.0F, false},
+        {"shading_night", 23.0F * 3600.0F, true},
+    };
+    for (const Shot& shot : shots) {
+        fh::GameOptions options;
+        options.startTime = shot.seconds;
+        Session session(options);
+        CHECK(session.waitForCar());
+        session.run(4.0F, {});
+        const fh::render::WorldRenderer* world = session.game().worldRenderer();
+        CHECK(world != nullptr);
+        if (world == nullptr) {
+            return;
+        }
+        const glm::vec4 emissive = world->emissiveSwitchOn();
+        CHECK_EQ(emissive.z, 1.0F);
+        if (shot.lit) {
+            CHECK(emissive.x >= fh::render::TrackFrameConstants::kSwitchOnLightsFloor);
+        } else {
+            CHECK_EQ(emissive.x, -1.0F);
+        }
+        CHECK(world->cubeMapsLoaded() > 0);
+        std::fprintf(stderr, "%s: world pass GPU %.3f ms\n", shot.name, worldPassMs(session));
+        session.capture(shot.name);
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)

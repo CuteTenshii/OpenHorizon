@@ -112,6 +112,7 @@
     X(PFNGLTEXTURESUBIMAGE2DPROC, glTextureSubImage2D)                                                                 \
     X(PFNGLTEXTURESUBIMAGE3DPROC, glTextureSubImage3D)                                                                 \
     X(PFNGLCOMPRESSEDTEXTURESUBIMAGE2DPROC, glCompressedTextureSubImage2D)                                             \
+    X(PFNGLCOMPRESSEDTEXTURESUBIMAGE3DPROC, glCompressedTextureSubImage3D)                                             \
     X(PFNGLTEXTUREPARAMETERIPROC, glTextureParameteri)                                                                 \
     X(PFNGLTEXTUREPARAMETERFPROC, glTextureParameterf)                                                                 \
     X(PFNGLTEXTUREPARAMETERFVPROC, glTextureParameterfv)                                                               \

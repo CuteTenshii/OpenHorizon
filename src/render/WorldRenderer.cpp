@@ -293,6 +293,11 @@ WorldRenderer::~WorldRenderer()
                 glMakeTextureHandleNonResidentARB(slot.handle);
             }
         }
+        for (const auto& [id, slot] : m_cubes) {
+            if (slot.handle != 0) {
+                glMakeTextureHandleNonResidentARB(slot.handle);
+            }
+        }
         for (std::uint32_t entry = 0; entry < texturehandle::kFirstTrackTexture; ++entry) {
             glMakeTextureHandleNonResidentARB(m_handles[entry]);
         }
@@ -361,11 +366,26 @@ std::shared_ptr<WorldRenderer::GpuMesh> WorldRenderer::upload(const TileBuild& b
     glCreateVertexArrays(1, &gpu->vao);
     glVertexArrayElementBuffer(gpu->vao, gpu->indices);
 
+    gpu->batches = mesh.batches;
+    gpu->programs.reserve(mesh.batches.size());
+    for (const world::ShadedMesh::Batch& batch : mesh.batches) {
+        gpu->programs.push_back(m_programs.program(batch.shader));
+    }
+
     static_assert(TrackMaterial::kConstants == world::ShadedMesh::kMaterialConstants);
     const std::size_t stride = m_bindless ? sizeof(TrackMaterial) : kMaterialBlockBytes;
     std::vector<std::uint8_t> materials(std::max<std::size_t>(mesh.batches.size(), 1) * stride, 0);
     for (std::size_t b = 0; b < mesh.batches.size(); ++b) {
         const world::ShadedMesh::Batch& batch = mesh.batches[b];
+        // The registers the program samples as cubes.
+        std::array<bool, world::ShadedMesh::kSamplers> cube{};
+        if (const TrackPrograms::Program* program = gpu->programs[b]) {
+            for (const TrackPrograms::Sampler& sampler : program->samplers) {
+                if (sampler.cube && sampler.reg >= 0 && static_cast<std::size_t>(sampler.reg) < cube.size()) {
+                    cube[static_cast<std::size_t>(sampler.reg)] = true;
+                }
+            }
+        }
         TrackMaterial material;
         std::copy_n(batch.constants.begin(), std::min(batch.constants.size(), TrackMaterial::kConstants),
             material.constants.begin());
@@ -373,6 +393,11 @@ std::shared_ptr<WorldRenderer::GpuMesh> WorldRenderer::upload(const TileBuild& b
         for (std::size_t r = 0; r < batch.textures.size() && r < material.textures.size(); ++r) {
             const std::uint32_t id = batch.textures[r];
             const bool engine = id == world::ShadedMesh::kNoTexture || id == world::ShadedMesh::kEngineTexture;
+            if (!engine && r < cube.size() && cube[r]) {
+                requestCube(id);
+                material.textures[r] = m_bindless ? cubeEntry(id) : TrackMaterial::kEngineTextureEntry;
+                continue;
+            }
             material.textures[r] = engine || !m_bindless ? TrackMaterial::kEngineTextureEntry : textureEntry(id);
             if (!engine && std::find(gpu->textureIds.begin(), gpu->textureIds.end(), id) == gpu->textureIds.end()) {
                 gpu->textureIds.push_back(id);
@@ -384,16 +409,55 @@ std::shared_ptr<WorldRenderer::GpuMesh> WorldRenderer::upload(const TileBuild& b
     glCreateBuffers(1, &gpu->materials);
     glNamedBufferStorage(gpu->materials, static_cast<GLsizeiptr>(materials.size()), materials.data(), 0);
 
-    gpu->batches = mesh.batches;
-    gpu->programs.reserve(mesh.batches.size());
-    for (const world::ShadedMesh::Batch& batch : mesh.batches) {
-        gpu->programs.push_back(m_programs.program(batch.shader));
-    }
     gpu->triangles = mesh.triangleCount() + build.scattered.triangleCount();
     if (!build.scattered.indices.empty()) {
         gpu->scattered = ScatterPass::upload(build.scattered);
     }
     return gpu;
+}
+
+void WorldRenderer::requestCube(std::uint32_t id)
+{
+    if (m_cubes.contains(id)) {
+        return;
+    }
+    m_cubes.emplace(id, CubeSlot{});
+    m_jobs.submit(0.0F, [this, id, alive = m_alive] {
+        if (!alive->load()) {
+            return;
+        }
+        try {
+            auto cube = std::make_unique<world::CubeTexture>(world::loadTrackCube(*m_world.archive, id));
+            const std::lock_guard lock(m_resultMutex);
+            m_loadedCubes.push_back({id, std::move(cube)});
+        } catch (const std::exception& e) {
+            // Stays black, like a 2D texture missing from the disc.
+            logDebug("world: cube texture {:08X}: {}", id, e.what());
+        }
+    });
+}
+
+std::uint32_t WorldRenderer::cubeEntry(std::uint32_t id)
+{
+    const auto [it, added] = m_cubeEntries.try_emplace(id, static_cast<std::uint32_t>(m_handles.size()));
+    if (added) {
+        m_handles.push_back(m_handles[texturehandle::kBlackCube]);
+        m_dirtyFirst = std::min(m_dirtyFirst, m_handles.size() - 1);
+        m_dirtyEnd = m_handles.size();
+    }
+    return it->second;
+}
+
+std::size_t WorldRenderer::cubeMapsLoaded() const
+{
+    return static_cast<std::size_t>(
+        std::count_if(m_cubes.begin(), m_cubes.end(), [](const auto& entry) { return entry.second.ready; }));
+}
+
+GLuint WorldRenderer::cubeTexture(std::uint32_t id) const
+{
+    const auto it = m_cubes.find(id);
+    return it != m_cubes.end() && it->second.ready ? it->second.map.id() : m_blackCube;
 }
 
 void WorldRenderer::requestTexture(std::uint32_t id, float priority)
@@ -601,9 +665,11 @@ void WorldRenderer::update(const glm::vec3& camera)
     std::deque<LoadedTexture> loaded;
     std::deque<BuiltDynamic> dynamics;
     std::vector<std::uint32_t> failed;
+    std::deque<LoadedCube> cubes;
     {
         const std::lock_guard lock(m_resultMutex);
         built.swap(m_builtTiles);
+        cubes.swap(m_loadedCubes);
         const std::size_t take = std::min<std::size_t>(m_loadedTextures.size(), kMaxTextureUploadsPerFrame);
         for (std::size_t i = 0; i < take; ++i) {
             loaded.push_back(std::move(m_loadedTextures.front()));
@@ -614,6 +680,17 @@ void WorldRenderer::update(const glm::vec3& camera)
     }
     for (std::uint32_t id : failed) {
         m_textures[id].failed = true;
+    }
+    for (LoadedCube& loadedCube : cubes) {
+        CubeSlot& slot = m_cubes[loadedCube.id];
+        // Colour, as the track's other colour textures.
+        slot.map = CubeMap::fromCube(*loadedCube.cube, true);
+        slot.ready = slot.map.id() != 0;
+        if (m_bindless && slot.ready) {
+            slot.handle = glGetTextureHandleARB(slot.map.id());
+            glMakeTextureHandleResidentARB(slot.handle);
+            setHandle(cubeEntry(loadedCube.id), slot.handle);
+        }
     }
     for (LoadedTexture& texture : loaded) {
         TextureSlot& slot = m_textures[texture.id];
@@ -745,15 +822,17 @@ void WorldRenderer::bindSamplers(const TrackPrograms::Program& program, const wo
         const std::uint32_t id = sampler.reg >= 0 && static_cast<std::size_t>(sampler.reg) < batch.textures.size()
             ? batch.textures[static_cast<std::size_t>(sampler.reg)]
             : world::ShadedMesh::kNoTexture;
+        if (sampler.cube) {
+            bindTexture(sampler.unit, cubeTexture(id));
+            continue;
+        }
         const Texture* own
             = id != world::ShadedMesh::kNoTexture && id != world::ShadedMesh::kEngineTexture ? texture(id) : nullptr;
-        if (own != nullptr && !sampler.cube) {
+        if (own != nullptr) {
             bindTexture(sampler.unit, own->id());
             continue;
         }
-        if (sampler.cube) {
-            bindTexture(sampler.unit, m_blackCube);
-        } else if (sampler.shadowMask) {
+        if (sampler.shadowMask) {
             bindTexture(sampler.unit, m_white.id());
         } else {
             bindTexture(sampler.unit, m_black.id());
@@ -871,16 +950,18 @@ void WorldRenderer::draw(const FrameParams& frame)
 
     // Frame constants: the static world's, then one block per moving object.
     std::vector<TrackFrameConstants> blocks;
-    blocks.push_back(
-        TrackFrameConstants::make(viewProjection, inverseView, frame.cameraPosition, frame.lighting, frame.time));
+    const world::TrackSettings* settings = m_world.settings ? &*m_world.settings : nullptr;
+    blocks.push_back(TrackFrameConstants::make(
+        viewProjection, inverseView, frame.cameraPosition, frame.lighting, frame.time, glm::mat4(1.0F), settings));
     m_timeGain = blocks.front().c[249];
+    m_emissiveSwitchOn = blocks.front().c[213];
     for (const auto& [handle, dynamic] : m_dynamics) {
         if (!dynamic.mesh) {
             continue;
         }
         const auto slot = static_cast<std::uint32_t>(blocks.size());
-        blocks.push_back(TrackFrameConstants::make(
-            viewProjection, inverseView, frame.cameraPosition, frame.lighting, frame.time, dynamic.transform));
+        blocks.push_back(TrackFrameConstants::make(viewProjection, inverseView, frame.cameraPosition, frame.lighting,
+            frame.time, dynamic.transform, settings));
         touchTextures(*dynamic.mesh);
         collect(*dynamic.mesh, slot);
         if (dynamic.mesh->scattered) {
