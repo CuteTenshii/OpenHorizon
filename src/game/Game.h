@@ -129,6 +129,8 @@ public:
         bool radioReady = false;
         /// Initial traffic cars not on the road yet.
         std::size_t trafficPending = 0;
+        /// What the loading screen shows in place of PLEASE WAIT.
+        std::string message;
     };
 
     /// Read-only state for the scenario tests.
@@ -368,6 +370,9 @@ private:
     int m_initialTrafficLeft = 0;
     /// When the loading screen was last drawn, for its tip timing.
     std::chrono::steady_clock::time_point m_loadingDrawn = std::chrono::steady_clock::now();
+    /// The most track effects seen waiting to be linked, for the loading
+    /// screen's count; the set of effects is fixed, so this is all of them.
+    std::size_t m_programsToLink = 0;
     /// Half a stick's travel counts as a menu direction; the threshold the
     /// game's front end uses was not traced.
     ui::MenuInputReader m_menuInput{0.5F};

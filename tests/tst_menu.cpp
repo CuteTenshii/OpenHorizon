@@ -631,6 +631,28 @@ TEST(disc_loading_tip_lines_sit_on_their_bars)
     }
 }
 
+TEST(disc_loading_status_takes_the_place_of_please_wait)
+{
+    const char* dir = gameDir();
+    if (!dir || !glWindow()) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    LoadingScreen screen(vfs, "en", 0);
+    screen.show("freeroam");
+    CHECK_EQ(screen.message(), std::string("PLEASE WAIT"));
+    screen.setStatus("Compiling shaders 120/480");
+    CHECK_EQ(screen.message(), std::string("Compiling shaders 120/480"));
+    // The next screen keeps it until it is cleared.
+    screen.show("freeroam");
+    CHECK_EQ(screen.message(), std::string("Compiling shaders 120/480"));
+    screen.update(1.0F / 60.0F);
+    screen.draw(1280, 720);
+    screen.setStatus(std::nullopt);
+    CHECK_EQ(screen.message(), std::string("PLEASE WAIT"));
+}
+
 TEST(disc_title_scene_binds_the_movie_and_the_prompt)
 {
     const char* dir = gameDir();

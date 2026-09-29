@@ -15,7 +15,9 @@
 #include <array>
 #include <format>
 #include <limits>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace fh::ui {
@@ -109,6 +111,10 @@ struct LoadingScreen::Impl {
     int title = -1;
     int tipLayout = -1;
     int backgroundMaterial = -1;
+    int messageText = -1;
+    /// The text TEXT_MESSAGE has in the scene.
+    std::string sceneMessage;
+    std::optional<std::string> status;
     std::array<int, kLines> lines{};
     /// Each line's brush bar, -1 where the scene has none.
     std::array<int, kLines> bars{};
@@ -153,6 +159,10 @@ LoadingScreen::Impl::Impl(const Vfs& vfs, const std::string& language, std::uint
     title = scene.contractParameter(rootContract, "TEXT_TIP_TITLE");
     tipLayout = scene.contractParameter(rootContract, "COMPONENT_TIP_INFO");
     backgroundMaterial = scene.contractParameter(rootContract, "MATERIAL_BACKGROUND");
+    messageText = scene.contractParameter(rootContract, "TEXT_MESSAGE");
+    if (messageText >= 0) {
+        sceneMessage = scene.text(messageText);
+    }
     for (int i = 0; i < kLines; ++i) {
         const auto index = static_cast<std::size_t>(i);
         lines[index] = scene.contractParameter(rootContract, std::format("TEXT_LINE_{}", i + 1));
@@ -291,6 +301,9 @@ void LoadingScreen::show(std::string_view groupName)
     impl.scene.reset();
     impl.drawn = false;
     impl.linesUsed = 0;
+    if (impl.messageText >= 0 && impl.status) {
+        impl.scene.setText(impl.messageText, *impl.status);
+    }
     impl.scene.fireEvent(impl.rootContract, "SHOW");
     impl.pickBackground();
     impl.group = impl.definitions.find(groupName);
@@ -366,6 +379,21 @@ void LoadingScreen::draw(int width, int height)
     impl.renderer.begin(width, height);
     impl.renderer.draw(items);
     impl.renderer.end();
+}
+
+void LoadingScreen::setStatus(std::optional<std::string> status)
+{
+    Impl& impl = *m_impl;
+    impl.status = std::move(status);
+    if (impl.messageText >= 0) {
+        impl.scene.setText(impl.messageText, impl.status ? *impl.status : impl.sceneMessage);
+    }
+}
+
+std::string LoadingScreen::message() const
+{
+    const Impl& impl = *m_impl;
+    return impl.messageText >= 0 ? impl.scene.text(impl.messageText) : std::string();
 }
 
 const LoadingTip* LoadingScreen::tip() const

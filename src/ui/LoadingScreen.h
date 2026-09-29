@@ -109,6 +109,16 @@ public:
     /// Draws the full screen over the bound framebuffer.
     void draw(int width, int height);
 
+    /// Shows `status` in the scene's PLEASE WAIT text (TEXT_MESSAGE), with
+    /// its font, size, place, animation and spinner; std::nullopt puts the
+    /// scene's own text back. The one text on this screen that is not the
+    /// game's: the console never compiled shaders or streamed from a PC
+    /// disk, so the string tables have nothing for this engine's loading
+    /// stages. Kept across show().
+    void setStatus(std::optional<std::string> status);
+    /// The text TEXT_MESSAGE shows.
+    std::string message() const;
+
     /// The tip shown, if any.
     const LoadingTip* tip() const;
     /// The game path of the background shown.

@@ -265,6 +265,9 @@ Game::Game(Window& window, const GameOptions& options)
     if (carId < 0) {
         throw DataError("no car named {} in the game database", options.car);
     }
+    if (m_loading) {
+        m_loading->setStatus("Loading cars");
+    }
     // The model's files decode off this thread; its upload and programs
     // need the GL context.
     std::optional<carmodel::CarModel> playerModel = loadWhileDrawing([&]() -> std::optional<carmodel::CarModel> {
@@ -391,6 +394,9 @@ void Game::drawLoading()
 
 void Game::loadWorld()
 {
+    if (m_loading) {
+        m_loading->setStatus("Loading the world");
+    }
     drawLoading();
     const auto start = std::chrono::steady_clock::now();
     // Progress arrives from whichever loader thread finished a batch; only
@@ -688,6 +694,22 @@ void Game::updateLoading(float dt)
         if (m_worldRenderer->programsPending() > 0) {
             m_worldRenderer->precompile(kPrecompileSlice);
         }
+        if (m_loading) {
+            // This engine's own stages, in place of PLEASE WAIT (see
+            // ui::LoadingScreen::setStatus).
+            const std::size_t pending = m_worldRenderer->programsPending();
+            m_programsToLink = std::max(m_programsToLink, pending);
+            if (pending > 0) {
+                m_loading->setStatus(
+                    std::format("Compiling shaders {}/{}", m_programsToLink - pending, m_programsToLink));
+            } else if (m_loadPhase == LoadPhase::Streaming) {
+                m_loading->setStatus("Loading the world");
+            } else if (trafficPending() > 0) {
+                m_loading->setStatus("Loading cars");
+            } else {
+                m_loading->setStatus(std::nullopt);
+            }
+        }
         break;
     case LoadPhase::Fading:
         m_fadeElapsed += dt;
@@ -768,6 +790,7 @@ Game::LoadingStatus Game::loadingStatus() const
     status.playerCarReady = m_playerPlaced && m_modelCache.contains(player().spec->id) && (player().engine || !m_audio);
     status.radioReady = radioReady() && (!m_radio || m_loadPhase != LoadPhase::Streaming);
     status.trafficPending = trafficPending();
+    status.message = m_loading ? m_loading->message() : std::string();
     return status;
 }
 

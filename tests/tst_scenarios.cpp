@@ -808,9 +808,18 @@ TEST(loadingScreenStaysUntilTheStartIsReady)
     fh::Game& game = session.game();
     // Up from the first frame, before any has run.
     CHECK(game.loadingStatus().screenShown);
+    // While track effects link, the screen says so in place of PLEASE WAIT.
+    bool compilingShown = false;
     for (float t = 0.0F; t < 180.0F && game.loadingStatus().screenShown; t += kStep) {
         session.run(kStep, {});
+        const fh::Game::LoadingStatus during = game.loadingStatus();
+        if (!compilingShown && during.screenShown && during.programsPending > 0
+            && during.message.starts_with("Compiling shaders ")) {
+            compilingShown = true;
+            session.capture("loading_status");
+        }
     }
+    CHECK(compilingShown);
     const fh::Game::LoadingStatus status = game.loadingStatus();
     CHECK(!status.screenShown);
     CHECK_EQ(status.pendingJobs, std::size_t{0});
