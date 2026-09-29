@@ -12,12 +12,18 @@
 /// A minimal test runner: TEST(name) defines a test that registers itself,
 /// CHECK-style macros record failures without stopping the test, and
 /// runAllTests() runs every test and returns the process exit code. A test
-/// that throws fails with the exception's message.
+/// that throws fails with the exception's message. SLOW_TEST(name) defines
+/// a test that the default run leaves out: a sweep over every file of a
+/// kind on the disc, too long for every push, run with kSlowFilter.
 namespace fh::test {
+
+/// The filter that runs the slow tests, and only them.
+inline constexpr std::string_view kSlowFilter = "--slow";
 
 struct TestCase {
     const char* name;
     std::function<void()> body;
+    bool slow = false;
 };
 
 inline std::vector<TestCase>& registry()
@@ -33,7 +39,10 @@ inline int& failureCount()
 }
 
 struct Registrar {
-    Registrar(const char* name, std::function<void()> body) { registry().push_back({name, std::move(body)}); }
+    Registrar(const char* name, std::function<void()> body, bool slow = false)
+    {
+        registry().push_back({name, std::move(body), slow});
+    }
 };
 
 inline void fail(const char* file, int line, const std::string& message)
@@ -53,13 +62,25 @@ template <typename T> std::string show(const T& value)
     }
 }
 
-/// Runs the tests whose names contain `filter` (all of them when empty).
+/// Runs the tests whose names contain `filter`, or every test but the slow
+/// ones when it is empty; kSlowFilter runs the slow tests alone.
 inline int runAllTests(std::string_view filter = {})
 {
+    const bool slowOnly = filter == kSlowFilter;
     int failedTests = 0;
     int ran = 0;
+    int leftOut = 0;
     for (const TestCase& test : registry()) {
-        if (!filter.empty() && std::string_view(test.name).find(filter) == std::string_view::npos) {
+        if (slowOnly) {
+            if (!test.slow) {
+                continue;
+            }
+        } else if (!filter.empty()) {
+            if (std::string_view(test.name).find(filter) == std::string_view::npos) {
+                continue;
+            }
+        } else if (test.slow) {
+            ++leftOut;
             continue;
         }
         ++ran;
@@ -74,6 +95,10 @@ inline int runAllTests(std::string_view filter = {})
         std::fprintf(stderr, "%s %s\n", passed ? "PASS" : "FAIL", test.name);
     }
     std::fprintf(stderr, "%d of %d tests passed\n", ran - failedTests, ran);
+    if (leftOut > 0) {
+        std::fprintf(stderr, "slow tests left out: %d (%.*s runs them)\n", leftOut,
+            static_cast<int>(kSlowFilter.size()), kSlowFilter.data());
+    }
     return failedTests == 0 ? 0 : 1;
 }
 
@@ -85,6 +110,11 @@ inline int runAllTests(std::string_view filter = {})
 #define TEST(name)                                                                                                     \
     static void name();                                                                                                \
     static const ::fh::test::Registrar FH_TEST_CONCAT(registrar_, name)(#name, name);                                  \
+    static void name()
+
+#define SLOW_TEST(name)                                                                                                \
+    static void name();                                                                                                \
+    static const ::fh::test::Registrar FH_TEST_CONCAT(registrar_, name)(#name, name, true);                            \
     static void name()
 
 #define CHECK(condition)                                                                                               \

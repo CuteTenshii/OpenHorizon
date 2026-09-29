@@ -14,9 +14,13 @@ add_test(NAME tst_collision COMMAND tst_collision)
 add_executable(tst_audio TestHarness.h tst_audio.cpp)
 target_compile_options(tst_audio PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_audio PRIVATE fh1audio)
-# The disc tests inside (decoding every sample, parsing every project and
-# engine tuning) run only when FH1_GAME_DIR names an extracted disc.
+# The disc tests inside (decoding a few banks of every kind, parsing every
+# project and engine tuning) run only when FH1_GAME_DIR names an extracted
+# disc. Decoding every sample takes most of a minute: it is the slow test
+# tst_audio_slow, left out unless the label slow is asked for (ctest -L slow).
 add_test(NAME tst_audio COMMAND tst_audio)
+add_test(NAME tst_audio_slow COMMAND tst_audio --slow)
+set_tests_properties(tst_audio_slow PROPERTIES LABELS slow)
 
 add_executable(tst_carmodel TestHarness.h tst_carmodel.cpp)
 target_compile_options(tst_carmodel PRIVATE ${FH1N_WARNINGS})
@@ -34,8 +38,11 @@ add_test(NAME tst_spectators COMMAND tst_spectators)
 add_executable(tst_xenos TestHarness.h tst_xenos.cpp)
 target_compile_options(tst_xenos PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_xenos PRIVATE fh1xenoscheck)
-# The test of every game shader runs only when FH1_GAME_DIR is set.
+# The game's shaders are tested only when FH1_GAME_DIR is set: a few
+# effects by default, and every effect in the slow test tst_xenos_slow.
 add_test(NAME tst_xenos COMMAND tst_xenos)
+add_test(NAME tst_xenos_slow COMMAND tst_xenos --slow)
+set_tests_properties(tst_xenos_slow PROPERTIES LABELS slow)
 
 add_executable(tst_ui TestHarness.h tst_ui.cpp)
 target_compile_options(tst_ui PRIVATE ${FH1N_WARNINGS})

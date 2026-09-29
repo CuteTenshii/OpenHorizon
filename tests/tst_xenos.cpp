@@ -1,7 +1,7 @@
 // Tests of the Xenos shader library: hand-assembled microcode decoded,
 // disassembled, translated and compiled; an effect container built here in
 // the documented layout; and, when FH1_GAME_DIR names an extracted disc,
-// every effect of the game translated and compiled.
+// effects of the game translated and compiled (every one as a slow test).
 
 #include "TestHarness.h"
 
@@ -727,26 +727,70 @@ TEST(packsSystemConstants)
     CHECK_EQ(base, 77U);
 }
 
-TEST(translatesEveryGameShader)
+const char* gameDir()
 {
-    const char* gameDir = std::getenv("FH1_GAME_DIR");
-    if (gameDir == nullptr || *gameDir == '\0') {
+    const char* dir = std::getenv("FH1_GAME_DIR");
+    if (dir == nullptr || *dir == '\0') {
         std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return;
+        return nullptr;
     }
-    fh::Vfs vfs;
-    vfs.mountDisc(gameDir);
-    const std::vector<std::string> paths = xenos::listEffects(vfs);
-    CHECK(paths.size() > 300);
-    const xenos::CheckReport report = xenos::checkEffects(vfs, paths);
-    std::fprintf(stderr, "%s", xenos::formatReport(report).c_str());
+    return dir;
+}
+
+/// Every effect of `report` parsed, and every shader and pass translated and
+/// compiled with nothing left unsupported.
+void checkAllTranslate(const xenos::CheckReport& report)
+{
     CHECK_EQ(report.effectParseFailures, std::size_t{0});
     CHECK_EQ(report.decodeFailures, std::size_t{0});
-    CHECK(report.shaders > 4000);
     CHECK_EQ(report.translated, report.shaders);
     CHECK_EQ(report.compiled, report.shaders);
     CHECK_EQ(report.shadersWithUnsupported, std::size_t{0});
     CHECK_EQ(report.passesCompiled, report.passes);
+}
+
+// translatesEveryGameShader takes most of a minute, a GLSL compile for each
+// of over 4000 shaders. These three effects hold the kinds of control flow
+// and pass it meets: a car material branching by conditional exec,
+// predicated exec and conditional jump, a blended track material from
+// Colorado's bin.zip with two passes, and a particle effect with a pass
+// that only sets render states.
+TEST(translatesRepresentativeGameShaders)
+{
+    const char* dir = gameDir();
+    if (dir == nullptr) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const std::vector<std::string> paths{"media/shaders/cars/rim_carbon_fiber3.fxobj",
+        "media/tracks/colorado/bin/shaders/track/add_diff_opac_rgba.fxobj",
+        "media/shaders/v2/effects/particle_smoke.fxobj"};
+    const xenos::CheckReport report = xenos::checkEffects(vfs, paths);
+    std::fprintf(stderr, "%s", xenos::formatReport(report).c_str());
+    CHECK_EQ(report.effects, paths.size());
+    CHECK_EQ(report.shaders, std::size_t{8});
+    checkAllTranslate(report);
+    CHECK(report.stateOnlyPasses > 0);
+    for (const char* opcode : {"cexec_pc", "pexec", "cjmp"}) {
+        CHECK(report.controlFlow.contains(opcode));
+    }
+}
+
+SLOW_TEST(translatesEveryGameShader)
+{
+    const char* dir = gameDir();
+    if (dir == nullptr) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const std::vector<std::string> paths = xenos::listEffects(vfs);
+    CHECK(paths.size() > 300);
+    const xenos::CheckReport report = xenos::checkEffects(vfs, paths);
+    std::fprintf(stderr, "%s", xenos::formatReport(report).c_str());
+    CHECK(report.shaders > 4000);
+    checkAllTranslate(report);
 }
 
 } // namespace

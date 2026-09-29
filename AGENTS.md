@@ -21,6 +21,7 @@ cmake --build build --target fh1         # just the game
 ctest --test-dir build                   # unit tests
 FH1_GAME_DIR=/path/to/disc ctest --test-dir build        # also the checks against the real disc
 ctest --test-dir build -R tst_collision  # one test executable
+FH1_GAME_DIR=/path/to/disc ctest --test-dir build -L slow   # the slow sweeps over every sample and shader of the disc
 cmake --build build --target format      # clang-format every source (.clang-format)
 cmake --build build --target format-check
 cmake --build build --target tidy        # clang-tidy over the compilation database (.clang-tidy)
@@ -28,7 +29,7 @@ cmake --build build --target tidy        # clang-tidy over the compilation datab
 
 `lzx` and `xds` come from their git repos via FetchContent, pinned by commit in the root `CMakeLists.txt`. To work against local checkouts use `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` / `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>`.
 
-Tests are plain executables built on `tests/TestHarness.h` (no framework), one per module, registered in `tests/CMakeLists.txt`. Disc-dependent cases skip themselves unless `FH1_GAME_DIR` is set. Lefthook (`lefthook.yml`, `lefthook install` once) checks the formatting of staged lines before a commit and runs the tests except the scenarios before a push. See CONTRIBUTING.md.
+Tests are plain executables built on `tests/TestHarness.h` (no framework), one per module, registered in `tests/CMakeLists.txt`. Disc-dependent cases skip themselves unless `FH1_GAME_DIR` is set. A sweep over every file of a kind on the disc is a `SLOW_TEST`: its executable runs it only with `--slow`, registered as `<name>_slow` under the ctest label `slow`, next to a fast check of a few files chosen for their variety. Lefthook (`lefthook.yml`, `lefthook install` once) checks the formatting of staged lines before a commit and runs the tests except the scenarios and the slow tests before a push. See CONTRIBUTING.md.
 
 ### Running the game when testing
 
@@ -37,6 +38,7 @@ Never open windows on the desktop or play through the speakers. The game itself 
 ```sh
 scripts/run-tests.sh                        # configure, build, every test offscreen
 scripts/run-tests.sh build -R tst_scenarios # just the scenarios
+scripts/run-tests.sh build -L slow          # just the slow sweeps, which the other runs leave out
 scripts/capture.sh OUT_DIR [FILTER]         # run scenarios and keep their screenshots
 ```
 

@@ -1,7 +1,8 @@
 // Tests of the audio layer: the FSB and FEV readers on files built here in
 // the layouts the headers document, the DSP, mixer and engine-sound logic on
-// synthetic signals, and, when FH1_GAME_DIR names an extracted disc, every
-// bank, project and engine tuning on it.
+// synthetic signals, and, when FH1_GAME_DIR names an extracted disc, a few
+// banks of every kind (every bank as a slow test), every project and every
+// engine tuning on it.
 
 #include "TestHarness.h"
 
@@ -36,8 +37,11 @@
 #include <mutex>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -1279,7 +1283,66 @@ std::vector<std::string> filesUnder(const fh::Vfs& vfs, std::string_view suffix)
     return files;
 }
 
-TEST(discDecodesEverySample)
+/// Whether sample `index` of `bank` decodes to its full length; why not goes
+/// to stderr.
+bool decodesWhole(const FsbBank& bank, std::size_t index, std::string_view path)
+{
+    try {
+        const PcmBuffer pcm = decodeSample(bank, index);
+        if (pcm.frames() == bank.sample(index).sampleCount) {
+            return true;
+        }
+        std::fprintf(stderr, "%.*s sample %zu: %zu of %u frames\n", static_cast<int>(path.size()), path.data(), index,
+            pcm.frames(), bank.sample(index).sampleCount);
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "decode error: %s\n", e.what());
+    }
+    return false;
+}
+
+// discDecodesEverySample takes most of a minute, nearly all of it in the
+// radio's MPEG banks. These cover the kinds of sample it meets: XMA mono
+// and stereo at the engine loops' 36 and 48 kHz (an exhaust bank, as most
+// banks are), XMA at odd rates from a track's bin.zip (the festival's
+// ambience), and MPEG, one sample of each channel count and rate the
+// radio's voice bank holds, sync points among them.
+TEST(discDecodesRepresentativeBanks)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    for (const char* path :
+        {"media/audio/cars/engines/soundbanks/lod1/2rt2_rx7_exh.fsb", "media/tracks/colorado/bin/amb_festival.fsb"}) {
+        const FsbBank bank = FsbBank::parse(vfs.readOrThrow(path), path);
+        std::set<int> channels;
+        for (std::size_t i = 0; i < bank.size(); ++i) {
+            CHECK(bank.sample(i).codec == SampleCodec::Xma);
+            channels.insert(bank.sample(i).channels);
+            CHECK(decodesWhole(bank, i, path));
+        }
+        CHECK((channels == std::set<int>{1, 2}));
+    }
+
+    const char* radio = "media/audio/radio/radio_vo_en.fsb";
+    const FsbBank voice = FsbBank::parse(vfs.readOrThrow(radio), radio);
+    std::set<std::pair<int, int>> kinds;
+    bool syncPoints = false;
+    for (std::size_t i = 0; i < voice.size(); ++i) {
+        const FsbSample& sample = voice.sample(i);
+        CHECK(sample.codec == SampleCodec::Mpeg);
+        if (kinds.insert({sample.channels, sample.frequency}).second) {
+            syncPoints = syncPoints || !sample.syncPoints.empty();
+            CHECK(decodesWhole(voice, i, radio));
+        }
+    }
+    CHECK(kinds.size() > 1);
+    CHECK(syncPoints);
+}
+
+SLOW_TEST(discDecodesEverySample)
 {
     const char* dir = gameDir();
     if (!dir) {

@@ -2,9 +2,11 @@
 # Configures, builds and runs every test: the unit tests, the car checks and
 # the scenario tests that drive the whole game offscreen. Tests that need
 # the game's disc run when FH1_GAME_DIR names it (or when the settings file
-# remembers it) and skip otherwise.
+# remembers it) and skip otherwise. The slow tests, sweeps over every file
+# of a kind on the disc, run only when a label option asks for them.
 #
 #   scripts/run-tests.sh [BUILD_DIR] [ctest arguments...]
+#   scripts/run-tests.sh build -L slow     # just the slow tests
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,6 +24,16 @@ fi
 # Never open windows on the desktop or play through the speakers.
 export SDL_VIDEO_DRIVER=offscreen
 export SDL_AUDIO_DRIVER=dummy
+
+label_given=false
+for arg in "$@"; do
+    case "$arg" in
+    -L* | --label-*) label_given=true ;;
+    esac
+done
+if [[ "$label_given" == false ]]; then
+    set -- "$@" -LE slow
+fi
 
 cmake -S "$root" -B "$build" -G Ninja
 cmake --build "$build"
