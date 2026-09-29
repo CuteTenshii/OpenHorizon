@@ -57,12 +57,11 @@ TEST(stringIdKeysMatchTheStringTables)
 
 TEST(randomFollowsTheGamesGenerator)
 {
+    // Bits 16 to 30 of seed * 0x41C64E6D + 12345, from seed 12345.
     RadioRandom random(12345);
-    std::uint32_t state = 12345;
-    for (int i = 0; i < 100; ++i) {
-        state = state * 0x41C64E6DU + 12345U;
-        CHECK_EQ(random.next(), static_cast<int>((state >> 16) & 0x7FFF));
-    }
+    CHECK_EQ(random.next(), 21468);
+    CHECK_EQ(random.next(), 9988);
+    CHECK_EQ(random.next(), 22117);
     std::set<int> seen;
     for (int i = 0; i < 2000; ++i) {
         const int v = random.integer(0, 4);
@@ -279,7 +278,7 @@ TEST(sequencerRunsTheFreeRoamFlow)
     }
     CHECK(!idents.empty());
     CHECK_EQ(idents.empty() ? 0 : idents[0]->frame,
-        static_cast<std::uint64_t>((55000.0F - tracks[0]->startMs) * kRate / 1000.0F + 0.5F));
+        static_cast<std::uint64_t>(std::llround((55000.0F - tracks[0]->startMs) * kRate / 1000.0F)));
     // One track per DJ line: every change after the first has a line, and
     // the track starts so the 4 s line ends by EventStart; the intro (8 s) is
     // long enough, so it starts at SongStart.

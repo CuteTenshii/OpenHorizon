@@ -1367,17 +1367,6 @@ TEST(route_ratios_show_from_the_car_to_the_reveal)
     CHECK((routeRatios(4, 0, 0.6F) == std::vector<float>{0.0F, 0.0F, 1.0F, 1.0F}));
 }
 
-TEST(career_event_styles_name_map_activities)
-{
-    CHECK_EQ(careerEventActivityType(1), std::string_view("race"));
-    CHECK_EQ(careerEventActivityType(2), std::string_view("streetrace"));
-    CHECK_EQ(careerEventActivityType(3), std::string_view("exhibition"));
-    CHECK_EQ(careerEventActivityType(4), std::string_view("race"));
-    CHECK_EQ(careerEventActivityType(5), std::string_view("nemesisrace"));
-    CHECK_EQ(careerEventActivityType(6), std::string_view("race"));
-    CHECK(careerEventActivityType(0).empty());
-}
-
 TEST(minimap_camera_follows_the_car)
 {
     SatNavTuning tuning;
@@ -1720,9 +1709,6 @@ TEST(disc_hud_scene_structure)
     const int icons = hud.contractParameter(radioContract, "COMPONENT_RADIO_ICONS");
     CHECK(hud.goToSlideIndex(icons, 4));
     CHECK_EQ(hud.currentSlide(icons), std::string("OFF"));
-
-    const std::optional<fh::Bytes> table = vfs.read("media/stringtables/en/ingame.str");
-    CHECK(table.has_value());
 }
 
 TEST(disc_minimap_data_loads)

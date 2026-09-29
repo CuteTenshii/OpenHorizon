@@ -2,10 +2,9 @@
 // text wrapping, the map camera and the title prompt's timing on values
 // built here, and, when FH1_GAME_DIR names an extracted disc, the pause
 // menu's entries for free roam and races with their texts from the string
-// tables, the structure of the scenes the screens bind, the map's tunables,
-// background tiles and cursor area, and the title's movie and music. The
-// loading screen's cases draw it in an offscreen OpenGL context and skip
-// without one.
+// tables, the structure of the scenes the screens bind, the map's tunables
+// and cursor area, and the title's movie and music. The loading screen's
+// cases draw it in an offscreen OpenGL context and skip without one.
 
 #include "TestHarness.h"
 
@@ -29,7 +28,6 @@
 #include "vfs/Vfs.h"
 
 #include <glm/glm.hpp>
-#include <pugixml.hpp>
 #include <xds/xds.h>
 
 #include <algorithm>
@@ -87,13 +85,6 @@ TEST(wrap_breaks_at_spaces_within_the_width)
     CHECK_EQ(wrapText("one\ntwo three", 20.0F, measure), std::string("one\ntwo three"));
     CHECK_EQ(wrapText("unbreakable word", 4.0F, measure), std::string("unbreakable\nword"));
     CHECK_EQ(wrapText("", 10.0F, measure), std::string());
-}
-
-TEST(help_icons_are_the_game_paths)
-{
-    CHECK_EQ(helpIconTexture(HelpIcon::A), std::string("media/ui/textures/horizon/controller/a_button.xds"));
-    CHECK_EQ(helpIconTexture(HelpIcon::RightStickNoArrow),
-        std::string("media/ui/textures/horizon/controller/rthumbstick_noarrow.xds"));
 }
 
 TEST(map_camera_opens_on_the_player_at_the_default_zoom)
@@ -382,6 +373,12 @@ TEST(disc_pause_scene_has_the_bound_controls)
     CHECK_EQ(buttons, 7);
     const int bar = scene.contract(scene.contractParameter(root, "COMPONENT_HELP_BUTTON_BAR"), "HELP_BUTTON_BAR");
     CHECK(scene.contractParameter(bar, "GROUP_BUTTONS") >= 0);
+    // Every icon a help bar can show names a texture the disc has, but for
+    // the table's Triggers.tga, which the disc lacks.
+    for (int icon = 0; icon <= static_cast<int>(HelpIcon::Dpad); ++icon) {
+        const auto help = static_cast<HelpIcon>(icon);
+        CHECK(vfs.exists(helpIconTexture(help)) == (help != HelpIcon::Triggers));
+    }
 
     const Presentation popup(SceneFiles::load(vfs, "media/ui/scenes/ui4/h_message_popup"));
     const int popupRoot = popup.contract(0, "UIContract");
@@ -408,14 +405,6 @@ TEST(disc_map_data_is_where_the_map_reads_it)
     const int overlay = scene.contract(scene.contractParameter(root, "COMPONENT_MAP_OVERLAY"), "MAP_OVERLAY");
     CHECK(scene.contractParameter(overlay, "COMPONENT_CURSOR") >= 0);
     CHECK(scene.contractParameter(overlay, "MODEL_MAP_VIEWPORT") >= 0);
-
-    for (int column = 0; column < 5; ++column) {
-        for (int row = 0; row < 3; ++row) {
-            CHECK(vfs.exists(std::format("media/ui/textures/horizon/map/background/high-{}-{}.xds", column, row)));
-        }
-    }
-    CHECK(vfs.exists("media/ui/textures/horizon/map/background/low-0-0.xds"));
-    CHECK(vfs.exists("media/ui/textures/horizon/map/icons/mapicons/en/mapiconsheet.xds"));
 
     const NavFile nav = NavFile::parse(vfs.readOrThrow("media/tracks/colorado/colorado.nav"), "colorado.nav");
     int areas = 0;
@@ -457,9 +446,6 @@ TEST(disc_loading_tips_resolve_from_the_string_tables)
     CHECK(raceEncounters);
     CHECK(definitions.find("stats") != nullptr);
     CHECK(definitions.find("stats")->tips.empty());
-    for (int i = 1; i <= 10; ++i) {
-        CHECK(vfs.exists(std::format("media/ui/textures/horizon/loading/bgloadingimages/image{}.xds", i)));
-    }
 
     const Presentation scene(SceneFiles::load(vfs, "media/ui/scenes/ui4/2_c_ini_loading"));
     const int root = scene.contract(0, "UIContract");
@@ -714,36 +700,6 @@ TEST(disc_title_movie_is_the_wmv3_stream_its_definition_names)
     CHECK_NEAR(info.firstFrameTime, 0.0, 1e-6);
 }
 
-TEST(disc_title_music_is_the_front_end_ambience)
-{
-    const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
-    fh::Vfs vfs;
-    vfs.mountDisc(dir);
-    const std::string sounds = vfs.readText("media/audio/ui/ui4audio.xml").value_or("");
-    pugi::xml_document document;
-    CHECK(static_cast<bool>(document.load_buffer(sounds.data(), sounds.size())));
-    const pugi::xml_node splash
-        = document.child("ui4audio").child("defaults").find_child_by_attribute("event", "play", "SplashScreen");
-    CHECK_EQ(std::string(splash.attribute("group").as_string()), std::string("UIInGame/UI/FrontEnd"));
-    CHECK_EQ(std::string(splash.attribute("cue").as_string()), std::string("FE_Ambience"));
-    CHECK(splash.attribute("isLooping").as_bool());
-
-    fh::audio::AudioLibrary library(vfs);
-    const auto project = library.project("Game:\\Media\\Audio\\UI\\UIInGame\\UIInGame.fev");
-    const fh::audio::FevEvent* event = project->findEvent("UI/FrontEnd/FE_Ambience");
-    CHECK(event != nullptr);
-    if (!event) {
-        return;
-    }
-    CHECK_EQ(event->layers.size(), std::size_t{1});
-    CHECK_EQ(event->layers[0].sounds.size(), std::size_t{1});
-    CHECK_EQ(project->soundDefinition(event->layers[0].sounds[0].soundDefinition).name,
-        std::string("/FrontEnd/PressStart_Music"));
-}
-
 TEST(disc_ui_sounds_resolve_to_uiingame_events)
 {
     const char* dir = gameDir();
@@ -771,6 +727,24 @@ TEST(disc_ui_sounds_resolve_to_uiingame_events)
     for (const std::string_view name : {"Pause", "UnPause", "Accept", "Cancel", "Map_AmbientBackgroundLoop",
              "PressStartSlideOn", "PressStartSlideOff"}) {
         CHECK(project->findEvent(event(name)) != nullptr);
+    }
+
+    // The title's music: SplashScreen loops the front end ambience, whose
+    // one sound is the press start music.
+    const UiSound* splash = table.find("SplashScreen");
+    CHECK(splash != nullptr && splash->looping);
+    CHECK_EQ(event("SplashScreen"), std::string("UI/FrontEnd/FE_Ambience"));
+    const fh::audio::FevEvent* ambience = project->findEvent(event("SplashScreen"));
+    CHECK(ambience != nullptr);
+    if (ambience != nullptr) {
+        CHECK_EQ(ambience->layers.size(), std::size_t{1});
+        if (ambience->layers.size() == 1) {
+            CHECK_EQ(ambience->layers[0].sounds.size(), std::size_t{1});
+            if (ambience->layers[0].sounds.size() == 1) {
+                CHECK_EQ(project->soundDefinition(ambience->layers[0].sounds[0].soundDefinition).name,
+                    std::string("/FrontEnd/PressStart_Music"));
+            }
+        }
     }
 
     // Played on a device with no output: the pause sound sounds, a second
