@@ -190,6 +190,9 @@ private:
     std::shared_ptr<audio::AudioLibrary> m_audioLibrary;
     /// The festival radio; missing without sound or when its files are.
     std::unique_ptr<radio::Radio> m_radio;
+    /// What the HUD's radio panel shows next, when the radio's own delay
+    /// after a station change or new track has run out.
+    std::optional<radio::RadioNowPlaying> m_radioPanel;
     std::vector<std::unique_ptr<Vehicle>> m_vehicles;
     std::optional<Smashables> m_smashables;
     /// Renderer handle of each loose smashable, by body index.

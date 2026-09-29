@@ -68,7 +68,7 @@ std::vector<RaceEvent> loadRaceEvents(const Database& db, Localisation& strings,
     const std::vector<Row> rows = db.query(
         "SELECT e.Id AS EventId, r.Id AS RaceId, e.HorizonEventID, e.Name, ty.Name AS TypeName, t.RouteId, "
         "r.NumLaps, t.Length, e.CashPrize, e.NumberOfDrivers, e.TimeOfDayStart, e.TargetClass, "
-        "e.PlayerGridPosition, e.AISkillMed, e.AITemperamentMed FROM Races r "
+        "e.PlayerGridPosition, e.AISkillMed, e.AITemperamentMed, e.CareerEventStyle FROM Races r "
         "JOIN Events e ON e.Id = r.EventId JOIN Tracks t ON t.id = r.TrackId "
         "LEFT JOIN CareerEventTypes ty ON ty.id = e.CareerTypeId "
         "WHERE lower(t.MediaName) = lower(?) AND e.CareerEventStyle <> 0 ORDER BY e.EventOrder, e.Id, r.RaceNumber",
@@ -82,6 +82,7 @@ std::vector<RaceEvent> loadRaceEvents(const Database& db, Localisation& strings,
         event.name = strings.resolve("Events", row.text("Name"));
         event.type = strings.resolve("CareerEventTypes", row.text("TypeName"));
         event.routeId = row.i("RouteId");
+        event.careerEventStyle = row.i("CareerEventStyle");
         event.laps = std::max(1, row.i("NumLaps", 1));
         event.drivers = row.i("NumberOfDrivers", 7);
         event.targetClass = row.i("TargetClass");

@@ -23,6 +23,9 @@ struct RaceEvent {
     std::string horizonId;
     std::string name;
     std::string type;
+    /// Events.CareerEventStyle, which picks the event's map icon (see
+    /// ui::careerEventActivityType).
+    int careerEventStyle = 0;
     /// The route file (`Ribbon_00/TrackRouteNNN.xml`) and racing line
     /// (`route_NNN.owt`).
     int routeId = 0;

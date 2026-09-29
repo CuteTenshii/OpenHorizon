@@ -2,6 +2,7 @@
 
 #include "base/Log.h"
 #include "render/Gl.h"
+#include "ui/Minimap.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <pugixml.hpp>
@@ -529,9 +530,10 @@ void Game::updateRadio(float dt)
         m_radio->previousStation();
     }
     m_radio->update(dt);
-    if (const std::optional<radio::RadioNowPlaying> shown = m_radio->takeHudRequest()) {
+    if (std::optional<radio::RadioNowPlaying> shown = m_radio->takeHudRequest()) {
         logInfo("radio: {}{}", shown->stationName,
             shown->title.empty() ? std::string() : std::format(": {} by {}", shown->title, shown->artist));
+        m_radioPanel = std::move(shown);
     }
 }
 
@@ -1538,6 +1540,23 @@ ui::HudState Game::hudState(float dt) const
             state.standings.push_back(m_vehicles[racer->vehicle]->name);
         }
     }
+    for (const EventStart& start : m_eventStarts) {
+        const std::string_view type = ui::careerEventActivityType(m_events[start.event].careerEventStyle);
+        if (!type.empty()) {
+            state.mapMarkers.push_back(
+                {"activity_type", std::string(type), {start.position.x, start.position.z}, 0.0F});
+        }
+    }
+    // The game's map entities for other cars are CMapEntityVehicleAI ("ai")
+    // and CMapEntityVehicleFestivalTraffic ("traffic"); festival drivers
+    // counting as traffic is inferred from the class name.
+    for (std::size_t i = 1; i < m_vehicles.size(); ++i) {
+        const Vehicle& vehicle = *m_vehicles[i];
+        const glm::vec3 at = vehicle.physics->position();
+        const glm::vec3 ahead = vehicle.physics->forward();
+        state.mapMarkers.push_back({"vehicle_type", vehicle.role == Vehicle::Role::Racer ? "ai" : "traffic",
+            {at.x, at.z}, std::atan2(ahead.x, ahead.z)});
+    }
     if (m_nearbyStart) {
         const RaceEvent& event = m_events[m_eventStarts[*m_nearbyStart].event];
         state.prompt = event.name;
@@ -1553,7 +1572,13 @@ void Game::drawHud(float dt)
     m_fps = m_fps * 0.95F + (dt > 0.0F ? 1.0F / dt : 0.0F) * 0.05F;
 
     if (m_hud) {
-        m_hud->draw(hudState(dt), m_window.width(), m_window.height());
+        ui::HudState state = hudState(dt);
+        if (m_radioPanel) {
+            state.radio = ui::HudRadioRequest{
+                static_cast<int>(m_radioPanel->station), m_radioPanel->title, m_radioPanel->artist};
+            m_radioPanel.reset();
+        }
+        m_hud->draw(state, m_window.width(), m_window.height());
     }
     if (m_playerPlaced && !m_hud) {
         const CarPhysics& car = *player().physics;
