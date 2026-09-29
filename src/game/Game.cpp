@@ -9,10 +9,12 @@
 #include <xds/xds.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <format>
 #include <fstream>
+#include <string_view>
 
 namespace fh {
 
@@ -64,6 +66,60 @@ std::string ordinal(int n)
 bool secondTicked(float time, float dt)
 {
     return static_cast<int>(time) != static_cast<int>(time - dt);
+}
+
+/// CarPhysics' gravity, which its static wheel loads use.
+constexpr float kStandardGravity = 9.80665F;
+
+/// The wheels as the tyre sounds take them (audio::TyreInput); `surfaces`
+/// names the collision surface types, or is null without track collision.
+std::array<audio::TyreInput, CarPhysics::kWheels> tyreInputs(
+    const CarPhysics& car, const collision::SurfaceTable* surfaces)
+{
+    const CarSpec& spec = car.spec();
+    std::array<audio::TyreInput, CarPhysics::kWheels> inputs{};
+    for (std::size_t w = 0; w < inputs.size(); ++w) {
+        const CarPhysics::WheelState& wheel = car.wheels()[w];
+        audio::TyreInput& input = inputs[w];
+        input.onGround = wheel.onGround;
+        // Render geometry has no surface type, and Tires.xml maps sounds
+        // only to named surfaces, so a wheel on it stays silent.
+        const collision::SurfaceType* type = surfaces && wheel.ground.surface >= 0
+            ? surfaces->find(static_cast<std::uint8_t>(wheel.ground.surface))
+            : nullptr;
+        input.surface = type ? std::string_view(type->name) : std::string_view();
+        // The tyre sounds take slips over the tyre's peak. CarPhysics
+        // normalises slipMagnitude by the peaks at each axle's static load
+        // and keeps them private; the same computation from the car's spec
+        // gives the angle and ratio on the same scale.
+        const bool front = w < 2;
+        const float staticLoad
+            = car.mass() * kStandardGravity * (front ? spec.frontWeight : 1.0F - spec.frontWeight) * 0.5F;
+        const float peakAngleDeg = std::max(1.0F, spec.compound.lateral.peakSlip(staticLoad));
+        const float peakRatio = std::max(0.02F, spec.compound.longitudinal.peakSlip(staticLoad));
+        input.slipAngle = glm::degrees(wheel.slipAngle) / peakAngleDeg;
+        input.slipRatio = wheel.slipRatio / peakRatio;
+        input.combinedSlip = wheel.slipMagnitude;
+        input.load = wheel.load;
+        input.spin = wheel.spin;
+        input.position = wheel.hubWorld;
+    }
+    return inputs;
+}
+
+audio::TyreCarInput tyreCarInput(const CarPhysics& car)
+{
+    audio::TyreCarInput input;
+    input.mass = car.mass();
+    // The game flips SlipRatio when its drivetrain speed is negative; the
+    // wheels' mean spin carries the same sign whichever axle drives.
+    float spin = 0.0F;
+    for (const CarPhysics::WheelState& wheel : car.wheels()) {
+        spin += wheel.spin;
+    }
+    input.reversing = spin < 0.0F;
+    input.position = car.position();
+    return input;
 }
 
 } // namespace
@@ -573,15 +629,10 @@ void Game::updateAudio(float dt)
             vehicle->engine->shiftGear(vehicle->lastGear, car.gear());
             vehicle->lastGear = car.gear();
         }
-        float slip = 0.0F;
-        for (const CarPhysics::WheelState& wheel : car.wheels()) {
-            if (wheel.onGround) {
-                slip = std::max(slip, wheel.slipMagnitude);
-            }
-        }
-        vehicle->engine->setTyreSlip(slip);
+        vehicle->engine->updateTyres(
+            tyreInputs(car, m_collision ? m_collision->surfaces() : nullptr), tyreCarInput(car), dt);
         vehicle->engine->setTransform(car.position(), glm::mat3_cast(car.orientation()));
-        vehicle->engine->update(car.engineRpm(), car.throttleApplied(), car.speed(), dt);
+        vehicle->engine->update(car.engineRpm(), car.throttleApplied(), dt);
     }
 }
 

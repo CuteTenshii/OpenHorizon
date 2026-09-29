@@ -140,6 +140,18 @@ struct FevEvent {
     const FevParameter* findParameter(std::string_view parameterName) const;
 };
 
+/// An event group: a folder of events and subgroups. Its user properties
+/// hold settings the game reads by name (Tires.fev's "Tires/Tires" group
+/// carries the tyre parameter smoothing rates).
+struct FevGroup {
+    /// Parent groups and name joined with '/', without the project name,
+    /// e.g. "Tires/LOD1/OnRoad".
+    std::string path;
+    std::vector<FevUserProperty> userProperties;
+
+    const FevUserProperty* findUserProperty(std::string_view propertyName) const;
+};
+
 struct FevWaveform {
     enum class Type : std::uint32_t { Wavetable = 0, Oscillator = 1, DontPlay = 2, Programmer = 3 };
     Type type = Type::Wavetable;
@@ -224,11 +236,16 @@ public:
     const std::vector<FevBank>& banks() const { return m_banks; }
     const FevCategory& categories() const { return m_categories; }
     const std::vector<FevEvent>& events() const { return m_events; }
+    /// Every event group, parents before their subgroups.
+    const std::vector<FevGroup>& groups() const { return m_groups; }
     const std::vector<FevSoundDefinition>& soundDefinitions() const { return m_soundDefinitions; }
 
     /// The event at `path` ("Group/Subgroup/Event"), compared without case;
     /// a leading project name is accepted.
     const FevEvent* findEvent(std::string_view path) const;
+    /// The group at `path`, compared without case; a leading project name
+    /// is accepted.
+    const FevGroup* findGroup(std::string_view path) const;
     const FevSoundDefinition& soundDefinition(std::size_t index) const;
 
 private:
@@ -237,6 +254,7 @@ private:
     std::vector<FevBank> m_banks;
     FevCategory m_categories;
     std::vector<FevEvent> m_events;
+    std::vector<FevGroup> m_groups;
     std::vector<FevSoundDefinition> m_soundDefinitions;
 };
 

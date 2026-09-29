@@ -39,6 +39,12 @@ struct EventSettings {
 /// do the layers' volume envelopes; pitch and effect envelopes do not (their
 /// scales are unknown), and instances switch at their range boundaries
 /// without FMOD's crossfades.
+///
+/// A spatial 3D event keeps Designer's built-in "(distance)" parameter at
+/// its distance from the mixer's listener. An event whose mode has FMOD's
+/// custom rolloff bit (0x4000000) gets no distance attenuation of its own:
+/// such events draw their fall-off as a volume curve on "(distance)" (the
+/// LOD2 tyre rolls, whose minimum distance is 0, are the case on the disc).
 class EventInstance {
 public:
     /// `projectPath` is the game path of the .fev, used to find its banks;
@@ -65,6 +71,9 @@ public:
     void setPosition(const glm::vec3& position);
     /// Whether any of its voices is still sounding.
     bool isPlaying() const;
+    /// Between start() and stop(), whether or not any sound instance is in
+    /// range.
+    bool isStarted() const { return m_started; }
 
 private:
     struct Slot {
@@ -84,6 +93,8 @@ private:
     VoiceId startSound(const FevLayer& layer, const FevSoundInstance& sound);
     float voiceVolume() const;
     float voicePitch() const;
+    /// Sets "(distance)" from the listener, for spatial 3D events.
+    void updateDistance();
 
     Mixer& m_mixer;
     AudioLibrary& m_library;
@@ -93,6 +104,8 @@ private:
     EventSettings m_settings;
     std::vector<float> m_parameters;
     std::vector<Slot> m_slots;
+    /// Index of the "(distance)" parameter, if the event has one.
+    std::optional<std::size_t> m_distanceParameter;
     std::mt19937 m_random;
     bool m_started = false;
 };

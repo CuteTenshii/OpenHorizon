@@ -15,6 +15,7 @@
 #include "audio/Fev.h"
 #include "audio/Fsb.h"
 #include "audio/Mixer.h"
+#include "audio/TyreSound.h"
 #include "audio/Wav.h"
 #include "base/Bytes.h"
 #include "vfs/Vfs.h"
@@ -22,17 +23,21 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <thread>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -516,6 +521,23 @@ TEST(fevParsesEventsAndSoundDefinitions)
         }
         CHECK(project.findEvent("Group/Missing") == nullptr);
 
+        CHECK_EQ(project.groups().size(), std::size_t{2});
+        const FevGroup* group = project.findGroup("proj/group");
+        CHECK(group != nullptr);
+        if (group) {
+            const FevUserProperty* placeable = group->findUserProperty("placeable");
+            CHECK(placeable != nullptr);
+            if (placeable) {
+                CHECK(std::holds_alternative<std::int32_t>(placeable->value));
+                CHECK_EQ(std::get<std::int32_t>(placeable->value), 7);
+            }
+            CHECK(group->findUserProperty("Missing") == nullptr);
+        }
+        const FevGroup* sub = project.findGroup("Group/Sub");
+        CHECK(sub != nullptr);
+        CHECK(sub && sub->userProperties.empty());
+        CHECK(project.findGroup("Sub") == nullptr);
+
         CHECK_EQ(project.soundDefinitions().size(), std::size_t{2});
         const FevSoundDefinition& definition = project.soundDefinition(0);
         CHECK_EQ(definition.name, std::string("/Click"));
@@ -540,6 +562,26 @@ TEST(fevRejectsMisreadProjects)
     Bytes version = good;
     version[6] = 0x41;
     CHECK_THROWS(FevProject::parse(version, "version.fev"));
+}
+
+TEST(tyreSurfaceMapParses)
+{
+    const TyreSurfaceMap map = TyreSurfaceMap::parse(
+        "<Tires>\n"
+        "<SurfaceMap PhysicsSurface=\"Asphalt\" Lod1EventGroup=\"Tires/Tires/LOD1/OnRoad\" "
+        "Lod2EventGroup=\"Tires/Tires/LOD2/OnRoad\" SurfaceIndex=\"0\"/>\n"
+        "<SurfaceMap PhysicsSurface=\"Gravel\" Lod1EventGroup=\"Tires/Tires/LOD1/OffRoad\" "
+        "Lod2EventGroup=\"Tires/Tires/LOD2/OffRoad\" SurfaceIndex=\"12\"/>\n"
+        "<SurfaceMap Lod1EventGroup=\"Tires/Tires/LOD1/OnRoad\"/>\n"
+        "</Tires>\n");
+    CHECK_EQ(map.surfaces.size(), std::size_t{2});
+    CHECK(map.find("gravel") == std::optional<std::size_t>(1));
+    CHECK(!map.find("Kerb"));
+    CHECK_EQ(map.surfaces[1].lod1EventGroup, std::string("Tires/Tires/LOD1/OffRoad"));
+    CHECK_EQ(map.surfaces[1].lod2EventGroup, std::string("Tires/Tires/LOD2/OffRoad"));
+    CHECK_EQ(map.surfaces[1].surfaceIndex, 12);
+    CHECK_THROWS(TyreSurfaceMap::parse("<Other/>"));
+    CHECK_THROWS(TyreSurfaceMap::parse("not xml <"));
 }
 
 TEST(wavHeaderDescribesTheData)
@@ -1366,6 +1408,132 @@ TEST(discEngineTuningsLoad)
     CHECK_EQ(loaded, std::size_t{801});
 }
 
+/// Four wheels in the same state, for the tyre tests.
+std::array<TyreInput, TyreSound::kWheels> sameWheels(std::string_view surface, bool onGround, float spin,
+    float slipAngle, float slipRatio, float combinedSlip, float load)
+{
+    std::array<TyreInput, TyreSound::kWheels> wheels{};
+    for (TyreInput& wheel : wheels) {
+        wheel.onGround = onGround;
+        wheel.surface = surface;
+        wheel.spin = spin;
+        wheel.slipAngle = slipAngle;
+        wheel.slipRatio = slipRatio;
+        wheel.combinedSlip = combinedSlip;
+        wheel.load = load;
+    }
+    return wheels;
+}
+
+double renderRms(AudioDevice& device, const std::function<void()>& update, float seconds)
+{
+    double energy = 0.0;
+    std::size_t count = 0;
+    for (int i = 0; i < static_cast<int>(seconds * 60.0F); ++i) {
+        update();
+        for (const float sample : device.render(800)) {
+            energy += static_cast<double>(sample) * sample;
+            ++count;
+        }
+    }
+    return std::sqrt(energy / static_cast<double>(std::max<std::size_t>(count, 1)));
+}
+
+TEST(discTyreSoundFollowsTheGame)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const auto library = std::make_shared<AudioLibrary>(vfs);
+    AudioDevice device{AudioDevice::Offline{}};
+    TyreSound tyres(device.mixer(), library);
+
+    const TyreSmoothing& smoothing = tyres.smoothing();
+    CHECK_NEAR(smoothing.combinedSlipRate, 10.0, 1e-6);
+    CHECK_NEAR(smoothing.slipAngleRate, 10.0, 1e-6);
+    CHECK_NEAR(smoothing.slipRatioRate, 10.0, 1e-6);
+    CHECK_NEAR(smoothing.normLoadRate, 3.0, 1e-6);
+    CHECK_NEAR(smoothing.tireRpmRate, 500000.0, 1e-2);
+    CHECK_NEAR(smoothing.timeUntilLeavesGround, 0.15, 1e-6);
+    CHECK_EQ(tyres.surfaces().surfaces.size(), std::size_t{42});
+    const std::optional<std::size_t> asphalt = tyres.surfaces().find("Asphalt");
+    CHECK(asphalt.has_value());
+
+    constexpr float kMass = 1500.0F;
+    const float quarterWeight = kMass * 9.80665F / 4.0F;
+    TyreCarInput car;
+    car.mass = kMass;
+    constexpr float kDt = 0.1F;
+
+    // Slips move at 10 units per second, load at 3, and rpm at once.
+    tyres.update(sameWheels("Asphalt", true, 100.0F, 3.0F, 2.0F, 4.0F, 2.0F * quarterWeight), car, kDt);
+    const TyreSound::Parameters& front = tyres.parameters(0);
+    CHECK_NEAR(front.slipAngle, 1.0, 1e-4);
+    CHECK_NEAR(front.slipRatio, 1.0, 1e-4);
+    CHECK_NEAR(front.combinedSlip, 1.0, 1e-4);
+    CHECK_NEAR(front.normLoad, 0.3, 1e-4);
+    CHECK_NEAR(front.tireRpm, 100.0 * 60.0 / (2.0 * std::numbers::pi), 1e-2);
+    CHECK(asphalt && front.surface == static_cast<int>(*asphalt));
+    CHECK(front.grounded);
+
+    // The game's clamps: slips to 5, load to 3 quarter weights, rpm to
+    // 20000; slip ratio flips sign in reverse.
+    car.reversing = true;
+    for (int i = 0; i < 20; ++i) {
+        tyres.update(sameWheels("Asphalt", true, 5000.0F, -9.0F, 9.0F, 9.0F, 9.0F * quarterWeight), car, kDt);
+    }
+    CHECK_NEAR(front.slipAngle, 5.0, 1e-4);
+    CHECK_NEAR(front.slipRatio, -5.0, 1e-4);
+    CHECK_NEAR(front.combinedSlip, 5.0, 1e-4);
+    CHECK_NEAR(front.normLoad, 3.0, 1e-4);
+    CHECK_NEAR(front.tireRpm, 20000.0, 1e-2);
+    car.reversing = false;
+
+    // Briefly airborne, a wheel keeps its values and surface; after
+    // TimeUntilTireLeavesGround it takes the raw ones and loses the surface.
+    tyres.update(sameWheels("Asphalt", false, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F), car, kDt);
+    CHECK(front.grounded);
+    CHECK_NEAR(front.slipAngle, 5.0, 1e-4);
+    tyres.update(sameWheels("Asphalt", false, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F), car, kDt);
+    CHECK(!front.grounded);
+    CHECK_EQ(front.surface, -1);
+    CHECK_NEAR(front.slipAngle, 0.0, 1e-6);
+    device.render(4800);
+    CHECK(!tyres.isPlaying());
+
+    // Standing still makes no sound; rolling plays the road noise alone, the
+    // skid events staying below every skid layer's range; sliding is louder.
+    const auto standing = sameWheels("Asphalt", true, 0.0F, 0.0F, 0.0F, 0.0F, quarterWeight);
+    const double standingRms = renderRms(device, [&] { tyres.update(standing, car, 1.0F / 60.0F); }, 1.0F);
+    CHECK(standingRms < 1e-4);
+    const auto rolling = sameWheels("Asphalt", true, 60.0F, 0.05F, 0.05F, 0.07F, quarterWeight);
+    const double rollingRms = renderRms(device, [&] { tyres.update(rolling, car, 1.0F / 60.0F); }, 1.0F);
+    CHECK(rollingRms > 0.005);
+    const auto sliding = sameWheels("Asphalt", true, 50.0F, 3.0F, -0.5F, 3.0F, quarterWeight);
+    const double slidingRms = renderRms(device, [&] { tyres.update(sliding, car, 1.0F / 60.0F); }, 1.0F);
+    CHECK(slidingRms > 2.0 * rollingRms);
+
+    // A surface Tires.xml does not list has no tyre sounds.
+    const auto kerb = sameWheels("Kerb", true, 60.0F, 3.0F, 0.0F, 3.0F, quarterWeight);
+    renderRms(device, [&] { tyres.update(kerb, car, 1.0F / 60.0F); }, 0.5F);
+    CHECK(!tyres.isPlaying());
+    CHECK_EQ(tyres.parameters(0).surface, -1);
+    CHECK(tyres.parameters(0).grounded);
+
+    // LOD2 follows the most slipping wheel and needs some slip to sound.
+    TyreSoundOptions single;
+    single.perWheel = false;
+    TyreSound pair(device.mixer(), library, single);
+    const double stillRms = renderRms(device, [&] { pair.update(standing, car, 1.0F / 60.0F); }, 0.5F);
+    CHECK(stillRms < 1e-4);
+    CHECK(!pair.isPlaying());
+    renderRms(device, [&] { pair.update(sliding, car, 1.0F / 60.0F); }, 0.5F);
+    CHECK(pair.isPlaying());
+}
+
 TEST(discEngineSoundPlays)
 {
     const char* dir = gameDir();
@@ -1387,7 +1555,7 @@ TEST(discEngineSoundPlays)
         float peak = 0.0F;
         std::size_t count = 0;
         for (int i = 0; i < static_cast<int>(seconds * 60.0F); ++i) {
-            engine.update(rpm, throttle, 20.0F, 1.0F / 60.0F);
+            engine.update(rpm, throttle, 1.0F / 60.0F);
             for (const float s : device.render(800)) {
                 energy += static_cast<double>(s) * s;
                 peak = std::max(peak, std::abs(s));
@@ -1413,19 +1581,31 @@ TEST(discEngineSoundPlays)
     const std::size_t loops = device.mixer().activeVoiceCount();
     std::size_t most = loops;
     for (int i = 0; i < 180; ++i) {
-        engine.update(7300.0F, 0.0F, 30.0F, 1.0F / 60.0F);
+        engine.update(7300.0F, 0.0F, 1.0F / 60.0F);
         device.render(800);
         most = std::max(most, device.mixer().activeVoiceCount());
     }
     CHECK(most > loops);
 
     engine.shiftGear(2, 3);
-    engine.setTyreSlip(0.8F);
+    CHECK(engine.tyres() != nullptr);
+    std::array<TyreInput, TyreSound::kWheels> sliding{};
+    for (TyreInput& wheel : sliding) {
+        wheel.onGround = true;
+        wheel.surface = "Asphalt";
+        wheel.spin = 50.0F;
+        wheel.slipAngle = 3.0F;
+        wheel.combinedSlip = 3.0F;
+        wheel.load = 3500.0F;
+    }
+    TyreCarInput car;
+    car.mass = 1500.0F;
+    engine.updateTyres(sliding, car, 1.0F / 60.0F);
     const auto [effectsRms, effectsPeak] = run(0.5F, 5000.0F, 1.0F);
     CHECK(effectsRms > 0.03);
     CHECK(effectsPeak < 0.99F);
     CHECK(device.mixer().activeVoiceCount() > loops);
-    engine.setTyreSlip(0.0F);
+    CHECK(engine.tyres() && engine.tyres()->isPlaying());
 
     CHECK_THROWS(EngineSound(device, vfs, "NOT_A_CAR_00"));
 }

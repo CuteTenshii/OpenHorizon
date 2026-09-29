@@ -4,10 +4,20 @@
 
 #include "base/Log.h"
 
+#include <glm/geometric.hpp>
+
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace fh::audio {
+
+namespace {
+
+/// FMOD_3D_CUSTOMROLLOFF, in the event's mode word.
+constexpr std::uint32_t kCustomRolloff = 0x4000000;
+
+} // namespace
 
 EventInstance::EventInstance(Mixer& mixer, AudioLibrary& library, std::string projectPath,
     std::shared_ptr<const FevProject> project, const FevEvent& event, EventSettings settings)
@@ -19,8 +29,15 @@ EventInstance::EventInstance(Mixer& mixer, AudioLibrary& library, std::string pr
     , m_settings(settings)
     , m_random(m_settings.seed)
 {
-    for (const FevParameter& parameter : m_event.parameters) {
+    for (std::size_t i = 0; i < m_event.parameters.size(); ++i) {
+        const FevParameter& parameter = m_event.parameters[i];
         m_parameters.push_back(parameter.minimum);
+        if (parameter.name == "(distance)") {
+            m_distanceParameter = i;
+        }
+    }
+    if (!m_settings.rolloff && (m_event.mode & kCustomRolloff) != 0) {
+        m_settings.rolloff = Rolloff{std::numeric_limits<float>::infinity()};
     }
     for (std::size_t l = 0; l < m_event.layers.size(); ++l) {
         for (std::size_t s = 0; s < m_event.layers[l].sounds.size(); ++s) {
@@ -141,9 +158,20 @@ void EventInstance::refresh()
     }
 }
 
+void EventInstance::updateDistance()
+{
+    if (!m_distanceParameter || !m_settings.spatial || !m_event.is3d()) {
+        return;
+    }
+    const FevParameter& parameter = m_event.parameters[*m_distanceParameter];
+    const float distance = glm::length(m_settings.position - m_mixer.listenerPosition());
+    m_parameters[*m_distanceParameter] = std::clamp(distance, parameter.minimum, parameter.maximum);
+}
+
 void EventInstance::start()
 {
     m_started = true;
+    updateDistance();
     refresh();
 }
 
@@ -190,6 +218,10 @@ void EventInstance::setPosition(const glm::vec3& position)
     m_settings.position = position;
     for (const Slot& slot : m_slots) {
         m_mixer.setPosition(slot.voice, position);
+    }
+    if (m_distanceParameter && m_settings.spatial && m_event.is3d()) {
+        updateDistance();
+        refresh();
     }
 }
 

@@ -127,6 +127,7 @@ public:
     /// The listener's position and the direction of its right ear, which
     /// makes the pan independent of the coordinate system's handedness.
     void setListener(const glm::vec3& position, const glm::vec3& right);
+    glm::vec3 listenerPosition() const;
     void setMasterVolume(float volume);
 
     /// Mixes `out.size() / 2` stereo frames into `out`, overwriting it. The

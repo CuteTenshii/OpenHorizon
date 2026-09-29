@@ -19,6 +19,7 @@ struct ParsedProject {
     std::vector<FevBank> banks;
     FevCategory categories;
     std::vector<FevEvent> events;
+    std::vector<FevGroup> groups;
     std::vector<FevSoundDefinition> soundDefinitions;
 };
 
@@ -42,7 +43,7 @@ private:
     }
 
     FevCategory readCategory(int depth);
-    void readGroup(const std::string& prefix, std::vector<FevEvent>& events, int depth);
+    void readGroup(const std::string& prefix, ParsedProject& contents, int depth);
     FevEvent readEvent(const std::string& prefix);
     FevSoundInstance readSoundInstance();
     FevEnvelope readEnvelope();
@@ -99,21 +100,23 @@ std::vector<FevUserProperty> FevReader::readUserProperties()
     return properties;
 }
 
-void FevReader::readGroup(const std::string& prefix, std::vector<FevEvent>& events, int depth)
+void FevReader::readGroup(const std::string& prefix, ParsedProject& contents, int depth)
 {
     if (depth > 64) {
         m_in.fail("event groups nested more than 64 levels");
     }
-    const std::string name = m_in.countedString();
-    const std::string path = prefix + name + "/";
-    readUserProperties();
+    FevGroup group;
+    group.path = prefix + m_in.countedString();
+    group.userProperties = readUserProperties();
+    const std::string path = group.path + "/";
+    contents.groups.push_back(std::move(group));
     const std::uint32_t subgroups = count("subgroup");
     const std::uint32_t groupEvents = count("event");
     for (std::uint32_t i = 0; i < subgroups; ++i) {
-        readGroup(path, events, depth + 1);
+        readGroup(path, contents, depth + 1);
     }
     for (std::uint32_t i = 0; i < groupEvents; ++i) {
-        events.push_back(readEvent(path));
+        contents.events.push_back(readEvent(path));
     }
 }
 
@@ -312,7 +315,7 @@ ParsedProject FevReader::read()
 
     const std::uint32_t groups = count("event group");
     for (std::uint32_t i = 0; i < groups; ++i) {
-        readGroup({}, contents.events, 0);
+        readGroup({}, contents, 0);
     }
 
     const std::uint32_t templates = count("sound definition template");
@@ -369,6 +372,7 @@ FevProject FevProject::parse(ByteView data, std::string source)
     project.m_banks = std::move(contents.banks);
     project.m_categories = std::move(contents.categories);
     project.m_events = std::move(contents.events);
+    project.m_groups = std::move(contents.groups);
     project.m_soundDefinitions = std::move(contents.soundDefinitions);
     return project;
 }
@@ -382,6 +386,29 @@ const FevEvent* FevProject::findEvent(std::string_view path) const
     }
     if (startsWithNoCase(path, m_name) && path.size() > m_name.size() && path[m_name.size()] == '/') {
         return findEvent(path.substr(m_name.size() + 1));
+    }
+    return nullptr;
+}
+
+const FevGroup* FevProject::findGroup(std::string_view path) const
+{
+    for (const FevGroup& group : m_groups) {
+        if (iequals(group.path, path)) {
+            return &group;
+        }
+    }
+    if (startsWithNoCase(path, m_name) && path.size() > m_name.size() && path[m_name.size()] == '/') {
+        return findGroup(path.substr(m_name.size() + 1));
+    }
+    return nullptr;
+}
+
+const FevUserProperty* FevGroup::findUserProperty(std::string_view propertyName) const
+{
+    for (const FevUserProperty& property : userProperties) {
+        if (iequals(property.name, propertyName)) {
+            return &property;
+        }
     }
     return nullptr;
 }

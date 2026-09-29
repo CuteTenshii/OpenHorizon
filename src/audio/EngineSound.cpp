@@ -3,27 +3,23 @@
 #include "AudioDevice.h"
 #include "AudioLibrary.h"
 #include "EventPlayer.h"
+#include "TyreSound.h"
 
 #include "base/Log.h"
 #include "vfs/Vfs.h"
 
 #include <algorithm>
 #include <cmath>
-#include <numbers>
 
 namespace fh::audio {
 
 namespace {
 
-constexpr const char* kTiresProject = "media/audio/cars/tires/tires.fev";
-constexpr const char* kSkidEvent = "Tires/LOD1/OnRoad/Skid_LF";
 constexpr const char* kTransmissionsProject = "media/audio/cars/transmissions/transmissions.fev";
 constexpr const char* kShiftEvent = "ShiftComplete/L0";
 /// Fuel-cut rhythm of the rev limiter: one 35 ms cut every 90 ms.
 constexpr float kLimiterPeriod = 0.09F;
 constexpr float kLimiterCut = 0.035F;
-/// Wheel radius used to turn road speed into the skid event's TireRPM.
-constexpr float kWheelRadius = 0.33F;
 
 std::string_view groupName(EmissionGroup group)
 {
@@ -66,7 +62,7 @@ EngineSound::EngineSound(AudioDevice& device, std::shared_ptr<AudioLibrary> libr
 
 EngineSound::~EngineSound()
 {
-    m_skid.reset();
+    m_tyres.reset();
     m_shift.reset();
     for (const Emitter& emitter : m_emitters) {
         m_mixer.destroyBus(emitter.bus);
@@ -295,7 +291,18 @@ void EngineSound::startEvents()
         }
     };
     if (m_options.tyres) {
-        m_skid = prepare(kTiresProject, kSkidEvent, otherVolume("TireVolume") * m_volume);
+        TyreSoundOptions tyres;
+        // The game gives the car in focus a roll and a skid per wheel and
+        // other cars one pair; the player's car is the one heard unplaced.
+        tyres.perWheel = !m_options.spatial;
+        tyres.spatial = m_options.spatial;
+        tyres.volume = otherVolume("TireVolume") * m_volume;
+        tyres.seed = m_random();
+        try {
+            m_tyres = std::make_unique<TyreSound>(m_mixer, m_library, tyres);
+        } catch (const DataError& e) {
+            logWarning("audio: tyre sounds unavailable: {}", e.what());
+        }
     }
     if (m_options.transmission) {
         m_shift = prepare(kTransmissionsProject, kShiftEvent,
@@ -320,7 +327,7 @@ EngineInputs EngineSound::inputs(float rpm, float throttle) const
     return in;
 }
 
-void EngineSound::update(float rpm, float throttle, float speed, float dt)
+void EngineSound::update(float rpm, float throttle, float dt)
 {
     dt = std::max(dt, 0.0F);
     const float smoothing = 1.0F - std::exp(-dt / 0.04F);
@@ -375,14 +382,6 @@ void EngineSound::update(float rpm, float throttle, float speed, float dt)
     }
     updateBurbles(in, rpm, dt);
 
-    if (m_skid) {
-        const float angle = m_slip * 4.0F;
-        m_skid->setParameter("SlipAngle", angle);
-        m_skid->setParameter("SlipRatio", 0.0F);
-        m_skid->setParameter("Load", 1.0F);
-        m_skid->setParameter("TireRPM", std::abs(speed) / (2.0F * std::numbers::pi_v<float> * kWheelRadius) * 60.0F);
-        m_skid->setParameter("TireTemperature", 225.0F);
-    }
     if (m_shift) {
         m_shift->setParameter("TransmissionRPM", rpm);
     }
@@ -489,17 +488,10 @@ void EngineSound::shiftGear(int fromGear, int toGear)
     m_backfireQueued = up;
 }
 
-void EngineSound::setTyreSlip(float slip)
+void EngineSound::updateTyres(std::span<const TyreInput, 4> wheels, const TyreCarInput& car, float dt)
 {
-    const float previous = m_slip;
-    m_slip = std::clamp(slip, 0.0F, 1.0F);
-    if (!m_skid) {
-        return;
-    }
-    if (m_slip > 0.05F && previous <= 0.05F) {
-        m_skid->start();
-    } else if (m_slip <= 0.05F && previous > 0.05F) {
-        m_skid->stop(0.1F);
+    if (m_tyres) {
+        m_tyres->update(wheels, car, dt);
     }
 }
 
@@ -519,9 +511,6 @@ void EngineSound::setTransform(const glm::vec3& position, const glm::mat3& basis
             }
         }
     }
-    if (m_skid) {
-        m_skid->setPosition(position);
-    }
     if (m_shift) {
         m_shift->setPosition(position);
     }
@@ -530,8 +519,8 @@ void EngineSound::setTransform(const glm::vec3& position, const glm::mat3& basis
 void EngineSound::setVolume(float volume)
 {
     m_volume = std::max(volume, 0.0F);
-    if (m_skid) {
-        m_skid->setVolume(otherVolume("TireVolume") * m_volume);
+    if (m_tyres) {
+        m_tyres->setVolume(otherVolume("TireVolume") * m_volume);
     }
 }
 

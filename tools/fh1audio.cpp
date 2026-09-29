@@ -1,6 +1,6 @@
 // Inspects and plays the game's audio: lists and exports FMOD sound banks,
 // decodes every sample on the disc as a check, lists and plays FMOD Designer
-// events, and renders or plays a car's engine sound.
+// events, and renders or plays a car's engine and tyre sounds.
 
 #include "audio/AudioDevice.h"
 #include "audio/AudioLibrary.h"
@@ -8,11 +8,13 @@
 #include "audio/EngineSound.h"
 #include "audio/EventPlayer.h"
 #include "audio/Fsb.h"
+#include "audio/TyreSound.h"
 #include "audio/Wav.h"
 #include "base/Log.h"
 #include "vfs/Vfs.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -25,6 +27,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -41,12 +44,16 @@ int usage()
         "       fh1audio DISC export BANK OUTDIR\n"
         "       fh1audio DISC verify [FOLDER]\n"
         "       fh1audio DISC events PROJECT\n"
+        "       fh1audio DISC describe PROJECT EVENT\n"
         "       fh1audio DISC event PROJECT EVENT [--wav OUT] [--seconds N] [--param NAME=VALUE]...\n"
         "       fh1audio DISC engine CAR --wav OUT [--seconds N] [--view VIEW] [--upgrade LEVEL]\n"
         "       fh1audio DISC play CAR [--seconds N] [--view VIEW] [--upgrade LEVEL]\n"
+        "       fh1audio DISC tyres --wav OUT [--surface NAME] [--seconds N] [--lod2 1]\n"
         "\n"
         "engine and play sweep the rpm from idle to the redline at full throttle,\n"
-        "hold it on the limiter, and let it fall back to idle with the throttle shut.\n");
+        "hold it on the limiter, and let it fall back to idle with the throttle shut.\n"
+        "tyres plays four wheels on a surfaceTypes.xml surface (default Asphalt)\n"
+        "through a scripted drive and prints each stage's level.\n");
     return 2;
 }
 
@@ -247,6 +254,13 @@ int listEvents(AudioLibrary& library, const std::string& projectPath)
     for (const FevBank& bank : project->banks()) {
         std::printf("  %s\n", AudioLibrary::bankPathFor(projectPath, bank.name).c_str());
     }
+    for (const FevGroup& group : project->groups()) {
+        for (const FevUserProperty& property : group.userProperties) {
+            std::visit([&](const auto& value) {
+                std::printf("%s\n", std::format("group {}: {} = {}", group.path, property.name, value).c_str());
+            }, property.value);
+        }
+    }
     for (const FevEvent& event : project->events()) {
         std::string parameters;
         for (const FevParameter& parameter : event.parameters) {
@@ -275,6 +289,60 @@ int listEvents(AudioLibrary& library, const std::string& projectPath)
     }
     std::printf("%zu events, %zu sound definitions, %zu waveforms (%zu wavetables)\n", project->events().size(),
         project->soundDefinitions().size(), waveforms, wavetables);
+    return 0;
+}
+
+int describeEvent(AudioLibrary& library, const std::string& projectPath, const std::string& eventPath)
+{
+    const std::shared_ptr<const FevProject> project = library.project(projectPath);
+    const FevEvent* event = project->findEvent(eventPath);
+    if (!event) {
+        fh::logError("{} has no event '{}'", projectPath, eventPath);
+        return 1;
+    }
+    std::printf("%s\n", std::format("{}: volume {} pitch {} priority {} max playbacks {} mode 0x{:x} distance {}..{}",
+        event->path, event->volume, event->pitch, event->priority, event->maxPlaybacks, event->mode,
+        event->minDistance, event->maxDistance).c_str());
+    for (std::size_t i = 0; i < event->parameters.size(); ++i) {
+        const FevParameter& parameter = event->parameters[i];
+        std::printf("%s\n", std::format("  parameter {} {}: {}..{} velocity {} flags 0x{:x} seek speed {}", i,
+            parameter.name, parameter.minimum, parameter.maximum, parameter.velocity, parameter.flags,
+            parameter.seekSpeed).c_str());
+    }
+    for (const FevUserProperty& property : event->userProperties) {
+        std::visit([&](const auto& value) {
+            std::printf("%s\n", std::format("  user property {} = {}", property.name, value).c_str());
+        }, property.value);
+    }
+    for (const std::string& category : event->categories) {
+        std::printf("  category %s\n", category.c_str());
+    }
+    for (std::size_t l = 0; l < event->layers.size(); ++l) {
+        const FevLayer& layer = event->layers[l];
+        const std::string control = layer.controlParameter < event->parameters.size()
+            ? event->parameters[layer.controlParameter].name
+            : std::string("none");
+        std::printf("%s\n", std::format("  layer {}: flags 0x{:x} priority {} follows {}", l, layer.flags,
+            layer.priority, control).c_str());
+        for (const FevSoundInstance& sound : layer.sounds) {
+            const FevSoundDefinition& definition = project->soundDefinition(sound.soundDefinition);
+            std::printf("%s\n", std::format("    sound {} at {:.4f} length {:.4f}{} ({} waveforms)", definition.name,
+                sound.start, sound.length, sound.oneShot ? " one-shot" : "", definition.waveforms.size()).c_str());
+        }
+        for (const FevEnvelope& envelope : layer.envelopes) {
+            const std::string follows = envelope.parameter < event->parameters.size()
+                ? event->parameters[envelope.parameter].name
+                : std::string("?");
+            std::string points;
+            for (const FevEnvelopePoint& point : envelope.points) {
+                points += std::format(" ({:.4f}, {:.4f}{})", point.position, point.value,
+                    point.curveShape != 0 ? std::format(" shape {}", point.curveShape) : std::string());
+            }
+            std::printf("%s\n", std::format("    envelope property 0x{:x} dsp '{}' #{} parent {} follows {}:{}",
+                envelope.property, envelope.dspName, envelope.dspParameter, envelope.parent, follows, points)
+                .c_str());
+        }
+    }
     return 0;
 }
 
@@ -388,7 +456,7 @@ int runEngine(const fh::Vfs& vfs, const std::string& car, const Options& options
     for (int i = 0; i <= updates; ++i) {
         const float t = static_cast<float>(i) * dt;
         const auto [rpm, throttle] = sweepAt(t, seconds, idle, redline);
-        engine.update(rpm, throttle, 0.0F, dt);
+        engine.update(rpm, throttle, dt);
         if (live) {
             next += std::chrono::microseconds(1000000 / kUpdateRate);
             std::this_thread::sleep_until(next);
@@ -399,6 +467,83 @@ int runEngine(const fh::Vfs& vfs, const std::string& car, const Options& options
     if (wav) {
         recording.write(*wav);
     }
+    return 0;
+}
+
+/// One stage of the tyre script: every wheel in the same state. The values
+/// are test inputs in TyreInput's units, chosen to visit each part of the
+/// events' curves, not measurements of the game.
+struct TyreStage {
+    const char* name;
+    bool onGround;
+    float spin;
+    float slipAngle;
+    float slipRatio;
+    float combinedSlip;
+};
+
+int runTyres(const fh::Vfs& vfs, const Options& options)
+{
+    const std::optional<std::string> wav = options.get("wav");
+    if (!wav) {
+        return usage();
+    }
+    const float seconds = std::max(options.number("seconds", 3.0F), 0.1F);
+    const std::string surface = options.get("surface").value_or("Asphalt");
+    AudioDevice device{AudioDevice::Offline{}};
+    TyreSoundOptions settings;
+    settings.perWheel = options.number("lod2", 0.0F) == 0.0F;
+    TyreSound tyres(device.mixer(), std::make_shared<AudioLibrary>(vfs), settings);
+    const TyreSmoothing& smoothing = tyres.smoothing();
+    std::printf("%s\n", std::format("smoothing per second: combined slip {}, slip angle {}, slip ratio {}, load {}, "
+        "rpm {}; leaves the ground after {} s", smoothing.combinedSlipRate, smoothing.slipAngleRate,
+        smoothing.slipRatioRate, smoothing.normLoadRate, smoothing.tireRpmRate, smoothing.timeUntilLeavesGround)
+        .c_str());
+    if (!tyres.surfaces().find(surface)) {
+        std::printf("%s is not in Tires.xml, so the game plays no tyre sound on it\n", surface.c_str());
+    }
+
+    constexpr std::array<TyreStage, 7> kStages{{
+        {"standing", true, 0.0F, 0.0F, 0.0F, 0.0F},
+        {"rolling", true, 60.0F, 0.05F, 0.05F, 0.07F},
+        {"cornering", true, 60.0F, 0.8F, 0.05F, 0.8F},
+        {"sliding", true, 50.0F, 3.0F, -0.5F, 3.0F},
+        {"locked", true, 0.0F, 0.2F, -5.0F, 5.0F},
+        {"spinning", true, 90.0F, 0.1F, 3.0F, 3.0F},
+        {"airborne", false, 60.0F, 0.0F, 0.0F, 0.0F},
+    }};
+    constexpr float kMass = 1500.0F;
+    Recording recording;
+    const int updates = static_cast<int>(seconds * kUpdateRate);
+    for (const TyreStage& stage : kStages) {
+        std::array<TyreInput, TyreSound::kWheels> wheels{};
+        for (TyreInput& wheel : wheels) {
+            wheel.onGround = stage.onGround;
+            wheel.surface = surface;
+            wheel.spin = stage.spin;
+            wheel.slipAngle = stage.slipAngle;
+            wheel.slipRatio = stage.slipRatio;
+            wheel.combinedSlip = stage.combinedSlip;
+            wheel.load = kMass * 9.80665F / 4.0F;
+        }
+        TyreCarInput car;
+        car.mass = kMass;
+        double energy = 0.0;
+        std::size_t count = 0;
+        for (int i = 0; i < updates; ++i) {
+            tyres.update(wheels, car, 1.0F / kUpdateRate);
+            const std::vector<float> block = device.render(AudioDevice::kSampleRate / kUpdateRate);
+            for (const float sample : block) {
+                energy += static_cast<double>(sample) * sample;
+            }
+            count += block.size();
+            recording.append(block);
+        }
+        std::printf("%s\n", std::format("{:<10} rms {:.4f}{}", stage.name,
+            std::sqrt(energy / static_cast<double>(std::max<std::size_t>(count, 1))),
+            tyres.isPlaying() ? "" : " (no event sounding)").c_str());
+    }
+    recording.write(*wav);
     return 0;
 }
 
@@ -426,9 +571,16 @@ int main(int argc, char** argv)
         if (command == "events" && argc == 4) {
             return listEvents(library, argv[3]);
         }
+        if (command == "describe" && argc == 5) {
+            return describeEvent(library, argv[3], argv[4]);
+        }
         if (command == "event" && argc >= 5) {
             const std::optional<Options> options = Options::parse(argc, argv, 5);
             return options ? playEvent(library, argv[3], argv[4], *options) : usage();
+        }
+        if (command == "tyres") {
+            const std::optional<Options> options = Options::parse(argc, argv, 3);
+            return options ? runTyres(vfs, *options) : usage();
         }
         if ((command == "engine" || command == "play") && argc >= 4) {
             const std::optional<Options> options = Options::parse(argc, argv, 4);

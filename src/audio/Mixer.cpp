@@ -298,6 +298,12 @@ void Mixer::setListener(const glm::vec3& position, const glm::vec3& right)
     m_listenerRight = length > 0.0F ? right / length : glm::vec3(1.0F, 0.0F, 0.0F);
 }
 
+glm::vec3 Mixer::listenerPosition() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_listenerPosition;
+}
+
 void Mixer::setMasterVolume(float volume)
 {
     std::lock_guard lock(m_mutex);

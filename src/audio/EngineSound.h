@@ -2,6 +2,7 @@
 
 #include "EngineTuning.h"
 #include "Mixer.h"
+#include "TyreSound.h"
 
 #include <glm/mat3x3.hpp>
 #include <glm/vec3.hpp>
@@ -34,13 +35,16 @@ struct EngineSoundOptions {
     /// by GlobalRolloffs.xml; otherwise they play in stereo, panned by the
     /// view's surround levels.
     bool spatial = false;
-    /// Skid and gear-shift sounds from Tires.fev and Transmissions.fev.
+    /// Tyre sounds (TyreSound) and the gear-shift sound from Tires.fev and
+    /// Transmissions.fev.
     bool tyres = true;
     bool transmission = true;
     std::uint32_t seed = 1;
 };
 
-/// The engine, exhaust, burble, gear-shift and tyre sounds of one car.
+/// The engine, exhaust, burble, gear-shift and tyre sounds of one car. The
+/// tyres are a TyreSound, per wheel for the unplaced (player's) car and a
+/// single pair for spatial ones.
 ///
 /// The car's engine tuning names three harmonic tunings (intake, engine
 /// ambient, exhaust); each is a bank of loops recorded at steady rpm. Every
@@ -67,14 +71,16 @@ public:
 
     const CarAudioTuning& tuning() const { return m_tuning; }
 
-    /// Advances the sound by `dt` seconds for engine speed `rpm`, throttle
-    /// 0..1 and road speed in m/s.
-    void update(float rpm, float throttle, float speed, float dt);
+    /// Advances the sound by `dt` seconds for engine speed `rpm` and
+    /// throttle 0..1.
+    void update(float rpm, float throttle, float dt);
     /// Plays the gear-change clunk and applies the tuning's shift volume
     /// boost; an upshift also gives the exhaust a chance to backfire.
     void shiftGear(int fromGear, int toGear);
-    /// Tyre slip 0 (gripping) to 1 (sliding), driving the skid sound.
-    void setTyreSlip(float slip);
+    /// Advances the tyre sounds by `dt` seconds; wheels in CarPhysics order.
+    void updateTyres(std::span<const TyreInput, 4> wheels, const TyreCarInput& car, float dt);
+    /// Null when the options leave tyres out or Tires.fev failed to load.
+    const TyreSound* tyres() const { return m_tyres.get(); }
     /// The car's world position and orientation (columns: right, up,
     /// forward), for spatial engines.
     void setTransform(const glm::vec3& position, const glm::mat3& basis);
@@ -137,7 +143,7 @@ private:
     std::vector<Emitter> m_emitters;
     std::string m_burbleBank;
     const BurbleSettings* m_burble = nullptr;
-    std::unique_ptr<EventInstance> m_skid;
+    std::unique_ptr<TyreSound> m_tyres;
     std::unique_ptr<EventInstance> m_shift;
     std::mt19937 m_random;
     glm::vec3 m_position{0.0F};
@@ -148,7 +154,6 @@ private:
     bool m_limiter = false;
     float m_shiftBoost = 0.0F;
     float m_shiftBoostRate = 0.0F;
-    float m_slip = 0.0F;
     OneShotTimer m_burbleTimer;
     OneShotTimer m_backfireTimer;
     bool m_backfireQueued = false;
