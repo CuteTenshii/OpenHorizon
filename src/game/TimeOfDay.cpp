@@ -109,8 +109,8 @@ glm::vec3 TimeOfDayCurves::sample(std::string_view curve, float minutes) const
     if (t < 0.0F) {
         t += kMinutesPerDay;
     }
-    const auto next = std::upper_bound(
-        keys.begin(), keys.end(), t, [](float time, const Key& key) { return time < key.time; });
+    const auto next
+        = std::upper_bound(keys.begin(), keys.end(), t, [](float time, const Key& key) { return time < key.time; });
     // Between the last key and the first, wrap across midnight.
     const Key& after = next == keys.end() ? keys.front() : *next;
     const Key& before = next == keys.begin() ? keys.back() : *(next - 1);
@@ -211,8 +211,15 @@ render::SceneLighting TimeOfDay::lighting() const
     l.hazeIntensity = m_curves.sampleScalar("AtmosphereHazeIntensity", t);
     l.hazePower = m_curves.sampleScalar("AtmosphereHazePower", t);
     l.hazeEllipticalScale = m_curves.sampleScalar("AtmosphereHazeEllipticalScale", t);
-    l.sunDiscDirection = -aim("SunObjectPos", "SunObjectTargetPos");
-    l.sunDiscColour = m_curves.sample("SunObjectColour", t) * m_curves.sampleScalar("SunObjectAlpha", t);
+    // The sampler hands these to the sky together (0x8265A7CC). It prefers
+    // the rotation curve SunObjectRot when that has keys; Colorado's has
+    // none.
+    l.sunObjectDirection = aim("SunObjectPos", "SunObjectTargetPos");
+    l.sunObjectColour = m_curves.sample("SunObjectColour", t);
+    l.sunObjectAlpha = m_curves.sampleScalar("SunObjectAlpha", t);
+    l.sunObjectSize = m_curves.sampleScalar("SunObjectSize", t);
+    l.sunObjectMoon = m_curves.sampleScalar("SunObjectMoon", t);
+    l.starFade = m_curves.sampleScalar("StarFade", t);
 
     const TimeOfDayCurves::FogTemplate fog = m_curves.fogTemplate().value_or(TimeOfDayCurves::FogTemplate{});
     l.fogColour = m_curves.sample("FogColour", t) * fog.colour;

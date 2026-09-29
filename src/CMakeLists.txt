@@ -107,6 +107,8 @@ add_library(fh1engine STATIC
     render/ScatterPass.h
     render/Shader.cpp
     render/Shader.h
+    render/SkyObjects.cpp
+    render/SkyObjects.h
     render/Texture.cpp
     render/Texture.h
     render/TrackPrograms.cpp

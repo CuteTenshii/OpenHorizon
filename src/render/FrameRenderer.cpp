@@ -30,13 +30,7 @@ void main()
     vec4 far = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, 0.0, 1.0);
     vec4 near = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
     vec3 direction = normalize(far.xyz / far.w - near.xyz / near.w);
-    vec3 colour = skyColour(direction);
-    // The game draws the sun and moon as a textured sprite that is not
-    // decoded yet; a small bright disc in its colour stands in, its size
-    // and brightness chosen to read as the light source, not from data.
-    float disc = smoothstep(0.9995, 0.9998, dot(direction, uSunDiscDirection));
-    colour += uSunDiscColour * disc * 60.0;
-    fragColour = vec4(colour, 1.0);
+    fragColour = vec4(skyColour(direction), 1.0);
 }
 )";
 
@@ -171,6 +165,9 @@ void FrameRenderer::sky(const FrameParams& frame)
     glDepthFunc(GL_GREATER);
     glDepthMask(GL_TRUE);
     glEnable(GL_CULL_FACE);
+    if (m_skyObjects != nullptr) {
+        m_skyObjects->draw(frame);
+    }
 }
 
 void FrameRenderer::finish(const ToneSettings& tone)

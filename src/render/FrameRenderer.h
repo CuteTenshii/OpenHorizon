@@ -2,6 +2,7 @@
 
 #include "Gl.h"
 #include "Shader.h"
+#include "SkyObjects.h"
 #include "WorldRenderer.h"
 
 #include <glm/glm.hpp>
@@ -54,8 +55,11 @@ public:
     /// Binds and clears the HDR target at `width` x `height` pixels and sets
     /// the depth state every scene pass expects.
     void begin(int width, int height);
-    /// Draws the sky behind everything drawn so far.
+    /// Draws the sky behind everything drawn so far, with the sun, moon and
+    /// stars when setSkyObjects() gave them.
     void sky(const FrameParams& frame);
+    /// What sky() draws over the dome; nullptr for none. Not owned.
+    void setSkyObjects(SkyObjects* objects) { m_skyObjects = objects; }
     /// Tonemaps the HDR target onto the window's framebuffer, with exposure
     /// adapted to the frame's average brightness, and leaves the window
     /// bound for overlays.
@@ -77,6 +81,7 @@ private:
     int m_levels = 1;
     Shader m_skyShader;
     Shader m_tonemapShader;
+    SkyObjects* m_skyObjects = nullptr;
 };
 
 } // namespace fh::render

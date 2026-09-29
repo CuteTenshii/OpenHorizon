@@ -181,6 +181,12 @@ Game::Game(Window& window, const GameOptions& options)
     });
     m_fadeIn = loadFadeIn(m_vfs);
     m_frame = std::make_unique<render::FrameRenderer>();
+    try {
+        m_skyObjects = std::make_unique<render::SkyObjects>(m_vfs);
+        m_frame->setSkyObjects(m_skyObjects.get());
+    } catch (const std::exception& e) {
+        logWarning("sky objects: {}; no sun, moon or stars", e.what());
+    }
     m_frameStats = std::make_unique<render::FrameStats>();
     m_overlay = std::make_unique<render::Overlay>("sans-serif:bold", 26);
     drawLoading();

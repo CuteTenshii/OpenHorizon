@@ -36,6 +36,7 @@
 #include "render/FrameStats.h"
 #include "render/Overlay.h"
 #include "render/PresentTarget.h"
+#include "render/SkyObjects.h"
 #include "render/WorldRenderer.h"
 #include "ui/Hud.h"
 #include "ui/LoadingScreen.h"
@@ -317,6 +318,8 @@ private:
     std::optional<TimeOfDay> m_timeOfDay;
     render::ToneSettings m_tone;
     std::unique_ptr<render::FrameRenderer> m_frame;
+    /// The sun, moon and stars m_frame draws over the sky.
+    std::unique_ptr<render::SkyObjects> m_skyObjects;
     std::unique_ptr<render::FrameStats> m_frameStats;
     render::PresentTarget m_present;
     /// The input of the frame being run.

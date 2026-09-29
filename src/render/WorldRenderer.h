@@ -88,10 +88,17 @@ struct SceneLighting {
     float hazeIntensity = 0.0F;
     float hazePower = 0.0F;
     float hazeEllipticalScale = 0.0F;
-    /// The visible sun or moon: normalised direction towards it, and its
-    /// colour with its opacity applied.
-    glm::vec3 sunDiscDirection{};
-    glm::vec3 sunDiscColour{};
+    /// The sun or moon sprite SkyObjects draws, from the SunObject curves
+    /// (see SkyObjects): the normalised direction from SunObjectPos to
+    /// SunObjectTargetPos, so from the sprite towards the camera.
+    glm::vec3 sunObjectDirection{0.0F, -1.0F, 0.0F};
+    glm::vec3 sunObjectColour{};
+    float sunObjectAlpha = 0.0F;
+    float sunObjectSize = 0.0F;
+    /// Above one half the sprite is the moon.
+    float sunObjectMoon = 0.0F;
+    /// The stars' opacity (the StarFade curve).
+    float starFade = 0.0F;
 
     glm::vec3 fogColour{};
     glm::vec3 fogScatterColour{};
