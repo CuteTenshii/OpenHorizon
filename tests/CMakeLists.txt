@@ -50,3 +50,10 @@ target_link_libraries(tst_radio PRIVATE fh1radio)
 # The disc tests inside (the real stations, banks and a mixed render) run
 # only when FH1_GAME_DIR names an extracted disc.
 add_test(NAME tst_radio COMMAND tst_radio)
+
+add_executable(tst_menu TestHarness.h tst_menu.cpp)
+target_compile_options(tst_menu PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_menu PRIVATE fh1ui)
+# The disc tests inside (the pause menu's entries and texts, the scenes and
+# the map's data) run only when FH1_GAME_DIR names an extracted disc.
+add_test(NAME tst_menu COMMAND tst_menu)
