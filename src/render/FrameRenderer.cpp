@@ -176,7 +176,7 @@ void FrameRenderer::sky(const FrameParams& frame)
 void FrameRenderer::finish(const ToneSettings& tone)
 {
     glGenerateTextureMipmap(m_colour);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_output);
     glViewport(0, 0, m_width, m_height);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);

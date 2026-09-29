@@ -29,6 +29,7 @@ void printUsage()
         "  --time HH:MM       time of day to start at (default 16:00)\n"
         "  --race ID          start a race at once, by its event id (e.g. FR02)\n"
         "  --autopilot        let the AI drive the player's car in races\n"
+        "  --open pause|map   open the pause menu or the map once the car is placed\n"
         "  --manual           manual gearbox (E/Q or B/X to shift)\n"
         "  --demo-drive       drive with full throttle and a gentle weave, for testing\n"
         "  --width W --height H --fullscreen\n"
@@ -100,6 +101,8 @@ int main(int argc, char** argv)
             options.startTime = static_cast<float>(hours * 3600 + minutes * 60);
         } else if (arg == "--race") {
             options.race = value();
+        } else if (arg == "--open") {
+            options.openScreen = value();
         } else if (arg == "--autopilot") {
             options.autopilot = true;
         } else if (arg == "--manual") {

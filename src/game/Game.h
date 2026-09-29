@@ -27,6 +27,7 @@
 #include "render/CarRenderer.h"
 #include "render/FrameRenderer.h"
 #include "render/FrameStats.h"
+#include "render/PresentTarget.h"
 #include "render/Overlay.h"
 #include "render/WorldRenderer.h"
 #include "ui/Hud.h"
@@ -76,6 +77,9 @@ struct GameOptions {
     bool autopilot = false;
     /// Kilometres rather than miles per hour on the speedometer.
     bool metric = true;
+    /// "pause" or "map": opens that screen once the car is placed, so an
+    /// offscreen run can capture it.
+    std::string openScreen;
 };
 
 /// Free roam and races: the track's world streamed around the player's car,
@@ -198,6 +202,7 @@ private:
     render::ToneSettings m_tone;
     std::unique_ptr<render::FrameRenderer> m_frame;
     std::unique_ptr<render::FrameStats> m_frameStats;
+    render::PresentTarget m_present;
     std::unique_ptr<render::WorldRenderer> m_worldRenderer;
     std::unique_ptr<render::Overlay> m_overlay;
     /// The game's own HUD scene; the plain overlay HUD stands in without it.

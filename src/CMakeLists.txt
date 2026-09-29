@@ -83,6 +83,8 @@ add_library(fh1engine STATIC
     render/FrameRenderer.h
     render/FrameStats.cpp
     render/FrameStats.h
+    render/PresentTarget.cpp
+    render/PresentTarget.h
     render/Overlay.cpp
     render/Overlay.h
     render/Shader.cpp

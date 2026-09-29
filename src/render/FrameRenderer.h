@@ -60,6 +60,9 @@ public:
     /// adapted to the frame's average brightness, and leaves the window
     /// bound for overlays.
     void finish(const ToneSettings& tone);
+    /// Where finish() writes the tonemapped picture: the window's
+    /// framebuffer (0) unless the game draws into its own 16:9 picture.
+    void setOutputFramebuffer(GLuint framebuffer) { m_output = framebuffer; }
 
 private:
     void resize(int width, int height);
@@ -68,6 +71,7 @@ private:
     GLuint m_colour = 0;
     GLuint m_depth = 0;
     GLuint m_emptyVao = 0;
+    GLuint m_output = 0;
     int m_width = 0;
     int m_height = 0;
     int m_levels = 1;

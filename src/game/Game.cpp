@@ -275,10 +275,10 @@ std::unique_ptr<Game::Vehicle> Game::makeVehicle(
 void Game::drawLoading(const std::string& message)
 {
     m_window.pumpEvents();
-    const int w = m_window.width();
-    const int h = m_window.height();
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, w, h);
+    m_present.resize(m_window.width(), m_window.height());
+    m_present.bind();
+    const int w = m_present.width();
+    const int h = m_present.height();
     glClearColor(0.04F, 0.04F, 0.05F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT);
     if (m_loading && m_loading->isShown()) {
@@ -286,6 +286,7 @@ void Game::drawLoading(const std::string& message)
         m_loading->update(std::chrono::duration<float>(now - m_loadingDrawn).count());
         m_loadingDrawn = now;
         m_loading->draw(w, h);
+        m_present.present();
         m_window.swapBuffers();
         return;
     }
@@ -293,6 +294,7 @@ void Game::drawLoading(const std::string& message)
     const float width = m_overlay->textWidth(message, scale);
     m_overlay->text((static_cast<float>(w) - width) * 0.5F, static_cast<float>(h) * 0.5F, message, kHudText, scale);
     m_overlay->flush(glm::mat4(1.0F), w, h);
+    m_present.present();
     m_window.swapBuffers();
 }
 
@@ -450,7 +452,14 @@ void Game::spawnPlayer()
     if (m_loading) {
         m_loading->hide();
     }
+    const bool firstPlacement = !m_playerPlaced;
     m_playerPlaced = true;
+    if (firstPlacement && m_options.openScreen == "pause" && m_pause) {
+        m_pause->open(ui::PauseMenuContext{});
+    } else if (firstPlacement && m_options.openScreen == "map" && m_map) {
+        m_mapFromPause = false;
+        m_map->open(worldMapState());
+    }
     m_chaseVelocity = glm::vec3(0.0F);
     logInfo("car placed at height {:.1f}", player().physics->position().y);
     if (!m_options.race.empty()) {
@@ -1316,8 +1325,8 @@ void Game::drawEventStarts(const glm::mat4& viewProjection)
     constexpr float kBeaconDistance = 1500.0F;
     constexpr float kLabelDistance = 250.0F;
     const glm::vec3 eye = m_camera.position;
-    const float width = static_cast<float>(m_window.width());
-    const float height = static_cast<float>(m_window.height());
+    const float width = static_cast<float>(m_present.width());
+    const float height = static_cast<float>(m_present.height());
     for (std::size_t i = 0; i < m_eventStarts.size(); ++i) {
         const glm::vec3 base = m_eventStarts[i].position;
         const float distance = glm::length(base - eye);
@@ -1596,8 +1605,8 @@ void Game::updateCamera(float dt)
 render::FrameParams Game::frameParams() const
 {
     render::FrameParams frame;
-    const float aspect = static_cast<float>(std::max(m_window.width(), 1))
-        / static_cast<float>(std::max(m_window.height(), 1));
+    const float aspect = static_cast<float>(std::max(m_present.width(), 1))
+        / static_cast<float>(std::max(m_present.height(), 1));
     frame.view = m_camera.view();
     frame.projection = m_camera.projection(aspect);
     frame.cameraPosition = m_camera.position;
@@ -1739,8 +1748,8 @@ void Game::drawRaceHud()
     if (!own) {
         return;
     }
-    const auto w = static_cast<float>(m_window.width());
-    const auto h = static_cast<float>(m_window.height());
+    const auto w = static_cast<float>(m_present.width());
+    const auto h = static_cast<float>(m_present.height());
     const int racers = static_cast<int>(m_race->racers().size());
 
     // Top left: place, lap and time.
@@ -1984,8 +1993,8 @@ bool Game::updateMenus(const ui::MenuInput& input, float dt)
 
 void Game::drawHud(float dt)
 {
-    const auto w = static_cast<float>(m_window.width());
-    const auto h = static_cast<float>(m_window.height());
+    const auto w = static_cast<float>(m_present.width());
+    const auto h = static_cast<float>(m_present.height());
     m_fps = m_fps * 0.95F + (dt > 0.0F ? 1.0F / dt : 0.0F) * 0.05F;
 
     // The map replaces the HUD while it is open, as the game swaps scenes.
@@ -1997,7 +2006,7 @@ void Game::drawHud(float dt)
                 static_cast<int>(m_radioPanel->station), m_radioPanel->title, m_radioPanel->artist};
             m_radioPanel.reset();
         }
-        m_hud->draw(state, m_window.width(), m_window.height());
+        m_hud->draw(state, m_present.width(), m_present.height());
     }
     if (m_playerPlaced && !m_hud) {
         const CarPhysics& car = *player().physics;
@@ -2090,8 +2099,10 @@ void Game::drawHud(float dt)
 
 bool Game::saveScreenshot(const std::filesystem::path& path)
 {
-    const int w = m_window.width();
-    const int h = m_window.height();
+    // The 16:9 picture, without the window's bars.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_present.framebuffer());
+    const int w = m_present.width();
+    const int h = m_present.height();
     xds::Image image;
     image.width = static_cast<std::uint32_t>(w);
     image.height = static_cast<std::uint32_t>(h);
@@ -2251,30 +2262,41 @@ int Game::run()
         m_worldRenderer->update(m_camera.position);
         m_frameStats->mark(Part::Streaming);
 
-        const render::FrameParams frame = frameParams();
-        m_frame->begin(m_window.width(), m_window.height());
-        m_worldRenderer->draw(frame);
-        m_frameStats->mark(Part::DrawWorld);
-        drawVehicles(frame);
-        m_frameStats->mark(Part::DrawCars);
-        m_frame->sky(frame);
-        drawVehicleGlass(frame);
-        drawParticles(frame);
-        drawEventStarts(frame.projection * frame.view);
-        drawDrivingLine();
-        m_overlay->flush(frame.projection * frame.view, m_window.width(), m_window.height());
-        m_frame->finish(m_tone);
-        drawHud(dt);
-        m_overlay->flush(glm::mat4(1.0F), m_window.width(), m_window.height());
-        if (m_map && m_map->isOpen()) {
-            m_map->draw(m_window.width(), m_window.height());
+        // The whole frame draws into a 16:9 picture that present() fits in
+        // the window, as the console's output always was 16:9.
+        m_present.resize(m_window.width(), m_window.height());
+        m_frame->setOutputFramebuffer(m_present.framebuffer());
+        // The map is its own screen: the game swaps to the map scene and
+        // stops drawing the world, so nothing of it shows through.
+        const bool mapOpen = m_map && m_map->isOpen();
+        if (mapOpen) {
+            m_present.bind();
+            glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            m_map->draw(m_present.width(), m_present.height());
+        } else {
+            const render::FrameParams frame = frameParams();
+            m_frame->begin(m_present.width(), m_present.height());
+            m_worldRenderer->draw(frame);
+            m_frameStats->mark(Part::DrawWorld);
+            drawVehicles(frame);
+            m_frameStats->mark(Part::DrawCars);
+            m_frame->sky(frame);
+            drawVehicleGlass(frame);
+            drawParticles(frame);
+            drawEventStarts(frame.projection * frame.view);
+            drawDrivingLine();
+            m_overlay->flush(frame.projection * frame.view, m_present.width(), m_present.height());
+            m_frame->finish(m_tone);
+            drawHud(dt);
+            m_overlay->flush(glm::mat4(1.0F), m_present.width(), m_present.height());
         }
         if (m_pause && m_pause->isOpen()) {
-            m_pause->draw(m_window.width(), m_window.height());
+            m_pause->draw(m_present.width(), m_present.height());
         }
         if (m_loading && m_loading->isShown()) {
             m_loading->update(dt);
-            m_loading->draw(m_window.width(), m_window.height());
+            m_loading->draw(m_present.width(), m_present.height());
         }
         m_frameStats->mark(Part::DrawOther);
 
@@ -2283,6 +2305,7 @@ int Game::run()
         if (finished && !m_options.screenshot.empty()) {
             saveScreenshot(m_options.screenshot);
         }
+        m_present.present();
         m_frameStats->endGpuFrame();
         m_window.swapBuffers();
         m_frameStats->mark(Part::Present);
