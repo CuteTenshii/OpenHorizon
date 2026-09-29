@@ -1,16 +1,11 @@
 #include "ProfileStore.h"
 
+#include "base/Host.h"
 #include "base/Log.h"
 
 #include <pugixml.hpp>
 
-#include <fcntl.h>
-#include <unistd.h>
-
-#include <cerrno>
 #include <charconv>
-#include <cstdlib>
-#include <cstring>
 #include <format>
 #include <sstream>
 #include <system_error>
@@ -233,50 +228,15 @@ void readState(const pugi::xml_node node, GameState& state)
     }
 }
 
-bool writeFile(const std::filesystem::path& path, std::string_view content)
-{
-    const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-    if (fd < 0) {
-        logWarning("profile: cannot create {}: {}", path.string(), std::strerror(errno));
-        return false;
-    }
-    bool ok = true;
-    while (!content.empty()) {
-        const ssize_t written = ::write(fd, content.data(), content.size());
-        if (written < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            ok = false;
-            break;
-        }
-        content.remove_prefix(static_cast<std::size_t>(written));
-    }
-    // Flushed before the rename, so the name never points at a file whose
-    // data is not on disk yet.
-    if (ok && ::fsync(fd) != 0) {
-        ok = false;
-    }
-    if (::close(fd) != 0) {
-        ok = false;
-    }
-    if (!ok) {
-        logWarning("profile: cannot write {}: {}", path.string(), std::strerror(errno));
-    }
-    return ok;
-}
-
 } // namespace
 
 std::filesystem::path ProfileStore::defaultDirectory()
 {
-    if (const char* xdg = std::getenv("XDG_DATA_HOME"); xdg && *xdg) {
-        return std::filesystem::path(xdg) / "fh1-native" / "profile";
+    const std::filesystem::path folder = userFolder(UserFolder::Data);
+    if (folder.empty()) {
+        return std::filesystem::path("fh1-native-profile");
     }
-    if (const char* home = std::getenv("HOME"); home && *home) {
-        return std::filesystem::path(home) / ".local" / "share" / "fh1-native" / "profile";
-    }
-    return std::filesystem::path("fh1-native-profile");
+    return folder / "profile";
 }
 
 ProfileStore::ProfileStore(std::filesystem::path directory)
@@ -296,13 +256,13 @@ ProfileStore::LoadResult ProfileStore::load(const ProfileSchema& schema)
     const pugi::xml_parse_result parsed = document.load_file(file().c_str());
     const pugi::xml_node root = document.child(kRoot);
     if (!parsed || !root) {
-        logWarning("profile: {} is not a profile ({}); starting a new one", file().string(), parsed.description());
+        logWarning("profile: {} is not a profile ({}); starting a new one", pathToUtf8(file()), parsed.description());
         result.status = LoadStatus::Unreadable;
         m_setAside = true;
         return result;
     }
     if (const int version = root.attribute("version").as_int(-1); version != kFormatVersion) {
-        logWarning("profile: {} has format version {}, this game reads {}; starting a new one", file().string(),
+        logWarning("profile: {} has format version {}, this game reads {}; starting a new one", pathToUtf8(file()),
             version, kFormatVersion);
         result.status = LoadStatus::VersionMismatch;
         m_setAside = true;
@@ -371,7 +331,7 @@ bool ProfileStore::save(const Profile& profile)
     std::error_code error;
     std::filesystem::create_directories(m_directory, error);
     if (error) {
-        logWarning("profile: cannot create {}: {}", m_directory.string(), error.message());
+        logWarning("profile: cannot create {}: {}", pathToUtf8(m_directory), error.message());
         return false;
     }
     if (m_setAside) {
@@ -379,21 +339,24 @@ bool ProfileStore::save(const Profile& profile)
         aside += ".unreadable";
         std::filesystem::rename(file(), aside, error);
         if (error) {
-            logWarning("profile: cannot move {} aside: {}", file().string(), error.message());
+            logWarning("profile: cannot move {} aside: {}", pathToUtf8(file()), error.message());
             return false;
         }
-        logInfo("profile: kept the unreadable profile as {}", aside.string());
+        logInfo("profile: kept the unreadable profile as {}", pathToUtf8(aside));
         m_setAside = false;
     }
     std::filesystem::path temporary = file();
     temporary += ".tmp";
-    if (!writeFile(temporary, serialize(profile))) {
+    // Written to the disk before the rename, so the name never points at a
+    // file whose data is not there yet.
+    if (std::string written; !writeFileToDisk(temporary, serialize(profile), &written)) {
+        logWarning("profile: {}", written);
         std::filesystem::remove(temporary, error);
         return false;
     }
     std::filesystem::rename(temporary, file(), error);
     if (error) {
-        logWarning("profile: cannot replace {}: {}", file().string(), error.message());
+        logWarning("profile: cannot replace {}: {}", pathToUtf8(file()), error.message());
         std::filesystem::remove(temporary, error);
         return false;
     }

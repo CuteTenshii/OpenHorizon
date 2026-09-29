@@ -42,9 +42,9 @@ public:
     static constexpr int kFormatVersion = 1;
     static constexpr std::string_view kFileName = "ForzaProfile.xml";
 
-    /// `$XDG_DATA_HOME/fh1-native/profile`, or
-    /// `~/.local/share/fh1-native/profile` when XDG_DATA_HOME is not set:
-    /// one profile per user of the machine.
+    /// `profile` in the Data user folder: `~/.local/share/fh1-native/profile`
+    /// on Linux, `%LOCALAPPDATA%\fh1-native\profile` on Windows (see
+    /// fh::UserFolder); one profile per user of the machine.
     static std::filesystem::path defaultDirectory();
 
     explicit ProfileStore(std::filesystem::path directory);

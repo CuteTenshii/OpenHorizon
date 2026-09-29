@@ -6,6 +6,7 @@
 
 #include "TestHarness.h"
 
+#include "base/Host.h"
 #include "profile/Profile.h"
 #include "profile/ProfileSchema.h"
 #include "profile/ProfileStore.h"
@@ -18,6 +19,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -339,20 +341,20 @@ TEST(storeRefusesAnotherFormatVersion)
     CHECK(ProfileStore(dir).load(schema()).status == ProfileStore::LoadStatus::Missing);
 }
 
-TEST(defaultDirectoryIsUnderXdgDataHome)
+TEST(defaultDirectoryIsInTheUserDataFolder)
 {
-    const std::filesystem::path dir = scratch("xdg");
-    const char* previous = std::getenv("XDG_DATA_HOME");
-    const std::string saved = previous != nullptr ? previous : "";
-    setenv("XDG_DATA_HOME", dir.c_str(), 1);
-    CHECK(ProfileStore::defaultDirectory() == dir / "fh1-native" / "profile");
-    unsetenv("XDG_DATA_HOME");
-    const char* home = std::getenv("HOME");
-    if (home != nullptr && *home != '\0') {
-        CHECK(ProfileStore::defaultDirectory() == std::filesystem::path(home) / ".local/share/fh1-native/profile");
-    }
-    if (previous != nullptr) {
-        setenv("XDG_DATA_HOME", saved.c_str(), 1);
+    // The folder rules themselves are tst_base's; the profile goes in
+    // `profile` inside whatever the Data folder is.
+    const char* variable = fh::userFolderVariable(fh::UserFolder::Data);
+    const std::optional<std::string> previous = fh::environmentVariable(variable);
+    const std::filesystem::path dir = scratch("data-home");
+    fh::setEnvironmentVariable(variable, fh::pathToUtf8(dir));
+    CHECK(ProfileStore::defaultDirectory() == fh::userFolder(fh::UserFolder::Data) / "profile");
+    CHECK(fh::pathToUtf8(ProfileStore::defaultDirectory()).starts_with(fh::pathToUtf8(dir)));
+    if (previous) {
+        fh::setEnvironmentVariable(variable, *previous);
+    } else {
+        fh::unsetEnvironmentVariable(variable);
     }
 }
 
@@ -401,6 +403,7 @@ TEST(discSchemaIsTheGamesLayout)
 int main(int argc, char** argv)
 {
     // Never the player's own profile.
-    setenv("XDG_DATA_HOME", (std::filesystem::temp_directory_path() / "fh1-tst-profile" / "data").c_str(), 1);
+    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Data),
+        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-profile" / "data"));
     return fh::test::runAllTests(argc > 1 ? argv[1] : "");
 }
