@@ -49,6 +49,12 @@ A player-reported bug becomes a scenario in `tests/tst_scenarios.cpp` (or a car 
 - `fh1cartest DISC CAR|all [--trace]` - runs cars through the tests whose results the game recorded (`Data_Car.Sim*`) and prints ours against theirs. Run it over `all` after any change to `src/car`; the medians it reports are the car model's regression check.
 - `world/fh1world`, `collision/fh1fiz`, `audio/fh1audio` - per-module inspection tools for world tiles, collision meshes and sound.
 
+### Skills
+
+Step-by-step procedures for recurring work live in `.agents/skills/<name>/SKILL.md`. Agents that support skills load them from there (`.claude/skills` points to the same folder); others should read the matching file before starting such work:
+
+- `find-asset-evidence`: before using any asset, value, layout or rule from the game, find what the game itself uses and record what is verified, inferred or missing.
+
 ## Architecture
 
 Libraries, bottom up (targets in `src/CMakeLists.txt` and per-folder `CMakeLists.txt`):
