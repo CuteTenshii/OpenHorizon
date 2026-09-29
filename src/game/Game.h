@@ -27,6 +27,9 @@
 #include "render/Overlay.h"
 #include "render/WorldRenderer.h"
 #include "ui/Hud.h"
+#include "ui/MenuCommon.h"
+#include "ui/PauseMenu.h"
+#include "ui/WorldMap.h"
 #include "vfs/Vfs.h"
 #include "world/TrackWorld.h"
 
@@ -161,6 +164,14 @@ private:
     void drawEventStarts(const glm::mat4& viewProjection);
     void drawDrivingLine();
     void drawHud(float dt);
+    bool menuOpen() const;
+    /// The pad's menu controls, with the keyboard's arrows, Enter, Escape,
+    /// M and WASD/Q/E standing in for the D-pad, A, B, Back and the sticks.
+    ui::MenuInput readMenuInput();
+    /// Runs the open pause menu or map; returns false when the player
+    /// quits the game from the pause menu.
+    bool updateMenus(const ui::MenuInput& input, float dt);
+    ui::WorldMapState worldMapState() const;
     ui::HudState hudState(float dt) const;
     void updateRadio(float dt);
     void drawRaceHud();
@@ -183,6 +194,15 @@ private:
     std::unique_ptr<render::Overlay> m_overlay;
     /// The game's own HUD scene; the plain overlay HUD stands in without it.
     std::unique_ptr<ui::Hud> m_hud;
+    /// The pause menu (Start) and the world map (Back, or MAP in the pause
+    /// menu); while either is open the simulation stands still.
+    std::unique_ptr<ui::PauseMenu> m_pause;
+    std::unique_ptr<ui::WorldMap> m_map;
+    /// Half a stick's travel counts as a menu direction; the threshold the
+    /// game's front end uses was not traced.
+    ui::MenuInputReader m_menuInput{0.5F};
+    /// The map returns to the pause menu when it was opened from there.
+    bool m_mapFromPause = false;
     std::unique_ptr<physics::WorldCollision> m_collision;
 
     // Declared before the vehicles so it outlives their engine sounds, whose

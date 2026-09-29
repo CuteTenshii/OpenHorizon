@@ -84,6 +84,14 @@ Game::Game(Window& window, const GameOptions& options)
     } catch (const std::exception& e) {
         logWarning("hud: {}; using the plain one", e.what());
     }
+    try {
+        m_pause = std::make_unique<ui::PauseMenu>(m_vfs);
+        m_map = std::make_unique<ui::WorldMap>(m_vfs, m_options.track);
+    } catch (const std::exception& e) {
+        logWarning("menus: {}; no pause menu or map", e.what());
+        m_pause.reset();
+        m_map.reset();
+    }
 
     try {
         m_audio = std::make_unique<audio::AudioDevice>();
@@ -1135,7 +1143,9 @@ void Game::updateEventStarts()
         }
     }
     const InputState& in = m_window.input();
-    if (m_nearbyStart && car.speed() < 4.0F && (in.pressed(Key::Enter) || in.pressed(Button::A))) {
+    // Starting an event is the layout's Activate action, which the default
+    // layout puts on the shift-down button, X.
+    if (!menuOpen() && m_nearbyStart && car.speed() < 4.0F && (in.pressed(Key::Enter) || in.pressed(Button::X))) {
         startRace(m_events[m_eventStarts[*m_nearbyStart].event]);
     }
 }
@@ -1693,9 +1703,102 @@ ui::HudState Game::hudState(float dt) const
     if (m_nearbyStart) {
         const RaceEvent& event = m_events[m_eventStarts[*m_nearbyStart].event];
         state.prompt = event.name;
-        state.promptDetail = car.speed() < 4.0F ? "Enter or A to start" : "Stop to start the race";
+        state.promptDetail = car.speed() < 4.0F ? "Enter or X to start" : "Stop to start the race";
     }
     return state;
+}
+
+bool Game::menuOpen() const
+{
+    return (m_pause && m_pause->isOpen()) || (m_map && m_map->isOpen());
+}
+
+ui::MenuInput Game::readMenuInput()
+{
+    const InputState& in = m_window.input();
+    ui::MenuInput menu = m_menuInput.read(in);
+    menu.up = menu.up || in.pressed(Key::Up);
+    menu.down = menu.down || in.pressed(Key::Down);
+    menu.left = menu.left || in.pressed(Key::Left);
+    menu.right = menu.right || in.pressed(Key::Right);
+    menu.accept = menu.accept || in.pressed(Key::Enter);
+    menu.back = menu.back || in.pressed(Key::Escape);
+    menu.select = menu.select || in.pressed(Key::M);
+    if (m_map && m_map->isOpen()) {
+        const auto axis = [&](Key positive, Key negative) {
+            return (in.held(positive) ? 1.0F : 0.0F) - (in.held(negative) ? 1.0F : 0.0F);
+        };
+        const glm::vec2 keys(axis(Key::D, Key::A), axis(Key::W, Key::S));
+        if (glm::length(keys) > glm::length(menu.leftStick)) {
+            menu.leftStick = keys;
+        }
+        const float zoom = axis(Key::E, Key::Q);
+        if (std::abs(zoom) > std::abs(menu.rightStick.y)) {
+            menu.rightStick.y = zoom;
+        }
+    }
+    return menu;
+}
+
+ui::WorldMapState Game::worldMapState() const
+{
+    ui::WorldMapState state;
+    if (m_playerPlaced) {
+        const glm::vec3 at = player().physics->position();
+        const glm::vec3 ahead = player().physics->forward();
+        state.playerPosition = {at.x, at.z};
+        state.playerHeading = std::atan2(ahead.x, ahead.z);
+    }
+    for (const EventStart& start : m_eventStarts) {
+        const RaceEvent& event = m_events[start.event];
+        const std::string_view type = ui::careerEventActivityType(event.careerEventStyle);
+        if (!type.empty()) {
+            state.markers.push_back(
+                {{"activity_type", std::string(type), {start.position.x, start.position.z}, 0.0F}, event.name});
+        }
+    }
+    return state;
+}
+
+bool Game::updateMenus(const ui::MenuInput& input, float dt)
+{
+    if (m_map && m_map->isOpen()) {
+        m_map->setState(worldMapState());
+        if (m_map->update(input, dt) == ui::WorldMapAction::Back) {
+            m_map->close();
+            if (m_mapFromPause && m_pause) {
+                m_pause->reopen();
+            }
+        }
+        return true;
+    }
+    if (!m_pause || !m_pause->isOpen()) {
+        return true;
+    }
+    switch (m_pause->update(input, dt)) {
+    case ui::PauseAction::OpenMap:
+        if (m_map) {
+            m_mapFromPause = true;
+            m_map->open(worldMapState());
+        }
+        break;
+    case ui::PauseAction::Restart:
+        if (m_race) {
+            const RaceEvent event = m_race->event();
+            endRace();
+            startRace(event);
+        }
+        break;
+    case ui::PauseAction::RetireFromEvent:
+        endRace();
+        break;
+    case ui::PauseAction::QuitToTitle:
+        // QUIT leaves the game for the desktop.
+        return false;
+    default:
+        break;
+    }
+    return true;
 }
 
 void Game::drawHud(float dt)
@@ -1704,7 +1807,9 @@ void Game::drawHud(float dt)
     const auto h = static_cast<float>(m_window.height());
     m_fps = m_fps * 0.95F + (dt > 0.0F ? 1.0F / dt : 0.0F) * 0.05F;
 
-    if (m_hud) {
+    // The map replaces the HUD while it is open, as the game swaps scenes.
+    const bool mapOpen = m_map && m_map->isOpen();
+    if (m_hud && !mapOpen) {
         ui::HudState state = hudState(dt);
         if (m_radioPanel) {
             state.radio = ui::HudRadioRequest{
@@ -1758,7 +1863,7 @@ void Game::drawHud(float dt)
         const std::string title = event.name;
         const std::string detail = std::format("{}  ·  {} lap{}  ·  {:.1f} km", event.type, event.laps,
             event.laps == 1 ? "" : "s", event.lengthMetres / 1000.0F);
-        const std::string action = player().physics->speed() < 4.0F ? "Enter or A to start" : "Stop to start the race";
+        const std::string action = player().physics->speed() < 4.0F ? "Enter or X to start" : "Stop to start the race";
         const float panelW = std::max({m_overlay->textWidth(title, 1.0F), m_overlay->textWidth(detail, 0.7F),
                                  m_overlay->textWidth(action, 0.7F)})
             + 48.0F;
@@ -1842,12 +1947,29 @@ int Game::run()
         last = now;
         m_time += dt;
         const InputState& in = m_window.input();
-        m_timeOfDay->advance(dt);
+        if (!menuOpen()) {
+            m_timeOfDay->advance(dt);
+        }
 
-        if (in.pressed(Key::Escape)) {
-            if (m_window.mouseCaptured()) {
-                m_window.setMouseCaptured(false);
-            } else if (m_race) {
+        const ui::MenuInput menuInput = readMenuInput();
+        if (menuOpen()) {
+            if (!updateMenus(menuInput, dt)) {
+                break;
+            }
+        } else if (in.pressed(Key::Escape) && m_window.mouseCaptured()) {
+            m_window.setMouseCaptured(false);
+        } else if (m_pause && m_playerPlaced && (menuInput.start || in.pressed(Key::Escape))) {
+            // Start pauses (CWaitForPause onPause) and Back opens the map
+            // (onMap), as the game's default controller layout binds them.
+            ui::PauseMenuContext context;
+            context.freeRoam = !m_race;
+            m_pause->open(context);
+        } else if (m_map && m_playerPlaced && menuInput.select) {
+            m_mapFromPause = false;
+            m_map->open(worldMapState());
+        } else if (!m_pause && in.pressed(Key::Escape)) {
+            // Without the menu scenes Escape still leaves a race or quits.
+            if (m_race) {
                 endRace();
             } else {
                 break;
@@ -1859,8 +1981,8 @@ int Game::run()
         if (in.pressed(Key::Tab) || in.pressed(Key::F3)) {
             m_showDebug = !m_showDebug;
         }
-        // Back changes the view, as on the 360.
-        if (in.pressed(Key::C) || in.pressed(Button::Back)) {
+        // RB changes the view (SwitchCamera in the default layout).
+        if (!menuOpen() && (in.pressed(Key::C) || in.pressed(Button::RightShoulder))) {
             m_cameraMode = m_cameraMode == CameraMode::Chase ? CameraMode::Far
                 : m_cameraMode == CameraMode::Far          ? CameraMode::Bumper
                 : m_cameraMode == CameraMode::Bumper       ? CameraMode::Hood
@@ -1903,7 +2025,9 @@ int Game::run()
                 spawnPlayer();
             }
         }
-        if (m_playerPlaced) {
+        // The pause menu and the map stop the game (pause_game in the pause
+        // flow); the world keeps streaming and drawing behind them.
+        if (m_playerPlaced && !menuOpen()) {
             const float playerScale = m_race && !m_race->started() ? 0.0F : 1.0F;
             player().controls = player().ai ? player().ai->update(*player().physics, dt, playerScale)
                                             : readPlayerControls(dt);
@@ -1959,6 +2083,12 @@ int Game::run()
         m_frame->finish(m_tone);
         drawHud(dt);
         m_overlay->flush(glm::mat4(1.0F), m_window.width(), m_window.height());
+        if (m_map && m_map->isOpen()) {
+            m_map->draw(m_window.width(), m_window.height());
+        }
+        if (m_pause && m_pause->isOpen()) {
+            m_pause->draw(m_window.width(), m_window.height());
+        }
         m_frameStats->mark(Part::DrawOther);
 
         ++m_frameCount;
