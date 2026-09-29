@@ -11,6 +11,8 @@ add_library(fh1world STATIC
     ShadedTiles.h
     TrackPlacements.cpp
     TrackPlacements.h
+    TrackSettings.cpp
+    TrackSettings.h
     TrackShaders.cpp
     TrackShaders.h
     TrackTextures.cpp
@@ -21,6 +23,8 @@ add_library(fh1world STATIC
     WorldIndex.h
     WorldTiles.cpp
     WorldTiles.h
+    XboxCube.cpp
+    XboxCube.h
     XboxTexture.cpp
     XboxTexture.h
     ZoneGrid.cpp

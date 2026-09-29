@@ -3,6 +3,7 @@
 #include "Archive.h"
 #include "ScatterSet.h"
 #include "TrackPlacements.h"
+#include "TrackSettings.h"
 #include "TrackShaders.h"
 #include "TrackTextures.h"
 #include "WorldIndex.h"
@@ -51,6 +52,9 @@ struct TrackWorld {
     std::optional<TrackTextures> textures;
     /// The track's effects, which the renderer draws the models with.
     TrackShaders shaders;
+    /// The TrackSettings.xml values the effects read; missing when the file
+    /// cannot be read, and the scene constants they give are then left 0.
+    std::optional<TrackSettings> settings;
     WorldIndex index;
     /// What was missing or could not be read, for the log.
     std::vector<std::string> warnings;

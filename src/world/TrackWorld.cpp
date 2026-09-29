@@ -56,6 +56,12 @@ std::optional<TrackWorld> TrackWorld::load(
             std::format("props are not placed and textures are unknown: {} is missing", paths.pvs));
     }
 
+    try {
+        world.settings = TrackSettings::load(vfs, track);
+    } catch (const DataError& e) {
+        world.warnings.push_back(std::format("the track's scene constants are left 0: {}", e.what()));
+    }
+
     world.shaders = TrackShaders::load(archive);
     if (world.shaders.failed() > 0) {
         world.warnings.push_back(std::format("{} track effects could not be read", world.shaders.failed()));
