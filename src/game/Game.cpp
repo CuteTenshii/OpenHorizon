@@ -294,6 +294,7 @@ Game::Game(Window& window, const GameOptions& options)
     logInfo("car: {} ({:.0f} kg, {:.0f} N·m)", player().name, player().spec->massKg,
         player().spec->reference.peakTorqueNm);
     loadWorld();
+    loadProfile();
 }
 
 Game::~Game()
@@ -907,6 +908,7 @@ void Game::collideSmashables(Vehicle& vehicle)
         if (vehicle.role == Vehicle::Role::Player && m_flyers && m_flyers->collect(body.gameplayId)) {
             logInfo("discount sign {} smashed: {}/{}, upgrade discount {}", body.gameplayId,
                 m_flyers->collectedCount(), m_flyers->total(), m_flyers->upgradeDiscount());
+            requestProfileSave("Activity Discount Sign Smashed");
         }
         for (std::uint32_t chunk : body.chunks) {
             m_hiddenChunks[chunk] = true;
@@ -1766,13 +1768,122 @@ void Game::updateActivities(const glm::vec3& from)
     if (m_speedTraps) {
         if (const auto pass = m_speedTraps->update(from, car.position(), car.velocity())) {
             logInfo("speed trap {}: {:.1f} mph", m_speedTraps->traps()[pass->trap].name, pass->speed * 2.2369F);
+            // 0x8296f728: only a pass faster than the best saves.
+            if (pass->speed > pass->previousBest) {
+                requestProfileSave("Activity Speed Camera: New PB");
+            }
         }
     }
     if (m_outposts) {
         if (const auto found = m_outposts->updateDiscovery(car.position())) {
             logInfo("outpost {} discovered", m_outposts->all()[*found].name);
+            requestProfileSave("Discovered GasStation");
         }
         m_nearbyOutpost = m_outposts->zoneAt(car.position(), car.speed());
+    }
+}
+
+// The profile.
+//
+// The game saves its whole profile (the bags and the game state, see
+// profile::GameState) on two kinds of request. The state flows' save_profile
+// state (CSaveProfile) runs where the flows put it: after a car change,
+// after a mission and in the event unlock map flow, none of which this game
+// has yet. Micro saves are asked for from code through 0x824ad988 with a
+// reason, and every caller was found: a speed trap's new personal best
+// (0x8296f76c), an outpost's discovery (0x82972f24), a smashed discount
+// sign (0x8298aa9c), and others for systems not here (average speed zones,
+// barn finds, missions, challenges, popularity spikes). Road discovery asks
+// for none; the roads driven go with the next save. 0x824ad880 turns a
+// request down unless a profile is signed in, the session is of type 17, 18
+// or 19 and the checks at 0x826b9450 and 0x826b8488 pass; what those
+// sessions and checks are was not traced, so every request here saves. The
+// game writes on a job while play goes on (0x825659e8 queues it, and a
+// request during a write saves again after it); the file here is small
+// enough to write at once.
+
+void Game::loadProfile()
+{
+    std::optional<profile::ProfileSchema> schema;
+    try {
+        schema = profile::ProfileSchema::load(m_vfs);
+    } catch (const std::exception& e) {
+        logWarning("profile: {}; progress is not saved", e.what());
+        return;
+    }
+    m_profileStore = std::make_unique<profile::ProfileStore>(
+        m_options.profileDir.empty() ? profile::ProfileStore::defaultDirectory() : m_options.profileDir);
+    profile::ProfileStore::LoadResult loaded = m_profileStore->load(*schema);
+    m_profile.emplace(std::move(loaded.profile));
+    const profile::GameState& state = m_profile->state;
+    if (m_navigation && state.roads) {
+        m_navigation->coverage().restoreVisited(state.roads->visited);
+    }
+    if (m_speedTraps) {
+        for (const auto& [name, camera] : state.speedCameras) {
+            m_speedTraps->restore(name, camera.discovered, camera.personalBest);
+        }
+    }
+    if (m_outposts) {
+        for (const auto& [name, station] : state.gasStations) {
+            if (station.discovered) {
+                m_outposts->restoreDiscovered(name);
+            }
+        }
+    }
+    if (m_flyers) {
+        std::vector<std::string> collected;
+        for (const auto& [name, flyer] : state.flyers) {
+            if (flyer.collected) {
+                collected.push_back(name);
+            }
+        }
+        m_flyers->restore(collected);
+    }
+    logInfo("profile: {} from {}", loaded.status == profile::ProfileStore::LoadStatus::Loaded ? "loaded" : "new",
+        m_profileStore->file().string());
+}
+
+void Game::requestProfileSave(std::string_view reason)
+{
+    if (m_profile) {
+        logInfo("profile: save requested ({})", reason);
+        m_profileSaveRequested = true;
+    }
+}
+
+void Game::saveProfile()
+{
+    m_profileSaveRequested = false;
+    if (!m_profile || !m_profileStore) {
+        return;
+    }
+    profile::GameState& state = m_profile->state;
+    if (m_navigation) {
+        state.roads = profile::RoadDiscoveryState{m_navigation->coverage().visitedNodes()};
+    }
+    if (m_speedTraps) {
+        for (const SpeedTrap& trap : m_speedTraps->traps()) {
+            // The activity's own discovered flag (+40) is kept as loaded.
+            profile::SpeedCameraState& camera = state.speedCameras[trap.name];
+            camera.discovered = trap.discovered;
+            camera.personalBest = trap.best.value_or(0.0F);
+        }
+    }
+    if (m_outposts) {
+        for (const Outpost& outpost : m_outposts->all()) {
+            state.gasStations[outpost.name].discovered = outpost.discovered;
+        }
+    }
+    if (m_flyers) {
+        for (const std::string& id : m_flyers->ids()) {
+            state.flyers[id].collected = m_flyers->isCollected(id);
+        }
+        // Main/UpgradeDiscount follows the smashed count (0x8298d4f8).
+        m_profile->set("Main/UpgradeDiscount", std::uint64_t{m_flyers->upgradeDiscount()});
+    }
+    if (m_profileStore->save(*m_profile)) {
+        ++m_profileSaves;
     }
 }
 
@@ -2652,6 +2763,9 @@ bool Game::frame(const InputState& controls, float dt)
                 if (m_map && m_map->waypoint() && !m_navigation->destination()) {
                     m_map->clearWaypoint();
                 }
+            }
+            if (m_profileSaveRequested) {
+                saveProfile();
             }
             m_frameStats->mark(Part::Physics);
             updateDebris(dt);

@@ -81,6 +81,10 @@ public:
 
     const std::vector<SpeedTrap>& traps() const { return m_traps; }
     const SpeedTrap* find(std::string_view name) const;
+    /// Sets trap `name` as the profile saved it: discovered or not and its
+    /// personal best in metres per second, 0 standing for none as in a
+    /// fresh CSpeedCameraState. False when there is no such trap.
+    bool restore(std::string_view name, bool discovered, float personalBest);
     /// Passes counted so far this session.
     std::size_t passCount() const { return m_passes; }
     /// The latest counted pass, if any.

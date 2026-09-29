@@ -37,6 +37,17 @@ Outposts Outposts::build(const ActivityCatalogue& catalogue, const GameObjects& 
     return outposts;
 }
 
+bool Outposts::restoreDiscovered(std::string_view name)
+{
+    for (Outpost& outpost : m_outposts) {
+        if (outpost.name == name) {
+            outpost.discovered = true;
+            return true;
+        }
+    }
+    return false;
+}
+
 std::optional<std::size_t> Outposts::updateDiscovery(const glm::vec3& position)
 {
     for (std::size_t i = 0; i < m_outposts.size(); ++i) {

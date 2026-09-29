@@ -102,4 +102,16 @@ const SpeedTrap* SpeedTraps::find(std::string_view name) const
     return nullptr;
 }
 
+bool SpeedTraps::restore(std::string_view name, bool discovered, float personalBest)
+{
+    for (SpeedTrap& trap : m_traps) {
+        if (iequals(trap.name, name)) {
+            trap.discovered = discovered;
+            trap.best = personalBest > 0.0F ? std::optional<float>(personalBest) : std::nullopt;
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace fh

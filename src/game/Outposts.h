@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace fh {
@@ -74,6 +75,9 @@ public:
     std::optional<std::size_t> zoneAt(const glm::vec3& position, float speed) const;
 
     const std::vector<Outpost>& all() const { return m_outposts; }
+    /// Marks outpost `name` discovered, as the profile saved it. False when
+    /// there is no such outpost.
+    bool restoreDiscovered(std::string_view name);
     std::size_t discoveredCount() const;
 
 private:

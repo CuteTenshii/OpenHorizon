@@ -29,6 +29,8 @@
 #include "particles/TyreEffects.h"
 #include "physics/WorldCollision.h"
 #include "platform/Window.h"
+#include "profile/Profile.h"
+#include "profile/ProfileStore.h"
 #include "radio/Radio.h"
 #include "render/CarRenderer.h"
 #include "render/DrivingLineRenderer.h"
@@ -84,6 +86,9 @@ struct GameOptions {
     bool autopilot = false;
     /// Kilometres rather than miles per hour on the speedometer.
     bool metric = true;
+    /// The folder of the player's profile; profile::ProfileStore's default
+    /// (under XDG_DATA_HOME) when empty.
+    std::filesystem::path profileDir;
 };
 
 /// Free roam and races: the track's world streamed around the player's car,
@@ -185,6 +190,8 @@ public:
     /// World chunks of activation zones' set dressing drawn after the last
     /// frame.
     std::size_t activityPropChunksDrawn() const { return m_activityProps ? m_activityProps->chunksDrawn() : 0; }
+    /// Times the profile has been written since the game started.
+    std::size_t profileSaves() const { return m_profileSaves; }
 
 private:
     struct BodySphere {
@@ -272,6 +279,14 @@ private:
     /// Speed traps and outposts, for the player's car having moved from
     /// `from` this frame.
     void updateActivities(const glm::vec3& from);
+    /// Reads the player's profile and gives what it holds to the systems
+    /// that keep it: roads driven, speed traps, outposts, discount signs.
+    void loadProfile();
+    /// Asks for the profile to be saved at the end of the frame's update,
+    /// as the game's micro save requests do (0x824ad988 with `reason`).
+    void requestProfileSave(std::string_view reason);
+    /// Gathers the systems' state into the profile and writes it.
+    void saveProfile();
     void updateCamera(float dt);
     render::FrameParams frameParams() const;
     void drawVehicles(const render::FrameParams& frame);
@@ -472,6 +487,12 @@ private:
     std::unique_ptr<ActivityProps> m_activityProps;
     /// The discovered outpost whose zone the player is in, if any.
     std::optional<std::size_t> m_nearbyOutpost;
+    /// The player's profile and where it is kept; missing when the schema
+    /// could not be read, and then nothing is saved.
+    std::optional<profile::Profile> m_profile;
+    std::unique_ptr<profile::ProfileStore> m_profileStore;
+    bool m_profileSaveRequested = false;
+    std::size_t m_profileSaves = 0;
     /// The activities' texts, looked up once.
     struct ActivityTexts {
         std::string enterNow;

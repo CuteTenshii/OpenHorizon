@@ -80,9 +80,16 @@ MapCoverage::MapCoverage(const NavFile& nav, const RoadDiscoveryTuning& tuning)
     }
     linkRoadNodes();
     pruneLinks();
+    recountRoads();
+}
+
+void MapCoverage::recountRoads()
+{
     // Roads whose every node already counts start discovered (their counts
     // come from the saved profile in the game).
+    m_discovered = 0;
     for (Road& road : m_roads) {
+        road.discovered = false;
         for (RoadWay& entry : road.ways) {
             entry.complete = allVisited(entry.way);
         }
@@ -91,6 +98,27 @@ MapCoverage::MapCoverage(const NavFile& nav, const RoadDiscoveryTuning& tuning)
             ++m_discovered;
         }
     }
+}
+
+void MapCoverage::restoreVisited(const std::vector<bool>& visited)
+{
+    // CRoadDiscovery's load (0x8259b800) sets each node's count to its bit.
+    for (std::size_t node = 0; node < m_visits.size(); ++node) {
+        m_visits[node] = node < visited.size() && visited[node] ? 1 : 0;
+    }
+    m_newRoads.clear();
+    m_touched.clear();
+    ++m_revision;
+    recountRoads();
+}
+
+std::vector<bool> MapCoverage::visitedNodes() const
+{
+    std::vector<bool> visited(m_visits.size());
+    for (std::size_t node = 0; node < m_visits.size(); ++node) {
+        visited[node] = m_visits[node] > 0;
+    }
+    return visited;
 }
 
 bool MapCoverage::discoverable(std::uint32_t way) const

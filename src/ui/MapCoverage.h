@@ -95,6 +95,14 @@ public:
     /// wayRatios() can change.
     std::uint64_t revision() const { return m_revision; }
 
+    /// Whether each node has been counted, for the profile (CRoadDiscovery
+    /// keeps one bit per node).
+    std::vector<bool> visitedNodes() const;
+    /// Sets each node's count to 1 or 0 from `visited`, as loading the
+    /// profile does, and recounts the discovered roads without reporting
+    /// them as newly discovered. Nodes past its end are set to 0.
+    void restoreVisited(const std::vector<bool>& visited);
+
     std::size_t roadCount() const { return m_roads.size(); }
     std::size_t roadsDiscovered() const { return m_discovered; }
     /// The display names of the roads discovered in the last update.
@@ -127,6 +135,8 @@ private:
     bool stepZone(
         std::uint32_t node, std::uint32_t fromWay, const std::string& zone, std::vector<std::uint32_t>& visited);
     void touch(std::uint32_t way);
+    /// Marks the roads whose ways are all counted as discovered.
+    void recountRoads();
     void linkRoadNodes();
     void pruneLinks();
 

@@ -55,6 +55,14 @@ const char* gameDir()
     return dir;
 }
 
+/// An empty profile folder under the temporary directory.
+std::filesystem::path freshProfileDir(std::string_view name)
+{
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "fh1-scenarios-profiles" / name;
+    std::filesystem::remove_all(dir);
+    return dir;
+}
+
 /// One window for the whole run: the game allows one per process, and a
 /// small offscreen one keeps frames cheap.
 fh::Window& window()
@@ -86,6 +94,12 @@ public:
     explicit Session(fh::GameOptions options)
     {
         options.gameDir = gameDir();
+        if (options.profileDir.empty()) {
+            // A new profile for every scenario, so none sees what another
+            // discovered.
+            static int sessions = 0;
+            options.profileDir = freshProfileDir(std::format("session{}", ++sessions));
+        }
         m_game = std::make_unique<fh::Game>(window(), options);
     }
 
@@ -761,6 +775,71 @@ TEST(speedTrapMeasuresAPass)
     session.capture("speed_trap_map");
 }
 
+// "Add a game progression system so stuff is saved": what the player found
+// in free roam was gone after a restart. A speed trap's first pass is a new
+// personal best, which makes the game save its profile ("Activity Speed
+// Camera: New PB", 0x8296f76c), roads driven included; the next game loads
+// it back.
+TEST(progressIsKeptAcrossRestarts)
+{
+    if (!gameDir()) {
+        return;
+    }
+    const glm::vec2 gate{2274.2F, 319.6F};
+    const glm::vec2 north = glm::normalize(glm::vec2(0.1167F, 0.9932F));
+    fh::GameOptions options;
+    options.spawnAt = gate - north * 120.0F;
+    options.spawnHeading = std::atan2(north.x, north.y);
+    options.profileDir = freshProfileDir("restart");
+    float best = 0.0F;
+    std::vector<bool> driven;
+    {
+        Session session(options);
+        CHECK(session.waitForCar());
+        const fh::SpeedTraps* traps = session.game().speedTraps();
+        const fh::SpeedTrap* trap = traps ? traps->find("speed_camera_01") : nullptr;
+        CHECK(trap != nullptr);
+        if (trap == nullptr) {
+            return;
+        }
+        for (float t = 0.0F; t < 20.0F && !trap->discovered; t += kStep) {
+            session.run(kStep, {.throttle = 1.0F});
+        }
+        CHECK(trap->discovered);
+        CHECK_EQ(session.game().profileSaves(), std::size_t{1});
+        best = trap->best.value_or(0.0F);
+        CHECK(best >= 30.0F * 0.44704F);
+        // The save came at the end of that frame, with the roads driven up to
+        // it; those driven after wait for the next save, as in the game.
+        const fh::ui::Navigation* navigation = session.game().navigation();
+        CHECK(navigation != nullptr);
+        if (navigation != nullptr) {
+            driven = navigation->coverage().visitedNodes();
+        }
+        CHECK(std::count(driven.begin(), driven.end(), true) > 0);
+        CHECK(std::filesystem::exists(options.profileDir / "ForzaProfile.xml"));
+        session.run(0.5F, {});
+    }
+    Session session(options);
+    CHECK(session.waitForCar());
+    fh::Game& game = session.game();
+    const fh::SpeedTrap* trap = game.speedTraps() ? game.speedTraps()->find("speed_camera_01") : nullptr;
+    CHECK(trap != nullptr);
+    CHECK(trap && trap->discovered);
+    CHECK(trap && trap->best.value_or(0.0F) == best);
+    CHECK(hasMarker(game.currentMapState(), "speed_camera_discovered"));
+    const fh::ui::Navigation* navigation = game.navigation();
+    CHECK(navigation != nullptr);
+    if (navigation != nullptr) {
+        const std::vector<bool> now = navigation->coverage().visitedNodes();
+        std::size_t kept = 0;
+        for (std::size_t node = 0; node < driven.size() && node < now.size(); ++node) {
+            kept += driven[node] && now[node] ? 1 : 0;
+        }
+        CHECK_EQ(kept, static_cast<std::size_t>(std::count(driven.begin(), driven.end(), true)));
+    }
+}
+
 // A Horizon outpost (GasStation_01, the GASSTATION_001 zone) is discovered
 // within its discovery zone, then shows on the map, and its zone offers the
 // outpost with the game's prompt: HORIZON OUTPOST, its name, ENTER NOW.
@@ -846,6 +925,9 @@ int main(int argc, char** argv)
     // Nor write to the player's own shader cache; this folder persists
     // between runs, so later runs also exercise the cached path.
     setenv("XDG_CACHE_HOME", (std::filesystem::temp_directory_path() / "fh1-scenarios-cache").c_str(), 1);
+    // Nor the player's own profile: every Session names its own folder, and
+    // this catches any game made without one.
+    setenv("XDG_DATA_HOME", (std::filesystem::temp_directory_path() / "fh1-scenarios-data").c_str(), 1);
     fh::openLogFile(std::filesystem::temp_directory_path() / "fh1-scenarios.log");
     return fh::test::runAllTests(argc > 1 ? argv[1] : "");
 }

@@ -265,6 +265,7 @@ public:
     const NavLocator& locator() const { return *m_locator; }
     const MapCoverage& coverage() const { return *m_coverage; }
     /// For restoring the roads driven from the profile.
+    MapCoverage& coverage() { return *m_coverage; }
     std::optional<std::uint32_t> playerNode() const { return m_player->node(); }
 
 private:
