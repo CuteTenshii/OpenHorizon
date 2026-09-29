@@ -3,43 +3,53 @@
 #include "audio/AudioDevice.h"
 #include "audio/AudioLibrary.h"
 #include "audio/EngineSound.h"
+#include "audio/MixSnapshots.h"
 #include "base/JobPool.h"
 #include "car/CarPhysics.h"
 #include "car/CarSpec.h"
 #include "carmodel/CarModel.h"
 #include "data/Database.h"
 #include "data/StringTable.h"
+#include "game/Activities.h"
+#include "game/ActivityProps.h"
 #include "game/AiDriver.h"
 #include "game/CameraSettings.h"
+#include "game/DrivingLine.h"
 #include "game/Flyers.h"
 #include "game/GameObjects.h"
+#include "game/Outposts.h"
 #include "game/Race.h"
 #include "game/RaceData.h"
 #include "game/Smashables.h"
+#include "game/SpeedTraps.h"
 #include "game/TimeOfDay.h"
 #include "game/TrafficConfig.h"
 #include "particles/ParticleManager.h"
 #include "particles/ParticleRenderer.h"
 #include "particles/TyreEffects.h"
 #include "physics/WorldCollision.h"
-#include "radio/Radio.h"
 #include "platform/Window.h"
+#include "radio/Radio.h"
 #include "render/CarRenderer.h"
+#include "render/DrivingLineRenderer.h"
 #include "render/FrameRenderer.h"
 #include "render/FrameStats.h"
-#include "render/PresentTarget.h"
 #include "render/Overlay.h"
+#include "render/PresentTarget.h"
 #include "render/WorldRenderer.h"
 #include "ui/Hud.h"
 #include "ui/LoadingScreen.h"
 #include "ui/MenuCommon.h"
+#include "ui/Navigation.h"
 #include "ui/PauseMenu.h"
+#include "ui/UiSounds.h"
 #include "ui/WorldMap.h"
 #include "vfs/Vfs.h"
 #include "world/TrackWorld.h"
 
 #include <glm/glm.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -47,6 +57,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -96,8 +107,32 @@ public:
     /// Saves the last drawn 16:9 picture as PNG.
     bool saveScreenshot(const std::filesystem::path& path);
 
+    /// What the start of play still waits for; see loadingStatus().
+    struct LoadingStatus {
+        /// The tip loading screen is up.
+        bool screenShown = false;
+        /// The fade from black that follows it is running.
+        bool fading = false;
+        /// Jobs queued or running on the job pool: tile builds, texture
+        /// decodes, collision and car loads.
+        std::size_t pendingJobs = 0;
+        /// The tiles around the camera have their geometry and textures at
+        /// the level of detail it needs.
+        bool nearbyWorldReady = false;
+        /// The player's car is on the ground with its model and engine
+        /// sound (those that could be loaded at all).
+        bool playerCarReady = false;
+        /// The radio plays, or there is none or it is off.
+        bool radioReady = false;
+        /// Initial traffic cars not on the road yet.
+        std::size_t trafficPending = 0;
+    };
+
     /// Read-only state for the scenario tests.
     bool playerPlaced() const { return m_playerPlaced; }
+    /// The player drives: loading and its fade are over.
+    bool inControl() const;
+    LoadingStatus loadingStatus() const;
     const CarPhysics& playerCar() const { return *m_vehicles.front()->physics; }
     const render::Camera& camera() const { return m_camera; }
     bool menuShown() const { return menuOpen(); }
@@ -105,10 +140,44 @@ public:
     /// The pause menu, or nullptr when its scenes could not be loaded.
     const ui::PauseMenu* pauseMenu() const { return m_pause.get(); }
     bool mapShown() const { return m_map && m_map->isOpen(); }
+    /// The road network, the car's place on it and the roads driven; null
+    /// when the track's network could not be read.
+    const ui::Navigation* navigation() const { return m_navigation.get(); }
     /// Whether the last frame drew the world (the map screen does not).
     bool worldDrawn() const { return m_worldDrawn; }
     float timeOfDaySeconds() const { return m_timeOfDay ? m_timeOfDay->seconds() : 0.0F; }
     const Race* race() const { return m_race.get(); }
+    /// The clock the world's animation runs on (render::FrameParams::time).
+    float animationTime() const { return m_time; }
+    /// Whether the last frame drew the HUD.
+    bool hudDrawn() const { return m_hudDrawn; }
+    /// Vertices the last frame drew with the system-font overlay outside
+    /// the debug view (F3 or Tab).
+    std::size_t overlayVerticesDrawn() const { return m_overlayVertices; }
+    /// The driving line's chevrons as the last frame drew them, empty when
+    /// it drew none.
+    const std::vector<DrivingLine::Vertex>& drivingLineDrawn() const { return m_drivingLineDrawn; }
+    /// The mixer snapshots' state; null without sound.
+    const audio::SnapshotMixer* mixSnapshots() const { return m_snapshots ? &*m_snapshots : nullptr; }
+    /// The mixer volume of the category's bus as last set; 0 without sound.
+    float audioCategoryVolume(audio::MixCategory category) const;
+    /// How loud the player's engine reaches the master (see
+    /// audio::EngineSound::engineGain); 0 without its sound.
+    float playerEngineGain() const;
+    /// The UI sounds played so far, by their ui4audio.xml names.
+    std::vector<std::string> uiSoundsPlayed() const;
+    bool uiSoundPlaying(std::string_view name) const;
+    /// What the HUD would be given this frame.
+    ui::HudState currentHudState() const { return hudState(0.0F); }
+    /// What the full map would show this frame.
+    ui::WorldMapState currentMapState() const { return worldMapState(); }
+    /// The speed traps and the Horizon outposts; null when the game mode
+    /// lists none.
+    const SpeedTraps* speedTraps() const { return m_speedTraps ? &*m_speedTraps : nullptr; }
+    const Outposts* outposts() const { return m_outposts ? &*m_outposts : nullptr; }
+    /// World chunks of activation zones' set dressing drawn after the last
+    /// frame.
+    std::size_t activityPropChunksDrawn() const { return m_activityProps ? m_activityProps->chunksDrawn() : 0; }
 
 private:
     struct BodySphere {
@@ -124,7 +193,7 @@ private:
         /// The engine, exhaust and tyres as heard; missing without audio.
         std::unique_ptr<audio::EngineSound> engine;
         /// The car's own model; missing when it could not be loaded, and
-        /// the car is then drawn as an outline.
+        /// the car is then not drawn.
         std::shared_ptr<render::CarRenderer> model;
         /// Who drives it, which decides its AI's targets and when it goes.
         enum class Role { Player, Racer, Traffic, Festival } role = Role::Racer;
@@ -132,7 +201,6 @@ private:
         const RacingLine* line = nullptr;
         int lastGear = 1;
         CarControls controls;
-        glm::vec4 colour{1.0F};
         /// Factory paint (Combo_Colors), linear RGB.
         glm::vec3 paint{0.8F};
         bool metallic = false;
@@ -145,8 +213,8 @@ private:
     std::optional<std::pair<glm::vec3, float>> freeRoamStart() const;
     /// `model` is the car's decoded model when it was loaded elsewhere; it is
     /// read here otherwise, unless the cache already has it.
-    std::unique_ptr<Vehicle> makeVehicle(int carId, const glm::vec4& colour, int colourSequence = 1,
-        std::optional<carmodel::CarModel> model = std::nullopt) const;
+    std::unique_ptr<Vehicle> makeVehicle(
+        int carId, int colourSequence = 1, std::optional<carmodel::CarModel> model = std::nullopt) const;
     void spawnPlayer();
     void placeVehicle(Vehicle& vehicle, const glm::vec3& position, float heading);
     Vehicle& player() { return *m_vehicles.front(); }
@@ -163,11 +231,22 @@ private:
     void updateParticles(float dt);
     void drawParticles(const render::FrameParams& frame);
     void attachEngineSound(Vehicle& vehicle, bool spatial) const;
-    static audio::EngineSoundOptions engineSoundOptions(bool spatial);
+    audio::EngineSoundOptions engineSoundOptions(bool spatial) const;
     void updateAudio(float dt);
+    /// The bus of a mixer snapshot category; the master without snapshots.
+    audio::BusId categoryBus(audio::MixCategory category) const;
+    /// Advances the snapshot fades by `dt` seconds of real time and sets
+    /// the category buses to the result.
+    void updateMix(float dt);
+    void applyMix(audio::MixSnapshotId snapshot);
+    void playUiSound(std::string_view name);
+    /// Pauses or unpauses the game as CPauseGame does: the world stops (the
+    /// callers skip its update) and the Paused mix comes in or goes.
+    void setPaused(bool paused);
 
     void startRace(const RaceEvent& event);
-    void endRace();
+    /// Leaves the race; `toFreeRoam` also brings the FreeRoam mix back.
+    void endRace(bool toFreeRoam = true);
     void updateRace(float dt);
     void loadTraffic();
     void updateTraffic(float dt);
@@ -181,13 +260,17 @@ private:
     float gapAhead(const Vehicle& vehicle) const;
 
     void updateEventStarts();
+    /// Loads the game mode's activities and what the world shows of them.
+    void loadActivities();
+    /// Speed traps and outposts, for the player's car having moved from
+    /// `from` this frame.
+    void updateActivities(const glm::vec3& from);
     void updateCamera(float dt);
     render::FrameParams frameParams() const;
     void drawVehicles(const render::FrameParams& frame);
     void drawVehicleGlass(const render::FrameParams& frame);
     render::CarPose carPose(const Vehicle& vehicle) const;
-    void drawEventStarts(const glm::mat4& viewProjection);
-    void drawDrivingLine();
+    void drawDrivingLine(const glm::mat4& viewProjection);
     void drawHud(float dt);
     bool menuOpen() const;
     /// The pad's menu controls, with the keyboard's arrows, Enter, Escape,
@@ -198,9 +281,28 @@ private:
     bool updateMenus(const ui::MenuInput& input, float dt);
     ui::WorldMapState worldMapState() const;
     ui::HudState hudState(float dt) const;
+    /// The map entities of discovered speed traps and outposts, with their
+    /// names in `names` when given.
+    std::vector<ui::MapMarker> activityMapMarkers(std::vector<std::string>* names = nullptr) const;
     void updateRadio(float dt);
-    void drawRaceHud();
-    void drawLoading(const std::string& message);
+    /// Draws the loading screen straight to the window, for use while the
+    /// world loads.
+    void drawLoading();
+    /// Runs `work` on another thread and keeps drawing the loading screen
+    /// until it returns; for loads that need no GL context. Rethrows what
+    /// `work` throws.
+    template <typename Work> auto loadWhileDrawing(Work&& work) -> decltype(work());
+    /// Advances the start of play (see "Loading" in Game.cpp).
+    void updateLoading(float dt);
+    /// What CWaitForStreaming and CWaitForAllCarsToLoad wait for, as far as
+    /// this game has it.
+    bool streamingDone() const;
+    bool radioReady() const;
+    /// Initial traffic cars not on the road yet (placement attempts left
+    /// plus a car still loading).
+    std::size_t trafficPending() const;
+    /// Opacity of the fade from black, 0 once it is over.
+    float fadeAlpha() const;
 
     Window& m_window;
     GameOptions m_options;
@@ -219,17 +321,44 @@ private:
     const InputState* m_input = nullptr;
     const InputState& input() const { return *m_input; }
     bool m_worldDrawn = false;
+    bool m_hudDrawn = false;
+    std::size_t m_overlayVertices = 0;
     int m_lastPhysicsSteps = 0;
     std::unique_ptr<render::WorldRenderer> m_worldRenderer;
+    /// Lines and text in a system font for the debug view; what the player
+    /// sees otherwise comes from the game's scenes.
     std::unique_ptr<render::Overlay> m_overlay;
-    /// The game's own HUD scene; the plain overlay HUD stands in without it.
+    /// The game's own HUD scene; without it no HUD is drawn.
     std::unique_ptr<ui::Hud> m_hud;
     /// The pause menu (Start) and the world map (Back, or MAP in the pause
     /// menu); while either is open the simulation stands still.
     std::unique_ptr<ui::PauseMenu> m_pause;
     std::unique_ptr<ui::WorldMap> m_map;
-    /// The game's loading screen, shown until the player's car is placed.
+    /// The player's navigation (CNavigationComponent): road discovery for
+    /// the maps' road colours.
+    std::unique_ptr<ui::Navigation> m_navigation;
+    /// The game's loading screen, shown until the start is loaded.
     std::unique_ptr<ui::LoadingScreen> m_loading;
+    /// Where the start of play is: waiting for the world and cars
+    /// (Streaming), starting the radio and the first traffic (Starting),
+    /// fading in from black (Fading), then driving.
+    enum class LoadPhase { Streaming, Starting, Fading, Playing };
+    LoadPhase m_loadPhase = LoadPhase::Streaming;
+    std::chrono::steady_clock::time_point m_loadStart = std::chrono::steady_clock::now();
+    /// The fade_in state's FadeOptions (state_definitions.xml).
+    struct FadeOptions {
+        float duration = 0.0F;
+        float hold = 0.0F;
+        /// CurveType "S" rather than "Linear".
+        bool sCurve = false;
+        glm::vec3 colour{0.0F};
+    };
+    std::optional<FadeOptions> m_fadeIn;
+    static std::optional<FadeOptions> loadFadeIn(const Vfs& vfs);
+    float m_fadeElapsed = 0.0F;
+    /// Initial traffic placements still to try (CEnableTraffic's initial
+    /// spawn).
+    int m_initialTrafficLeft = 0;
     /// When the loading screen was last drawn, for its tip timing.
     std::chrono::steady_clock::time_point m_loadingDrawn = std::chrono::steady_clock::now();
     /// Half a stick's travel counts as a menu direction; the threshold the
@@ -237,6 +366,11 @@ private:
     ui::MenuInputReader m_menuInput{0.5F};
     /// The map returns to the pause menu when it was opened from there.
     bool m_mapFromPause = false;
+    /// Whether the map screen has started its ambience loop (CMapScreen
+    /// +456).
+    bool m_mapAmbienceStarted = false;
+    /// The pause (pause_game) is in effect: the pause menu or the map is up.
+    bool m_paused = false;
     std::unique_ptr<physics::WorldCollision> m_collision;
     /// The effects of DefaultTrack.xml; the tyre rules keep a pointer to
     /// the manager, so it stays in place once loaded.
@@ -248,6 +382,12 @@ private:
     // destructors release mixer buses.
     std::unique_ptr<audio::AudioDevice> m_audio;
     std::shared_ptr<audio::AudioLibrary> m_audioLibrary;
+    /// The mixer snapshots and a bus per category they set, which the
+    /// sounds of that category play into.
+    std::optional<audio::SnapshotMixer> m_snapshots;
+    std::array<audio::BusId, audio::kMixCategoryCount> m_categoryBuses{};
+    /// The UI sounds, on the GameUI bus; missing without sound.
+    std::unique_ptr<ui::UiSounds> m_uiSounds;
     /// The festival radio; missing without sound or when its files are.
     std::unique_ptr<radio::Radio> m_radio;
     /// What the HUD's radio panel shows next, when the radio's own delay
@@ -300,27 +440,46 @@ private:
     /// Car models by car id, shared by every car of the same model.
     mutable std::unordered_map<int, std::shared_ptr<render::CarRenderer>> m_modelCache;
     std::vector<RaceEvent> m_events;
-    /// Where each race can be started in free roam: the gameplay object
-    /// named by its HorizonEventID, as an index into m_events.
+    /// Where each race can be started in free roam: the activation zone of
+    /// the career_event_activations.xml activity whose zone object is its
+    /// HorizonEventID, as an index into m_events.
     struct EventStart {
         std::size_t event = 0;
         glm::vec3 position{0.0F};
+        float radius = 0.0F;
+        std::optional<float> maxSpeed;
+        /// The zone's set dressing in m_activityProps.
+        std::optional<std::size_t> props;
     };
     std::vector<EventStart> m_eventStarts;
     /// The start the player is standing in, if any.
     std::optional<std::size_t> m_nearbyStart;
-    /// Names of the starts in view this frame, at their screen positions.
-    struct ScreenLabel {
-        glm::vec2 position{0.0F};
-        std::string text;
-        float alpha = 1.0F;
+    std::optional<ActivityCatalogue> m_activities;
+    std::optional<SpeedTraps> m_speedTraps;
+    std::optional<Outposts> m_outposts;
+    std::unique_ptr<ActivityProps> m_activityProps;
+    /// The discovered outpost whose zone the player is in, if any.
+    std::optional<std::size_t> m_nearbyOutpost;
+    /// The activities' texts, looked up once.
+    struct ActivityTexts {
+        std::string enterNow;
+        std::vector<std::string> outpostTitles;
+        std::vector<std::string> outpostNames;
+        std::vector<std::string> outpostMapNames;
+        std::vector<std::string> speedTrapNames;
     };
-    std::vector<ScreenLabel> m_labels;
+    ActivityTexts m_activityTexts;
     std::unique_ptr<Race> m_race;
-    /// Speed profile of the race line for the player's car, which colours
-    /// the driving line.
-    std::unique_ptr<AiDriver> m_lineGuide;
     float m_resultsTime = 0.0F;
+    /// The driving line of the running race, and the speed profile its
+    /// colours compare the player's speed with; the renderer is missing
+    /// when the line's texture or shaders could not be loaded.
+    std::optional<DrivingLine> m_drivingLine;
+    std::unique_ptr<AiDriver> m_lineGuide;
+    std::unique_ptr<render::DrivingLineRenderer> m_drivingLineRenderer;
+    /// TrackPositioning/GreenLine/ResetBlendSpeed of globalregistry.xml.
+    float m_drivingLineReveal = 0.0F;
+    std::vector<DrivingLine::Vertex> m_drivingLineDrawn;
 
     CameraMode m_cameraMode = CameraMode::Chase;
     render::Camera m_camera;

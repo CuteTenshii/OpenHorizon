@@ -2,6 +2,7 @@
 
 #include "base/Log.h"
 #include "render/Gl.h"
+#include "render/GlProgram.h"
 #include "ui/Minimap.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -11,11 +12,12 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <thread>
 #include <cmath>
 #include <format>
 #include <fstream>
+#include <future>
 #include <string_view>
+#include <thread>
 
 namespace fh {
 
@@ -23,15 +25,13 @@ namespace {
 
 constexpr float kPi = 3.14159265F;
 constexpr float kMsToKmh = 3.6F;
-/// How long the results stay up after the player finishes.
+/// How long a race goes on after the player finishes before free roam
+/// comes back. The game shows its post-race scenes (h_post_race_*) then,
+/// which are not implemented; this time is chosen, not the game's.
 constexpr float kResultsSeconds = 8.0F;
+/// The debug view's text and panels in the system font, not the game's.
 const glm::vec4 kHudText{0.96F, 0.96F, 0.94F, 1.0F};
-const glm::vec4 kHudDim{0.96F, 0.96F, 0.94F, 0.55F};
 const glm::vec4 kHudPanel{0.02F, 0.02F, 0.03F, 0.6F};
-/// The HUD's one accent: the rev band near the redline, the selected event
-/// and the player's row in the standings.
-const glm::vec4 kHudAccent{1.0F, 0.42F, 0.1F, 1.0F};
-const glm::vec4 kPlayerColour{0.95F, 0.3F, 0.15F, 1.0F};
 constexpr float kMphToMs = 0.44704F;
 /// Height the ground is searched from when a start point gives none.
 constexpr float kSearchFromHeight = 3000.0F;
@@ -62,6 +62,26 @@ std::string ordinal(int n)
         suffix = n % 10 == 1 ? "st" : n % 10 == 2 ? "nd" : n % 10 == 3 ? "rd" : "th";
     }
     return std::format("{}{}", n, suffix);
+}
+
+/// TrackPositioning/GreenLine/ResetBlendSpeed of globalregistry.xml: the
+/// seconds the driving line takes to draw out. Throws DataError without it.
+float drivingLineRevealSeconds(const Vfs& vfs)
+{
+    constexpr const char* kPath = "media/gametunablesettings/globalregistry.xml";
+    const std::optional<std::string> text = vfs.readText(kPath);
+    pugi::xml_document doc;
+    if (!text || !doc.load_buffer(text->data(), text->size())) {
+        throw DataError("{} is missing or broken", kPath);
+    }
+    const pugi::xml_node value = doc.find_node([](const pugi::xml_node& node) {
+        return std::string_view(node.name()) == "Value"
+            && std::string_view(node.attribute("id").as_string()) == "TrackPositioning/GreenLine/ResetBlendSpeed";
+    });
+    if (!value) {
+        throw DataError("{} has no TrackPositioning/GreenLine/ResetBlendSpeed", kPath);
+    }
+    return value.attribute("value").as_float();
 }
 
 bool secondTicked(float time, float dt)
@@ -125,34 +145,70 @@ audio::TyreCarInput tyreCarInput(const CarPhysics& car)
 
 } // namespace
 
+template <typename Work> auto Game::loadWhileDrawing(Work&& work) -> decltype(work())
+{
+    auto result = std::async(std::launch::async, std::forward<Work>(work));
+    // One frame at 60 Hz between checks; drawLoading() itself waits for
+    // vsync when it is on.
+    while (result.wait_for(std::chrono::milliseconds(16)) != std::future_status::ready) {
+        drawLoading();
+    }
+    return result.get();
+}
+
 Game::Game(Window& window, const GameOptions& options)
     : m_window(window)
     , m_options(options)
 {
     m_vfs.mountDisc(options.gameDir);
-    m_database = std::make_unique<Database>(m_vfs.readOrThrow("media/db/gamedb.slt"));
-    m_strings = std::make_unique<Localisation>(m_vfs, "en");
+    // The loading screen comes first and stays up through everything below
+    // (see "Loading" further down).
+    try {
+        m_loading = std::make_unique<ui::LoadingScreen>(m_vfs, "en", std::random_device{}());
+        // Loading into free roam shows the "freeroam" tips: CLoadIntoFreeRoam
+        // (enter at 0x829D0F78) sets tip group 0, which the group name table
+        // at 0x83329630 names "freeroam".
+        m_loading->show("freeroam");
+    } catch (const std::exception& e) {
+        logWarning("loading screen: {}", e.what());
+        m_loading.reset();
+    }
+    drawLoading();
     m_jobs = std::make_unique<JobPool>();
+    loadWhileDrawing([this] {
+        m_database = std::make_unique<Database>(m_vfs.readOrThrow("media/db/gamedb.slt"));
+        m_strings = std::make_unique<Localisation>(m_vfs, "en");
+    });
+    m_fadeIn = loadFadeIn(m_vfs);
     m_frame = std::make_unique<render::FrameRenderer>();
     m_frameStats = std::make_unique<render::FrameStats>();
     m_overlay = std::make_unique<render::Overlay>("sans-serif:bold", 26);
+    drawLoading();
     try {
         m_hud = std::make_unique<ui::Hud>(m_vfs, m_options.track);
     } catch (const std::exception& e) {
-        logWarning("hud: {}; using the plain one", e.what());
+        logWarning("hud: {}; no HUD", e.what());
+    }
+    drawLoading();
+    try {
+        m_drivingLineRenderer = std::make_unique<render::DrivingLineRenderer>(m_vfs);
+        m_drivingLineReveal = drivingLineRevealSeconds(m_vfs);
+    } catch (const std::exception& e) {
+        logWarning("driving line: {}; not drawn", e.what());
     }
     try {
         m_pause = std::make_unique<ui::PauseMenu>(m_vfs);
         m_map = std::make_unique<ui::WorldMap>(m_vfs, m_options.track);
-        m_loading = std::make_unique<ui::LoadingScreen>(m_vfs, "en", std::random_device{}());
-        // Free roam's first load shows the "freeroam" tip group, as fast
-        // travel does; the group the game's initial load uses was not traced.
-        m_loading->show("freeroam");
     } catch (const std::exception& e) {
         logWarning("menus: {}; no pause menu or map", e.what());
         m_pause.reset();
         m_map.reset();
-        m_loading.reset();
+    }
+    drawLoading();
+    try {
+        m_navigation = std::make_unique<ui::Navigation>(m_vfs, m_options.track);
+    } catch (const std::exception& e) {
+        logWarning("navigation: {}; no road discovery", e.what());
     }
 
     try {
@@ -164,11 +220,36 @@ Game::Game(Window& window, const GameOptions& options)
     }
     if (m_audio) {
         try {
+            m_snapshots.emplace(audio::MixSnapshots::load(m_vfs));
+            for (audio::BusId& bus : m_categoryBuses) {
+                bus = m_audio->mixer().createBus();
+            }
+            // Free roam's first load runs under the Loading mix
+            // (Audio.loading at the start of prepare_free_roam in
+            // game_free_roam_flow.xml).
+            m_snapshots->apply(audio::MixSnapshotId::Loading);
+            updateMix(0.0F);
+        } catch (const std::exception& e) {
+            logWarning("audio: mixer snapshots: {}", e.what());
+            m_snapshots.reset();
+        }
+        try {
+            m_uiSounds = std::make_unique<ui::UiSounds>(
+                m_vfs, m_audio->mixer(), *m_audioLibrary, categoryBus(audio::MixCategory::GameUI));
+        } catch (const std::exception& e) {
+            logWarning("audio: ui sounds: {}", e.what());
+        }
+        drawLoading();
+        try {
             radio::Radio::Options radioOptions;
             // The game seeds its radio from a runtime value that was not
             // traced; any seed gives the game's sequencing.
             radioOptions.seed = std::random_device{}();
-            m_radio = std::make_unique<radio::Radio>(m_vfs, *m_audio, radioOptions);
+            // The music, idents and DJ are one stream here, so DJModifier
+            // cannot be set apart from GameMusic; every snapshot this game
+            // applies leaves DJModifier at 1.
+            radioOptions.bus = categoryBus(audio::MixCategory::GameMusic);
+            m_radio = loadWhileDrawing([&] { return std::make_unique<radio::Radio>(m_vfs, *m_audio, radioOptions); });
         } catch (const std::exception& e) {
             logWarning("radio: {}", e.what());
         }
@@ -178,15 +259,28 @@ Game::Game(Window& window, const GameOptions& options)
     if (carId < 0) {
         throw DataError("no car named {} in the game database", options.car);
     }
-    m_vehicles.push_back(makeVehicle(carId, kPlayerColour));
+    // The model's files decode off this thread; its upload and programs
+    // need the GL context.
+    std::optional<carmodel::CarModel> playerModel = loadWhileDrawing([&]() -> std::optional<carmodel::CarModel> {
+        const std::optional<Row> media
+            = m_database->queryOne("SELECT MediaName FROM Data_Car WHERE Id = ?", {std::to_string(carId)});
+        try {
+            return carmodel::CarModel::load(m_vfs, m_database.get(), media ? media->text("MediaName") : options.car);
+        } catch (const std::exception& e) {
+            logWarning("car model {}: {}", options.car, e.what());
+            return std::nullopt;
+        }
+    });
+    m_vehicles.push_back(makeVehicle(carId, 1, std::move(playerModel)));
     player().role = Vehicle::Role::Player;
+    drawLoading();
     try {
         m_cameraSettings = CameraSettings::load(m_vfs);
         m_carCameras = CarCameras::load(*m_cameraSettings, *m_database, carId);
     } catch (const std::exception& e) {
         logWarning("camera: {}", e.what());
     }
-    attachEngineSound(player(), false);
+    loadWhileDrawing([this] { attachEngineSound(player(), false); });
     player().physics->assists().automaticGearbox = !options.manualGearbox;
     logInfo("car: {} ({:.0f} kg, {:.0f} N·m)", player().name, player().spec->massKg,
         player().spec->reference.peakTorqueNm);
@@ -203,12 +297,11 @@ Game::~Game()
 }
 
 std::unique_ptr<Game::Vehicle> Game::makeVehicle(
-    int carId, const glm::vec4& colour, int colourSequence, std::optional<carmodel::CarModel> model) const
+    int carId, int colourSequence, std::optional<carmodel::CarModel> model) const
 {
     auto vehicle = std::make_unique<Vehicle>();
     vehicle->spec = std::make_unique<CarSpec>(loadCarSpec(*m_database, carId, &m_vfs));
     vehicle->physics = std::make_unique<CarPhysics>(*vehicle->spec);
-    vehicle->colour = colour;
     const CarSpec& spec = *vehicle->spec;
     // The requested factory colour, or the car's first when the sequence
     // is out of its range. RGB is packed 0xRRGGBB in sRGB.
@@ -272,42 +365,34 @@ std::unique_ptr<Game::Vehicle> Game::makeVehicle(
     return vehicle;
 }
 
-void Game::drawLoading(const std::string& message)
+void Game::drawLoading()
 {
     m_window.pumpEvents();
     m_present.resize(m_window.width(), m_window.height());
     m_present.bind();
-    const int w = m_present.width();
-    const int h = m_present.height();
-    glClearColor(0.04F, 0.04F, 0.05F, 1.0F);
+    // Black behind the loading screen, and alone without its scenes.
+    glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
     glClear(GL_COLOR_BUFFER_BIT);
     if (m_loading && m_loading->isShown()) {
         const auto now = std::chrono::steady_clock::now();
         m_loading->update(std::chrono::duration<float>(now - m_loadingDrawn).count());
         m_loadingDrawn = now;
-        m_loading->draw(w, h);
-        m_present.present();
-        m_window.swapBuffers();
-        return;
+        m_loading->draw(m_present.width(), m_present.height());
     }
-    const float scale = 1.2F;
-    const float width = m_overlay->textWidth(message, scale);
-    m_overlay->text((static_cast<float>(w) - width) * 0.5F, static_cast<float>(h) * 0.5F, message, kHudText, scale);
-    m_overlay->flush(glm::mat4(1.0F), w, h);
     m_present.present();
     m_window.swapBuffers();
 }
 
 void Game::loadWorld()
 {
-    drawLoading(std::format("Loading {}", m_options.track));
+    drawLoading();
     const auto start = std::chrono::steady_clock::now();
     // Progress arrives from whichever loader thread finished a batch; only
     // the main thread may draw.
     const std::thread::id mainThread = std::this_thread::get_id();
     m_world = world::TrackWorld::load(m_vfs, m_options.track, [&](std::size_t, std::size_t) {
         if (std::this_thread::get_id() == mainThread) {
-            drawLoading(std::format("Loading {}", m_options.track));
+            drawLoading();
         }
     });
     if (!m_world) {
@@ -319,7 +404,9 @@ void Game::loadWorld()
     logInfo("world: {} chunks indexed in {:.1f} s", m_world->index.chunks().size(),
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     m_worldRenderer = std::make_unique<render::WorldRenderer>(*m_world, *m_jobs);
+    drawLoading();
     m_collision = std::make_unique<physics::WorldCollision>(*m_world, *m_jobs, m_vfs, m_options.track);
+    drawLoading();
     try {
         m_smashables = Smashables::load(m_vfs, m_options.track, *m_world);
         m_collision->setExcludedChunks(m_smashables->chunkMask());
@@ -342,6 +429,7 @@ void Game::loadWorld()
         m_particles.reset();
     }
     m_hiddenChunks.assign(m_world->index.chunks().size(), false);
+    drawLoading();
 
     m_objects = GameObjects::load(m_vfs, m_options.track);
     m_timeOfDay.emplace(TimeOfDayCurves::load(m_vfs, m_options.track));
@@ -361,14 +449,10 @@ void Game::loadWorld()
     m_tone.white = std::max(post.white, 6.0F);
     m_tone.vignettePower = post.vignettePower;
 
+    drawLoading();
     m_events = loadRaceEvents(*m_database, *m_strings, m_options.track);
     loadTraffic();
-    for (std::size_t i = 0; i < m_events.size(); ++i) {
-        if (const GameObject* object = m_objects->find(m_events[i].horizonId)) {
-            m_eventStarts.push_back({i, object->position});
-        }
-    }
-    logInfo("races: {} of {} can be started from free roam", m_eventStarts.size(), m_events.size());
+    loadActivities();
 
     if (m_options.spawnAt) {
         // No height is given, so the ground is searched from well above the
@@ -446,12 +530,6 @@ void Game::placeVehicle(Vehicle& vehicle, const glm::vec3& position, float headi
 void Game::spawnPlayer()
 {
     placeVehicle(player(), m_spawnPosition, m_spawnHeading);
-    if (m_radio && !m_playerPlaced) {
-        m_radio->startFreeRoam();
-    }
-    if (m_loading) {
-        m_loading->hide();
-    }
     m_playerPlaced = true;
     m_chaseVelocity = glm::vec3(0.0F);
     logInfo("car placed at height {:.1f}", player().physics->position().y);
@@ -464,6 +542,218 @@ void Game::spawnPlayer()
             startRace(*it);
         }
     }
+}
+
+// Loading
+//
+// What the game does between the title and driving, from prepare_free_roam
+// in media/gamemodes/game_free_roam_flow.xml and the behaviours its states
+// run (media/gamemodes/state_definitions.xml, code traced in the
+// executable):
+//
+// 1. Audio.loading (the Loading mix), with the loading screen up:
+//    CLoadIntoFreeRoam (0x829D0F78) shows it with tip group "freeroam".
+// 2. wait_for_streaming: CWaitForStreaming. Its enter (0x82A42388) resets
+//    the world loader's "streamed" flag (0x824B7E48 clears +607 of the
+//    object at 0x833CAAE4); its update (0x82A42440) leaves once 0x824C1690
+//    is true: every player car in the loader's list passes 0x825258B8 (its
+//    model resources loaded) and the flag is set again. Where the flag is
+//    set was not found; inferred from the name and the reset that it means
+//    the streaming around the camera has caught up.
+// 3. wait_for_all_cars_loaded: CWaitForAllCarsToLoad. Enter (0x82A35EE0)
+//    clears the car manager's flag +124 and asks for a check; update
+//    (0x82A35F10) leaves once the flag is set, which the manager's message
+//    handler (0x82659D50) does on message (10, 0x10008). Inferred: every
+//    car in the world, opponents included, has its model loaded.
+// 4. start_radio (Audio.play_freeroam_music), snap_car_to_road,
+//    Audio.exterior_freeroam (the FreeRoam mix).
+// 5. enable_traffic_spawning_with_initial_spawn: CEnableTraffic with
+//    initialSpawn, whose enter (0x829BC248) enables traffic and makes its
+//    initial spawn at once; the counts are aiopenworld.xml's
+//    numInitialTrafficCars and numInitialFestivalCars (inferred from the
+//    names; the spawn's own code was not followed).
+// 6. black_out (CBlackOut, 0x829A26C0: the screen fade set to black), then
+//    show_empty_screen_with_hud_resource, which replaces the loading scene.
+// 7. fade_in: CFadeIn with the state's FadeOptions (1 s, S curve, from
+//    black); see fadeAlpha().
+// 8. show_hud_screen, start_driving, disable_car_parking_brake,
+//    unblock_pause_entry: the HUD shows and the player drives.
+//
+// The game waits only in 2, 3 and 7. Here the loading screen also stays up
+// until the radio plays and the initial traffic cars are on the road, whose
+// loads the game hides behind its black-out and fade instead: this game's
+// radio starts only once its stream is decoded and traffic models load on
+// workers, so without the wait both would start in view. It also waits for
+// the job pool to drain, which covers tile rebuilds at every level of
+// detail in view and their textures, not just those nearby.
+
+std::optional<Game::FadeOptions> Game::loadFadeIn(const Vfs& vfs)
+{
+    const std::optional<std::string> text = vfs.readText("media/gamemodes/state_definitions.xml");
+    pugi::xml_document doc;
+    if (!text || !doc.load_buffer(text->data(), text->size())) {
+        logWarning("fade: no media/gamemodes/state_definitions.xml; no fade after loading");
+        return std::nullopt;
+    }
+    const pugi::xpath_node node = doc.select_node("//State[@id='fade_in']/Behaviour[@id='CFadeIn']/FadeOptions");
+    if (!node) {
+        logWarning("fade: no fade_in state; no fade after loading");
+        return std::nullopt;
+    }
+    const pugi::xml_node options = node.node();
+    FadeOptions fade;
+    fade.duration = options.attribute("Duration").as_float();
+    fade.hold = options.attribute("HoldDuration").as_float();
+    // The curve names map through the table at 0x82084730: Linear 0, S 1.
+    fade.sCurve = std::string_view(options.attribute("CurveType").as_string()) == "S";
+    fade.colour = glm::vec3(options.attribute("Color.x").as_float(), options.attribute("Color.y").as_float(),
+        options.attribute("Color.z").as_float());
+    return fade;
+}
+
+float Game::fadeAlpha() const
+{
+    if (m_loadPhase == LoadPhase::Streaming || m_loadPhase == LoadPhase::Starting) {
+        return 1.0F;
+    }
+    if (m_loadPhase == LoadPhase::Playing || !m_fadeIn) {
+        return 0.0F;
+    }
+    // The fader's update (0x8297BE60) clamps its clock to the duration and
+    // evaluates the fade-in at 0x82902E08: opaque up to the shorter of the
+    // duration and the hold, clear from the longer on, a straight ramp
+    // between, shaped by the curve (0x829004A0: S is (1 - cos(pi x)) / 2).
+    const FadeOptions& fade = *m_fadeIn;
+    const float t = std::min(m_fadeElapsed, fade.duration);
+    if (t >= fade.duration) {
+        return 0.0F;
+    }
+    const float from = std::min(fade.duration, fade.hold);
+    const float to = std::max(fade.duration, fade.hold);
+    float x = 0.0F;
+    if (t <= from) {
+        x = 1.0F;
+    } else if (t < to) {
+        x = 1.0F - (t - from) / (to - from);
+    }
+    x = std::clamp(x, 0.0F, 1.0F);
+    return fade.sCurve ? (1.0F - std::cos(kPi * x)) * 0.5F : x;
+}
+
+bool Game::streamingDone() const
+{
+    if (!m_playerPlaced || !m_worldRenderer->nearbyReady() || m_jobs->outstanding() > 0
+        || !m_collision->readyAt(player().physics->position())) {
+        return false;
+    }
+    // Car models load with their car here, so a car in the world has its
+    // model or has failed to get one; only a traffic car still loading is
+    // not in yet.
+    return !m_pendingSpawn;
+}
+
+bool Game::radioReady() const
+{
+    if (!m_radio) {
+        return true;
+    }
+    const radio::RadioNowPlaying& playing = m_radio->nowPlaying();
+    return playing.off || !playing.title.empty() || playing.djSpeaking;
+}
+
+std::size_t Game::trafficPending() const
+{
+    // After loading, a car loading is ordinary traffic, not the initial
+    // spawn.
+    const bool initialLoading = m_pendingSpawn && m_loadPhase == LoadPhase::Starting;
+    return static_cast<std::size_t>(std::max(m_initialTrafficLeft, 0)) + (initialLoading ? 1U : 0U);
+}
+
+void Game::updateLoading(float dt)
+{
+    switch (m_loadPhase) {
+    case LoadPhase::Streaming:
+    case LoadPhase::Starting:
+        break;
+    case LoadPhase::Fading:
+        m_fadeElapsed += dt;
+        if (fadeAlpha() <= 0.0F) {
+            m_loadPhase = LoadPhase::Playing;
+            logInfo("loading: driving after {:.1f} s",
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - m_loadStart).count());
+        }
+        return;
+    case LoadPhase::Playing:
+        return;
+    }
+
+    if (m_loadPhase == LoadPhase::Streaming) {
+        if (!streamingDone()) {
+            return;
+        }
+        if (m_radio) {
+            m_radio->startFreeRoam();
+        }
+        // A race given in the options is already set up and has applied
+        // its own mix.
+        if (!m_race) {
+            applyMix(audio::MixSnapshotId::FreeRoam);
+        }
+        if (m_trafficConfig && !m_trafficLines.empty()) {
+            if (const TrafficConfig::Settings* settings = m_trafficConfig->find(m_race ? "race" : "freeroam")) {
+                m_initialTrafficLeft = settings->initialTrafficCars + settings->initialFestivalCars;
+            }
+        }
+        m_loadPhase = LoadPhase::Starting;
+        logInfo("loading: streamed after {:.1f} s",
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - m_loadStart).count());
+    }
+
+    // The initial spawn places its cars one after another, each loading on
+    // a worker; a car that finds no free road is not tried again.
+    finishTrafficSpawn();
+    if (!m_pendingSpawn && m_initialTrafficLeft > 0) {
+        const TrafficConfig::Settings& settings = *m_trafficConfig->find(m_race ? "race" : "freeroam");
+        const int traffic = static_cast<int>(std::count_if(
+            m_vehicles.begin(), m_vehicles.end(), [](const auto& v) { return v->role == Vehicle::Role::Traffic; }));
+        const bool festival = traffic >= settings.initialTrafficCars;
+        const auto& list = festival ? settings.festival : settings.traffic;
+        const auto density = list.find(kTrafficRoadClass);
+        spawnTraffic(festival ? Vehicle::Role::Festival : Vehicle::Role::Traffic, settings,
+            density == list.end() ? TrafficConfig::Density{} : density->second);
+        --m_initialTrafficLeft;
+    }
+    if (trafficPending() > 0 || !radioReady() || !streamingDone()) {
+        return;
+    }
+    if (m_loading) {
+        m_loading->hide();
+    }
+    m_loadPhase = LoadPhase::Fading;
+    m_fadeElapsed = 0.0F;
+    const render::ProgramCacheStats shaders = render::programCacheStats();
+    logInfo("loading: screen down after {:.1f} s; programs: {} from the cache, {} compiled, {} cached binaries "
+            "refused, {:.0f} ms building them",
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - m_loadStart).count(), shaders.fromCache,
+        shaders.compiled, shaders.rejected, std::chrono::duration<double, std::milli>(shaders.time).count());
+}
+
+bool Game::inControl() const
+{
+    return m_loadPhase == LoadPhase::Playing;
+}
+
+Game::LoadingStatus Game::loadingStatus() const
+{
+    LoadingStatus status;
+    status.screenShown = m_loading ? m_loading->isShown() : m_loadPhase <= LoadPhase::Starting;
+    status.fading = m_loadPhase == LoadPhase::Fading;
+    status.pendingJobs = m_jobs->outstanding();
+    status.nearbyWorldReady = m_worldRenderer && m_worldRenderer->nearbyReady();
+    status.playerCarReady = m_playerPlaced && m_modelCache.contains(player().spec->id) && (player().engine || !m_audio);
+    status.radioReady = radioReady() && (!m_radio || m_loadPhase != LoadPhase::Streaming);
+    status.trafficPending = trafficPending();
+    return status;
 }
 
 CarControls Game::readPlayerControls(float /*dt*/)
@@ -609,14 +899,74 @@ void Game::updateDebris(float dt)
     }
 }
 
-audio::EngineSoundOptions Game::engineSoundOptions(bool spatial)
+audio::EngineSoundOptions Game::engineSoundOptions(bool spatial) const
 {
     audio::EngineSoundOptions options;
     options.spatial = spatial;
     // Opponents' gear changes and skids would crowd the mix; the player's
     // own carry the feedback.
     options.transmission = !spatial;
+    // The car in focus is the player's (the one heard unplaced); the
+    // snapshots set it apart from the others (FocusCar, OppCar). That the
+    // FocusCar volume scales the engine is verified (0x82C7E28C multiplies
+    // it into each engine layer's volume); the other categories are matched
+    // to the sounds by their names.
+    using audio::MixCategory;
+    options.buses.engine = categoryBus(spatial ? MixCategory::OppCar : MixCategory::FocusCar);
+    options.buses.backfire = categoryBus(MixCategory::Backfire);
+    options.buses.transmission = categoryBus(MixCategory::Transmission);
+    options.buses.tyres = categoryBus(MixCategory::Tire);
     return options;
+}
+
+audio::BusId Game::categoryBus(audio::MixCategory category) const
+{
+    return m_snapshots ? m_categoryBuses[static_cast<std::size_t>(category)] : audio::kMasterBus;
+}
+
+void Game::updateMix(float dt)
+{
+    if (!m_snapshots || !m_audio) {
+        return;
+    }
+    m_snapshots->update(dt);
+    for (std::size_t c = 0; c < audio::kMixCategoryCount; ++c) {
+        m_audio->mixer().setBusVolume(m_categoryBuses[c], m_snapshots->volume(static_cast<audio::MixCategory>(c)));
+    }
+}
+
+void Game::applyMix(audio::MixSnapshotId snapshot)
+{
+    if (m_snapshots) {
+        m_snapshots->apply(snapshot);
+    }
+}
+
+void Game::playUiSound(std::string_view name)
+{
+    if (m_uiSounds) {
+        m_uiSounds->play(name);
+    }
+}
+
+void Game::setPaused(bool paused)
+{
+    if (paused == m_paused) {
+        return;
+    }
+    m_paused = paused;
+    // CPauseGame (0x829DC758) applies the Paused snapshot (id 6) when the
+    // game becomes paused and restores the one it replaced when it is
+    // unpaused; the pause flow's pause_game and unpause_game do not ask it
+    // to leave the snapshot alone.
+    if (!m_snapshots) {
+        return;
+    }
+    if (paused) {
+        m_snapshots->apply(audio::MixSnapshotId::Paused);
+    } else {
+        m_snapshots->restore();
+    }
 }
 
 void Game::attachEngineSound(Vehicle& vehicle, bool spatial) const
@@ -702,10 +1052,11 @@ void Game::updateRadio(float dt)
     const InputState& in = input();
     // "To change radio stations press left and right on the d-pad", as the
     // game's loading tip says; Page Up and Down stand in on a keyboard.
-    if (in.pressed(Button::DpadRight) || in.pressed(Key::PageDown)) {
+    // While paused the pad drives the menus instead.
+    if (!m_paused && (in.pressed(Button::DpadRight) || in.pressed(Key::PageDown))) {
         m_radio->nextStation();
     }
-    if (in.pressed(Button::DpadLeft) || in.pressed(Key::PageUp)) {
+    if (!m_paused && (in.pressed(Button::DpadLeft) || in.pressed(Key::PageUp))) {
         m_radio->previousStation();
     }
     m_radio->update(dt);
@@ -839,7 +1190,7 @@ void Game::collideVehicles()
 
 void Game::startRace(const RaceEvent& event)
 {
-    endRace();
+    endRace(false);
     // Racers take the slots after the player; traffic comes back later.
     m_vehicles.resize(1);
     RaceRoute route;
@@ -888,14 +1239,10 @@ void Game::startRace(const RaceEvent& event)
         }
         const RouteTransform& t = grid.grid[static_cast<std::size_t>(slot)];
         const int carId = event.opponents[static_cast<std::size_t>(opponent)];
-        // Opponents are told apart by hue, all within the HUD's cool range
-        // so none is confused with the player's orange.
-        const float hue = static_cast<float>(opponent) / 7.0F;
-        const glm::vec4 colour(0.35F + 0.3F * std::sin(hue * 6.28F), 0.6F + 0.3F * std::cos(hue * 6.28F), 0.95F, 1.0F);
         try {
             const std::size_t o = static_cast<std::size_t>(opponent);
             std::unique_ptr<Vehicle> ai
-                = makeVehicle(carId, colour, o < event.opponentColours.size() ? event.opponentColours[o] : 1);
+                = makeVehicle(carId, o < event.opponentColours.size() ? event.opponentColours[o] : 1);
             ai->physics->assists().speedSensitiveSteering = false;
             // Alternate sides of the line, as a grid does, so the field does
             // not drive nose to tail.
@@ -912,7 +1259,11 @@ void Game::startRace(const RaceEvent& event)
         }
         ++opponent;
     }
+    // The player's line colours compare the car's speed with what our own
+    // AI would take each point at; the game's speed planner (0x824a4e40)
+    // was not traced.
     m_lineGuide = std::make_unique<AiDriver>(m_race->line(), *player().spec, 100, 0.0F);
+    m_drivingLine.emplace(m_drivingLineReveal);
     if (m_options.autopilot) {
         player().ai = std::make_unique<AiDriver>(m_race->line(), *player().spec, 90, 0.0F);
         // The AI's speed profile assumes the full lock, as for every other
@@ -920,6 +1271,10 @@ void Game::startRace(const RaceEvent& event)
         player().physics->assists().speedSensitiveSteering = false;
     }
     m_timeOfDay->setSeconds(event.timeOfDay);
+    // The race flows apply Audio.exterior_race (the Race snapshot) just
+    // before start_race; the PreEvent mix of their pre-race menus has no
+    // counterpart here.
+    applyMix(audio::MixSnapshotId::Race);
     m_resultsTime = 0.0F;
     m_chaseVelocity = glm::vec3(0.0F);
     m_camera.position
@@ -929,15 +1284,22 @@ void Game::startRace(const RaceEvent& event)
         m_race->line().loop ? " (loop)" : "");
 }
 
-void Game::endRace()
+void Game::endRace(bool toFreeRoam)
 {
     if (!m_race) {
         return;
+    }
+    // Leaving a race goes back through prepare_free_roam, which ends with
+    // the FreeRoam snapshot (inferred from the flows; the loading between
+    // has no counterpart here).
+    if (toFreeRoam) {
+        applyMix(audio::MixSnapshotId::FreeRoam);
     }
     m_vehicles.resize(1);
     m_collision->setActiveRoute(-1);
     player().ai.reset();
     player().physics->assists().speedSensitiveSteering = true;
+    m_drivingLine.reset();
     m_lineGuide.reset();
     m_race.reset();
 }
@@ -1145,7 +1507,8 @@ bool Game::spawnTraffic(
         audio::AudioDevice* device = m_audio.get();
         m_pendingSpawn = spawn;
         m_jobs->submit(-1000.0F,
-            [spawn, mediaName, needModel, device, library = m_audioLibrary, vfs = &m_vfs, db = m_database.get()] {
+            [spawn, mediaName, needModel, device, library = m_audioLibrary, vfs = &m_vfs, db = m_database.get(),
+                soundOptions = engineSoundOptions(true)] {
             // Either part may fail on its own; the car then comes without
             // it, as the synchronous path did.
             if (needModel) {
@@ -1157,8 +1520,7 @@ bool Game::spawnTraffic(
             }
             if (device) {
                 try {
-                    spawn->engine = std::make_unique<audio::EngineSound>(
-                        *device, library, mediaName, engineSoundOptions(true));
+                    spawn->engine = std::make_unique<audio::EngineSound>(*device, library, mediaName, soundOptions);
                 } catch (const std::exception& e) {
                     logWarning("audio: {}: {}", mediaName, e.what());
                 }
@@ -1189,8 +1551,7 @@ void Game::finishTrafficSpawn()
         return;
     }
     try {
-        std::unique_ptr<Vehicle> vehicle
-            = makeVehicle(spawn->carId, {0.7F, 0.7F, 0.7F, 1.0F}, spawn->colourSequence, std::move(spawn->model));
+        std::unique_ptr<Vehicle> vehicle = makeVehicle(spawn->carId, spawn->colourSequence, std::move(spawn->model));
         vehicle->role = spawn->role;
         vehicle->line = &line;
         vehicle->physics->assists().speedSensitiveSteering = false;
@@ -1279,20 +1640,72 @@ void Game::updateTraffic(float dt)
     }
 }
 
+void Game::loadActivities()
+{
+    try {
+        m_activities = ActivityCatalogue::load(m_vfs, m_options.track);
+    } catch (const std::exception& e) {
+        logWarning("activities: {}", e.what());
+        return;
+    }
+    m_activityProps = std::make_unique<ActivityProps>(m_world->index);
+    // A career event starts from its activation zone: the TriggerZone of
+    // the career_event_activations.xml activity whose object is the
+    // event's HorizonEventID. An event without one is not offered in free
+    // roam, as the game has nowhere to activate it.
+    for (std::size_t i = 0; i < m_events.size(); ++i) {
+        const auto zone = m_activities->zoneFor(m_events[i].horizonId);
+        const GameObject* object = m_objects->find(m_events[i].horizonId);
+        if (!zone || object == nullptr || zone->first->type != "ActivityCareerEventActivation") {
+            continue;
+        }
+        EventStart start{i, object->position, zone->second->radius, zone->second->maxSpeed, std::nullopt};
+        if (zone->second->isActivation) {
+            start.props = m_activityProps->addGroup(ActivityProps::zoneNames(zone->second->object, *m_objects));
+        }
+        m_eventStarts.push_back(start);
+    }
+    logInfo("races: {} of {} can be started from free roam", m_eventStarts.size(), m_events.size());
+    m_speedTraps = SpeedTraps::build(*m_activities, *m_objects);
+    m_outposts = Outposts::build(*m_activities, *m_objects);
+    // The texts are the Activities table's, and the speed traps' names are
+    // List_SpeedCameras'.
+    ui::UiStrings strings(m_vfs, "en");
+    m_activityTexts.enterNow = strings.get("Activities", "IDS_EnterNow");
+    for (const Outpost& outpost : m_outposts->all()) {
+        m_activityTexts.outpostTitles.push_back(strings.get("Activities", outpost.promptTitle));
+        m_activityTexts.outpostNames.push_back(strings.get("Activities", outpost.prompt));
+        m_activityTexts.outpostMapNames.push_back(strings.get("Activities", outpost.mapDescription));
+    }
+    for (const SpeedTrap& trap : m_speedTraps->traps()) {
+        m_activityTexts.speedTrapNames.push_back(strings.get("List_SpeedCameras", trap.nameStringId()));
+    }
+    logInfo("activities: {} speed traps, {} outposts", m_speedTraps->traps().size(), m_outposts->all().size());
+}
+
 void Game::updateEventStarts()
 {
     m_nearbyStart.reset();
+    if (m_activityProps) {
+        // Free-roam activation zones are off during a race.
+        for (const EventStart& start : m_eventStarts) {
+            if (start.props) {
+                m_activityProps->setShown(*start.props, !m_race);
+            }
+        }
+    }
     if (m_race || !m_playerPlaced) {
         return;
     }
-    // As in the game, a race is offered while the car sits in its start
-    // circle; it starts on the confirm button.
-    constexpr float kStartRadius = 12.0F;
+    // A zone offers its event while the car is inside its radius (a sphere,
+    // inferred from the equal extents of the zones the executable builds)
+    // below its maxMPH.
     const CarPhysics& car = *player().physics;
     const glm::vec3 position = car.position();
     for (std::size_t i = 0; i < m_eventStarts.size(); ++i) {
-        const glm::vec3 offset = m_eventStarts[i].position - position;
-        if (glm::length(glm::vec2(offset.x, offset.z)) < kStartRadius && std::abs(offset.y) < 6.0F) {
+        const EventStart& start = m_eventStarts[i];
+        if (glm::length(start.position - position) < start.radius
+            && (!start.maxSpeed || car.speed() < *start.maxSpeed)) {
             m_nearbyStart = i;
             break;
         }
@@ -1300,50 +1713,28 @@ void Game::updateEventStarts()
     const InputState& in = input();
     // Starting an event is the layout's Activate action, which the default
     // layout puts on the shift-down button, X.
-    if (!menuOpen() && m_nearbyStart && car.speed() < 4.0F && (in.pressed(Key::Enter) || in.pressed(Button::X))) {
+    if (!menuOpen() && m_nearbyStart && (in.pressed(Key::Enter) || in.pressed(Button::X))) {
         startRace(m_events[m_eventStarts[*m_nearbyStart].event]);
     }
 }
 
-void Game::drawEventStarts(const glm::mat4& viewProjection)
+void Game::updateActivities(const glm::vec3& from)
 {
-    m_labels.clear();
+    m_nearbyOutpost.reset();
     if (m_race || !m_playerPlaced) {
         return;
     }
-    constexpr float kBeaconDistance = 1500.0F;
-    constexpr float kLabelDistance = 250.0F;
-    const glm::vec3 eye = m_camera.position;
-    const float width = static_cast<float>(m_present.width());
-    const float height = static_cast<float>(m_present.height());
-    for (std::size_t i = 0; i < m_eventStarts.size(); ++i) {
-        const glm::vec3 base = m_eventStarts[i].position;
-        const float distance = glm::length(base - eye);
-        if (distance > kBeaconDistance) {
-            continue;
+    const CarPhysics& car = *player().physics;
+    if (m_speedTraps) {
+        if (const auto pass = m_speedTraps->update(from, car.position(), car.velocity())) {
+            logInfo("speed trap {}: {:.1f} mph", m_speedTraps->traps()[pass->trap].name, pass->speed * 2.2369F);
         }
-        // A tall beam marks the start from afar and a ring on the ground
-        // marks where to stop.
-        const bool here = m_nearbyStart == i;
-        const glm::vec4 colour = here ? glm::vec4(1.0F, 0.55F, 0.2F, 1.0F) : glm::vec4(1.0F, 0.8F, 0.35F, 0.9F);
-        for (float dx : {-0.4F, 0.0F, 0.4F}) {
-            m_overlay->line(base + glm::vec3(dx, 0.0F, 0.0F), base + glm::vec3(dx, 60.0F, 0.0F), colour);
+    }
+    if (m_outposts) {
+        if (const auto found = m_outposts->updateDiscovery(car.position())) {
+            logInfo("outpost {} discovered", m_outposts->all()[*found].name);
         }
-        m_overlay->circle(base + glm::vec3(0.0F, 0.2F, 0.0F), {1.0F, 0.0F, 0.0F}, {0.0F, 0.0F, 1.0F}, 12.0F, colour, 48);
-        if (distance > kLabelDistance) {
-            continue;
-        }
-        const glm::vec4 clip = viewProjection * glm::vec4(base + glm::vec3(0.0F, 4.0F, 0.0F), 1.0F);
-        if (clip.w <= 0.1F) {
-            continue;
-        }
-        const glm::vec2 ndc = glm::vec2(clip) / clip.w;
-        if (std::abs(ndc.x) > 1.1F || std::abs(ndc.y) > 1.1F) {
-            continue;
-        }
-        const RaceEvent& event = m_events[m_eventStarts[i].event];
-        m_labels.push_back({{(ndc.x * 0.5F + 0.5F) * width, (0.5F - ndc.y * 0.5F) * height}, event.name,
-            std::clamp(1.0F - (distance - 150.0F) / 100.0F, 0.0F, 1.0F)});
+        m_nearbyOutpost = m_outposts->zoneAt(car.position(), car.speed());
     }
 }
 
@@ -1630,33 +2021,26 @@ void Game::drawVehicles(const render::FrameParams& frame)
         return;
     }
     for (const auto& vehicle : m_vehicles) {
+        // A car whose model failed to load is not drawn.
         if (vehicle->model) {
             vehicle->model->draw(frame, carPose(*vehicle), false);
-            continue;
-        }
-        // Outline of the body and wheels for a car whose model is missing.
-        const CarPhysics& car = *vehicle->physics;
-        const CarSpec& spec = *vehicle->spec;
-        const glm::mat4 transform = car.transform();
-        const glm::vec3 lo(spec.boundsMin[0], spec.boundsMin[1], spec.boundsMin[2]);
-        const glm::vec3 hi(spec.boundsMax[0], spec.boundsMax[1], spec.boundsMax[2]);
-        const glm::vec3 lift(0.0F, std::max(spec.front.rideHeight, 0.1F), 0.0F);
-        const glm::vec3 centre = (lo + hi) * 0.5F + lift * 0.5F;
-        const glm::vec3 half = (hi - lo) * 0.5F - glm::vec3(0.0F, lift.y * 0.5F, 0.0F);
-        m_overlay->box(transform * glm::translate(glm::mat4(1.0F), centre), half, vehicle->colour);
-        const glm::vec3 up = car.up();
-        for (int w = 0; w < CarPhysics::kWheels; ++w) {
-            const CarPhysics::WheelState& wheel = car.wheels()[static_cast<std::size_t>(w)];
-            const glm::quat steer
-                = car.orientation() * glm::angleAxis(wheel.steerAngle, glm::vec3(0.0F, 1.0F, 0.0F));
-            const glm::vec3 forward = steer * glm::vec3(0.0F, 0.0F, 1.0F);
-            const glm::vec4 colour(0.9F, 0.9F, 0.9F, 1.0F);
-            const float radius = car.wheelRadius(w);
-            m_overlay->circle(wheel.hubWorld, forward, up, radius, colour);
-            const glm::vec3 spoke = forward * std::cos(wheel.spinAngle) - up * std::sin(wheel.spinAngle);
-            m_overlay->line(wheel.hubWorld, wheel.hubWorld + spoke * radius, colour);
         }
     }
+}
+
+void Game::drawDrivingLine(const glm::mat4& viewProjection)
+{
+    m_drivingLineDrawn.clear();
+    const Race::Racer* racer = m_race ? m_race->player() : nullptr;
+    // The pause flow hides the line while paused (disable_racing_line in
+    // pause.xml). Hiding it once the player has finished is inferred.
+    if (!racer || racer->finished || !m_drivingLine || !m_lineGuide || !m_drivingLineRenderer
+        || (m_pause && m_pause->isOpen())) {
+        return;
+    }
+    m_drivingLineDrawn = m_drivingLine->build(m_race->line(), racer->lineIndex, player().physics->speed(),
+        [this](float index) { return m_lineGuide->speedLimitAt(index); });
+    m_drivingLineRenderer->draw(m_drivingLineDrawn, viewProjection);
 }
 
 void Game::drawVehicleGlass(const render::FrameParams& frame)
@@ -1671,129 +2055,12 @@ void Game::drawVehicleGlass(const render::FrameParams& frame)
     }
 }
 
-void Game::drawDrivingLine()
-{
-    if (!m_race || !m_lineGuide) {
-        return;
-    }
-    const Race::Racer* racer = m_race->player();
-    if (!racer) {
-        return;
-    }
-    // The line ahead, lifted off the road: green where the player's speed
-    // can be carried, amber where it needs easing, red where it needs the
-    // brakes, as the game's driving line assist shows it.
-    const RacingLine& line = m_race->line();
-    const float speed = std::abs(player().physics->forwardSpeed());
-    const float start = racer->lineIndex;
-    const float end = line.advance(start, 180.0F);
-    glm::vec3 previousLeft(0.0F);
-    glm::vec3 previousRight(0.0F);
-    bool first = true;
-    for (float index = start + 1.0F; index < end; index += 1.0F) {
-        if (!line.loop && index >= static_cast<float>(line.points.size()) - 1.0F) {
-            break;
-        }
-        const glm::vec3 p = line.positionAt(index) + glm::vec3(0.0F, 0.15F, 0.0F);
-        const glm::vec3 d = line.directionAt(index);
-        const glm::vec3 side = glm::normalize(glm::cross(glm::vec3(0.0F, 1.0F, 0.0F), d)) * 0.35F;
-        const float excess = speed - m_lineGuide->speedLimitAt(index);
-        glm::vec4 colour(0.2F, 0.9F, 0.3F, 0.9F);
-        if (excess > 3.0F) {
-            colour = glm::vec4(0.95F, 0.15F, 0.1F, 0.9F);
-        } else if (excess > -3.0F) {
-            colour = glm::vec4(1.0F, 0.75F, 0.1F, 0.9F);
-        }
-        const glm::vec3 left = p - side;
-        const glm::vec3 right = p + side;
-        if (!first) {
-            m_overlay->line(previousLeft, left, colour);
-            m_overlay->line(previousRight, right, colour);
-            m_overlay->line(left, right, colour);
-        }
-        previousLeft = left;
-        previousRight = right;
-        first = false;
-    }
-    // The finish gate, as two posts and a bar.
-    if (const auto& finish = m_race->route().finish) {
-        const glm::vec3 side = glm::normalize(glm::cross(glm::vec3(0.0F, 1.0F, 0.0F), finish->facing))
-            * std::max(finish->width * 0.5F, 6.0F);
-        const glm::vec3 base = finish->position;
-        const glm::vec3 up(0.0F, 5.0F, 0.0F);
-        const glm::vec4 colour(1.0F, 1.0F, 1.0F, 1.0F);
-        m_overlay->line(base - side, base - side + up, colour);
-        m_overlay->line(base + side, base + side + up, colour);
-        m_overlay->line(base - side + up, base + side + up, colour);
-    }
-}
-
-void Game::drawRaceHud()
-{
-    if (!m_race) {
-        return;
-    }
-    const Race::Racer* own = m_race->player();
-    if (!own) {
-        return;
-    }
-    const auto w = static_cast<float>(m_present.width());
-    const auto h = static_cast<float>(m_present.height());
-    const int racers = static_cast<int>(m_race->racers().size());
-
-    // Top left: place, lap and time.
-    const std::string place = std::to_string(m_race->place(*own));
-    m_overlay->rect(24.0F, 24.0F, 300.0F, 132.0F, kHudPanel);
-    m_overlay->text(40.0F, 30.0F, place, kHudText, 2.2F);
-    m_overlay->text(48.0F + m_overlay->textWidth(place, 2.2F), 64.0F, std::format("/ {}", racers), kHudDim, 0.9F);
-    if (m_race->line().loop) {
-        m_overlay->text(
-            170.0F, 40.0F, std::format("Lap {}/{}", m_race->lap(*own), m_race->event().laps), kHudText, 0.9F);
-    }
-    m_overlay->text(170.0F, 76.0F, formatTime(m_race->elapsed()), kHudText, 0.9F);
-    const float remaining = std::max(m_race->distance() - own->progress, 0.0F);
-    m_overlay->text(40.0F, 118.0F, std::format("{:.1f} km to go", remaining / 1000.0F), kHudDim, 0.75F);
-
-    // Countdown in the middle.
-    const float scale = 4.0F;
-    if (m_race->phase() == Race::Phase::Countdown) {
-        const std::string text = std::to_string(std::max(static_cast<int>(std::ceil(m_race->countdown())), 1));
-        m_overlay->text((w - m_overlay->textWidth(text, scale)) * 0.5F, h * 0.3F, text, kHudText, scale);
-    } else if (m_race->elapsed() < 1.0F && m_race->phase() == Race::Phase::Racing) {
-        m_overlay->text((w - m_overlay->textWidth("GO", scale)) * 0.5F, h * 0.3F, "GO", kHudAccent, scale);
-    }
-
-    // Standings during the race, results once the player has finished.
-    const std::vector<const Race::Racer*> order = m_race->standings();
-    const bool results = m_race->phase() == Race::Phase::Finished;
-    const float rowHeight = m_overlay->lineHeight(0.7F) + 2.0F;
-    const float panelW = results ? 560.0F : 300.0F;
-    const float x0 = results ? (w - panelW) * 0.5F : 24.0F;
-    const float y0 = results ? h * 0.25F : 170.0F;
-    const float titleHeight = results ? m_overlay->lineHeight(1.0F) + 12.0F : 0.0F;
-    m_overlay->rect(x0, y0, panelW, titleHeight + rowHeight * static_cast<float>(order.size()) + 16.0F, kHudPanel);
-    float y = y0 + 8.0F;
-    if (results) {
-        m_overlay->text(x0 + 16.0F, y, std::format("{} place", ordinal(own->finishPlace)), kHudAccent, 1.0F);
-        y += titleHeight;
-    }
-    for (std::size_t i = 0; i < order.size(); ++i) {
-        const Race::Racer& racer = *order[i];
-        const Vehicle& vehicle = *m_vehicles[racer.vehicle];
-        std::string line = std::format("{}  {}", i + 1, vehicle.name);
-        if (results && racer.finished) {
-            line += std::format("   {}", formatTime(racer.finishTime));
-        }
-        m_overlay->text(x0 + 16.0F, y, line, racer.player ? kHudAccent : kHudText, 0.7F);
-        y += rowHeight;
-    }
-}
-
 ui::HudState Game::hudState(float dt) const
 {
     ui::HudState state;
     state.dt = dt;
     state.metric = m_options.metric;
+    state.coverage = m_navigation ? &m_navigation->coverage() : nullptr;
     if (!m_playerPlaced) {
         return state;
     }
@@ -1879,12 +2146,78 @@ ui::HudState Game::hudState(float dt) const
         state.mapMarkers.push_back({"vehicle_type", vehicle.role == Vehicle::Role::Racer ? "ai" : "traffic",
             {at.x, at.z}, std::atan2(ahead.x, ahead.z)});
     }
+    // The activation prompt: a zone's name, its title when it has one, and
+    // its call to action, IDS_EnterNow unless the zone names another.
     if (m_nearbyStart) {
-        const RaceEvent& event = m_events[m_eventStarts[*m_nearbyStart].event];
-        state.prompt = event.name;
-        state.promptDetail = car.speed() < 4.0F ? "Enter or X to start" : "Stop to start the race";
+        state.prompt = m_events[m_eventStarts[*m_nearbyStart].event].name;
+        state.promptDetail = m_activityTexts.enterNow;
+    } else if (m_nearbyOutpost) {
+        state.promptTitle = m_activityTexts.outpostTitles[*m_nearbyOutpost];
+        state.prompt = m_activityTexts.outpostNames[*m_nearbyOutpost];
+        state.promptDetail = m_activityTexts.enterNow;
+    }
+    for (const ui::MapMarker& marker : activityMapMarkers()) {
+        state.mapMarkers.push_back({marker.key, marker.value, marker.position, marker.heading});
+    }
+    if (m_speedTraps && m_speedTraps->lastPass()) {
+        const SpeedTrapPass& pass = *m_speedTraps->lastPass();
+        state.speedCamera = ui::HudSpeedCamera{m_speedTraps->passCount(), false, pass.speed, pass.previousBest};
     }
     return state;
+}
+
+std::vector<ui::MapMarker> Game::activityMapMarkers(std::vector<std::string>* names) const
+{
+    std::vector<ui::MapMarker> markers;
+    // A speed trap's "speed_camera_discovered" entity shows once it is
+    // discovered (0x82958398), at the middle of its gate.
+    if (m_speedTraps) {
+        for (std::size_t i = 0; i < m_speedTraps->traps().size(); ++i) {
+            const SpeedTrap& trap = m_speedTraps->traps()[i];
+            if (trap.discovered) {
+                const glm::vec3 at = trap.centre();
+                markers.push_back({"activity_type", "speed_camera_discovered", {at.x, at.z}, 0.0F});
+                if (names) {
+                    names->push_back(m_activityTexts.speedTrapNames[i]);
+                }
+            }
+        }
+    }
+    // An outpost's "gas_station" entity appears with its discovery
+    // (0x82972da0), at its zone's object.
+    if (m_outposts) {
+        for (std::size_t i = 0; i < m_outposts->all().size(); ++i) {
+            const Outpost& outpost = m_outposts->all()[i];
+            if (outpost.discovered) {
+                markers.push_back({"activity_type", "gas_station", {outpost.position.x, outpost.position.z}, 0.0F});
+                if (names) {
+                    names->push_back(m_activityTexts.outpostMapNames[i]);
+                }
+            }
+        }
+    }
+    return markers;
+}
+
+float Game::audioCategoryVolume(audio::MixCategory category) const
+{
+    return m_audio && m_snapshots ? m_audio->mixer().busVolume(m_categoryBuses[static_cast<std::size_t>(category)])
+                                  : 0.0F;
+}
+
+float Game::playerEngineGain() const
+{
+    return player().engine ? player().engine->engineGain() : 0.0F;
+}
+
+std::vector<std::string> Game::uiSoundsPlayed() const
+{
+    return m_uiSounds ? m_uiSounds->played() : std::vector<std::string>();
+}
+
+bool Game::uiSoundPlaying(std::string_view name) const
+{
+    return m_uiSounds && m_uiSounds->isPlaying(name);
 }
 
 bool Game::menuOpen() const
@@ -1922,6 +2255,7 @@ ui::MenuInput Game::readMenuInput()
 ui::WorldMapState Game::worldMapState() const
 {
     ui::WorldMapState state;
+    state.coverage = m_navigation ? &m_navigation->coverage() : nullptr;
     if (m_playerPlaced) {
         const glm::vec3 at = player().physics->position();
         const glm::vec3 ahead = player().physics->forward();
@@ -1936,17 +2270,51 @@ ui::WorldMapState Game::worldMapState() const
                 {{"activity_type", std::string(type), {start.position.x, start.position.z}, 0.0F}, event.name});
         }
     }
+    std::vector<std::string> names;
+    const std::vector<ui::MapMarker> activities = activityMapMarkers(&names);
+    for (std::size_t i = 0; i < activities.size(); ++i) {
+        state.markers.push_back({activities[i], names[i]});
+    }
     return state;
 }
 
 bool Game::updateMenus(const ui::MenuInput& input, float dt)
 {
+    constexpr std::string_view kMapAmbience = "Map_AmbientBackgroundLoop";
     if (m_map && m_map->isOpen()) {
+        // CMapScreen's update (0x827B3D28) starts the map's ambience loop
+        // the first time it finds the map shown. It skips the start when a
+        // flag and a positive value on the object at 0x833D5BAC (+119, +120)
+        // say so; what they stand for was not identified.
+        if (!m_mapAmbienceStarted) {
+            m_mapAmbienceStarted = true;
+            playUiSound(kMapAmbience);
+        }
+        if (m_uiSounds) {
+            // Every frame 0x82C57CC0 sets RadioIsPlaying on the UI events
+            // that play, from byte +141 of the radio's state; that the byte
+            // is whether the radio is on (not RADIO OFF) is inferred. The
+            // loop's only sound lies in the lower half of the parameter, so
+            // it is heard with the radio off.
+            const bool radioOn = m_radio && !m_radio->nowPlaying().off;
+            m_uiSounds->setParameter(kMapAmbience, "RadioIsPlaying", radioOn ? 1.0F : 0.0F);
+        }
         m_map->setState(worldMapState());
         if (m_map->update(input, dt) == ui::WorldMapAction::Back) {
+            // B (input action 96) plays Cancel as the map goes (CMapScreen's
+            // input handler, 0x827C9300); leaving the screen stops its loop
+            // (0x8278D988).
+            playUiSound("Cancel");
             m_map->close();
+            if (m_uiSounds) {
+                m_uiSounds->stop(kMapAmbience);
+            }
+            m_mapAmbienceStarted = false;
             if (m_mapFromPause && m_pause) {
                 m_pause->reopen();
+                // pause_screen.enterBack: the pause screen's entry
+                // (CShowPauseScreen, 0x82A1D5B8) plays Pause again.
+                playUiSound("Pause");
             }
         }
         return true;
@@ -1954,21 +2322,43 @@ bool Game::updateMenus(const ui::MenuInput& input, float dt)
     if (!m_pause || !m_pause->isOpen()) {
         return true;
     }
-    switch (m_pause->update(input, dt)) {
+    if (!m_pause->confirming()) {
+        if (input.back) {
+            // CPauseMenu's input handler (0x827DADC8) plays Cancel for B
+            // before resuming.
+            playUiSound("Cancel");
+        } else if (input.accept && !m_pause->entries().empty()) {
+            // Choosing an entry plays Accept in the menu list (CMenuCtrl,
+            // 0x828B80A8) and again in the pause menu's handler (0x827EBEE0)
+            // in the same frame; UI/Nav/Accept allows one playback.
+            playUiSound("Accept");
+        }
+    }
+    const ui::PauseAction action = m_pause->update(input, dt);
+    if (!m_pause->isOpen()) {
+        // Leaving pause_screen, for the game, the map or a retirement: the
+        // pause screen's exit (CShowPauseScreen, 0x82A1D850).
+        playUiSound("UnPause");
+    }
+    switch (action) {
     case ui::PauseAction::OpenMap:
         if (m_map) {
             m_mapFromPause = true;
+            m_mapAmbienceStarted = false;
             m_map->open(worldMapState());
         }
         break;
     case ui::PauseAction::Restart:
         if (m_race) {
+            // Unpaused before the race starts over under its own mix.
+            setPaused(false);
             const RaceEvent event = m_race->event();
-            endRace();
+            endRace(false);
             startRace(event);
         }
         break;
     case ui::PauseAction::RetireFromEvent:
+        setPaused(false);
         endRace();
         break;
     case ui::PauseAction::Quit:
@@ -1982,13 +2372,19 @@ bool Game::updateMenus(const ui::MenuInput& input, float dt)
 
 void Game::drawHud(float dt)
 {
-    const auto w = static_cast<float>(m_present.width());
     const auto h = static_cast<float>(m_present.height());
     m_fps = m_fps * 0.95F + (dt > 0.0F ? 1.0F / dt : 0.0F) * 0.05F;
 
-    // The map replaces the HUD while it is open, as the game swaps scenes.
+    // The map and the pause screen replace the HUD while they are open:
+    // the HUD (CCShowHudScreen, screen 94, 0x82A181B8), the pause screen
+    // (CShowPauseScreen, screen 205, 0x82A1D420) and the map are all shown
+    // into layer 1 (the default the screen behaviours' base, 0x82A020D0,
+    // sets), which holds one screen (0x82A002C0), and the pause flow shows
+    // the HUD again on its way out (show_hud_screen before unpause_game).
     const bool mapOpen = m_map && m_map->isOpen();
-    if (m_hud && !mapOpen) {
+    const bool hudScreen = !mapOpen && !(m_pause && m_pause->isOpen());
+    m_hudDrawn = m_hud && hudScreen;
+    if (m_hud && hudScreen) {
         ui::HudState state = hudState(dt);
         if (m_radioPanel) {
             state.radio = ui::HudRadioRequest{
@@ -1997,63 +2393,8 @@ void Game::drawHud(float dt)
         }
         m_hud->draw(state, m_present.width(), m_present.height());
     }
-    if (m_playerPlaced && !m_hud) {
-        const CarPhysics& car = *player().physics;
-        const float speed = std::abs(car.forwardSpeed()) * kMsToKmh;
-        const int gear = car.gear();
-        const std::string gearText = gear < 0 ? "R" : gear == 0 ? "N" : std::to_string(gear);
-        const float rpm = car.engineRpm();
-        const float redline = player().spec->redlineRpm;
 
-        const float panelW = 300.0F;
-        const float panelH = 128.0F;
-        const float x0 = w - panelW - 32.0F;
-        const float y0 = h - panelH - 32.0F;
-        m_overlay->rect(x0, y0, panelW, panelH, kHudPanel);
-        const std::string speedText = std::format("{:.0f}", speed);
-        const float big = 2.4F;
-        m_overlay->text(x0 + 20.0F, y0 + 10.0F, speedText, kHudText, big);
-        m_overlay->text(x0 + 24.0F + m_overlay->textWidth(speedText, big), y0 + 46.0F, "km/h", kHudDim, 0.8F);
-        const float gearWidth = m_overlay->textWidth(gearText, big);
-        m_overlay->text(x0 + panelW - gearWidth - 20.0F, y0 + 10.0F, gearText, kHudText, big);
-
-        // Rev bar: the last tenth before the redline takes the accent.
-        const float barX = x0 + 20.0F;
-        const float barY = y0 + panelH - 34.0F;
-        const float barW = panelW - 40.0F;
-        const float fraction = std::clamp(rpm / (redline * 1.05F), 0.0F, 1.0F);
-        m_overlay->rect(barX, barY, barW, 12.0F, {1.0F, 1.0F, 1.0F, 0.12F});
-        m_overlay->rect(barX, barY, barW * fraction, 12.0F, rpm > redline * 0.9F ? kHudAccent : kHudText);
-        m_overlay->text(barX, barY - 26.0F, std::format("{:.0f} rpm", rpm), kHudDim, 0.7F);
-    }
-    if (!m_hud) {
-        drawRaceHud();
-    }
-
-    for (const ScreenLabel& label : m_labels) {
-        const float labelWidth = m_overlay->textWidth(label.text, 0.75F);
-        const glm::vec2 at = label.position - glm::vec2(labelWidth * 0.5F, m_overlay->lineHeight(0.75F));
-        m_overlay->rect(at.x - 10.0F, at.y - 4.0F, labelWidth + 20.0F, m_overlay->lineHeight(0.75F) + 8.0F,
-            {kHudPanel.r, kHudPanel.g, kHudPanel.b, kHudPanel.a * label.alpha});
-        m_overlay->text(at.x, at.y, label.text, {kHudText.r, kHudText.g, kHudText.b, label.alpha}, 0.75F);
-    }
-    if (m_nearbyStart && !m_hud) {
-        const RaceEvent& event = m_events[m_eventStarts[*m_nearbyStart].event];
-        const std::string title = event.name;
-        const std::string detail = std::format("{}  ·  {} lap{}  ·  {:.1f} km", event.type, event.laps,
-            event.laps == 1 ? "" : "s", event.lengthMetres / 1000.0F);
-        const std::string action = player().physics->speed() < 4.0F ? "Enter or X to start" : "Stop to start the race";
-        const float panelW = std::max({m_overlay->textWidth(title, 1.0F), m_overlay->textWidth(detail, 0.7F),
-                                 m_overlay->textWidth(action, 0.7F)})
-            + 48.0F;
-        const float x0 = (w - panelW) * 0.5F;
-        const float y0 = h * 0.62F;
-        m_overlay->rect(x0, y0, panelW, 118.0F, kHudPanel);
-        m_overlay->text(x0 + 24.0F, y0 + 12.0F, title, kHudText, 1.0F);
-        m_overlay->text(x0 + 24.0F, y0 + 52.0F, detail, kHudDim, 0.7F);
-        m_overlay->text(x0 + 24.0F, y0 + 82.0F, action, kHudAccent, 0.7F);
-    }
-
+    m_overlayVertices += m_overlay->queuedVertices();
     if (m_showDebug) {
         const auto& stats = m_worldRenderer->stats();
         const glm::vec3 p = m_playerPlaced ? player().physics->position() : m_camera.position;
@@ -2076,13 +2417,6 @@ void Game::drawHud(float dt)
             m_overlay->text(18.0F, y, line, kHudText, 0.7F);
             y += lineHeight;
         }
-    }
-    if (!m_playerPlaced && !m_loading) {
-        const std::string message = "Loading the area around the start";
-        const float width = m_overlay->textWidth(message, 1.0F);
-        m_overlay->rect((w - width) * 0.5F - 20.0F, h * 0.5F - 12.0F, width + 40.0F, m_overlay->lineHeight() + 24.0F,
-            kHudPanel);
-        m_overlay->text((w - width) * 0.5F, h * 0.5F, message, kHudText);
     }
 }
 
@@ -2121,9 +2455,10 @@ bool Game::frame(const InputState& controls, float dt)
     using Part = render::FrameStats::Part;
     {
         m_input = &controls;
+        m_hudDrawn = false;
+        m_overlayVertices = 0;
         m_frameStats->beginFrame();
         int physicsSteps = 0;
-        m_time += dt;
         const InputState& in = input();
 
         const ui::MenuInput menuInput = readMenuInput();
@@ -2133,15 +2468,21 @@ bool Game::frame(const InputState& controls, float dt)
             }
         } else if (in.pressed(Key::Escape) && m_window.mouseCaptured()) {
             m_window.setMouseCaptured(false);
-        } else if (m_pause && m_playerPlaced && (menuInput.start || in.pressed(Key::Escape))) {
+        } else if (m_pause && inControl() && (menuInput.start || in.pressed(Key::Escape))) {
             // Start pauses (CWaitForPause onPause) and Back opens the map
             // (onMap), as the game's default controller layout binds them.
             ui::PauseMenuContext context;
             context.freeRoam = !m_race;
             m_pause->open(context);
-        } else if (m_map && m_playerPlaced && menuInput.select) {
+            // The pause screen's entry (CShowPauseScreen, 0x82A1D5B8).
+            playUiSound("Pause");
+        } else if (m_map && inControl() && menuInput.select) {
             m_mapFromPause = false;
+            m_mapAmbienceStarted = false;
             m_map->open(worldMapState());
+            // CWaitForPause plays Pause itself before it takes onMap
+            // (0x82A47E98).
+            playUiSound("Pause");
         } else if (!m_pause && in.pressed(Key::Escape)) {
             // Without the menu scenes Escape still leaves a race or quits.
             if (m_race) {
@@ -2175,7 +2516,7 @@ bool Game::frame(const InputState& controls, float dt)
                 m_window.setMouseCaptured(true);
             }
         }
-        if (in.pressed(Key::R) && m_playerPlaced) {
+        if (in.pressed(Key::R) && inControl()) {
             if (m_race && m_race->player()) {
                 // Back onto the line where the player left it.
                 const float index = m_race->player()->lineIndex;
@@ -2186,11 +2527,19 @@ bool Game::frame(const InputState& controls, float dt)
             }
         }
         // After the menus, so the frame that opens the pause menu is already
-        // paused, as the car's simulation is.
-        if (!menuOpen()) {
+        // paused, as the car's simulation is. The pause stops the world's
+        // clocks with it: the time of day, and the clock the world's
+        // animation runs on (inferred: the game's world shaders take no time
+        // of their own, none of the 371 .fxobj files declares one, so
+        // nothing of the world moves while the game is paused).
+        setPaused(menuOpen());
+        if (!m_paused) {
             m_timeOfDay->advance(dt);
+            m_time += dt;
         }
-        updateEventStarts();
+        if (inControl()) {
+            updateEventStarts();
+        }
 
         const glm::vec3 focus = m_playerPlaced ? player().physics->position() : m_spawnPosition;
         m_frameStats->mark(Part::Simulation);
@@ -2205,22 +2554,42 @@ bool Game::frame(const InputState& controls, float dt)
                 spawnPlayer();
             }
         }
+        updateLoading(dt);
         // The pause menu and the map stop the game (pause_game in the pause
         // flow); the world keeps streaming and drawing behind them.
         if (m_playerPlaced && !menuOpen()) {
-            const float playerScale = m_race && !m_race->started() ? 0.0F : 1.0F;
-            player().controls = player().ai ? player().ai->update(*player().physics, dt, playerScale)
-                                            : readPlayerControls(dt);
-            updateRace(dt);
-            updateAiDrivers(dt);
-            updateTraffic(dt);
+            if (inControl()) {
+                const float playerScale = m_race && !m_race->started() ? 0.0F : 1.0F;
+                player().controls
+                    = player().ai ? player().ai->update(*player().physics, dt, playerScale) : readPlayerControls(dt);
+                updateRace(dt);
+                if (m_drivingLine) {
+                    m_drivingLine->update(dt);
+                }
+            } else {
+                // Until the fade is over the car stands on its parking brake,
+                // which prepare_free_roam releases only after fade_in
+                // (disable_car_parking_brake).
+                player().controls = CarControls{};
+                player().controls.handbrake = 1.0F;
+            }
+            // Traffic is enabled at the end of loading and drives through
+            // the fade.
+            if (m_loadPhase == LoadPhase::Fading || m_loadPhase == LoadPhase::Playing) {
+                updateAiDrivers(dt);
+                updateTraffic(dt);
+            }
             m_frameStats->mark(Part::Simulation);
+            const glm::vec3 before = player().physics->position();
             physicsSteps = stepPhysics(dt);
+            updateActivities(before);
+            if (m_navigation) {
+                m_navigation->update(player().physics->position());
+            }
             m_frameStats->mark(Part::Physics);
             updateDebris(dt);
             updateParticles(dt);
             updateAudio(dt);
-            updateRadio(dt);
             if (m_race && m_race->player() && secondTicked(m_time, dt)) {
                 const Race::Racer* own = m_race->player();
                 const CarPhysics& car = *player().physics;
@@ -2238,8 +2607,24 @@ bool Game::frame(const InputState& controls, float dt)
                 spawnPlayer();
             }
         }
-        updateCamera(dt);
+        // The radio plays on through the pause, under the Paused mix's
+        // GameMusic volume of a quarter.
+        if (m_playerPlaced) {
+            updateRadio(dt);
+        }
+        // The cameras are part of the world the pause stops: the chase
+        // camera steps on the world's signed time step (its heading spring,
+        // 0x82902128, takes |dt| and flips with the sign for rewinds), not
+        // on real time.
+        if (!m_paused) {
+            updateCamera(dt);
+        }
+        // The mix fades on real time, through the pause too.
+        updateMix(dt);
         m_frameStats->mark(Part::Simulation);
+        if (m_activityProps) {
+            m_activityProps->update(m_camera.position, *m_worldRenderer);
+        }
         m_worldRenderer->update(m_camera.position);
         m_frameStats->mark(Part::Streaming);
 
@@ -2265,12 +2650,20 @@ bool Game::frame(const InputState& controls, float dt)
             m_frameStats->mark(Part::DrawCars);
             m_frame->sky(frame);
             drawVehicleGlass(frame);
+            drawDrivingLine(frame.projection * frame.view);
             drawParticles(frame);
-            drawEventStarts(frame.projection * frame.view);
-            drawDrivingLine();
+            m_overlayVertices = m_overlay->queuedVertices();
             m_overlay->flush(frame.projection * frame.view, m_present.width(), m_present.height());
             m_frame->finish(m_tone);
-            drawHud(dt);
+            if (const float fade = fadeAlpha(); fade > 0.0F && m_fadeIn) {
+                m_overlay->rect(0.0F, 0.0F, static_cast<float>(m_present.width()),
+                    static_cast<float>(m_present.height()), glm::vec4(m_fadeIn->colour, fade));
+                m_overlay->flush(glm::mat4(1.0F), m_present.width(), m_present.height());
+            }
+            // The HUD shows once the fade is over (show_hud_screen).
+            if (inControl()) {
+                drawHud(dt);
+            }
             m_overlay->flush(glm::mat4(1.0F), m_present.width(), m_present.height());
         }
         if (m_pause && m_pause->isOpen()) {

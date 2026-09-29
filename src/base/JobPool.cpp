@@ -57,6 +57,12 @@ std::size_t JobPool::pending() const
     return m_queue.size();
 }
 
+std::size_t JobPool::outstanding() const
+{
+    const std::lock_guard lock(m_mutex);
+    return m_queue.size() + m_running;
+}
+
 void JobPool::run()
 {
     while (true) {

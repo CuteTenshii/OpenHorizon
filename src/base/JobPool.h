@@ -28,7 +28,10 @@ public:
     /// an object whose jobs capture it can be destroyed safely. Must not be
     /// called from a job.
     void clearAndWait();
+    /// Jobs queued and not started yet.
     std::size_t pending() const;
+    /// Jobs queued or running.
+    std::size_t outstanding() const;
     unsigned threadCount() const { return static_cast<unsigned>(m_threads.size()); }
 
 private:
