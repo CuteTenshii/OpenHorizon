@@ -135,6 +135,16 @@ struct MapSymbolizer {
 /// worked out; the colours here are the profile's values as written.
 glm::vec4 lineColour(const MapSymbolizer& symbolizer, float ratio);
 
+/// The colour ratios of the sat-nav route's points (the colour source of
+/// CMapEntityRoute, 0x82d91878): 0, the primary colour, for the points
+/// from `start` up to, not including, `reveal` times the point count
+/// (truncated), and 1 for the others; with no `start` (-1 in the entity)
+/// every point is 1. Both profiles give the route a secondary colour of
+/// alpha 0, so only that span shows. `start` is where the car is along the
+/// route (+52) and `reveal` how much of it has drawn in (+56, 1 once the
+/// map has finished revealing it and while it is closed).
+std::vector<float> routeRatios(std::size_t count, std::optional<std::size_t> start, float reveal);
+
 /// A `<Group>`: its symbolizers apply to entities whose tag matches the
 /// filter.
 struct MapGroup {
@@ -190,6 +200,9 @@ struct MapLine {
     std::string value;
     /// World x and z, in order.
     std::vector<glm::vec2> points;
+    /// The colour ratio of each point (see lineColour and routeRatios);
+    /// empty for the primary colour throughout.
+    std::vector<float> ratios;
 };
 
 /// The activity_type a career event's map entity carries, by its

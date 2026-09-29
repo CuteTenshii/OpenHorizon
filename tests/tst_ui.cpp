@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -1272,6 +1273,95 @@ TEST(car_position_follows_the_network)
     CHECK(!position.node());
 }
 
+/// The sat-nav's shipped costs (Navigation/RoutingHeuristicSpeeds/SatNav/*).
+RouteTuning shippedRouteTuning()
+{
+    RouteTuning tuning;
+    tuning.mphARoad = 60.0F;
+    tuning.mphBRoad = 40.0F;
+    tuning.mphDirtRoad = 35.0F;
+    tuning.mphFreeway = 75.0F;
+    tuning.mphNone = 1.0F;
+    tuning.mphShortcut = 60.0F;
+    tuning.mphUnknownRoad = 40.0F;
+    tuning.oneWayMultiplier = 999.0F;
+    tuning.shortcutProbability = 0.0F;
+    tuning.turnDelaySeconds = 5.0F;
+    return tuning;
+}
+
+/// Whether consecutive nodes of `route` are neighbours along a way.
+bool followsWays(const NavFile& nav, const std::vector<std::uint32_t>& route)
+{
+    for (std::size_t i = 1; i < route.size(); ++i) {
+        bool linked = false;
+        for (const NavLink& link : nav.nodes[route[i - 1]].links) {
+            const std::vector<std::uint32_t>& nodes = nav.ways[link.way].nodes;
+            const std::size_t at = link.position;
+            linked = linked || (at + 1 < nodes.size() && nodes[at + 1] == route[i])
+                || (at > 0 && nodes[at - 1] == route[i]);
+        }
+        if (!linked) {
+            return false;
+        }
+    }
+    return true;
+}
+
+TEST(route_search_follows_the_roads)
+{
+    // A square of roads 100 m a side: an A road along the south side
+    // (nodes 0, 1, 2), B roads up the east and west sides to the north
+    // corners (2, 3 and 0, 4), and a dirt road along the north side (4, 5,
+    // 3), with a spur from its middle to node 6.
+    NavSpec spec;
+    spec.nodes = {{glm::vec3(0.0F, 0.0F, 0.0F), {}}, {glm::vec3(50.0F, 0.0F, 0.0F), {}},
+        {glm::vec3(100.0F, 0.0F, 0.0F), {}}, {glm::vec3(100.0F, 0.0F, 100.0F), {}}, {glm::vec3(0.0F, 0.0F, 100.0F), {}},
+        {glm::vec3(50.0F, 0.0F, 100.0F), {}}, {glm::vec3(50.0F, 0.0F, 150.0F), {}}};
+    spec.ways = {{{0, 1, 2}, {{"road_type", "a"}}}, {{2, 3}, {{"road_type", "b"}}}, {{0, 4}, {{"road_type", "b"}}},
+        {{4, 5, 3}, {{"road_type", "dirt"}}}, {{5, 6}, {{"road_type", "b"}}}};
+    const NavFile nav = NavFile::parse(buildNav(spec), "square.nav");
+    const RouteSearch search(nav, shippedRouteTuning());
+    const glm::vec3 none(0.0F);
+
+    // Along the one road, through the node in its middle.
+    CHECK((search.find(0, 2, none, false) == std::vector<std::uint32_t>{0, 1, 2}));
+    // From the middle of the south road to the spur's end the two ways
+    // round are as long; the car's facing breaks the tie, turning round
+    // costing TurnDelaySeconds.
+    CHECK((search.find(1, 6, glm::vec3(1.0F, 0.0F, 0.0F), false) == std::vector<std::uint32_t>{1, 2, 3, 5, 6}));
+    CHECK((search.find(1, 6, glm::vec3(-1.0F, 0.0F, 0.0F), false) == std::vector<std::uint32_t>{1, 0, 4, 5, 6}));
+    // A goal in the middle of a way is reached without going on to its end.
+    CHECK((search.find(0, 5, none, false) == std::vector<std::uint32_t>{0, 4, 5}));
+    CHECK(search.find(2, 2, none, false) == std::vector<std::uint32_t>{2});
+    CHECK_NEAR(search.speed(0, false), 60.0 * 0.44704, 1e-4);
+    CHECK_NEAR(search.segmentCost(0, 1, none, false), 50.0 / (60.0 * 0.44704), 1e-3);
+    CHECK_NEAR(search.segmentCost(1, 0, glm::vec3(1.0F, 0.0F, 0.0F), false), 50.0 / (60.0 * 0.44704) + 5.0, 1e-3);
+
+    // Made one-way from east to west, the south road is not driven the
+    // wrong way while the way round is open.
+    spec.ways[0] = {{2, 1, 0}, {{"road_type", "a"}, {"oneway", "true"}}};
+    const NavFile oneWay = NavFile::parse(buildNav(spec), "oneway.nav");
+    const RouteSearch oneWaySearch(oneWay, shippedRouteTuning());
+    CHECK((oneWaySearch.find(0, 2, none, false) == std::vector<std::uint32_t>{0, 4, 5, 3, 2}));
+    CHECK((oneWaySearch.find(2, 0, none, false) == std::vector<std::uint32_t>{2, 1, 0}));
+    CHECK_NEAR(oneWaySearch.segmentCost(0, 1, none, false), 999.0 * 50.0 / (60.0 * 0.44704), 1e-2);
+
+    // Unconnected, there is no route.
+    spec.ways.pop_back();
+    const NavFile cut = NavFile::parse(buildNav(spec), "cut.nav");
+    const RouteSearch cutSearch(cut, shippedRouteTuning());
+    CHECK(cutSearch.find(0, 6, none, false).empty());
+}
+
+TEST(route_ratios_show_from_the_car_to_the_reveal)
+{
+    CHECK((routeRatios(4, std::nullopt, 1.0F) == std::vector<float>{1.0F, 1.0F, 1.0F, 1.0F}));
+    CHECK((routeRatios(4, 0, 1.0F) == std::vector<float>{0.0F, 0.0F, 0.0F, 0.0F}));
+    CHECK((routeRatios(4, 1, 1.0F) == std::vector<float>{1.0F, 0.0F, 0.0F, 0.0F}));
+    CHECK((routeRatios(4, 0, 0.6F) == std::vector<float>{0.0F, 0.0F, 1.0F, 1.0F}));
+}
+
 TEST(career_event_styles_name_map_activities)
 {
     CHECK_EQ(careerEventActivityType(1), std::string_view("race"));
@@ -1724,6 +1814,61 @@ TEST(disc_road_colours_by_road_type)
     const NavLocator locator(nav);
     CHECK(locator.nearest(nav.nodes[node].position + glm::vec3(2.0F, 0.0F, 0.0F), NavFilter::NoShortcut)
         == std::optional<std::uint32_t>(node));
+}
+
+// A route from road_094 to a place across the map runs along the roads,
+// from the car's node to the node nearest the waypoint.
+TEST(disc_route_reaches_the_waypoint)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const RouteTuning tuning = RouteTuning::load(vfs);
+    CHECK_NEAR(tuning.mphFreeway, 75.0, 1e-3);
+    CHECK_NEAR(tuning.turnDelaySeconds, 5.0, 1e-3);
+    Navigation navigation(vfs, "colorado");
+    const NavFile& nav = navigation.network();
+    const NavWay& road = nav.ways[33];
+    const glm::vec3 from = nav.nodes[road.nodes[0]].position;
+    const glm::vec3 ahead = nav.nodes[road.nodes[1]].position - from;
+    navigation.update(from, glm::normalize(ahead));
+    CHECK(navigation.playerNode() == std::optional<std::uint32_t>(road.nodes[0]));
+
+    // Beside the middle node of the first A road more than 3 km away.
+    glm::vec2 waypoint(0.0F);
+    for (const NavWay& way : nav.ways) {
+        const glm::vec2 middle = way.points[way.points.size() / 2];
+        if (way.tag("road_type") == "a" && glm::length(middle - glm::vec2(from.x, from.z)) > 3000.0F) {
+            waypoint = middle + glm::vec2(5.0F, 0.0F);
+            break;
+        }
+    }
+    navigation.setDestination(waypoint);
+    const std::optional<std::uint32_t> goal
+        = navigation.locator().nearestOnGround(waypoint, NavFilter::NoShortcutOrNone);
+    CHECK(goal.has_value());
+    CHECK(navigation.destination() == goal);
+    const std::vector<std::uint32_t>& route = navigation.routeNodes();
+    CHECK(route.size() > 10);
+    if (route.empty() || !goal) {
+        return;
+    }
+    CHECK_EQ(route.front(), road.nodes[0]);
+    CHECK_EQ(route.back(), *goal);
+    CHECK(followsWays(nav, route));
+    CHECK_EQ(navigation.route().size(), route.size());
+
+    // Driving onto the route's next node moves the car's place along it.
+    navigation.update(nav.nodes[route[1]].position, glm::normalize(ahead));
+    CHECK(navigation.playerNode() == std::optional<std::uint32_t>(route[1]));
+    CHECK_EQ(navigation.routeProgress(), std::size_t{1});
+    // At the waypoint's node the car has arrived.
+    navigation.update(nav.nodes[*goal].position, glm::normalize(ahead));
+    CHECK(!navigation.destination());
+    CHECK(navigation.routeNodes().empty());
 }
 
 } // namespace

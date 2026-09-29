@@ -140,6 +140,8 @@ public:
     /// The pause menu, or nullptr when its scenes could not be loaded.
     const ui::PauseMenu* pauseMenu() const { return m_pause.get(); }
     bool mapShown() const { return m_map && m_map->isOpen(); }
+    /// The full-screen map, or nullptr when its scene could not be loaded.
+    const ui::WorldMap* worldMap() const { return m_map.get(); }
     /// The road network, the car's place on it and the roads driven; null
     /// when the track's network could not be read.
     const ui::Navigation* navigation() const { return m_navigation.get(); }

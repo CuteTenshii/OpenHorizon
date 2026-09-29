@@ -795,7 +795,7 @@ void Hud::Impl::drawMinimap(const HudState& state, int width, int height)
     std::vector<MapLine> lines;
     lines.reserve(state.mapLines.size());
     for (const HudMapLine& line : state.mapLines) {
-        lines.push_back({line.key, line.value, line.points});
+        lines.push_back({line.key, line.value, line.points, line.ratios});
     }
     minimap->setCoverage(state.coverage);
     const GLuint texture = minimap->render(

@@ -16,6 +16,7 @@
 #include <cctype>
 #include <cmath>
 #include <format>
+#include <functional>
 #include <limits>
 #include <numbers>
 #include <unordered_map>
@@ -401,7 +402,23 @@ WorldMapTuning WorldMapTuning::load(const Vfs& vfs)
     tuning.viewEdgeTop = get("ViewEdgeTop");
     tuning.viewEdgeBottom = get("ViewEdgeBottom");
     tuning.contextSnapSize = get("contextSnapSize");
+    tuning.cursorSize = get("cursorSize");
+    tuning.cursorSizeDistance = get("cursorSizeDistance");
+    tuning.cursorAnarkSize = get("cursorAnarkSize");
+    tuning.routeRevealMetresPerSecond = get("RouteReveal_MetersPerSecond");
+    tuning.routeRevealMinimumSeconds = get("RouteReveal_MinimumSeconds");
     return tuning;
+}
+
+float worldMapCursorScale(const WorldMapTuning& tuning, float distance, float viewportWidth)
+{
+    if (distance <= 0.0F || tuning.cursorSizeDistance <= 0.0F || tuning.cursorAnarkSize <= 0.0F) {
+        return 1.0F;
+    }
+    // The same 0.75 and 0.25 as the profiles' <DynamicSize> (0x82000e18,
+    // 0x82000d04).
+    const float size = tuning.cursorSize * (0.75F + 0.25F * distance / tuning.cursorSizeDistance);
+    return size / distance * viewportWidth / tuning.cursorAnarkSize;
 }
 
 float WorldMapCamera::Shaper::shape(float input, float dt, const WorldMapTuning& tuning)
@@ -532,6 +549,7 @@ struct WorldMap::Impl {
     /// The viewport model's rectangle in scene units: centre and half size.
     std::pair<glm::vec2, glm::vec2> viewportRect() const;
     void updateHover();
+    float routeReveal() const;
     void placeOverlay(int width, int height);
     GLuint renderMap(int width, int height);
     void buildFrame();
@@ -557,6 +575,8 @@ struct WorldMap::Impl {
     int rootContract = -1;
     int overlayContract = -1;
     int cursor = -1;
+    /// The model under COMPONENT_CURSOR that draws the crosshair.
+    int cursorModel = -1;
     int cursorSnap = -1;
     int contextPopup = -1;
     int popupTitle = -1;
@@ -580,6 +600,9 @@ struct WorldMap::Impl {
     bool open = false;
     float time = 0.0F;
     std::optional<glm::vec2> waypoint;
+    /// Seconds since SET ROUTE (+464 of the overlay), none while the route
+    /// shows whole.
+    std::optional<float> revealTime;
     std::optional<std::size_t> hovered;
     std::optional<std::size_t> helpHovered;
     bool helpShown = false;
@@ -650,6 +673,19 @@ void WorldMap::Impl::bindScene()
         throw DataError("{}: no MAP_OVERLAY contract", kScene);
     }
     cursor = scene.contractParameter(overlayContract, "COMPONENT_CURSOR");
+    const std::function<int(int)> firstModel = [&](int element) {
+        for (const int child : scene.children(element)) {
+            const FbfRecord* record = scene.record(child);
+            if (record && record->kind == FbfKind::Model) {
+                return child;
+            }
+            if (const int below = firstModel(child); below >= 0) {
+                return below;
+            }
+        }
+        return -1;
+    };
+    cursorModel = cursor >= 0 ? firstModel(cursor) : -1;
     cursorSnap = scene.contractParameter(overlayContract, "COMPONENT_CURSOR_SNAP");
     contextPopup = scene.contractParameter(overlayContract, "COMPONENT_CONTEXT_POPUP");
     popupTitle = scene.contractParameter(overlayContract, "TEXT_POPUP_TITLE");
@@ -706,6 +742,22 @@ glm::vec2 WorldMap::Impl::project(glm::vec2 point, float aspect) const
     const float scale = 1.0F / std::tan(kFieldOfView * 0.5F) / camera->distance();
     const glm::vec2 offset = point - camera->position();
     return {offset.x * scale * aspect, offset.y * scale};
+}
+
+float WorldMap::Impl::routeReveal() const
+{
+    if (!revealTime) {
+        return 1.0F;
+    }
+    // 0x828b6efc: the time over the route's length (0x82a4c6b0, taken to
+    // be its length along the points) at RouteReveal_MetersPerSecond, no
+    // less than RouteReveal_MinimumSeconds.
+    float length = 0.0F;
+    for (std::size_t i = 1; i < state.route.size(); ++i) {
+        length += glm::length(state.route[i] - state.route[i - 1]);
+    }
+    const float seconds = std::max(length / tuning.routeRevealMetresPerSecond, tuning.routeRevealMinimumSeconds);
+    return seconds > 0.0F ? std::min(*revealTime / seconds, 1.0F) : 1.0F;
 }
 
 void WorldMap::Impl::updateHover()
@@ -829,13 +881,10 @@ void WorldMap::Impl::buildFrame()
         markers.push_back(marker.marker);
     }
     markers.push_back({kVehicleTag, kPlayerValue, state.playerPosition, state.playerHeading});
-    // The route's own entity: the line along the route, and its icons at
-    // their placement ratio along it; with no route worked out, the flag
-    // at the waypoint.
-    std::vector<glm::vec2> route = state.route;
-    if (route.empty() && waypoint) {
-        route.push_back(*waypoint);
-    }
+    // The route's own entity: the line along the route coloured by its
+    // colour source, and its icons at their placement ratio along it.
+    const std::vector<glm::vec2>& route = state.route;
+    const std::vector<float> routeRatio = routeRatios(route.size(), state.routeStart, routeReveal());
 
     for (const FullGroup& group : profile.groups) {
         const bool isRoute = group.filterTag == kRouteTag && group.filterValue == kRouteValue;
@@ -896,7 +945,12 @@ void WorldMap::Impl::buildFrame()
                 const float halfWidth = 2.0F * base.size;
                 const bool caps = base.type != "line_nocaps";
                 if (isRoute) {
-                    appendLine(route, halfWidth, std::vector<glm::vec4>(route.size(), colourFor(base)), caps);
+                    std::vector<glm::vec4> colours;
+                    colours.reserve(route.size());
+                    for (const float ratio : routeRatio) {
+                        colours.push_back(lineColour(base, ratio));
+                    }
+                    appendLine(route, halfWidth, colours, caps);
                 } else if (!group.filterTag.empty()) {
                     // The road network's ways colour each point by the
                     // roads driven (lineColour, MapCoverage::wayRatios).
@@ -1113,6 +1167,13 @@ void WorldMap::Impl::placeOverlay(int width, int height)
     } else {
         place(cursorSnap, camera->cursor());
     }
+    const float scale = worldMapCursorScale(tuning, camera->distance(), half.x * 2.0F);
+    for (const int element : {cursor, cursorSnap}) {
+        if (element >= 0) {
+            scene.setAttribute(element, attr::ScaleX, scale);
+            scene.setAttribute(element, attr::ScaleY, scale);
+        }
+    }
 }
 
 std::pair<glm::vec2, glm::vec2> WorldMap::Impl::viewportRect() const
@@ -1153,6 +1214,7 @@ void WorldMap::open(const WorldMapState& state)
 void WorldMap::close()
 {
     m_impl->open = false;
+    m_impl->revealTime.reset();
 }
 
 bool WorldMap::isOpen() const
@@ -1177,6 +1239,9 @@ WorldMapAction WorldMap::update(const MenuInput& input, float dt)
     WorldMapAction action = WorldMapAction::None;
     impl.camera->update(input.leftStick, input.rightStick.y, dt);
     impl.time += dt;
+    if (impl.revealTime) {
+        *impl.revealTime += dt;
+    }
     impl.updateHover();
     if (input.back) {
         action = WorldMapAction::Back;
@@ -1187,6 +1252,7 @@ WorldMapAction WorldMap::update(const MenuInput& input, float dt)
             action = WorldMapAction::ClearWaypoint;
         } else {
             impl.waypoint = at;
+            impl.revealTime = 0.0F;
             action = WorldMapAction::SetWaypoint;
         }
     }
@@ -1195,6 +1261,7 @@ WorldMapAction WorldMap::update(const MenuInput& input, float dt)
     impl.scene.takeFiredEvents();
     if (action == WorldMapAction::Back) {
         impl.open = false;
+        impl.revealTime.reset();
     }
     return action;
 }
@@ -1262,6 +1329,25 @@ const WorldMapMarker* WorldMap::hovered() const
         return nullptr;
     }
     return &impl.state.markers[*impl.hovered - impl.activityMarkers.size()];
+}
+
+float WorldMap::routeReveal() const
+{
+    return m_impl->routeReveal();
+}
+
+glm::vec2 WorldMap::cursorExtent() const
+{
+    const Impl& impl = *m_impl;
+    const FbfRecord* record = impl.cursorModel >= 0 ? impl.scene.record(impl.cursorModel) : nullptr;
+    if (!record || record->mesh >= impl.scene.files().fbf.meshes.size()) {
+        return glm::vec2(0.0F);
+    }
+    const Mesh& mesh = impl.scene.files().fbf.meshes[record->mesh];
+    const glm::mat4 world = impl.scene.worldTransform(impl.cursorModel);
+    const glm::vec3 low(world * glm::vec4(mesh.boundsMin, 1.0F));
+    const glm::vec3 high(world * glm::vec4(mesh.boundsMax, 1.0F));
+    return glm::abs(glm::vec2(high - low));
 }
 
 } // namespace fh::ui

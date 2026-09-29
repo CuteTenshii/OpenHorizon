@@ -51,6 +51,9 @@ struct HudMapLine {
     std::string value;
     /// World x and z, in order.
     std::vector<glm::vec2> points;
+    /// The colour ratio of each point (MapLine::ratios); empty for the
+    /// primary colour throughout.
+    std::vector<float> ratios;
 };
 
 /// A reading of a speed trap or speed zone for the HUD_SPEED_CAMERA

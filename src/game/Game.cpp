@@ -2113,7 +2113,7 @@ ui::HudState Game::hudState(float dt) const
         // show (the profile's green line with the finish flag at its end).
         const RacingLine& line = m_race->line();
         if (!own.finished && line.points.size() > 1) {
-            ui::HudMapLine course{"type", "route", {}};
+            ui::HudMapLine course{"type", "route", {}, {}};
             course.points.push_back(state.playerMapPosition);
             const auto count = static_cast<std::ptrdiff_t>(line.points.size());
             const auto next = static_cast<std::ptrdiff_t>(std::ceil(own.lineIndex));
@@ -2128,6 +2128,13 @@ ui::HudState Game::hudState(float dt) const
                 state.destinationDistance = left;
             }
         }
+    }
+    // The sat-nav route: the route entity, which the minimap draws from the
+    // car's place along it (its reveal is whole outside the map).
+    if (m_navigation && !m_navigation->routeNodes().empty()) {
+        ui::HudMapLine route{"type", "route", m_navigation->route(), {}};
+        route.ratios = ui::routeRatios(route.points.size(), m_navigation->routeProgress(), 1.0F);
+        state.mapLines.push_back(std::move(route));
     }
     for (const EventStart& start : m_eventStarts) {
         const std::string_view type = ui::careerEventActivityType(m_events[start.event].careerEventStyle);
@@ -2256,6 +2263,10 @@ ui::WorldMapState Game::worldMapState() const
 {
     ui::WorldMapState state;
     state.coverage = m_navigation ? &m_navigation->coverage() : nullptr;
+    if (m_navigation) {
+        state.route = m_navigation->route();
+        state.routeStart = m_navigation->routeProgress();
+    }
     if (m_playerPlaced) {
         const glm::vec3 at = player().physics->position();
         const glm::vec3 ahead = player().physics->forward();
@@ -2300,7 +2311,20 @@ bool Game::updateMenus(const ui::MenuInput& input, float dt)
             m_uiSounds->setParameter(kMapAmbience, "RadioIsPlaying", radioOn ? 1.0F : 0.0F);
         }
         m_map->setState(worldMapState());
-        if (m_map->update(input, dt) == ui::WorldMapAction::Back) {
+        const ui::WorldMapAction action = m_map->update(input, dt);
+        if (m_navigation && action == ui::WorldMapAction::SetWaypoint) {
+            // SET ROUTE (0x828af208): the planner takes the waypoint and
+            // searches the route to it.
+            m_navigation->setDestination(m_map->waypoint());
+            if (!m_navigation->destination()) {
+                m_map->clearWaypoint();
+            }
+            m_map->setState(worldMapState());
+        } else if (m_navigation && action == ui::WorldMapAction::ClearWaypoint) {
+            m_navigation->setDestination(std::nullopt);
+            m_map->setState(worldMapState());
+        }
+        if (action == ui::WorldMapAction::Back) {
             // B (input action 96) plays Cancel as the map goes (CMapScreen's
             // input handler, 0x827C9300); leaving the screen stops its loop
             // (0x8278D988).
@@ -2584,7 +2608,12 @@ bool Game::frame(const InputState& controls, float dt)
             physicsSteps = stepPhysics(dt);
             updateActivities(before);
             if (m_navigation) {
-                m_navigation->update(player().physics->position());
+                m_navigation->update(player().physics->position(), player().physics->forward());
+                // The planner drops the waypoint when the car arrives or no
+                // route reaches it; the map's goes with it.
+                if (m_map && m_map->waypoint() && !m_navigation->destination()) {
+                    m_map->clearWaypoint();
+                }
             }
             m_frameStats->mark(Part::Physics);
             updateDebris(dt);

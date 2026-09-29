@@ -204,6 +204,20 @@ glm::vec4 lineColour(const MapSymbolizer& symbolizer, float ratio)
     return glm::trunc(primary + (secondary - primary) * ratio) / 255.0F;
 }
 
+std::vector<float> routeRatios(std::size_t count, std::optional<std::size_t> start, float reveal)
+{
+    std::vector<float> ratios(count, 1.0F);
+    if (!start) {
+        return ratios;
+    }
+    // fctiwz of reveal times the count.
+    const auto end = static_cast<std::size_t>(std::max(0, static_cast<int>(reveal * static_cast<float>(count))));
+    for (std::size_t i = *start; i < std::min(end, count); ++i) {
+        ratios[i] = 0.0F;
+    }
+    return ratios;
+}
+
 std::string_view careerEventActivityType(int careerEventStyle)
 {
     switch (careerEventStyle) {
@@ -777,8 +791,13 @@ GLuint MinimapRenderer::render(glm::vec2 position, float heading, float speedMet
             batch.technique = technique;
             batch.first = m_vertices.size();
             for (const MapLine* line : matchedLines) {
-                appendLine(line->points, 2.0F * symbolizer.size,
-                    std::vector<glm::vec4>(line->points.size(), colorOf(symbolizer)), symbolizer.type != "line_nocaps");
+                std::vector<glm::vec4> colours(line->points.size(), colorOf(symbolizer));
+                if (line->ratios.size() == line->points.size()) {
+                    for (std::size_t i = 0; i < colours.size(); ++i) {
+                        colours[i] = lineColour(symbolizer, line->ratios[i]);
+                    }
+                }
+                appendLine(line->points, 2.0F * symbolizer.size, colours, symbolizer.type != "line_nocaps");
             }
             batch.count = m_vertices.size() - batch.first;
             if (batch.count > 0) {

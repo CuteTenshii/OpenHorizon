@@ -43,10 +43,32 @@ struct WorldMapTuning {
     float viewEdgeTop = 0.0F;
     float viewEdgeBottom = 0.0F;
     float contextSnapSize = 0.0F;
+    /// The cursor's size (registered at 0x8323f7f0, 0x8323f858 and
+    /// 0x8323f8c0; see worldMapCursorScale).
+    float cursorSize = 0.0F;
+    float cursorSizeDistance = 0.0F;
+    float cursorAnarkSize = 0.0F;
+    /// How fast a new route draws in (read by the map overlay's update at
+    /// 0x828b6f10).
+    float routeRevealMetresPerSecond = 0.0F;
+    float routeRevealMinimumSeconds = 0.0F;
 
     /// Throws DataError when a value is missing.
     static WorldMapTuning load(const Vfs& vfs);
 };
+
+/// The scale the map overlay gives its cursor and snap ring each frame
+/// (0x828b6998, set on COMPONENT_CURSOR and COMPONENT_CURSOR_SNAP through
+/// the scale setters 0x82f35bf8 and 0x82f35c10): cursorSize * (0.75 + 0.25
+/// * distance / cursorSizeDistance) / distance * viewportWidth /
+/// cursorAnarkSize, with `distance` the camera's height above the ground
+/// (+212 of the map camera, stored at 0x825875a0) and `viewportWidth` the
+/// width of the overlay's MODEL_MAP_VIEWPORT in scene units (its size
+/// virtual, called at 0x828ac77c). Verified: the formula and the three
+/// tunables it reads. Inferred: that the size virtual gives the model's
+/// width in scene units, as the same value places the cursor at the
+/// projected point times half of it.
+float worldMapCursorScale(const WorldMapTuning& tuning, float distance, float viewportWidth);
 
 /// The map camera: a cursor the left stick drives over the ground, a zoom
 /// the right stick drives, and a camera that follows the cursor.
@@ -139,11 +161,11 @@ struct WorldMapState {
     /// Radians, 0 facing +z, increasing towards +x.
     float playerHeading = 0.0F;
     std::vector<WorldMapMarker> markers;
-    /// The route to the waypoint, if the game has one, as ground points
-    /// from the car to the waypoint. The map draws it with the profile's
-    /// route group; working the route out along the roads is the game's
-    /// job (the executable's route search was not traced).
+    /// The sat-nav route to the waypoint as ground points (Navigation's
+    /// route), drawn with the profile's route group from `routeStart`, the
+    /// car's place along it (see routeRatios); empty while there is none.
     std::vector<glm::vec2> route;
+    std::size_t routeStart = 0;
     /// The roads the player has driven, which colour the road lines; null
     /// draws every road undriven. It must be of the track's network and
     /// outlive the state's use.
@@ -171,8 +193,12 @@ enum class WorldMapAction {
 /// symbolizer's Size and Offset: Size is the north-south extent and the
 /// image's 5:3 shape gives the east-west one, which puts its edges on the
 /// ViewEdgeTop and ViewEdgeBottom tunables), the road network's lines, the
-/// route group along WorldMapState::route with its flag at the waypoint,
-/// and the icon symbolizers of every marker, with the profile's "default"
+/// route group along WorldMapState::route (the line with routeRatios, the
+/// flag at the route's end, nothing while there is no route; a route set
+/// on the map draws in over its length over RouteReveal_MetersPerSecond,
+/// at least RouteReveal_MinimumSeconds, as the overlay's update does at
+/// 0x828b6efc, and shows whole once the map closes, 0x828af13c), the
+/// cursor at worldMapCursorScale, and the icon symbolizers of every marker, with the profile's "default"
 /// and "intro" animations (the player's radar ping, the icons' grow).
 /// Left out, as their state does not exist here: the career icons' ring
 /// colour, finished wreath, NEW badge and warning note; the smoke of
@@ -207,6 +233,12 @@ public:
     const WorldMapCamera& camera() const;
     /// The marker the cursor is on, if any.
     const WorldMapMarker* hovered() const;
+    /// The cursor's crosshair as last drawn: its width and height in the
+    /// scene's units (1280 x 720).
+    glm::vec2 cursorExtent() const;
+    /// How much of the route shows (the route entity's +56): 0 to 1 while
+    /// a route set on the map draws in, 1 otherwise.
+    float routeReveal() const;
 
 private:
     struct Impl;

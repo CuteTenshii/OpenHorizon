@@ -19,6 +19,8 @@
 #include "platform/Window.h"
 #include "ui/Navigation.h"
 #include "ui/PauseMenu.h"
+#include "ui/WorldMap.h"
+#include "vfs/Vfs.h"
 
 #include <glm/glm.hpp>
 
@@ -449,6 +451,116 @@ TEST(drivenRoadsColourTheMap)
     session.press(fh::Button::Back);
     session.run(3.0F, {.zoom = 1.0F});
     session.capture("map_driven");
+}
+
+/// The width the map overlay (0x828b6998) scales its cursor to: the
+/// crosshair's 128 units as authored (a 100-unit rectangle at scale 1.28)
+/// times cursorSize * (0.75 + 0.25 * distance / cursorSizeDistance) /
+/// distance * viewport width / cursorAnarkSize, the viewport being the
+/// scene's 1280-unit wide MODEL_MAP_VIEWPORT.
+float expectedCursorWidth(const fh::ui::WorldMapTuning& tuning, float distance)
+{
+    const float grow = 0.75F + 0.25F * distance / tuning.cursorSizeDistance;
+    return 128.0F * tuning.cursorSize * grow / distance * 1280.0F / tuning.cursorAnarkSize;
+}
+
+// "The map cursor is too big." The game scales the cursor with the map
+// camera's distance every frame; drawn at its authored size it covered
+// about a tenth of the screen.
+TEST(mapCursorKeepsTheGameSize)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(gameDir());
+    const fh::ui::WorldMapTuning tuning = fh::ui::WorldMapTuning::load(vfs);
+    Session session({});
+    CHECK(session.waitForCar());
+    session.press(fh::Button::Back);
+    session.run(1.0F, {});
+    const fh::ui::WorldMap* map = session.game().worldMap();
+    CHECK(map != nullptr);
+    if (map == nullptr) {
+        return;
+    }
+    CHECK_NEAR(map->cursorExtent().x, expectedCursorWidth(tuning, map->camera().distance()), 0.5);
+    session.capture("map_cursor");
+    // Zoomed in, the camera is nearer and the cursor grows.
+    session.run(2.0F, {.zoom = 1.0F});
+    CHECK_NEAR(map->cursorExtent().x, expectedCursorWidth(tuning, map->camera().distance()), 0.5);
+    session.capture("map_cursor_zoomed");
+}
+
+// "Selecting a route on the map doesn't show its itinerary." SET ROUTE on
+// a marker gives the sat-nav the waypoint, which searches the roads from
+// the car's node to the node nearest the waypoint; the map draws that
+// route, and it stays while the car drives.
+TEST(setRouteShowsTheItinerary)
+{
+    if (!gameDir()) {
+        return;
+    }
+    // On colorado's way 33, the b road "road_094", facing along it.
+    fh::GameOptions options;
+    options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
+    options.spawnHeading = 3.14159265F;
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(0.5F, {});
+    const fh::ui::Navigation* navigation = session.game().navigation();
+    const fh::ui::WorldMap* map = session.game().worldMap();
+    CHECK(navigation != nullptr && map != nullptr);
+    if (navigation == nullptr || map == nullptr) {
+        return;
+    }
+    session.press(fh::Button::Back);
+    session.run(1.0F, {});
+    // The cursor goes east until it rests on a marker at least 500 m from
+    // the car.
+    const glm::vec2 car = session.game().currentMapState().playerPosition;
+    const auto onFarMarker = [&] {
+        const fh::ui::WorldMapMarker* marker = map->hovered();
+        return marker != nullptr && glm::length(marker->marker.position - car) > 500.0F;
+    };
+    for (int frame = 0; frame < 1200 && !onFarMarker(); ++frame) {
+        session.run(kStep, {.steer = 0.25F});
+    }
+    CHECK(onFarMarker());
+    session.capture("route_before");
+    session.press(fh::Button::A);
+    CHECK(map->waypoint().has_value());
+    CHECK(navigation->destination().has_value());
+    const std::vector<glm::vec2> route = navigation->route();
+    CHECK(route.size() > 2);
+    if (route.empty() || !map->waypoint() || !navigation->playerNode()) {
+        return;
+    }
+    // From the car's node...
+    const glm::vec3 start = navigation->network().nodes[*navigation->playerNode()].position;
+    CHECK(glm::length(route.front() - glm::vec2(start.x, start.z)) < 1e-3F);
+    CHECK(glm::length(route.front() - car) < 100.0F);
+    // ...to the node nearest the waypoint.
+    const std::optional<std::uint32_t> goal
+        = navigation->locator().nearestOnGround(*map->waypoint(), fh::ui::NavFilter::NoShortcutOrNone);
+    CHECK(goal.has_value() && navigation->destination() == goal);
+    if (goal) {
+        const glm::vec3 end = navigation->network().nodes[*goal].position;
+        CHECK(glm::length(route.back() - glm::vec2(end.x, end.z)) < 1e-3F);
+    }
+    // The map shows it, drawing in, then whole.
+    CHECK(session.game().currentMapState().route.size() == route.size());
+    CHECK(map->routeReveal() < 1.0F);
+    session.run(2.0F, {});
+    CHECK_NEAR(map->routeReveal(), 1.0, 1e-6);
+    session.capture("route_map");
+
+    // Driving on, the route stays and the car's place moves along it.
+    session.press(fh::Button::B);
+    session.run(6.0F, {.throttle = 0.6F});
+    CHECK(navigation->destination().has_value());
+    CHECK(!navigation->routeNodes().empty());
+    session.capture("route_minimap");
 }
 
 // A race drives under the Race mix (exterior_race before start_race in the
