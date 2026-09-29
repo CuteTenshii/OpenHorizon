@@ -5,12 +5,16 @@ add_library(fh1ui STATIC
     Hud.h
     LoadingScreen.cpp
     LoadingScreen.h
+    MapCoverage.cpp
+    MapCoverage.h
     MenuCommon.cpp
     MenuCommon.h
     Minimap.cpp
     Minimap.h
     MovieRenderer.cpp
     MovieRenderer.h
+    Navigation.cpp
+    Navigation.h
     PauseMenu.cpp
     PauseMenu.h
     Presentation.cpp

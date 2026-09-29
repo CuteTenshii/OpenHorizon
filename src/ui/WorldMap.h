@@ -16,6 +16,8 @@ class Vfs;
 
 namespace fh::ui {
 
+class MapCoverage;
+
 /// The full-screen map's tunables (UI/Map/* in
 /// media/gametunablesettings/globalregistry.xml; registered at 0x83221ec0
 /// and on, read by the map camera at 0x82584a40, 0x82584bd8 and 0x82587418).
@@ -142,6 +144,10 @@ struct WorldMapState {
     /// route group; working the route out along the roads is the game's
     /// job (the executable's route search was not traced).
     std::vector<glm::vec2> route;
+    /// The roads the player has driven, which colour the road lines; null
+    /// draws every road undriven. It must be of the track's network and
+    /// outlive the state's use.
+    const MapCoverage* coverage = nullptr;
 };
 
 enum class WorldMapAction {

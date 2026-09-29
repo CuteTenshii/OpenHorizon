@@ -13,6 +13,8 @@ class Vfs;
 
 namespace fh::ui {
 
+class MapCoverage;
+
 /// A request to show the radio panel (the HUD_RADIO control), as the game's
 /// radio status (CHudStatusRadio) carries it.
 struct HudRadioRequest {
@@ -131,6 +133,9 @@ struct HudState {
     /// Metres to the sat-nav destination; empty (or 0) hides the readout
     /// below the minimap (HUD_SAT_NAV, 0x828b0768).
     std::optional<float> destinationDistance;
+    /// The roads the player has driven, which colour the minimap's road
+    /// lines; null draws every road undriven.
+    const MapCoverage* coverage = nullptr;
 
     /// Set on the frame a radio panel request arrives (for the radio module,
     /// on the frame Radio::takeHudRequest() returns one), empty otherwise.

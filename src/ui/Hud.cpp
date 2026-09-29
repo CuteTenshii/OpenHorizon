@@ -735,6 +735,7 @@ void Hud::Impl::drawMinimap(const HudState& state, int width, int height)
     for (const HudMapLine& line : state.mapLines) {
         lines.push_back({line.key, line.value, line.points});
     }
+    minimap->setCoverage(state.coverage);
     const GLuint texture = minimap->render(
         state.playerMapPosition, state.playerHeading, state.speedMetresPerSecond, size, markers, lines);
     renderer.setTextureOverride("@minimap", texture);

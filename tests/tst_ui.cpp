@@ -9,7 +9,9 @@
 #include "base/Bytes.h"
 #include "base/Error.h"
 #include "ui/AnarkFormats.h"
+#include "ui/MapCoverage.h"
 #include "ui/Minimap.h"
+#include "ui/Navigation.h"
 #include "ui/Presentation.h"
 #include "ui/VectorFont.h"
 #include "vfs/Vfs.h"
@@ -22,6 +24,7 @@
 #include <cstdlib>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -906,46 +909,118 @@ TEST(events_run_their_actions)
     CHECK(!scene.fireEvent(1, "GO_PAUSED"));
 }
 
-Bytes buildRoadNetwork()
+/// A road network to write in the .nav layout (see NavFile).
+struct NavSpec {
+    using Tags = std::vector<std::pair<std::string, std::string>>;
+    struct Node {
+        glm::vec3 position{0.0F};
+        Tags tags;
+    };
+    struct Way {
+        std::vector<std::uint32_t> nodes;
+        Tags tags;
+    };
+    std::vector<Node> nodes;
+    std::vector<Way> ways;
+};
+
+Bytes buildNav(const NavSpec& spec)
 {
-    Writer w;
-    const std::vector<std::string> keys{"oneway", "road_type"};
-    const std::vector<std::string> values{"a", "dirt", "true"};
-    std::string keyText;
+    std::vector<std::string> keys;
+    std::vector<std::string> values;
+    const auto indexOf = [](std::vector<std::string>& table, const std::string& text) {
+        const auto it = std::find(table.begin(), table.end(), text);
+        if (it != table.end()) {
+            return static_cast<std::uint32_t>(it - table.begin());
+        }
+        table.push_back(text);
+        return static_cast<std::uint32_t>(table.size() - 1);
+    };
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> tags;
+    const auto addTags = [&](const NavSpec::Tags& list) {
+        const auto first = static_cast<std::uint32_t>(tags.size());
+        for (const auto& [key, value] : list) {
+            tags.emplace_back(indexOf(keys, key), indexOf(values, value));
+        }
+        return first;
+    };
+    std::vector<std::uint32_t> nodeFirstTag;
+    nodeFirstTag.reserve(spec.nodes.size());
+    for (const NavSpec::Node& node : spec.nodes) {
+        nodeFirstTag.push_back(addTags(node.tags));
+    }
+    std::vector<std::uint32_t> wayFirstTag;
+    wayFirstTag.reserve(spec.ways.size());
+    for (const NavSpec::Way& way : spec.ways) {
+        wayFirstTag.push_back(addTags(way.tags));
+    }
+    // The links of each node: the ways through it and its place in each.
+    std::vector<std::vector<std::pair<std::uint32_t, std::uint32_t>>> links(spec.nodes.size());
+    std::uint32_t wayNodeCount = 0;
+    for (std::uint32_t way = 0; way < spec.ways.size(); ++way) {
+        for (std::uint32_t i = 0; i < spec.ways[way].nodes.size(); ++i) {
+            links[spec.ways[way].nodes[i]].emplace_back(way, i);
+        }
+        wayNodeCount += static_cast<std::uint32_t>(spec.ways[way].nodes.size());
+    }
+    std::uint32_t linkCount = 0;
+    for (const auto& list : links) {
+        linkCount += static_cast<std::uint32_t>(list.size());
+    }
+    const auto text = [](const std::vector<std::string>& table, std::vector<std::uint32_t>& offsets) {
+        std::string blob;
+        for (const std::string& entry : table) {
+            offsets.push_back(static_cast<std::uint32_t>(blob.size()));
+            blob += entry + '\0';
+        }
+        return blob;
+    };
     std::vector<std::uint32_t> keyOffsets;
-    for (const std::string& key : keys) {
-        keyOffsets.push_back(static_cast<std::uint32_t>(keyText.size()));
-        keyText += key + '\0';
-    }
-    std::string valueText;
     std::vector<std::uint32_t> valueOffsets;
-    for (const std::string& value : values) {
-        valueOffsets.push_back(static_cast<std::uint32_t>(valueText.size()));
-        valueText += value + '\0';
-    }
-    for (const std::uint32_t v : {0x0E177551U, 3U, 2U, 3U, 4U, 4U, 2U, 3U, static_cast<std::uint32_t>(keyText.size()),
-             static_cast<std::uint32_t>(valueText.size())}) {
+    const std::string keyText = text(keys, keyOffsets);
+    const std::string valueText = text(values, valueOffsets);
+
+    Writer w;
+    for (const std::uint32_t v : {0x0E177551U, static_cast<std::uint32_t>(spec.nodes.size()),
+             static_cast<std::uint32_t>(spec.ways.size()), static_cast<std::uint32_t>(tags.size()), wayNodeCount,
+             linkCount, static_cast<std::uint32_t>(keys.size()), static_cast<std::uint32_t>(values.size()),
+             static_cast<std::uint32_t>(keyText.size()), static_cast<std::uint32_t>(valueText.size())}) {
         w.u32(v);
     }
-    const std::array<glm::vec3, 3> nodes{
-        glm::vec3(0.0F, 5.0F, 0.0F), glm::vec3(100.0F, 5.0F, 0.0F), glm::vec3(100.0F, 6.0F, 50.0F)};
-    for (std::size_t i = 0; i < nodes.size(); ++i) {
+    std::uint32_t firstLink = 0;
+    for (std::size_t i = 0; i < spec.nodes.size(); ++i) {
         w.u32(static_cast<std::uint32_t>(i + 10));
-        w.f32(nodes[i].x);
-        w.f32(nodes[i].y);
-        w.f32(nodes[i].z);
-        w.zeros(16);
+        w.f32(spec.nodes[i].position.x);
+        w.f32(spec.nodes[i].position.y);
+        w.f32(spec.nodes[i].position.z);
+        w.u32(static_cast<std::uint32_t>(links[i].size()));
+        w.u32(firstLink);
+        w.u32(static_cast<std::uint32_t>(spec.nodes[i].tags.size()));
+        w.u32(nodeFirstTag[i]);
+        firstLink += static_cast<std::uint32_t>(links[i].size());
     }
-    // Way 0: nodes 0, 1 as an A road, one-way; way 1: nodes 1, 2, dirt.
-    for (const std::uint32_t v : {2U, 0U, 2U, 0U, 2U, 2U, 1U, 2U}) {
-        w.u32(v);
+    std::uint32_t firstWayNode = 0;
+    for (std::size_t i = 0; i < spec.ways.size(); ++i) {
+        w.u32(static_cast<std::uint32_t>(spec.ways[i].nodes.size()));
+        w.u32(firstWayNode);
+        w.u32(static_cast<std::uint32_t>(spec.ways[i].tags.size()));
+        w.u32(wayFirstTag[i]);
+        firstWayNode += static_cast<std::uint32_t>(spec.ways[i].nodes.size());
     }
-    for (const std::uint32_t v : {0U, 1U, 1U, 2U}) {
-        w.u32(v);
+    for (const NavSpec::Way& way : spec.ways) {
+        for (const std::uint32_t node : way.nodes) {
+            w.u32(node);
+        }
     }
-    w.zeros(4 * 8);
-    for (const std::uint32_t v : {1U, 0U, 0U, 2U, 1U, 1U}) {
-        w.u32(v);
+    for (const auto& list : links) {
+        for (const auto& [way, position] : list) {
+            w.u32(way);
+            w.u32(position);
+        }
+    }
+    for (const auto& [key, value] : tags) {
+        w.u32(key);
+        w.u32(value);
     }
     for (const std::uint32_t v : keyOffsets) {
         w.u32(v);
@@ -957,6 +1032,16 @@ Bytes buildRoadNetwork()
     w.bytes(valueText);
     w.u32(0x0E177551U);
     return w.data;
+}
+
+Bytes buildRoadNetwork()
+{
+    NavSpec spec;
+    spec.nodes = {{glm::vec3(0.0F, 5.0F, 0.0F), {}}, {glm::vec3(100.0F, 5.0F, 0.0F), {{"uturn", "true"}}},
+        {glm::vec3(100.0F, 6.0F, 50.0F), {}}};
+    // Way 0: nodes 0, 1 as an A road, one-way; way 1: nodes 1, 2, dirt.
+    spec.ways = {{{0, 1}, {{"road_type", "a"}, {"oneway", "true"}}}, {{1, 2}, {{"road_type", "dirt"}}}};
+    return buildNav(spec);
 }
 
 TEST(road_network_reads_ways_and_tags)
@@ -972,6 +1057,20 @@ TEST(road_network_reads_ways_and_tags)
         CHECK_EQ(std::string(nav.ways[1].tag("road_type")), std::string("dirt"));
         CHECK_NEAR(nav.ways[1].points[1].y, 50.0, 1e-6);
         CHECK(nav.ways[1].tag("oneway").empty());
+        CHECK((nav.ways[1].nodes == std::vector<std::uint32_t>{1, 2}));
+    }
+    CHECK_EQ(nav.nodes.size(), std::size_t{3});
+    if (nav.nodes.size() == 3) {
+        CHECK_NEAR(nav.nodes[2].position.y, 6.0, 1e-6);
+        CHECK_NEAR(nav.nodes[2].position.z, 50.0, 1e-6);
+        CHECK_EQ(std::string(nav.nodes[1].tag("uturn")), std::string("true"));
+        CHECK_EQ(nav.nodes[1].links.size(), std::size_t{2});
+        if (nav.nodes[1].links.size() == 2) {
+            CHECK_EQ(nav.nodes[1].links[0].way, 0U);
+            CHECK_EQ(nav.nodes[1].links[0].position, 1U);
+            CHECK_EQ(nav.nodes[1].links[1].way, 1U);
+            CHECK_EQ(nav.nodes[1].links[1].position, 0U);
+        }
     }
     Bytes truncated = data;
     truncated.resize(truncated.size() - 4);
@@ -1010,6 +1109,167 @@ TEST(map_profile_reads_groups)
         CHECK(!group.symbolizers[0].placementRatio);
     }
     CHECK_THROWS(MapProfile::parse(xml, "test.xml", "missing"));
+}
+
+/// A symbolizer of the full-screen profile's dirt road group.
+MapSymbolizer dirtRoadLine()
+{
+    MapSymbolizer symbolizer;
+    symbolizer.type = "line_coloured";
+    symbolizer.primary = glm::vec4(120.0F, 120.0F, 120.0F, 255.0F);
+    symbolizer.secondary = glm::vec4(194.0F, 120.0F, 76.0F, 255.0F);
+    return symbolizer;
+}
+
+TEST(coloured_lines_lerp_by_their_ratio)
+{
+    const MapSymbolizer dirt = dirtRoadLine();
+    const auto bytes = [](const glm::vec4& colour) { return colour * 255.0F; };
+    const glm::vec4 undriven = bytes(lineColour(dirt, 0.0F));
+    const glm::vec4 driven = bytes(lineColour(dirt, 1.0F));
+    CHECK_NEAR(undriven.r, 120.0, 1e-3);
+    CHECK_NEAR(undriven.b, 120.0, 1e-3);
+    CHECK_NEAR(driven.r, 194.0, 1e-3);
+    CHECK_NEAR(driven.g, 120.0, 1e-3);
+    CHECK_NEAR(driven.b, 76.0, 1e-3);
+    CHECK_NEAR(driven.a, 255.0, 1e-3);
+    // Channels are truncated: 120 + 74 * 0.5 = 157, 120 - 44 * 0.5 = 98.
+    const glm::vec4 half = bytes(lineColour(dirt, 0.5F));
+    CHECK_NEAR(half.r, 157.0, 1e-3);
+    CHECK_NEAR(half.b, 98.0, 1e-3);
+    // Lines without the coloured flag keep their primary colour.
+    MapSymbolizer plain = dirt;
+    plain.type = "line";
+    CHECK_NEAR(bytes(lineColour(plain, 1.0F)).r, 120.0, 1e-3);
+    // A coloured line without a secondary colour goes to opaque black.
+    MapSymbolizer shadow;
+    shadow.type = "line_fade_lr";
+    shadow.primary = glm::vec4(0.0F, 0.0F, 0.0F, 128.0F);
+    CHECK_NEAR(bytes(lineColour(shadow, 1.0F)).a, 255.0, 1e-3);
+    CHECK_NEAR(bytes(lineColour(shadow, 0.0F)).a, 128.0, 1e-3);
+}
+
+/// A b road "Main" of five nodes 100 m apart along x, a dirt road "Track"
+/// on from its end, a b road "Loop" of nodes 30 m apart, and the two
+/// carriageways of the one-way freeway "Dual", 10 m apart.
+NavSpec coverageNetwork()
+{
+    NavSpec spec;
+    for (int i = 0; i < 7; ++i) {
+        spec.nodes.push_back({glm::vec3(100.0F * static_cast<float>(i), 0.0F, 0.0F), {}});
+    }
+    for (int i = 0; i < 3; ++i) {
+        spec.nodes.push_back({glm::vec3(30.0F * static_cast<float>(i), 0.0F, 1000.0F), {}});
+    }
+    for (int side = 0; side < 2; ++side) {
+        for (int i = 0; i < 2; ++i) {
+            spec.nodes.push_back(
+                {glm::vec3(200.0F * static_cast<float>(i), 0.0F, 2000.0F + 10.0F * static_cast<float>(side)), {}});
+        }
+    }
+    spec.ways = {{{0, 1, 2, 3, 4}, {{"road_type", "b"}, {"display_name", "Main"}}},
+        {{4, 5, 6}, {{"road_type", "dirt"}, {"display_name", "Track"}}},
+        {{7, 8, 9}, {{"road_type", "b"}, {"display_name", "Loop"}}},
+        {{10, 11}, {{"road_type", "freeway"}, {"display_name", "Dual"}, {"oneway", "true"}}},
+        {{13, 12}, {{"road_type", "freeway"}, {"display_name", "Dual"}, {"oneway", "true"}}},
+        {{0, 7}, {{"road_type", "shortcut"}, {"display_name", "Cut"}}}};
+    return spec;
+}
+
+RoadDiscoveryTuning shippedDiscoveryTuning()
+{
+    RoadDiscoveryTuning tuning;
+    tuning.maxSquaredDistanceForLinkedNodes = 2100.0F;
+    tuning.unvisitedDistanceThreshold = 75.0F;
+    return tuning;
+}
+
+TEST(driven_roads_take_their_secondary_colour)
+{
+    const NavFile nav = NavFile::parse(buildNav(coverageNetwork()), "coverage.nav");
+    MapCoverage coverage(nav, shippedDiscoveryTuning());
+    CHECK_EQ(coverage.roadCount(), std::size_t{4});
+    CHECK((coverage.wayRatios(0) == std::vector<float>{0.0F, 0.0F, 0.0F, 0.0F, 0.0F}));
+
+    // Driving onto node 1 colours the segments on each side of it.
+    coverage.update(1U);
+    CHECK_EQ(coverage.visits(1), 1);
+    CHECK_EQ(coverage.visits(0), 0);
+    CHECK((coverage.wayRatios(0) == std::vector<float>{1.0F, 1.0F, 0.0F, 0.0F, 0.0F}));
+    const glm::vec4 first = lineColour(dirtRoadLine(), coverage.wayRatios(0)[0]) * 255.0F;
+    CHECK_NEAR(first.r, 194.0, 1e-3);
+    // Staying on the same node counts it once.
+    coverage.update(1U);
+    CHECK_EQ(coverage.visits(1), 1);
+
+    // The road is discovered when all its nodes have been driven.
+    for (const std::uint32_t node : {0U, 2U, 3U}) {
+        coverage.update(node);
+    }
+    CHECK_EQ(coverage.roadsDiscovered(), std::size_t{0});
+    coverage.update(4U);
+    CHECK_EQ(coverage.roadsDiscovered(), std::size_t{1});
+    CHECK((coverage.newlyDiscovered() == std::vector<std::string>{"Main"}));
+    CHECK((coverage.wayRatios(0) == std::vector<float>{1.0F, 1.0F, 1.0F, 1.0F, 1.0F}));
+    CHECK((coverage.wayRatios(1) == std::vector<float>{1.0F, 0.0F, 0.0F}));
+    coverage.update(5U);
+    CHECK(coverage.newlyDiscovered().empty());
+
+    // A node left between two driven ones less than 75 m apart counts too.
+    coverage.update(7U);
+    CHECK_EQ(coverage.visits(8), 0);
+    coverage.update(9U);
+    CHECK_EQ(coverage.visits(8), 1);
+
+    // The other carriageway of a divided road counts with the one driven.
+    coverage.update(10U);
+    CHECK_EQ(coverage.visits(12), 1);
+    CHECK_EQ(coverage.visits(13), 0);
+    CHECK_EQ(coverage.linkedNodes(10).size(), std::size_t{1});
+
+    // Nothing is counted while discovery is off.
+    coverage.setEnabled(false);
+    coverage.update(6U);
+    CHECK_EQ(coverage.visits(6), 0);
+}
+
+TEST(discovery_zones_count_their_nodes)
+{
+    NavSpec spec;
+    for (int i = 0; i < 4; ++i) {
+        spec.nodes.push_back({glm::vec3(500.0F * static_cast<float>(i), 0.0F, 0.0F), {}});
+    }
+    for (const int i : {0, 1, 2}) {
+        spec.nodes[static_cast<std::size_t>(i)].tags = {{"discovery_zone", "town"}};
+    }
+    spec.ways = {{{0, 1, 2, 3}, {{"road_type", "a"}, {"display_name", "Street"}}}};
+    const NavFile nav = NavFile::parse(buildNav(spec), "zone.nav");
+    MapCoverage coverage(nav, shippedDiscoveryTuning());
+    coverage.update(0U);
+    CHECK_EQ(coverage.visits(1), 1);
+    CHECK_EQ(coverage.visits(2), 1);
+    CHECK_EQ(coverage.visits(3), 0);
+}
+
+TEST(car_position_follows_the_network)
+{
+    const NavFile nav = NavFile::parse(buildNav(coverageNetwork()), "coverage.nav");
+    const NavLocator locator(nav);
+    CHECK(locator.nearest(glm::vec3(210.0F, 0.0F, 5.0F), NavFilter::NoShortcut) == std::optional<std::uint32_t>(2U));
+    // The grid wraps round every 10 km: a place 10 km east looks in the
+    // same cell.
+    CHECK(locator.nearest(glm::vec3(10210.0F, 0.0F, 5.0F), NavFilter::NoShortcut).has_value());
+
+    NavPosition position(locator, NavFilter::NoShortcut);
+    position.update(glm::vec3(10.0F, 0.0F, 0.0F), nullptr);
+    CHECK(position.node() == std::optional<std::uint32_t>(0U));
+    // Along the way to the next nodes.
+    position.update(glm::vec3(180.0F, 0.0F, 0.0F), nullptr);
+    CHECK(position.node() == std::optional<std::uint32_t>(2U));
+    CHECK(position.previous() == std::optional<std::uint32_t>(0U));
+    // Far below the ground the car is off the network.
+    position.update(glm::vec3(180.0F, -2000.0F, 0.0F), nullptr);
+    CHECK(!position.node());
 }
 
 TEST(career_event_styles_name_map_activities)
@@ -1403,6 +1663,67 @@ TEST(disc_minimap_data_loads)
     const SatNavTuning tuning = SatNavTuning::load(vfs);
     CHECK_NEAR(tuning.distanceMin, 500.0, 1e-3);
     CHECK_NEAR(tuning.playerViewportY, -0.3, 1e-5);
+}
+
+TEST(disc_road_colours_by_road_type)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    // Undriven, the paved roads are the same grey (and on the full-screen
+    // map the dirt roads too); driven, each road type takes its own colour
+    // (full-screen: dirt brown, a and b roads light grey, freeways yellow).
+    for (const auto& [path, name] : {std::pair{"media/ui/MapProfileFullscreen.xml", "fullscreen"},
+             std::pair{"media/ui/MapProfileMinimap.xml", "minimap"}}) {
+        const fh::Bytes xml = vfs.readOrThrow(path);
+        const MapProfile profile
+            = MapProfile::parse(std::string_view(reinterpret_cast<const char*>(xml.data()), xml.size()), path, name);
+        std::vector<std::pair<glm::vec4, glm::vec4>> colours;
+        for (const char* type : {"dirt", "b", "a", "freeway"}) {
+            for (const MapGroup& group : profile.groups) {
+                if (group.filterTag != "road_type" || group.filterValue != type) {
+                    continue;
+                }
+                for (const MapSymbolizer& symbolizer : group.symbolizers) {
+                    if (symbolizer.type.starts_with("line_coloured")) {
+                        colours.emplace_back(lineColour(symbolizer, 0.0F), lineColour(symbolizer, 1.0F));
+                    }
+                }
+            }
+        }
+        CHECK_EQ(colours.size(), std::size_t{4});
+        if (colours.size() == 4) {
+            CHECK(colours[1].first == colours[2].first);
+            CHECK(colours[2].first == colours[3].first);
+            CHECK((colours[0].first == colours[3].first) == (std::string_view(name) == "fullscreen"));
+            CHECK(colours[0].second != colours[1].second);
+            CHECK(colours[1].second != colours[3].second);
+            CHECK(colours[0].second != colours[3].second);
+        }
+    }
+
+    const RoadDiscoveryTuning tuning = RoadDiscoveryTuning::load(vfs);
+    CHECK_NEAR(tuning.maxSquaredDistanceForLinkedNodes, 2100.0, 1e-3);
+    CHECK_NEAR(tuning.unvisitedDistanceThreshold, 75.0, 1e-3);
+    const NavFile nav = NavFile::parse(vfs.readOrThrow("media/tracks/colorado/colorado.nav"), "colorado.nav");
+    CHECK_EQ(nav.nodes.size(), std::size_t{12036});
+    MapCoverage coverage(nav, tuning);
+    // Distinct display names of the ways whose road_type is a, b, dirt or
+    // freeway.
+    CHECK_EQ(coverage.roadCount(), std::size_t{216});
+    CHECK_EQ(coverage.roadsDiscovered(), std::size_t{0});
+    // Way 33, the b road "road_094": driving onto its second node colours
+    // its start.
+    const std::uint32_t node = nav.ways[33].nodes[1];
+    coverage.update(node);
+    const std::vector<float> ratios = coverage.wayRatios(33);
+    CHECK(!ratios.empty() && ratios[0] == 1.0F);
+    const NavLocator locator(nav);
+    CHECK(locator.nearest(nav.nodes[node].position + glm::vec3(2.0F, 0.0F, 0.0F), NavFilter::NoShortcut)
+        == std::optional<std::uint32_t>(node));
 }
 
 } // namespace

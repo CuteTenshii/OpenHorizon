@@ -1,6 +1,7 @@
 #include "Minimap.h"
 
 #include "AnarkFormats.h"
+#include "MapCoverage.h"
 
 #include "base/Error.h"
 #include "base/Log.h"
@@ -128,13 +129,12 @@ int lineTechnique(std::string_view type)
     return -1;
 }
 
-/// Lines lerp from the primary colour to the secondary one by a ratio their
-/// entity's colour source provides (0x82d917d8); the road network's ways
-/// have none here, so the primary colour stands, as in the code path
-/// without one. Channels come out 0 to 1.
+/// The colour of entities without a colour source (markers, and the lines
+/// the game passes in): the primary colour, as lineColour gives at ratio 0.
+/// Channels come out 0 to 1.
 glm::vec4 colorOf(const MapSymbolizer& symbolizer)
 {
-    return symbolizer.primary.value_or(glm::vec4(255.0F)) / 255.0F;
+    return lineColour(symbolizer, 0.0F);
 }
 
 /// The point `ratio` of the way along a line by length, heading along the
@@ -190,6 +190,19 @@ std::string lower(std::string text)
 }
 
 } // namespace
+
+glm::vec4 lineColour(const MapSymbolizer& symbolizer, float ratio)
+{
+    const glm::vec4 primary = symbolizer.primary.value_or(glm::vec4(255.0F));
+    const std::string_view type = symbolizer.type;
+    const bool coloured = type == "line_coloured" || type == "line_coloured_noalpha" || type == "line_fade_l"
+        || type == "line_fade_r" || type == "line_fade_lr";
+    if (!coloured) {
+        return primary / 255.0F;
+    }
+    const glm::vec4 secondary = symbolizer.secondary.value_or(glm::vec4(0.0F, 0.0F, 0.0F, 255.0F));
+    return glm::trunc(primary + (secondary - primary) * ratio) / 255.0F;
+}
 
 std::string_view careerEventActivityType(int careerEventStyle)
 {
@@ -258,7 +271,7 @@ std::vector<MapMarker> loadActivityMarkers(const Vfs& vfs, const std::string& tr
     return markers;
 }
 
-std::string_view NavWay::tag(std::string_view key) const
+std::string_view navTag(const NavTags& tags, std::string_view key)
 {
     for (const auto& [name, value] : tags) {
         if (name == key) {
@@ -284,14 +297,21 @@ NavFile NavFile::parse(ByteView data, const std::string& source)
     const std::uint32_t keyBytes = in.u32();
     const std::uint32_t valueBytes = in.u32();
 
+    struct NodeRecord {
+        std::uint32_t linkCount;
+        std::uint32_t firstLink;
+        std::uint32_t tagCount;
+        std::uint32_t firstTag;
+    };
     in.need(static_cast<std::size_t>(nodeCount) * 32);
-    std::vector<glm::vec2> nodes(nodeCount);
-    for (glm::vec2& node : nodes) {
+    std::vector<glm::vec3> nodes(nodeCount);
+    std::vector<NodeRecord> nodeRecords(nodeCount);
+    for (std::uint32_t i = 0; i < nodeCount; ++i) {
         in.skip(4);
-        node.x = in.f32();
-        in.skip(4);
-        node.y = in.f32();
-        in.skip(16);
+        nodes[i].x = in.f32();
+        nodes[i].y = in.f32();
+        nodes[i].z = in.f32();
+        nodeRecords[i] = {in.u32(), in.u32(), in.u32(), in.u32()};
     }
     struct WayRecord {
         std::uint32_t nodeCount;
@@ -310,7 +330,10 @@ NavFile NavFile::parse(ByteView data, const std::string& source)
         node = in.u32();
     }
     in.need(static_cast<std::size_t>(linkCount) * 8);
-    in.skip(static_cast<std::size_t>(linkCount) * 8);
+    std::vector<NavLink> links(linkCount);
+    for (NavLink& link : links) {
+        link = {in.u32(), in.u32()};
+    }
     in.need(static_cast<std::size_t>(tagCount) * 8);
     std::vector<std::pair<std::uint32_t, std::uint32_t>> tags(tagCount);
     for (auto& [key, value] : tags) {
@@ -352,6 +375,40 @@ NavFile NavFile::parse(ByteView data, const std::string& source)
     }
 
     NavFile file;
+    const auto readTags = [&](std::uint32_t first, std::uint32_t count) {
+        if (static_cast<std::uint64_t>(first) + count > tags.size()) {
+            in.fail("a tag list reaches past its table");
+        }
+        NavTags list;
+        list.reserve(count);
+        for (std::uint32_t i = 0; i < count; ++i) {
+            const auto [key, value] = tags[first + i];
+            if (key >= keys.size() || value >= values.size()) {
+                in.fail("a tag names a missing key or value");
+            }
+            list.emplace_back(keys[key], values[value]);
+        }
+        return list;
+    };
+    file.nodes.reserve(nodeCount);
+    for (std::uint32_t i = 0; i < nodeCount; ++i) {
+        const NodeRecord& record = nodeRecords[i];
+        if (static_cast<std::uint64_t>(record.firstLink) + record.linkCount > links.size()) {
+            in.fail("a node's links reach past their table");
+        }
+        NavNode node;
+        node.position = nodes[i];
+        node.tags = readTags(record.firstTag, record.tagCount);
+        node.links.assign(links.begin() + record.firstLink, links.begin() + record.firstLink + record.linkCount);
+        for (const NavLink& link : node.links) {
+            if (link.way >= ways.size() || link.position >= ways[link.way].nodeCount
+                || static_cast<std::uint64_t>(ways[link.way].firstNode) + link.position >= wayNodes.size()
+                || wayNodes[ways[link.way].firstNode + link.position] != i) {
+                in.fail(std::format("a link of node {} does not lead back to it", i));
+            }
+        }
+        file.nodes.push_back(std::move(node));
+    }
     file.ways.reserve(wayCount);
     for (const WayRecord& record : ways) {
         if (static_cast<std::uint64_t>(record.firstNode) + record.nodeCount > wayNodes.size()
@@ -360,22 +417,19 @@ NavFile NavFile::parse(ByteView data, const std::string& source)
         }
         NavWay way;
         way.points.reserve(record.nodeCount);
+        way.nodes.reserve(record.nodeCount);
         for (std::uint32_t i = 0; i < record.nodeCount; ++i) {
             const std::uint32_t node = wayNodes[record.firstNode + i];
             if (node >= nodes.size()) {
                 in.fail(std::format("way node {} of {}", node, nodes.size()));
             }
-            way.points.push_back(nodes[node]);
+            way.points.emplace_back(nodes[node].x, nodes[node].z);
+            way.nodes.push_back(node);
         }
-        for (std::uint32_t i = 0; i < record.tagCount; ++i) {
-            const auto [key, value] = tags[record.firstTag + i];
-            if (key >= keys.size() || value >= values.size()) {
-                in.fail("a tag names a missing key or value");
-            }
-            way.tags.emplace_back(keys[key], values[value]);
-        }
+        way.tags = readTags(record.firstTag, record.tagCount);
         file.ways.push_back(std::move(way));
     }
+    file.values = std::move(values);
     return file;
 }
 
@@ -557,9 +611,9 @@ void MinimapRenderer::ensureTarget(int size)
 }
 
 void MinimapRenderer::appendLine(
-    const std::vector<glm::vec2>& points, float halfWidth, const glm::vec4& color, bool caps)
+    const std::vector<glm::vec2>& points, float halfWidth, const std::vector<glm::vec4>& colors, bool caps)
 {
-    if (points.size() < 2) {
+    if (points.size() < 2 || colors.size() != points.size()) {
         return;
     }
     // 0x82da8200: a quad pair per point, offset along the averaged normal of
@@ -571,14 +625,15 @@ void MinimapRenderer::appendLine(
     };
     const auto ground = [](glm::vec2 p) { return glm::vec3(p.x, 0.0F, p.y); };
     std::vector<Vertex> strip;
-    const auto emitPair = [&](glm::vec2 centre, glm::vec2 normal, float u) {
+    // Each point takes its own colour; the caps take their end's.
+    const auto emitPair = [&](glm::vec2 centre, glm::vec2 normal, float u, const glm::vec4& color) {
         strip.push_back({ground(centre - normal * halfWidth), glm::vec2(u, -1.0F), color});
         strip.push_back({ground(centre + normal * halfWidth), glm::vec2(u, 1.0F), color});
     };
     const glm::vec2 firstDirection = glm::normalize(points[1] - points[0]);
     const glm::vec2 firstNormal = normalOf(points[0], points[1]);
     if (caps) {
-        emitPair(points[0] - firstDirection * halfWidth, firstNormal, -1.0F);
+        emitPair(points[0] - firstDirection * halfWidth, firstNormal, -1.0F, colors.front());
     }
     for (std::size_t i = 0; i < points.size(); ++i) {
         glm::vec2 normal;
@@ -591,12 +646,13 @@ void MinimapRenderer::appendLine(
             const float length = glm::length(sum);
             normal = length > 0.0F ? sum / length : normalOf(points[i], points[i + 1]);
         }
-        emitPair(points[i], normal, 0.0F);
+        emitPair(points[i], normal, 0.0F, colors[i]);
     }
     if (caps) {
         const std::size_t last = points.size() - 1;
         const glm::vec2 lastDirection = glm::normalize(points[last] - points[last - 1]);
-        emitPair(points[last] + lastDirection * halfWidth, normalOf(points[last - 1], points[last]), -1.0F);
+        emitPair(
+            points[last] + lastDirection * halfWidth, normalOf(points[last - 1], points[last]), -1.0F, colors.back());
     }
     for (std::size_t i = 0; i + 3 < strip.size(); i += 2) {
         m_vertices.insert(
@@ -618,19 +674,48 @@ void MinimapRenderer::appendIcon(const glm::vec3& centre, const glm::vec3& acros
     m_vertices.insert(m_vertices.end(), {topLeft, topRight, bottomLeft, topRight, bottomRight, bottomLeft});
 }
 
+std::vector<glm::vec4> MinimapRenderer::roadColours(const MapSymbolizer& symbolizer, std::size_t way) const
+{
+    const std::size_t count = m_nav.ways[way].points.size();
+    std::vector<float> ratios;
+    if (m_coverage && m_coverage->wayCount() == m_nav.ways.size()) {
+        ratios = m_coverage->wayRatios(way);
+    }
+    ratios.resize(count, 0.0F);
+    std::vector<glm::vec4> colours;
+    colours.reserve(count);
+    for (const float ratio : ratios) {
+        colours.push_back(lineColour(symbolizer, ratio));
+    }
+    return colours;
+}
+
+void MinimapRenderer::setCoverage(const MapCoverage* coverage)
+{
+    if (coverage != m_coverage) {
+        m_coverage = coverage;
+        buildRoads();
+    }
+}
+
 void MinimapRenderer::buildRoads()
 {
     // The road network does not move and its line widths do not change with
     // the camera (every line of the profile has a fixed <Size>), so its
-    // geometry is built once.
+    // geometry is built once, and again whenever the driven roads change
+    // their colours.
+    m_vertices.clear();
+    m_roadBatches.clear();
+    m_uploadedRoads = false;
+    m_coverageRevision = m_coverage ? std::optional<std::uint64_t>(m_coverage->revision()) : std::nullopt;
     for (const MapGroup& group : m_profile.groups) {
         if (group.filterTag.empty() || group.filterTag == kPlayerFilterTag) {
             continue;
         }
-        std::vector<const NavWay*> ways;
-        for (const NavWay& way : m_nav.ways) {
-            if (way.tag(group.filterTag) == group.filterValue) {
-                ways.push_back(&way);
+        std::vector<std::size_t> ways;
+        for (std::size_t way = 0; way < m_nav.ways.size(); ++way) {
+            if (m_nav.ways[way].tag(group.filterTag) == group.filterValue) {
+                ways.push_back(way);
             }
         }
         for (const MapSymbolizer& symbolizer : group.symbolizers) {
@@ -646,8 +731,8 @@ void MinimapRenderer::buildRoads()
             // which a fixed size (k = 1) reduces to twice the size.
             const float halfWidth = 2.0F * symbolizer.size;
             const bool caps = symbolizer.type != "line_nocaps";
-            for (const NavWay* way : ways) {
-                appendLine(way->points, halfWidth, colorOf(symbolizer), caps);
+            for (const std::size_t way : ways) {
+                appendLine(m_nav.ways[way].points, halfWidth, roadColours(symbolizer, way), caps);
             }
             batch.count = m_vertices.size() - batch.first;
             if (batch.count > 0) {
@@ -665,6 +750,9 @@ GLuint MinimapRenderer::render(glm::vec2 position, float heading, float speedMet
     ensureTarget(size);
     const MinimapCamera camera = MinimapCamera::follow(m_tuning, position, heading, speedMetresPerSecond, 1.0F);
 
+    if ((m_coverage ? std::optional<std::uint64_t>(m_coverage->revision()) : std::nullopt) != m_coverageRevision) {
+        buildRoads();
+    }
     m_vertices.resize(m_roadVertexCount);
     m_batches = m_roadBatches;
 
@@ -689,7 +777,8 @@ GLuint MinimapRenderer::render(glm::vec2 position, float heading, float speedMet
             batch.technique = technique;
             batch.first = m_vertices.size();
             for (const MapLine* line : matchedLines) {
-                appendLine(line->points, 2.0F * symbolizer.size, colorOf(symbolizer), symbolizer.type != "line_nocaps");
+                appendLine(line->points, 2.0F * symbolizer.size,
+                    std::vector<glm::vec4>(line->points.size(), colorOf(symbolizer)), symbolizer.type != "line_nocaps");
             }
             batch.count = m_vertices.size() - batch.first;
             if (batch.count > 0) {

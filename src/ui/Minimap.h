@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 
 #include <array>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -24,14 +25,42 @@ class Vfs;
 /// by media/ui/MapProfileMinimap.xml.
 namespace fh::ui {
 
+class MapCoverage;
+
+/// A tag list of a node or way, and the lookup of one of its values.
+using NavTags = std::vector<std::pair<std::string, std::string>>;
+
+/// The value of tag `key` in `tags`, or empty.
+std::string_view navTag(const NavTags& tags, std::string_view key);
+
+/// One way through a node: the way's index and the node's place in it.
+struct NavLink {
+    std::uint32_t way = 0;
+    std::uint32_t position = 0;
+};
+
+/// One node of a track's road network file.
+struct NavNode {
+    /// World x, y (height) and z.
+    glm::vec3 position{0.0F};
+    NavTags tags;
+    /// The ways through the node.
+    std::vector<NavLink> links;
+
+    /// The value of tag `key`, or empty.
+    std::string_view tag(std::string_view key) const { return navTag(tags, key); }
+};
+
 /// One way of a track's road network file (`<track>.nav`).
 struct NavWay {
     /// Node positions on the ground plane: world x and z.
     std::vector<glm::vec2> points;
-    std::vector<std::pair<std::string, std::string>> tags;
+    /// The node indices the points come from, in order.
+    std::vector<std::uint32_t> nodes;
+    NavTags tags;
 
     /// The value of tag `key`, or empty.
-    std::string_view tag(std::string_view key) const;
+    std::string_view tag(std::string_view key) const { return navTag(tags, key); }
 };
 
 /// The road network. Layout, as the loader (0x82d9dd18) reads it, all
@@ -46,7 +75,9 @@ struct NavWay {
 ///       u32 first tag}
 ///     way nodes: u32 node indices
 ///     links of {u32 way, u32 position in the way} (the ways through each
-///       node; the second word's meaning is inferred from the data)
+///       node; the neighbour lookup 0x82da9cc8 reads the second word as the
+///       node's index in the way, and every one of colorado's 13238 links
+///       names its node there)
 ///     tags of {u32 key index, u32 value index}
 ///     u32 key text offsets, u32 value text offsets
 ///     key text, value text: NUL-terminated strings
@@ -55,7 +86,10 @@ struct NavWay {
 /// Every way becomes one map entity whose tags are the way's tags
 /// (CMapEntityWay, 0x82d91c60); the profiles filter on them (road_type).
 struct NavFile {
+    std::vector<NavNode> nodes;
     std::vector<NavWay> ways;
+    /// The value strings in the file's order.
+    std::vector<std::string> values;
 
     /// Throws DataError when the file does not have this layout.
     static NavFile parse(ByteView data, const std::string& source);
@@ -84,6 +118,22 @@ struct MapSymbolizer {
     /// first point and 1 at its last.
     std::optional<float> placementRatio;
 };
+
+/// The colour, channels 0 to 1, a line symbolizer draws a point with when
+/// its entity's colour source gives the point `ratio` (0x82da8200 per
+/// point, lerping with 0x82da0408). Verified: the symbolizer factory
+/// (0x82d98710) sets the coloured flag (+242) for line_coloured,
+/// line_coloured_noalpha, line_fade_l, line_fade_r and line_fade_lr, and
+/// such a line lerps each channel from the primary colour to the secondary
+/// one, truncating the result; other lines, and entities without a colour
+/// source (ratio 0), keep the primary colour. A missing primary colour is
+/// opaque white and a missing secondary opaque black (0x82daa278). Road
+/// ways take their ratios from MapCoverage::wayRatios.
+///
+/// Missing: the profile loader (0x82da9100) passes each colour through
+/// 0x82cf46b0, a per-channel curve (0x8247c8e0) whose formula was not
+/// worked out; the colours here are the profile's values as written.
+glm::vec4 lineColour(const MapSymbolizer& symbolizer, float ratio);
 
 /// A `<Group>`: its symbolizers apply to entities whose tag matches the
 /// filter.
@@ -203,6 +253,11 @@ public:
     /// The activity markers loaded for the track.
     const std::vector<MapMarker>& activityMarkers() const { return m_activityMarkers; }
 
+    /// The roads driven, which colour the road lines (see lineColour);
+    /// null draws every road undriven. The coverage must be of the same
+    /// network and outlive its use here.
+    void setCoverage(const MapCoverage* coverage);
+
 private:
     struct Vertex {
         glm::vec3 position;
@@ -219,7 +274,11 @@ private:
         const UiTexture* texture = nullptr;
     };
 
-    void appendLine(const std::vector<glm::vec2>& points, float halfWidth, const glm::vec4& color, bool caps);
+    /// A line through `points` with the colour of each point in `colors`.
+    void appendLine(
+        const std::vector<glm::vec2>& points, float halfWidth, const std::vector<glm::vec4>& colors, bool caps);
+    /// The colour of each point of way `way` under a road symbolizer.
+    std::vector<glm::vec4> roadColours(const MapSymbolizer& symbolizer, std::size_t way) const;
     /// A quad centred on `centre` spanning `across` and `up` (half extents)
     /// with the symbolizer's atlas cell, the cell's top towards `up`.
     void appendIcon(const glm::vec3& centre, const glm::vec3& across, const glm::vec3& up,
@@ -247,6 +306,9 @@ private:
     std::vector<Batch> m_roadBatches;
     std::size_t m_roadVertexCount = 0;
     bool m_uploadedRoads = false;
+    const MapCoverage* m_coverage = nullptr;
+    /// The coverage revision the road geometry was built for.
+    std::optional<std::uint64_t> m_coverageRevision;
 };
 
 } // namespace fh::ui

@@ -1,6 +1,7 @@
 #include "WorldMap.h"
 
 #include "AnarkFormats.h"
+#include "MapCoverage.h"
 #include "Presentation.h"
 #include "UiRenderer.h"
 #include "VectorFont.h"
@@ -335,9 +336,10 @@ int lineTechnique(std::string_view type)
     return -1;
 }
 
+/// The colour of entities without a colour source: the primary colour.
 glm::vec4 colourFor(const MapSymbolizer& symbolizer)
 {
-    return symbolizer.primary.value_or(glm::vec4(255.0F)) / 255.0F;
+    return lineColour(symbolizer, 0.0F);
 }
 
 /// The texture files of a tiles symbolizer's image: "<name>-<column>-<row>"
@@ -533,7 +535,9 @@ struct WorldMap::Impl {
     void placeOverlay(int width, int height);
     GLuint renderMap(int width, int height);
     void buildFrame();
-    void appendLine(const std::vector<glm::vec2>& points, float halfWidth, const glm::vec4& color, bool caps);
+    /// A line through `points` with the colour of each point in `colors`.
+    void appendLine(
+        const std::vector<glm::vec2>& points, float halfWidth, const std::vector<glm::vec4>& colors, bool caps);
     void appendQuad(const glm::vec3& centre, const glm::vec3& across, const glm::vec3& up, glm::vec2 uv0, glm::vec2 uv1,
         const glm::vec4& color);
     void ensureTarget(int width, int height);
@@ -743,9 +747,9 @@ void WorldMap::Impl::updateHover()
 }
 
 void WorldMap::Impl::appendLine(
-    const std::vector<glm::vec2>& points, float halfWidth, const glm::vec4& color, bool caps)
+    const std::vector<glm::vec2>& points, float halfWidth, const std::vector<glm::vec4>& colors, bool caps)
 {
-    if (points.size() < 2) {
+    if (points.size() < 2 || colors.size() != points.size()) {
         return;
     }
     const auto normalOf = [](glm::vec2 from, glm::vec2 to) {
@@ -755,13 +759,14 @@ void WorldMap::Impl::appendLine(
     };
     const auto ground = [](glm::vec2 p) { return glm::vec3(p.x, 0.0F, p.y); };
     std::vector<Vertex> strip;
-    const auto emitPair = [&](glm::vec2 centre, glm::vec2 normal, float u) {
+    // Each point takes its own colour; the caps take their end's.
+    const auto emitPair = [&](glm::vec2 centre, glm::vec2 normal, float u, const glm::vec4& color) {
         strip.push_back({ground(centre - normal * halfWidth), glm::vec2(u, -1.0F), color});
         strip.push_back({ground(centre + normal * halfWidth), glm::vec2(u, 1.0F), color});
     };
     const glm::vec2 firstNormal = normalOf(points[0], points[1]);
     if (caps && glm::length(points[1] - points[0]) > 0.0F) {
-        emitPair(points[0] - glm::normalize(points[1] - points[0]) * halfWidth, firstNormal, -1.0F);
+        emitPair(points[0] - glm::normalize(points[1] - points[0]) * halfWidth, firstNormal, -1.0F, colors.front());
     }
     for (std::size_t i = 0; i < points.size(); ++i) {
         glm::vec2 normal;
@@ -774,12 +779,12 @@ void WorldMap::Impl::appendLine(
             const float length = glm::length(sum);
             normal = length > 0.0F ? sum / length : normalOf(points[i], points[i + 1]);
         }
-        emitPair(points[i], normal, 0.0F);
+        emitPair(points[i], normal, 0.0F, colors[i]);
     }
     const std::size_t last = points.size() - 1;
     if (caps && glm::length(points[last] - points[last - 1]) > 0.0F) {
         emitPair(points[last] + glm::normalize(points[last] - points[last - 1]) * halfWidth,
-            normalOf(points[last - 1], points[last]), -1.0F);
+            normalOf(points[last - 1], points[last]), -1.0F, colors.back());
     }
     for (std::size_t i = 0; i + 3 < strip.size(); i += 2) {
         vertices.insert(
@@ -891,12 +896,24 @@ void WorldMap::Impl::buildFrame()
                 const float halfWidth = 2.0F * base.size;
                 const bool caps = base.type != "line_nocaps";
                 if (isRoute) {
-                    appendLine(route, halfWidth, colourFor(base), caps);
+                    appendLine(route, halfWidth, std::vector<glm::vec4>(route.size(), colourFor(base)), caps);
                 } else if (!group.filterTag.empty()) {
-                    for (const NavWay& way : nav.ways) {
-                        if (way.tag(group.filterTag) == group.filterValue) {
-                            appendLine(way.points, halfWidth, colourFor(base), caps);
+                    // The road network's ways colour each point by the
+                    // roads driven (lineColour, MapCoverage::wayRatios).
+                    const bool covered = state.coverage && state.coverage->wayCount() == nav.ways.size();
+                    for (std::size_t way = 0; way < nav.ways.size(); ++way) {
+                        const NavWay& road = nav.ways[way];
+                        if (road.tag(group.filterTag) != group.filterValue) {
+                            continue;
                         }
+                        std::vector<float> ratios = covered ? state.coverage->wayRatios(way) : std::vector<float>();
+                        ratios.resize(road.points.size(), 0.0F);
+                        std::vector<glm::vec4> colours;
+                        colours.reserve(ratios.size());
+                        for (const float ratio : ratios) {
+                            colours.push_back(lineColour(base, ratio));
+                        }
+                        appendLine(road.points, halfWidth, colours, caps);
                     }
                 }
                 finish(batch);
