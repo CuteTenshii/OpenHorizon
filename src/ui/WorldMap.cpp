@@ -2,6 +2,7 @@
 
 #include "AnarkFormats.h"
 #include "MapCoverage.h"
+#include "Navigation.h"
 #include "Presentation.h"
 #include "UiRenderer.h"
 #include "VectorFont.h"
@@ -177,6 +178,12 @@ struct FullSymbolizer {
     float tilesSize = 0.0F;
     glm::vec3 offset{0.0F};
     std::optional<glm::vec4> visibleRange;
+    /// <SnapSize value pull>: the symbolizer's entities can be picked
+    /// (+44), within this size (+48), and pull the pick onto themselves
+    /// unless pull is false (+60; the default when the attribute is absent
+    /// was not traced and is taken to pull).
+    std::optional<float> snapSize;
+    bool snapPull = true;
 };
 
 struct FullGroup {
@@ -291,6 +298,10 @@ FullProfile parseProfile(std::string_view xml)
                 }
                 symbolizer.tilesSize = base.size;
                 symbolizer.offset = vectorOf(node.child("Offset"));
+                if (const pugi::xml_node snap = node.child("SnapSize")) {
+                    symbolizer.snapSize = floatAttribute(snap, "value", 0.0F);
+                    symbolizer.snapPull = snap.attribute("pull").as_bool(true);
+                }
                 if (const pugi::xml_node range = node.child("VisibleRange")) {
                     symbolizer.visibleRange = glm::vec4(floatAttribute(range, "min_distance", 0.0F),
                         floatAttribute(range, "min_fade_distance", 0.0F), floatAttribute(range, "max_distance", 0.0F),
@@ -360,7 +371,49 @@ std::string texturePath(const std::string& texture)
     return texturePathForScene(path);
 }
 
+/// The point of segment a-b nearest `p` (0x82d79eb8).
+glm::vec2 nearestOnSegment(glm::vec2 a, glm::vec2 b, glm::vec2 p)
+{
+    const glm::vec2 d = b - a;
+    const float lengthSquared = glm::dot(d, d);
+    if (lengthSquared <= 0.0F) {
+        return a;
+    }
+    const float t = std::clamp(glm::dot(p - a, d) / lengthSquared, 0.0F, 1.0F);
+    return a + d * t;
+}
+
+float squaredLength(glm::vec2 v)
+{
+    return glm::dot(v, v);
+}
+
 } // namespace
+
+std::optional<MapLinePick> pickMapLine(const std::vector<glm::vec2>& points, glm::vec2 cursor, float snapSize)
+{
+    if (points.empty()) {
+        return std::nullopt;
+    }
+    glm::vec2 point = points.front();
+    if (points.size() == 2) {
+        point = nearestOnSegment(points[0], points[1], cursor);
+    } else if (points.size() > 2) {
+        std::size_t nearest = 0;
+        float best = std::numeric_limits<float>::max();
+        for (std::size_t i = 1; i + 1 < points.size(); ++i) {
+            const float d = squaredLength(points[i] - cursor);
+            if (d < best) {
+                best = d;
+                nearest = i;
+            }
+        }
+        const glm::vec2 before = nearestOnSegment(points[nearest - 1], points[nearest], cursor);
+        const glm::vec2 after = nearestOnSegment(points[nearest], points[nearest + 1], cursor);
+        point = squaredLength(before - cursor) < squaredLength(after - cursor) ? before : after;
+    }
+    return MapLinePick{point, glm::length(point - cursor) - snapSize};
+}
 
 WorldMapTuning WorldMapTuning::load(const Vfs& vfs)
 {
@@ -539,6 +592,8 @@ struct WorldMap::Impl {
     void bindScene();
     void showScene();
     void updateHelp();
+    /// The place A sets and its node (the overlay's +576).
+    void updateTarget();
     /// The place of marker `index`: the track's activity markers first,
     /// then the state's.
     glm::vec2 markerPosition(std::size_t index) const
@@ -567,6 +622,9 @@ struct WorldMap::Impl {
     Presentation scene;
     UiRenderer renderer;
     NavFile nav;
+    std::unique_ptr<NavLocator> locator;
+    /// The ways the road symbolizers can pick, with their snap sizes.
+    std::vector<std::pair<std::size_t, float>> snapWays;
     FullProfile profile;
     WorldMapTuning tuning;
     std::unique_ptr<WorldMapCamera> camera;
@@ -604,9 +662,11 @@ struct WorldMap::Impl {
     /// shows whole.
     std::optional<float> revealTime;
     std::optional<std::size_t> hovered;
-    std::optional<std::size_t> helpHovered;
-    bool helpShown = false;
-    bool helpWaypointHere = false;
+    std::optional<glm::vec2> target;
+    std::optional<std::uint32_t> targetNode;
+    std::optional<std::uint32_t> waypointNode;
+    /// Whether the help shows CLEAR ROUTE; none until it is first set.
+    std::optional<bool> helpClear;
 };
 
 WorldMap::Impl::Impl(const Vfs& vfs, const std::string& track, const std::string& language)
@@ -617,9 +677,27 @@ WorldMap::Impl::Impl(const Vfs& vfs, const std::string& track, const std::string
 {
     const std::string navPath = std::format("media/tracks/{}/{}.nav", track, track);
     nav = NavFile::parse(vfs.readOrThrow(navPath), navPath);
+    locator = std::make_unique<NavLocator>(nav);
     const Bytes profileData = vfs.readOrThrow(kProfilePath);
     profile = parseProfile(std::string_view(reinterpret_cast<const char*>(profileData.data()), profileData.size()));
     tuning = WorldMapTuning::load(vfs);
+    // The road symbolizers the picker offers a point on: lines with a
+    // <SnapSize> that does not pull, over the ways their group filters.
+    for (const FullGroup& group : profile.groups) {
+        if (group.filterTag.empty() || (group.filterTag == kRouteTag && group.filterValue == kRouteValue)) {
+            continue;
+        }
+        for (const FullSymbolizer& symbolizer : group.symbolizers) {
+            if (lineTechnique(symbolizer.base.type) < 0 || !symbolizer.snapSize || symbolizer.snapPull) {
+                continue;
+            }
+            for (std::size_t way = 0; way < nav.ways.size(); ++way) {
+                if (nav.ways[way].tag(group.filterTag) == group.filterValue) {
+                    snapWays.emplace_back(way, *symbolizer.snapSize);
+                }
+            }
+        }
+    }
     try {
         activityMarkers = loadActivityMarkers(vfs, track);
     } catch (const DataError& e) {
@@ -706,33 +784,45 @@ void WorldMap::Impl::showScene()
     scene.fireEvent(rootContract, "HIDE_PLAYER_BAR");
     scene.fireEvent(rootContract, "HIDE_TIP");
     scene.fireEvent(overlayContract, "SHOW_CURSOR");
-    helpShown = false;
+    helpClear.reset();
     updateHelp();
 }
 
 void WorldMap::Impl::updateHelp()
 {
-    // 0x827a8e88: A for the item under the cursor (SET ROUTE, or CLEAR
-    // ROUTE when it is the destination), B EXIT MAP, then MOVE on the left
-    // stick and ZOOM on the right. The X and Y entries (fast travel,
-    // leaderboards, details) and FILTER belong to systems this game does
-    // not have.
-    const bool waypointHere = hovered && waypoint && markerPosition(*hovered) == *waypoint;
-    if (helpShown && helpHovered == hovered && helpWaypointHere == waypointHere) {
+    // 0x827a8e88: A (SET ROUTE, or CLEAR ROUTE when the target's node is
+    // the destination's), B EXIT MAP, then MOVE on the left stick and ZOOM
+    // on the right. The X and Y entries (fast travel, leaderboards,
+    // details) and FILTER belong to systems this game does not have.
+    const bool clear = targetNode && waypointNode && *targetNode == *waypointNode;
+    if (helpClear == clear) {
         return;
     }
     std::vector<HelpBar::Entry> entries;
-    if (hovered) {
-        entries.push_back(
-            {HelpIcon::A, strings.get(kHelpButtons, waypointHere ? "IDS_ClearDestination" : "IDS_SetDestination")});
-    }
+    entries.push_back({HelpIcon::A, strings.get(kHelpButtons, clear ? "IDS_ClearDestination" : "IDS_SetDestination")});
     entries.push_back({HelpIcon::B, strings.get(kHelpButtons, "IDS_ExitMap")});
     entries.push_back({HelpIcon::LeftStickNoArrow, strings.get(kHelpButtons, "IDS_Move")});
     entries.push_back({HelpIcon::RightStickNoArrow, strings.get(kHelpButtons, "IDS_Zoom")});
     help.set(scene, entries);
-    helpShown = true;
-    helpHovered = hovered;
-    helpWaypointHere = waypointHere;
+    helpClear = clear;
+}
+
+void WorldMap::Impl::updateTarget()
+{
+    if (hovered) {
+        target = markerPosition(*hovered);
+    } else {
+        const glm::vec2 cursorAt = camera->cursor();
+        std::optional<MapLinePick> best;
+        for (const auto& [way, snapSize] : snapWays) {
+            const std::optional<MapLinePick> pick = pickMapLine(nav.ways[way].points, cursorAt, snapSize);
+            if (pick && (!best || pick->distance < best->distance)) {
+                best = pick;
+            }
+        }
+        target = best ? std::optional<glm::vec2>(best->point) : std::nullopt;
+    }
+    targetNode = target ? locator->nearestOnGround(*target, NavFilter::NoShortcutOrNone) : std::nullopt;
 }
 
 glm::vec2 WorldMap::Impl::project(glm::vec2 point, float aspect) const
@@ -749,14 +839,11 @@ float WorldMap::Impl::routeReveal() const
     if (!revealTime) {
         return 1.0F;
     }
-    // 0x828b6efc: the time over the route's length (0x82a4c6b0, taken to
-    // be its length along the points) at RouteReveal_MetersPerSecond, no
-    // less than RouteReveal_MinimumSeconds.
-    float length = 0.0F;
-    for (std::size_t i = 1; i < state.route.size(); ++i) {
-        length += glm::length(state.route[i] - state.route[i - 1]);
-    }
-    const float seconds = std::max(length / tuning.routeRevealMetresPerSecond, tuning.routeRevealMinimumSeconds);
+    // 0x828b6efc: the time over the route's length (the planner's +620
+    // through 0x82a4c6b0) at RouteReveal_MetersPerSecond, no less than
+    // RouteReveal_MinimumSeconds.
+    const float seconds
+        = std::max(state.routeLength / tuning.routeRevealMetresPerSecond, tuning.routeRevealMinimumSeconds);
     return seconds > 0.0F ? std::min(*revealTime / seconds, 1.0F) : 1.0F;
 }
 
@@ -1207,6 +1294,8 @@ void WorldMap::open(const WorldMapState& state)
     impl.camera->reset(state.playerPosition);
     impl.time = 0.0F;
     impl.hovered.reset();
+    impl.target.reset();
+    impl.targetNode.reset();
     impl.open = true;
     impl.showScene();
 }
@@ -1224,9 +1313,10 @@ bool WorldMap::isOpen() const
 
 void WorldMap::setState(const WorldMapState& state)
 {
-    m_impl->state = state;
-    if (m_impl->hovered && *m_impl->hovered >= m_impl->activityMarkers.size() + state.markers.size()) {
-        m_impl->hovered.reset();
+    Impl& impl = *m_impl;
+    impl.state = state;
+    if (impl.hovered && *impl.hovered >= impl.activityMarkers.size() + state.markers.size()) {
+        impl.hovered.reset();
     }
 }
 
@@ -1243,15 +1333,17 @@ WorldMapAction WorldMap::update(const MenuInput& input, float dt)
         *impl.revealTime += dt;
     }
     impl.updateHover();
+    impl.updateTarget();
     if (input.back) {
         action = WorldMapAction::Back;
-    } else if (input.accept && impl.hovered) {
-        const glm::vec2 at = impl.markerPosition(*impl.hovered);
-        if (impl.waypoint && *impl.waypoint == at) {
+    } else if (input.accept && impl.targetNode) {
+        if (impl.waypointNode && *impl.waypointNode == *impl.targetNode) {
             impl.waypoint.reset();
+            impl.waypointNode.reset();
             action = WorldMapAction::ClearWaypoint;
         } else {
-            impl.waypoint = at;
+            impl.waypoint = impl.target;
+            impl.waypointNode = impl.targetNode;
             impl.revealTime = 0.0F;
             action = WorldMapAction::SetWaypoint;
         }
@@ -1315,6 +1407,22 @@ std::optional<glm::vec2> WorldMap::waypoint() const
 void WorldMap::clearWaypoint()
 {
     m_impl->waypoint.reset();
+    m_impl->waypointNode.reset();
+}
+
+std::optional<glm::vec2> WorldMap::target() const
+{
+    return m_impl->target;
+}
+
+std::optional<std::uint32_t> WorldMap::targetNode() const
+{
+    return m_impl->targetNode;
+}
+
+const Presentation& WorldMap::scene() const
+{
+    return m_impl->scene;
 }
 
 const WorldMapCamera& WorldMap::camera() const

@@ -5,6 +5,7 @@
 
 #include <glm/glm.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -12,7 +13,7 @@
 
 namespace fh {
 class Vfs;
-}
+} // namespace fh
 
 namespace fh::ui {
 
@@ -145,6 +146,26 @@ private:
     float m_distance = 0.0F;
 };
 
+/// Where a map line is nearest the cursor, as the line symbolizers of the
+/// map's profile pick it (0x82da30e0, the symbolizer's virtual at +36, which
+/// the map's picker 0x82da6ab8 calls through 0x82da4ef8 for every line of a
+/// symbolizer with a <SnapSize>).
+///
+/// Verified: of a line of three points or more, only the two segments next
+/// to the interior point nearest the cursor are tried (the first nearest
+/// wins a tie), and the nearer of the two wins, the first on a tie; a line
+/// of two points is its one segment and a line of one point that point.
+/// The distance is the square root of the one compared, less the snap size
+/// (<SnapSize value> times 1: 0x82da9500 sets both of the size's scale
+/// factors to 1). Inferred: that the distances are Euclidean (the vector
+/// instructions computing them were not decoded) and measured on the
+/// ground plane, where the map draws its lines.
+struct MapLinePick {
+    glm::vec2 point{0.0F};
+    float distance = 0.0F;
+};
+std::optional<MapLinePick> pickMapLine(const std::vector<glm::vec2>& points, glm::vec2 cursor, float snapSize);
+
 /// Something on the map with the name its context popup shows (empty for
 /// none).
 struct WorldMapMarker {
@@ -166,6 +187,9 @@ struct WorldMapState {
     /// car's place along it (see routeRatios); empty while there is none.
     std::vector<glm::vec2> route;
     std::size_t routeStart = 0;
+    /// Navigation::routeLength(), which times the route's reveal; 0 while
+    /// it is not known yet.
+    float routeLength = 0.0F;
     /// The roads the player has driven, which colour the road lines; null
     /// draws every road undriven. It must be of the track's network and
     /// outlive the state's use.
@@ -177,9 +201,10 @@ enum class WorldMapAction {
     /// B (EXIT MAP): the map screen's onBack. Opened from the pause menu,
     /// the game goes back to it; opened with the Back button, to driving.
     Back,
-    /// A on a marker (SET ROUTE): waypoint() is now that marker's place.
+    /// A (SET ROUTE): waypoint() is now target(), the marker the cursor is
+    /// on or the nearest point of a road.
     SetWaypoint,
-    /// A on the marker that is the waypoint (CLEAR ROUTE).
+    /// A with the cursor on the waypoint's node (CLEAR ROUTE).
     ClearWaypoint,
 };
 
@@ -195,11 +220,38 @@ enum class WorldMapAction {
 /// ViewEdgeTop and ViewEdgeBottom tunables), the road network's lines, the
 /// route group along WorldMapState::route (the line with routeRatios, the
 /// flag at the route's end, nothing while there is no route; a route set
-/// on the map draws in over its length over RouteReveal_MetersPerSecond,
-/// at least RouteReveal_MinimumSeconds, as the overlay's update does at
-/// 0x828b6efc, and shows whole once the map closes, 0x828af13c), the
-/// cursor at worldMapCursorScale, and the icon symbolizers of every marker, with the profile's "default"
-/// and "intro" animations (the player's radar ping, the icons' grow).
+/// on the map draws in over WorldMapState::routeLength at
+/// RouteReveal_MetersPerSecond, at least RouteReveal_MinimumSeconds, as the
+/// overlay's update does at 0x828b6efc, and shows whole once the map
+/// closes, 0x828af13c), the cursor at worldMapCursorScale, and the icon
+/// symbolizers of every marker, with the profile's "default" and "intro"
+/// animations (the player's radar ping, the icons' grow).
+///
+/// The place A sets (the overlay's update, 0x828b6998, verified): each
+/// frame the map's picker (0x82da6ab8) finds the entity nearest the cursor
+/// and, among the lines of the symbolizers whose <SnapSize> does not pull
+/// (the road groups' pull="false"), the nearest road point (pickMapLine).
+/// An entity closer than UI/Map/contextSnapSize times the camera's distance
+/// (0x833f4004 against the camera's +212) is the target, otherwise the
+/// road point is; the target's node is the nearest one filter 0 accepts
+/// (0x828af1b8), kept at +576. A (+425) hands that node to the sat-nav
+/// (0x828af208), which clears the route instead when the node is already
+/// its goal (0x82a4dda0 against it). The help's A entry is always there
+/// (the screen sets its mode to 1, 0x827b3e5c) and reads CLEAR ROUTE when
+/// the goal is the target's node, SET ROUTE otherwise (0x827a8fd0). The
+/// snap ring stays on the cursor when the target is a road point (UNSNAP,
+/// 0x828b7688).
+///
+/// Differences: which entity is nearest is the marker hover's own rule
+/// (updateHover; the icon symbolizers' pick, 0x82da2d50, applies their
+/// offsets and DynamicSnapSize and was not decoded). The nodes are looked
+/// up on the ground plane, as Navigation::setDestination does, so both
+/// find the same node (the game measures in three dimensions). The
+/// sounds the overlay plays (Map_RouteAdd, Map_RouteRemove,
+/// Map_RouteChangeDisallowed, Map_Snap) and the camera's "hotspot" entity
+/// (the profile's cursor/hotspot group, only shown by the scripted camera)
+/// are left out.
+///
 /// Left out, as their state does not exist here: the career icons' ring
 /// colour, finished wreath, NEW badge and warning note; the smoke of
 /// newly revealed events and the unlock sequences; hover animations; the
@@ -230,9 +282,16 @@ public:
 
     std::optional<glm::vec2> waypoint() const;
     void clearWaypoint();
+    /// The place A would set: the marker the cursor is on, or the nearest
+    /// point of a road; none before the first update.
+    std::optional<glm::vec2> target() const;
+    /// The node nearest target() that NavFilter::NoShortcutOrNone accepts.
+    std::optional<std::uint32_t> targetNode() const;
     const WorldMapCamera& camera() const;
     /// The marker the cursor is on, if any.
     const WorldMapMarker* hovered() const;
+    /// The scene as it shows now, for reading its texts.
+    const Presentation& scene() const;
     /// The cursor's crosshair as last drawn: its width and height in the
     /// scene's units (1280 x 720).
     glm::vec2 cursorExtent() const;

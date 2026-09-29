@@ -10,10 +10,12 @@
 #include "base/Error.h"
 #include "ui/AnarkFormats.h"
 #include "ui/MapCoverage.h"
+#include "ui/MenuCommon.h"
 #include "ui/Minimap.h"
 #include "ui/Navigation.h"
 #include "ui/Presentation.h"
 #include "ui/VectorFont.h"
+#include "ui/WorldMap.h"
 #include "vfs/Vfs.h"
 
 #include <algorithm>
@@ -1895,6 +1897,47 @@ TEST(disc_route_reaches_the_waypoint)
     navigation.update(nav.nodes[*goal].position, glm::normalize(ahead));
     CHECK(!navigation.destination());
     CHECK(navigation.routeNodes().empty());
+}
+
+// The road symbolizers' pick (0x82da30e0) tries only the segments beside
+// the interior point nearest the cursor, so a nearer segment elsewhere on
+// the line is not found.
+TEST(map_line_pick_tries_the_segments_beside_the_nearest_point)
+{
+    CHECK(!pickMapLine({}, glm::vec2(0.0F), 60.0F));
+    // One point: that point, less the snap size.
+    const std::optional<MapLinePick> single = pickMapLine({glm::vec2(3.0F, 4.0F)}, glm::vec2(0.0F), 1.0F);
+    CHECK(single.has_value());
+    if (single) {
+        CHECK_NEAR(single->distance, 4.0, 1e-5);
+    }
+    // Two points: the one segment.
+    const std::optional<MapLinePick> segment
+        = pickMapLine({glm::vec2(-10.0F, 5.0F), glm::vec2(10.0F, 5.0F)}, glm::vec2(2.0F, 0.0F), 60.0F);
+    CHECK(segment.has_value());
+    if (segment) {
+        CHECK_NEAR(segment->point.x, 2.0, 1e-5);
+        CHECK_NEAR(segment->point.y, 5.0, 1e-5);
+        CHECK_NEAR(segment->distance, -55.0, 1e-4);
+    }
+    // A long segment passes 1 m from the cursor, but the interior point
+    // nearest it is (0, 10), so the pick is on one of its two segments.
+    const std::vector<glm::vec2> line{
+        glm::vec2(-100.0F, -1.0F), glm::vec2(100.0F, -1.0F), glm::vec2(0.0F, 10.0F), glm::vec2(0.0F, 20.0F)};
+    const std::optional<MapLinePick> far = pickMapLine(line, glm::vec2(0.0F), 0.0F);
+    CHECK(far.has_value());
+    if (far) {
+        CHECK(far->distance > 1.5F);
+        CHECK(glm::length(far->point - glm::vec2(0.0F, -1.0F)) > 1.0F);
+    }
+    // Beside that point, the nearer of its two segments wins.
+    const std::optional<MapLinePick> near = pickMapLine(line, glm::vec2(1.0F, 15.0F), 0.0F);
+    CHECK(near.has_value());
+    if (near) {
+        CHECK_NEAR(near->point.x, 0.0, 1e-5);
+        CHECK_NEAR(near->point.y, 15.0, 1e-4);
+        CHECK_NEAR(near->distance, 1.0, 1e-4);
+    }
 }
 
 } // namespace

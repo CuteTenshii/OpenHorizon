@@ -2467,6 +2467,7 @@ ui::WorldMapState Game::worldMapState() const
     if (m_navigation) {
         state.route = m_navigation->route();
         state.routeStart = m_navigation->routeProgress();
+        state.routeLength = m_navigation->routeLength();
     }
     if (m_playerPlaced) {
         const glm::vec3 at = player().physics->position();

@@ -575,6 +575,8 @@ void Navigation::setDestination(std::optional<glm::vec2> waypoint)
 {
     m_route.clear();
     m_progress = 0;
+    m_routeDistance = 0.0F;
+    m_routeLength = 0.0F;
     m_goal.reset();
     if (!waypoint) {
         return;
@@ -602,6 +604,8 @@ void Navigation::plan()
     }
     m_route = m_search->find(*start, *m_goal, m_carForward, shortcutsAllowed);
     m_progress = 0;
+    m_routeDistance = 0.0F;
+    m_routeLength = 0.0F;
     if (m_route.empty()) {
         m_goal.reset();
     }
@@ -618,16 +622,35 @@ void Navigation::follow()
         m_goal.reset();
         m_route.clear();
         m_progress = 0;
+        m_routeDistance = 0.0F;
+        m_routeLength = 0.0F;
         return;
     }
     const auto found = std::find(m_route.begin() + static_cast<std::ptrdiff_t>(m_progress), m_route.end(), *node);
     if (found != m_route.end()) {
         m_progress = static_cast<std::size_t>(found - m_route.begin());
+        m_routeDistance = remainingDistance();
+        if (m_routeLength == 0.0F) {
+            m_routeLength = m_routeDistance;
+        }
         return;
     }
     if (squaredDistance(m_carPosition, m_nav->nodes[m_route[m_progress]].position) > kLostSquaredDistance) {
         plan();
     }
+}
+
+float Navigation::remainingDistance() const
+{
+    const std::size_t next = m_progress + 1;
+    if (next >= m_route.size()) {
+        return 0.0F;
+    }
+    float distance = glm::length(m_carPosition - m_nav->nodes[m_route[next]].position);
+    for (std::size_t i = next + 1; i < m_route.size(); ++i) {
+        distance += glm::length(m_nav->nodes[m_route[i]].position - m_nav->nodes[m_route[i - 1]].position);
+    }
+    return distance;
 }
 
 std::vector<glm::vec2> Navigation::route() const

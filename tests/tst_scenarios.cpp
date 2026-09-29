@@ -112,6 +112,8 @@ struct Hold {
     float steer = 0.0F;
     /// The right stick's y: on the map, positive zooms in.
     float zoom = 0.0F;
+    /// The left stick's y: on the map, positive moves the cursor north.
+    float cursorY = 0.0F;
 };
 
 /// A game and the scripted player driving it.
@@ -180,6 +182,7 @@ private:
         input.axes[static_cast<std::size_t>(fh::Axis::LeftTrigger)] = hold.brake;
         input.axes[static_cast<std::size_t>(fh::Axis::LeftX)] = hold.steer;
         input.axes[static_cast<std::size_t>(fh::Axis::RightY)] = hold.zoom;
+        input.axes[static_cast<std::size_t>(fh::Axis::LeftY)] = hold.cursorY;
         if (button) {
             input.buttons[static_cast<std::size_t>(*button)] = true;
         }
@@ -1246,6 +1249,106 @@ TEST(trackShadingSwitchesLightsAndReflects)
         std::fprintf(stderr, "%s: world pass GPU %.3f ms\n", shot.name, worldPassMs(session));
         session.capture(shot.name);
     }
+}
+
+// "On the map you can't select a destination somewhere on the road. Only
+// events." With the cursor on no marker, A hands the sat-nav the point of
+// the roads nearest the cursor (the map overlay's update, 0x828b6998), and
+// the route goes to that point's node; A again on it clears the route.
+TEST(setRouteOnARoadAwayFromMarkers)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::GameOptions options;
+    options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
+    options.spawnHeading = 3.14159265F;
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(0.5F, {});
+    const fh::ui::Navigation* navigation = session.game().navigation();
+    const fh::ui::WorldMap* map = session.game().worldMap();
+    CHECK(navigation != nullptr && map != nullptr);
+    if (navigation == nullptr || map == nullptr) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(gameDir());
+    const std::vector<fh::ui::MapMarker> activities = fh::ui::loadActivityMarkers(vfs, "colorado");
+    session.press(fh::Button::Back);
+    session.run(1.0F, {});
+
+    // The cursor goes west until it is 800 m from the car with no marker
+    // within 400 m of it.
+    const glm::vec2 car = session.game().currentMapState().playerPosition;
+    const auto clearOfMarkers = [&] {
+        const glm::vec2 at = map->camera().cursor();
+        const auto near = [&](glm::vec2 marker) { return glm::length(marker - at) < 400.0F; };
+        for (const fh::ui::MapMarker& marker : activities) {
+            if (near(marker.position)) {
+                return false;
+            }
+        }
+        for (const fh::ui::WorldMapMarker& marker : session.game().currentMapState().markers) {
+            if (near(marker.marker.position)) {
+                return false;
+            }
+        }
+        return glm::length(at - car) > 800.0F;
+    };
+    for (int frame = 0; frame < 1800 && !clearOfMarkers(); ++frame) {
+        session.run(kStep, {.steer = -0.25F});
+    }
+    session.run(0.5F, {});
+    CHECK(clearOfMarkers());
+    CHECK(map->hovered() == nullptr);
+    const std::optional<glm::vec2> target = map->target();
+    CHECK(target.has_value());
+    if (!target) {
+        return;
+    }
+    // The target is the pick of the profile's road lines (a, b, dirt and
+    // freeway ways, SnapSize 60 each) nearest the cursor.
+    const fh::ui::NavFile& nav = navigation->network();
+    std::optional<fh::ui::MapLinePick> best;
+    for (const fh::ui::NavWay& way : nav.ways) {
+        const std::string_view type = way.tag("road_type");
+        if (type != "a" && type != "b" && type != "dirt" && type != "freeway") {
+            continue;
+        }
+        const std::optional<fh::ui::MapLinePick> pick = fh::ui::pickMapLine(way.points, map->camera().cursor(), 60.0F);
+        if (pick && (!best || pick->distance < best->distance)) {
+            best = pick;
+        }
+    }
+    CHECK(best.has_value());
+    if (best) {
+        CHECK(glm::length(best->point - *target) < 1e-3F);
+    }
+    session.capture("route_road_before");
+
+    session.press(fh::Button::A);
+    CHECK(map->waypoint().has_value());
+    CHECK(navigation->destination().has_value());
+    const std::optional<std::uint32_t> goal
+        = navigation->locator().nearestOnGround(*target, fh::ui::NavFilter::NoShortcutOrNone);
+    CHECK(goal.has_value() && navigation->destination() == goal);
+    CHECK(map->targetNode() == goal);
+    const std::vector<glm::vec2> route = navigation->route();
+    CHECK(route.size() > 2);
+    if (goal && !route.empty()) {
+        const glm::vec3 end = nav.nodes[*goal].position;
+        CHECK(glm::length(route.back() - glm::vec2(end.x, end.z)) < 1e-3F);
+    }
+    CHECK_EQ(session.game().currentMapState().route.size(), route.size());
+    session.run(2.0F, {});
+    session.capture("route_road_map");
+
+    // A on the destination's node clears it (CLEAR ROUTE).
+    session.press(fh::Button::A);
+    CHECK(!map->waypoint().has_value());
+    CHECK(!navigation->destination().has_value());
+    CHECK(navigation->routeNodes().empty());
 }
 
 } // namespace

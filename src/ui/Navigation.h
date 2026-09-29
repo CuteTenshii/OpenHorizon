@@ -260,6 +260,21 @@ public:
     std::vector<glm::vec2> route() const;
     /// The index in the route of the car's last place on it.
     std::size_t routeProgress() const { return m_progress; }
+    /// Metres left to the waypoint (the planner's +624, which the HUD's
+    /// sat-nav readout shows, 0x8266cf20): the distance from the car to the
+    /// route's node after its place, plus the lengths of the route's
+    /// segments from there to the waypoint's node (0x82a4d4a8). It is worked
+    /// out whenever the car's node is found along the route (0x82a54cbc)
+    /// and kept otherwise; 0 from a new search until then (0x82a52b10) and
+    /// while there is no route. Verified: which points it sums. Inferred:
+    /// that the lengths are three-dimensional (the vector instructions were
+    /// not decoded; the fourth component is set to 0 before them) and that
+    /// the car's place is its body origin.
+    float routeDistance() const { return m_routeDistance; }
+    /// routeDistance() as first worked out after a search (the planner's
+    /// +620, set only while it is 0), which the map's route reveal is timed
+    /// by (0x828b6f0c).
+    float routeLength() const { return m_routeLength; }
 
     const NavFile& network() const { return *m_nav; }
     const NavLocator& locator() const { return *m_locator; }
@@ -273,6 +288,8 @@ private:
     /// there is no route.
     void plan();
     void follow();
+    /// 0x82a4d4a8 from the car's place on the route.
+    float remainingDistance() const;
 
     std::unique_ptr<NavFile> m_nav;
     std::unique_ptr<NavLocator> m_locator;
@@ -286,6 +303,8 @@ private:
     std::optional<std::uint32_t> m_goal;
     std::vector<std::uint32_t> m_route;
     std::size_t m_progress = 0;
+    float m_routeDistance = 0.0F;
+    float m_routeLength = 0.0F;
 };
 
 } // namespace fh::ui
