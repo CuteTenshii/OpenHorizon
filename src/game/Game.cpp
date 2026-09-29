@@ -1807,7 +1807,9 @@ ui::HudState Game::hudState(float dt) const
     state.rpm = car.engineRpm();
     state.redlineRpm = spec.redlineRpm;
     state.maxRpm = std::max(spec.torqueCurveMaxRpm, spec.redlineRpm);
-    const DrivingAssists& assists = player().physics->assists();
+    // The lights show an assist at work, as the game's HUD does, not its
+    // setting.
+    const AssistActivity& assists = player().physics->assistActivity();
     state.absOn = assists.abs;
     state.stmOn = assists.stabilityControl;
     state.tcsOn = assists.tractionControl;

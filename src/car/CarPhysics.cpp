@@ -734,15 +734,14 @@ float CarPhysics::applyAssists(const CarControls& controls, float dt)
         m_wheelBrake[static_cast<std::size_t>(w)] = controls.brake;
         m_absTimer[static_cast<std::size_t>(w)] += dt;
     }
-    if (m_assists.stabilityControl) {
-        applyStabilityManagement();
-    }
-    applyAbs(controls);
+    m_assistActivity.stabilityControl = m_assists.stabilityControl && applyStabilityManagement();
+    m_assistActivity.abs = applyAbs(controls);
     m_tcsCut = m_assists.tractionControl ? tractionControlCut() : 0.0F;
+    m_assistActivity.tractionControl = m_tcsCut > 0.0F && controls.throttle > 0.0F;
     return controls.throttle * (1.0F - m_tcsCut);
 }
 
-void CarPhysics::applyStabilityManagement()
+bool CarPhysics::applyStabilityManagement()
 {
     // 0x82DEEF80: above StabilityManageSpeed while rolling forwards, the
     // rear tyres' average normalised slip angle past STMSlipMin brakes one
@@ -751,14 +750,14 @@ void CarPhysics::applyStabilityManagement()
     // tarmac) scales the speed; surfaces are not told apart here.
     const float threshold = m_spec.assistSettings.stabilityManageSpeedMph * kMphToMs;
     if (glm::dot(m_velocity, m_velocity) < threshold * threshold || forwardSpeed() < 0.0F) {
-        return;
+        return false;
     }
     const float rearSlip = 0.5F * (normalisedSlip(RearLeft) + normalisedSlip(RearRight));
     const float magnitude = std::abs(rearSlip);
     const float lower = std::min(m_spec.stmSlipMin, m_spec.stmSlipMax);
     const float upper = std::max(m_spec.stmSlipMin, m_spec.stmSlipMax);
     if (magnitude < m_spec.stmSlipMin || upper <= lower) {
-        return;
+        return false;
     }
     const float amount = std::clamp((magnitude - lower) / (upper - lower), 0.0F, 1.0F);
     // The game brakes its wheels 0 and 3 when the average is positive and 1
@@ -779,9 +778,10 @@ void CarPhysics::applyStabilityManagement()
         float& brake = m_wheelBrake[static_cast<std::size_t>(w)];
         brake = std::max(brake - amount * 0.5F, 0.0F);
     }
+    return amount > 0.0F;
 }
 
-void CarPhysics::applyAbs(const CarControls& controls)
+bool CarPhysics::applyAbs(const CarControls& controls)
 {
     // 0x82DF8630: with ABS on, or with it off and the pedal at
     // NoABSBrakeTravel, a braked wheel whose normalised slip passes the
@@ -790,7 +790,7 @@ void CarPhysics::applyAbs(const CarControls& controls)
     // the full-steer value by the steering input.
     const AssistSettings& settings = m_spec.assistSettings;
     if (!m_assists.abs && controls.brake < settings.noAbsBrakeTravel) {
-        return;
+        return false;
     }
     const float steer = std::min(std::abs(controls.steer), 1.0F);
     const auto blend = [steer](float noSteer, float fullSteer) { return noSteer + (fullSteer - noSteer) * steer; };
@@ -806,11 +806,13 @@ void CarPhysics::applyAbs(const CarControls& controls)
         rear = blend(settings.noAbsSlipRearNoSteer, settings.noAbsSlipRearFullSteer);
         duration = settings.noAbsDisableTime;
     }
+    bool released = false;
     for (int w = 0; w < kWheels; ++w) {
         const auto index = static_cast<std::size_t>(w);
         float& brake = m_wheelBrake[index];
         float& timer = m_absTimer[index];
         if (timer < duration) {
+            released = released || brake > 0.0F;
             brake = 0.0F;
             continue;
         }
@@ -823,6 +825,7 @@ void CarPhysics::applyAbs(const CarControls& controls)
         if ((slip > release && roll <= 0.0F) || (slip < -release && roll >= 0.0F)) {
             brake = 0.0F;
             timer = 0.0F;
+            released = true;
         } else if (!m_wheels[index].onGround) {
             // A wheel in the air restarts the release time, so its brake
             // lets go from the next step. On this step the game also caps
@@ -831,6 +834,7 @@ void CarPhysics::applyAbs(const CarControls& controls)
             timer = 0.0F;
         }
     }
+    return released;
 }
 
 float CarPhysics::tractionControlCut() const

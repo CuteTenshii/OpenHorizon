@@ -65,6 +65,18 @@ struct DrivingAssists {
     bool speedSensitiveSteering = true;
 };
 
+/// Which assists acted on the last physics step, for the HUD's assist
+/// lights: the game lights them while an assist is working, not while it
+/// is merely switched on.
+struct AssistActivity {
+    /// A braked wheel's brake was let go of.
+    bool abs = false;
+    /// Traction control cut the throttle.
+    bool tractionControl = false;
+    /// Stability management braked a pair of wheels.
+    bool stabilityControl = false;
+};
+
 /// The rigid-body simulation of one car: chassis, four suspensions and tyres,
 /// engine, clutch, gearbox and differentials, driven by a CarSpec.
 ///
@@ -120,6 +132,7 @@ public:
 
     const CarSpec& spec() const { return m_spec; }
     DrivingAssists& assists() { return m_assists; }
+    const AssistActivity& assistActivity() const { return m_assistActivity; }
 
     /// Car-space origin and orientation in the world.
     glm::vec3 position() const;
@@ -211,8 +224,10 @@ private:
     /// (stability management, then ABS) and returns the throttle traction
     /// control leaves.
     float applyAssists(const CarControls& controls, float dt);
-    void applyStabilityManagement();
-    void applyAbs(const CarControls& controls);
+    /// Returns true when it braked.
+    bool applyStabilityManagement();
+    /// Returns true when it let go of a braked wheel.
+    bool applyAbs(const CarControls& controls);
     float tractionControlCut() const;
     /// Wheel slip ratio over the tyre's peak slip ratio.
     float normalisedSlipRatio(int wheel) const;
@@ -270,6 +285,7 @@ private:
     /// since ABS last released it.
     std::array<float, kWheels> m_wheelBrake{};
     std::array<float, kWheels> m_absTimer{};
+    AssistActivity m_assistActivity;
     float m_accumulator = 0.0F;
 };
 
