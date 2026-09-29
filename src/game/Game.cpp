@@ -462,6 +462,16 @@ CarControls Game::readPlayerControls(float /*dt*/)
         controls.throttle = 1.0F;
         controls.steer = 0.15F * std::sin(m_time * 0.4F);
     }
+    // A stopped car with neither pedal pressed holds itself on the
+    // handbrake, so it does not roll away on a slope. This is not the
+    // game's rule (its physics and assist step have none; its parking
+    // brake is only set around UI and event hand-overs) but asked for by
+    // players; the 1 m/s threshold is chosen, not from the game.
+    constexpr float kHoldSpeed = 1.0F;
+    if (m_playerPlaced && controls.throttle == 0.0F && controls.brake == 0.0F
+        && std::abs(player().physics->forwardSpeed()) < kHoldSpeed) {
+        controls.handbrake = 1.0F;
+    }
     return controls;
 }
 
