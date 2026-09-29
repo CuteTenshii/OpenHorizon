@@ -67,6 +67,8 @@ add_subdirectory(world)
 find_package(Freetype REQUIRED)
 
 add_library(fh1engine STATIC
+    game/ActivationFlares.cpp
+    game/ActivationFlares.h
     game/Activities.cpp
     game/Activities.h
     game/ActivityProps.cpp

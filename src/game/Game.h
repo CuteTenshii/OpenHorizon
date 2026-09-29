@@ -10,6 +10,7 @@
 #include "carmodel/CarModel.h"
 #include "data/Database.h"
 #include "data/StringTable.h"
+#include "game/ActivationFlares.h"
 #include "game/Activities.h"
 #include "game/ActivityProps.h"
 #include "game/AiDriver.h"
@@ -192,6 +193,10 @@ public:
     /// World chunks of activation zones' set dressing drawn after the last
     /// frame.
     std::size_t activityPropChunksDrawn() const { return m_activityProps ? m_activityProps->chunksDrawn() : 0; }
+    /// The particle manager; null when the effects could not be loaded.
+    const particles::ParticleManager* particleManager() const { return m_particles ? &*m_particles : nullptr; }
+    /// The flares of the free-roam event starts' activation zones.
+    const ActivationFlares& activationFlares() const { return m_activationFlares; }
     /// Times the profile has been written since the game started.
     std::size_t profileSaves() const { return m_profileSaves; }
     /// Where the time of the frames goes, per part of the frame; the perf
@@ -485,6 +490,8 @@ private:
         std::optional<float> maxSpeed;
         /// The zone's set dressing in m_activityProps.
         std::optional<std::size_t> props;
+        /// The zone's flare in m_activationFlares.
+        std::size_t flare = 0;
     };
     std::vector<EventStart> m_eventStarts;
     /// The start the player is standing in, if any.
@@ -493,6 +500,7 @@ private:
     std::optional<SpeedTraps> m_speedTraps;
     std::optional<Outposts> m_outposts;
     std::unique_ptr<ActivityProps> m_activityProps;
+    ActivationFlares m_activationFlares;
     /// The discovered outpost whose zone the player is in, if any.
     std::optional<std::size_t> m_nearbyOutpost;
     /// The player's profile and where it is kept; missing when the schema

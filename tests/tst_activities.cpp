@@ -5,11 +5,14 @@
 
 #include "TestHarness.h"
 
+#include "game/ActivationFlares.h"
 #include "game/Activities.h"
 #include "game/ActivityProps.h"
 #include "game/GameObjects.h"
 #include "game/Outposts.h"
 #include "game/SpeedTraps.h"
+#include "particles/ParticleEmitters.h"
+#include "particles/ParticleManager.h"
 #include "vfs/Vfs.h"
 
 #include <glm/glm.hpp>
@@ -17,6 +20,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -203,6 +207,68 @@ TEST(colorado_activities)
 }
 
 } // namespace
+
+// Every career event zone of Colorado has its flare in ParticleEmitters.xml,
+// named after the zone's object. A zone burns it while enabled with the
+// player's car within 500 m (0x8298dcf0, 0x8298dbe8), and puts it out when
+// disabled, as in a race, or when the car leaves.
+TEST(an_enabled_zone_burns_its_flare_while_the_car_is_within_500_m)
+{
+    const char* dir = gameDir();
+    if (dir == nullptr) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const fh::ActivityCatalogue catalogue = fh::ActivityCatalogue::load(vfs, "colorado");
+    const fh::particles::ParticleEmitterSet set = fh::particles::ParticleEmitterSet::load(vfs, "colorado");
+    std::size_t zones = 0;
+    std::size_t withFlare = 0;
+    for (const fh::Activity* activity : catalogue.ofType("ActivityCareerEventActivation")) {
+        for (const fh::ActivityZone& zone : activity->zones) {
+            ++zones;
+            withFlare += set.findSimple(fh::ActivationFlares::flareId(zone.object)) != nullptr ? 1 : 0;
+        }
+    }
+    CHECK(zones >= 88);
+    CHECK_EQ(withFlare, std::size_t{88});
+
+    const fh::GameObjects objects = fh::GameObjects::load(vfs, "colorado");
+    const fh::GameObject* fr04 = objects.find("FR04");
+    CHECK(fr04 != nullptr);
+    if (fr04 == nullptr) {
+        return;
+    }
+    fh::particles::ParticleManager particles = fh::particles::ParticleManager::load(vfs);
+    particles.placeSimpleEmitters(vfs, set);
+    const fh::particles::SimpleEmitterState* emitter = particles.simpleEmitter("FR04_flare");
+    CHECK(emitter != nullptr);
+    if (emitter == nullptr) {
+        return;
+    }
+    // The flare stands by its zone's object.
+    CHECK(glm::distance(emitter->position, fr04->position) < 20.0F);
+
+    fh::ActivationFlares flares;
+    const std::size_t zone = flares.add("FR04", fr04->position);
+    const glm::vec3 near = fr04->position + glm::vec3(0.0F, 0.0F, 499.0F);
+    const glm::vec3 far = fr04->position + glm::vec3(0.0F, 0.0F, 501.0F);
+    flares.update(near, particles);
+    CHECK(!flares.burning(zone));
+    flares.setEnabled(zone, true);
+    flares.update(far, particles);
+    CHECK(!flares.burning(zone));
+    flares.update(near, particles);
+    CHECK(flares.burning(zone) && emitter->running);
+    flares.setEnabled(zone, false);
+    flares.update(near, particles);
+    CHECK(!flares.burning(zone) && !emitter->running);
+    flares.setEnabled(zone, true);
+    flares.update(near, particles);
+    CHECK(emitter->running);
+    flares.update(std::nullopt, particles);
+    CHECK(!emitter->running);
+}
 
 int main(int argc, char** argv)
 {

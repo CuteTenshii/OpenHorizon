@@ -1,6 +1,7 @@
 #include "Game.h"
 
 #include "base/Log.h"
+#include "particles/ParticleEmitters.h"
 #include "render/Gl.h"
 #include "render/GlProgram.h"
 #include "ui/Minimap.h"
@@ -1712,13 +1713,24 @@ void Game::loadActivities()
         if (!zone || object == nullptr || zone->first->type != "ActivityCareerEventActivation") {
             continue;
         }
-        EventStart start{i, object->position, zone->second->radius, zone->second->maxSpeed, std::nullopt};
+        EventStart start{i, object->position, zone->second->radius, zone->second->maxSpeed, std::nullopt,
+            m_activationFlares.add(zone->second->object, object->position)};
         if (zone->second->isActivation) {
             start.props = m_activityProps->addGroup(ActivityProps::zoneNames(zone->second->object, *m_objects));
         }
         m_eventStarts.push_back(start);
     }
     logInfo("races: {} of {} can be started from free roam", m_eventStarts.size(), m_events.size());
+    // The zones' flares, and the other SimpleEmitters gameplay switches, are
+    // placed by the track's ParticleEmitters.xml.
+    if (m_particles) {
+        try {
+            m_particles->placeSimpleEmitters(m_vfs, particles::ParticleEmitterSet::load(m_vfs, m_options.track));
+            logInfo("particles: {} gameplay emitters", m_particles->simpleEmitters().size());
+        } catch (const std::exception& e) {
+            logWarning("particle emitters: {}", e.what());
+        }
+    }
     m_speedTraps = SpeedTraps::build(*m_activities, *m_objects);
     m_outposts = Outposts::build(*m_activities, *m_objects);
     // The texts are the Activities table's, and the speed traps' names are
@@ -1746,6 +1758,16 @@ void Game::updateEventStarts()
                 m_activityProps->setShown(*start.props, !m_race);
             }
         }
+    }
+    for (const EventStart& start : m_eventStarts) {
+        m_activationFlares.setEnabled(start.flare, !m_race);
+    }
+    if (m_particles) {
+        std::optional<glm::vec3> car;
+        if (m_playerPlaced) {
+            car = player().physics->position();
+        }
+        m_activationFlares.update(car, *m_particles);
     }
     if (m_race || !m_playerPlaced) {
         return;
