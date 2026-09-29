@@ -773,6 +773,38 @@ TEST(presentation_applies_slides_tracks_and_overrides)
     CHECK(!scene.present(1));
 }
 
+// The evaluated state is kept between reads (the HUD's stackers read and
+// set attributes dozens of times a frame); every kind of change must still
+// show in the next read.
+TEST(presentation_reads_follow_every_change)
+{
+    Presentation scene(buildScene());
+    const int root = scene.find("");
+    const float shown = scene.attribute(1, attr::PositionX).value_or(-1.0F);
+    scene.setAttribute(1, attr::PositionX, 3.0F);
+    CHECK_NEAR(scene.attribute(1, attr::PositionX).value_or(-1.0F), 3.0, 1e-5);
+    scene.clearAttribute(1, attr::PositionX);
+    CHECK_NEAR(scene.attribute(1, attr::PositionX).value_or(-1.0F), shown, 1e-5);
+
+    CHECK(scene.goToSlide(root, "Move"));
+    CHECK_NEAR(scene.attribute(1, attr::PositionX).value_or(-1.0F),
+        scene.trackValue(1, attr::PositionX, 0.0F).value_or(-2.0F), 1e-3);
+    scene.update(0.25F);
+    CHECK_NEAR(scene.attribute(1, attr::PositionX).value_or(-1.0F),
+        scene.trackValue(1, attr::PositionX, 250.0F).value_or(-2.0F), 1e-3);
+    scene.seek(root, 750.0F);
+    CHECK_NEAR(scene.attribute(1, attr::PositionX).value_or(-1.0F),
+        scene.trackValue(1, attr::PositionX, 750.0F).value_or(-2.0F), 1e-3);
+    // An override set while the state is kept wins over the track.
+    scene.setAttribute(1, attr::PositionX, -4.0F);
+    scene.update(0.1F);
+    CHECK_NEAR(scene.attribute(1, attr::PositionX).value_or(-1.0F), -4.0, 1e-5);
+
+    scene.reset();
+    CHECK_EQ(scene.currentSlide(root), std::string("Show"));
+    CHECK_NEAR(scene.attribute(1, attr::PositionX).value_or(-1.0F), shown, 1e-5);
+}
+
 /// A scene whose root component has one slide per play mode, all 1000 ms
 /// long, and a model below it.
 SceneFiles buildTimelineScene()

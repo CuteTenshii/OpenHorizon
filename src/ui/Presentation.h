@@ -335,6 +335,9 @@ private:
     /// String value of a behaviour element's attribute, or nullptr.
     const std::string* stringAttribute(int element, std::uint32_t hash) const;
     State computeState() const;
+    /// The evaluated state, computed when something it depends on changed
+    /// since it was last asked for.
+    const State& currentState() const;
     int layerOf(int element) const;
 
     SceneFiles m_files;
@@ -348,6 +351,9 @@ private:
     std::vector<FiredEvent> m_firedEvents;
     mutable std::vector<glm::mat4> m_world;
     mutable std::vector<char> m_present;
+    /// The last evaluated state; empty once a slide, a timeline's time, a
+    /// hidden flag or a cleared value has changed since.
+    mutable std::optional<State> m_state;
 };
 
 } // namespace fh::ui

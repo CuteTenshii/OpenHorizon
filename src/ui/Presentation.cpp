@@ -339,6 +339,7 @@ std::vector<Presentation::FiredEvent> Presentation::takeFiredEvents()
 
 void Presentation::enterSlide(Timeline& timeline, int slideIndex)
 {
+    m_state.reset();
     timeline.current = slideIndex;
     timeline.elapsedMs = 0.0F;
     timeline.timeMs = 0.0F;
@@ -349,10 +350,18 @@ void Presentation::enterSlide(Timeline& timeline, int slideIndex)
 
 void Presentation::resolveTime(Timeline& timeline)
 {
+    // A timeline holding still keeps the evaluated state, so a HUD whose
+    // components have all stopped does not recompute it every frame.
+    const auto setTime = [&](float ms) {
+        if (ms != timeline.timeMs) {
+            timeline.timeMs = ms;
+            m_state.reset();
+        }
+    };
     const Slide& slide = slideOf(timeline);
     const float duration = static_cast<float>(slide.durationMs);
     if (duration <= 0.0F) {
-        timeline.timeMs = 0.0F;
+        setTime(0.0F);
         return;
     }
     if (timeline.elapsedMs < 0.0F) {
@@ -367,14 +376,14 @@ void Presentation::resolveTime(Timeline& timeline)
             }
             // Holding at the end: forwards passes end at the duration,
             // ping-pong ones at the end of the last pass's direction.
-            timeline.timeMs = slide.pingPong && slide.playCount % 2 == 0 ? 0.0F : duration;
+            setTime(slide.pingPong && slide.playCount % 2 == 0 ? 0.0F : duration);
             return;
         }
     }
     const float passes = std::floor(timeline.elapsedMs / duration);
     const float within = timeline.elapsedMs - passes * duration;
     const bool backwards = slide.pingPong && static_cast<long long>(passes) % 2 == 1;
-    timeline.timeMs = backwards ? duration - within : within;
+    setTime(backwards ? duration - within : within);
 }
 
 int Presentation::findBelow(int element, std::string_view name) const
@@ -712,20 +721,29 @@ void Presentation::setText(int element, std::string text)
 void Presentation::setAttribute(int element, std::uint32_t hash, float value)
 {
     m_nodes[static_cast<std::size_t>(element)].overrides.set(hash, value);
+    // Overrides apply last, so the evaluated state takes the value as is:
+    // the HUD's stackers set and read attributes in turn every frame, and
+    // must not force a whole new evaluation each time.
+    if (m_state) {
+        m_state->values[static_cast<std::size_t>(element)].set(hash, value);
+    }
 }
 
 void Presentation::clearAttribute(int element, std::uint32_t hash)
 {
     m_nodes[static_cast<std::size_t>(element)].overrides.erase(hash);
+    m_state.reset();
 }
 
 void Presentation::setHidden(int element, bool hidden)
 {
     m_nodes[static_cast<std::size_t>(element)].hidden = hidden;
+    m_state.reset();
 }
 
 void Presentation::reset()
 {
+    m_state.reset();
     for (Node& node : m_nodes) {
         node.overrides = Values();
         node.textOverride.reset();
@@ -872,9 +890,17 @@ int Presentation::layerOf(int element) const
     return 0;
 }
 
+const Presentation::State& Presentation::currentState() const
+{
+    if (!m_state) {
+        m_state = computeState();
+    }
+    return *m_state;
+}
+
 std::vector<DrawItem> Presentation::evaluate() const
 {
-    const State state = computeState();
+    const State& state = currentState();
     std::vector<DrawItem> items;
     std::vector<float> opacity(m_nodes.size(), 1.0F);
     int order = 0;
@@ -1020,8 +1046,7 @@ std::vector<DrawItem> Presentation::evaluate() const
 
 std::optional<float> Presentation::attribute(int element, std::uint32_t hash) const
 {
-    const State state = computeState();
-    if (const float* value = state.values[static_cast<std::size_t>(element)].find(hash)) {
+    if (const float* value = currentState().values[static_cast<std::size_t>(element)].find(hash)) {
         return *value;
     }
     return std::nullopt;
@@ -1043,7 +1068,7 @@ std::string Presentation::text(int element) const
     if (node.textOverride) {
         return *node.textOverride;
     }
-    const State state = computeState();
+    const State& state = currentState();
     const auto it = state.texts.find(static_cast<std::uint32_t>(element));
     return it != state.texts.end() ? it->second : node.baseText;
 }
