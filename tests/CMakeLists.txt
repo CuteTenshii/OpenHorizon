@@ -64,3 +64,17 @@ target_link_libraries(tst_particles PRIVATE fh1particles)
 # The disc test inside (every effect file, the surface table and the effect
 # list the game loads) runs only when FH1_GAME_DIR names an extracted disc.
 add_test(NAME tst_particles COMMAND tst_particles)
+
+add_executable(tst_car TestHarness.h tst_car.cpp)
+target_compile_options(tst_car PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_car PRIVATE fh1data)
+# The real cars on a flat or tilted plane; skips without FH1_GAME_DIR.
+add_test(NAME tst_car COMMAND tst_car)
+
+add_executable(tst_scenarios TestHarness.h tst_scenarios.cpp)
+target_compile_options(tst_scenarios PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_scenarios PRIVATE fh1engine)
+# The whole game offscreen with scripted controls; skips without
+# FH1_GAME_DIR. Each scenario loads the game, so they take minutes.
+add_test(NAME tst_scenarios COMMAND tst_scenarios)
+set_tests_properties(tst_scenarios PROPERTIES TIMEOUT 1800)
