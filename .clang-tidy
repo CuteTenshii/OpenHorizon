@@ -16,6 +16,9 @@
 # - concurrency-mt-unsafe: getenv and friends are only called at startup.
 # - performance-no-int-to-ptr: OpenGL takes buffer offsets as pointers.
 # - performance-enum-size: enums are not stored in bulk.
+# - optin.performance.Padding: member order sets construction and
+#   destruction order (the audio device outlives the engine sounds), so it
+#   is not reordered for size.
 Checks: >
   -*,
   bugprone-*,
@@ -31,6 +34,7 @@ Checks: >
   -bugprone-random-generator-seed,
   clang-analyzer-*,
   -clang-analyzer-security.FloatLoopCounter,
+  -clang-analyzer-optin.performance.Padding,
   cppcoreguidelines-slicing,
   cppcoreguidelines-virtual-class-destructor,
   misc-redundant-expression,
