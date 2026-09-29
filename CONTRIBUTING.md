@@ -1,67 +1,75 @@
 # Contributing
 
-This is a native reimplementation of Forza Horizon (Xbox 360, 2012) for Linux and Windows. Before changing anything, keep three rules in mind.
+Thanks for looking into this. The project rebuilds Forza Horizon (Xbox 360, 2012) as a native program for Linux and Windows, reading the game's own files from your copy of the disc. Most of the work is finding out what the original game does, then writing that down in code.
 
-1. **New code, the game's data.** The engine, the simulation and the rules are written here from scratch. Recompiling or emulating the Xbox 360 executable (XenonRecomp and similar) is out of scope. The game's own files are read at runtime from your copy of the disc.
-2. **No game data in the repository.** Tests and tools read the disc from `FH1_GAME_DIR`; nothing extracted from it is committed.
-3. **Nothing guessed.** Every asset use, formula and value comes from the game's data (scenes, XML, gamedb, curves) or from its code. When something cannot be found, leave it out and say so, in the code and in the commit. Do not fill the gap with a value that looks right.
+## The three rules
 
-## Getting set up
+1. **Write new code.** The engine, the physics and the game rules are written here. Recompiling or emulating the Xbox 360 executable (XenonRecomp and similar tools) is out of scope.
+2. **Commit no game data.** Nothing extracted from the disc goes into the repository, not even a small sample for a test. Tests and tools read the disc from wherever you keep it.
+3. **Guess nothing.** Every value, formula, asset and rule comes from the game's data or its code. If you can't find where the game gets something, leave it out and write down what is missing. A number that merely looks right is a bug that hides.
 
-You need the build dependencies listed in the [README](README.md#build), an extracted copy of the disc, and optionally [Lefthook](https://lefthook.dev) for the git hooks.
+The third rule shapes most reviews. "It looks like the game" isn't enough; "the game reads this from `TrackSettings.xml`" or "the executable does this at `0x82443D50`" is.
+
+## Getting started
+
+You need:
+
+- the build dependencies listed in the [README](README.md#build), for Linux or Windows;
+- an extracted copy of the disc;
+- optionally, [Lefthook](https://lefthook.dev) for the git hooks.
 
 ```sh
 cmake -S . -B build -G Ninja
 cmake --build build
-./build/src/fh1 --game /path/to/extracted/disc   # remembered in the settings file (README, "Run")
-lefthook install                                 # once, to enable the hooks
+./build/src/fh1 --game /path/to/extracted/disc   # the path is remembered afterwards
+lefthook install                                 # once, to turn on the hooks
 ```
 
-To work on the executable itself you need its decrypted, flat image (big-endian PowerPC, base `0x82000000`). AGENTS.md shows how to disassemble ranges of it; string references built with `lis`/`addi` pairs lead to most loaders. The author's notes on maps and paths and the `forza-map-manager` format notes cover many track formats.
+## Finding out what the game does
 
-## Evidence
+Start from the data. The disc holds far more than the renderer needs: scenes for every screen, XML for time of day, tracks, effects and game modes, and a SQLite database (`media/db/gamedb.slt`) with every car, event and unlock. The tools in the [README](README.md#tools) read these the way the engine does. `fh1vfs DISC list media/ui` is a good first step when you're looking for something.
 
-- Doc comments (`///`) on formats and game rules say what was verified, and against what: the file, the function address, the count of files checked. They also say what is inferred and why.
-- A constant that had to be fitted or chosen says so in its comment, with the reason. It should be the exception.
-- Commit messages explain why the change is needed and what it rests on, including anything still unknown.
+When the data isn't enough, read the executable. You need a decrypted, flat image of it (big-endian PowerPC, loaded at `0x82000000`) and a PowerPC disassembler such as `powerpc-linux-gnu-objdump`. Searching the image for a file name or a string you've seen in the data, then following the code that loads its address, finds most loaders.
 
-## Testing
+Write down what you find where the code uses it: a `///` comment that says what you verified and against what (a file, a function address, how many files you checked), and what you inferred and why. The next person, possibly you in six months, will rely on that distinction.
 
-Everything runs offscreen: never open a window on the desktop or play sound through the speakers while testing.
+## Fixing a bug
+
+Reproduce it in a test before fixing it. The test should fail on the current code and pass with your fix. There are three kinds:
+
+- **Unit tests** (`tst_world`, `tst_audio`, `tst_ui` and the rest, one per module) check formats and logic, with small hand-built data and, when the disc is available, the real files.
+- **Car checks** (`tst_car`) put real cars on a flat or tilted plane to test how they drive. If you change anything in `src/car`, also run `fh1cartest DISC all`, which compares acceleration, braking, grip and top speed with the figures the game recorded; its medians shouldn't get worse.
+- **Scenarios** (`tst_scenarios`) run the whole game at a fixed frame rate with scripted controls: a start point, a race or a time of day, then throttle, steering and button presses. They check the game's own state. Most player-reported bugs end up here.
+
+The tests run the game offscreen: no window opens and no sound plays.
 
 ```sh
-scripts/run-tests.sh                          # configure, build, every test (disc tests when FH1_GAME_DIR is set) but the slow ones
-scripts/run-tests.sh build -R tst_scenarios   # one test executable
-scripts/run-tests.sh build -L slow            # the slow tests: every sample and every shader on the disc
+scripts/run-tests.sh                          # configure, build, run everything except the slow tests
+scripts/run-tests.sh build -R tst_scenarios   # one test program
+scripts/run-tests.sh build -L slow            # checks that go through every file of a kind on the disc
 scripts/capture.sh shots/ pause               # run the scenarios matching "pause" and keep their screenshots
 ```
 
-There are three kinds of test, all plain executables on `tests/TestHarness.h`:
+Tests that need the disc skip themselves unless `FH1_GAME_DIR` points to it. The scripts also find the path you gave the game.
 
-- **Unit tests** (`tst_world`, `tst_audio`, `tst_ui` and others, one per module): formats and logic, with synthetic data and, when `FH1_GAME_DIR` is set, the real disc. A check of every file of a kind that takes more than a few seconds is a `SLOW_TEST`, left out of the default run and of the pre-push hook (`scripts/run-tests.sh build -L slow` runs them); keep beside it a fast check of a few files chosen for their variety, and say in a comment why those.
-- **Car checks** (`tst_car`): the real cars on a flat or tilted plane, for how they drive. `fh1cartest DISC all` compares the performance figures with the ones the game recorded; run it after any change to `src/car` and do not let its medians get worse without a reason from the game's code.
-- **Scenarios** (`tst_scenarios`): the whole game, offscreen at a fixed 60 Hz, driven by scripted controls through `Game::frame(input, dt)` and checked through the game's own state. A `Session` sets the game up through `GameOptions` (start point, race, time of day), holds controls for a while (`run(seconds, {.throttle = 1.0F, .steer = -0.3F})`), presses buttons (`press(Button::Start)`) and asserts.
+## Writing code
 
-When a player reports a bug, first write the scenario or car check that shows it failing, then fix it. The game has no command-line options for testing; if a test needs to set something up or read something out, add it to `GameOptions` or to the game's read-only accessors.
+- C++20, formatted with the repository's `.clang-format`. Much of the code predates that file, so format the lines you change, not whole files.
+- No compiler warnings, and clean under `.clang-tidy`. If a check is wrong for this code, turn it off in `.clang-tidy` and say why.
+- The code builds on Linux and Windows. Anything that differs between the two lives in `src/base/Host`. The README explains the Windows build.
+- Comments say why, not what. Don't leave TODOs: finish the piece, or leave it out and note what's missing in the code and in [TODO.md](TODO.md).
+- Text the player sees comes from the game's string tables whenever the game has it.
+- Units come from the data and are converted once, when loading, with the evidence for the conversion next to it. The database, for example, stores weight in hundreds of kilograms and springs in newtons per millimetre.
+- The game's world is left-handed: see [Coordinates](README.md#coordinates) in the README.
 
-## Code
+## Commits and pull requests
 
-- C++20, the style in `.clang-format`. The pre-commit hook checks the lines you are committing (`git clang-format --staged`); much of the code predates the file, so do not reformat whole files in unrelated changes.
-- Portable to Linux (GCC, Clang) and Windows (MSVC, MinGW-w64). Anything that differs between the two goes through `src/base/Host.h`: the player's folders, environment variables, positional reads, durable writes. Text turns into a path with `fh::pathFromUtf8` and back with `fh::pathToUtf8`, never `path::string()`, which throws on Windows for names outside the code page. No POSIX headers or compiler extensions elsewhere. To check the Windows side from Linux, cross-build with the `windows-mingw-cross` preset (MinGW-w64 and vcpkg) and run the tests under Wine.
-- Zero compiler warnings, and clean under `.clang-tidy` (`cmake --build build --target tidy`). If a check is wrong for this code, switch it off in `.clang-tidy` with the reason, rather than suppressing it line by line.
-- Comments explain why, not what. No TODOs or placeholders: write the whole thing, or leave it out and document what is missing.
-- User-visible text comes from the game's string tables wherever the game has it, and avoids em dashes otherwise.
-- Units come from the data and are converted once, on load, with the evidence for the conversion in a comment (gamedb stores curb weight in 100 kg, springs in N/mm, and so on).
-- World space is the game's, left-handed: x east, y up, z north. Car space is x right, y up, z forward.
+Keep one change per commit, and use the message to explain why it's needed and what it rests on, including anything still unknown. A short scoped subject reads well in the log, for example `fix(car): hold a stopped car on the handbrake`.
 
-## Layout
+Every commit should build and pass the tests on its own. With Lefthook installed, the commit hook checks the formatting of the lines you're committing, and the push hook builds and runs the tests except the scenarios, the performance test and the slow tests. Run those with the scripts above when your change could affect them.
 
-Each area is a library in its own `src/` folder with its own `CMakeLists.txt`, test executable and, often, an inspection tool in `tools/`. AGENTS.md describes how they fit together and how a frame is drawn. When several people or agents work at once, each keeps to its own folder; shared files (`src/CMakeLists.txt`, `tests/CMakeLists.txt`, `src/game/Game.cpp`) are edited in place, never rewritten from an older copy.
-
-## Commits
-
-One concern per commit, with a message that says why. A short scoped subject such as `fix(car): hold a stopped car on the handbrake` reads well in the log. Every commit should build and pass the tests on its own; the pre-push hook builds and runs everything except the scenarios, the perf test and the slow tests.
+GitHub builds and tests every push and pull request, but without the game's files, so the tests that need the disc only run on your machine. Say in the pull request which of them you ran.
 
 ## What to work on
 
-[TODO.md](TODO.md) lists what is in progress, what comes next and what has not been started, with what is known about each item.
+[TODO.md](TODO.md) lists what is being worked on, what comes next and what hasn't started, with what is already known about each item. Pick something, or fix whatever bothers you most while playing.
