@@ -15,6 +15,8 @@ add_library(fh1ui STATIC
     PauseMenu.h
     Presentation.cpp
     Presentation.h
+    SuperStacker.cpp
+    SuperStacker.h
     TitleScreen.cpp
     TitleScreen.h
     UiRenderer.cpp
