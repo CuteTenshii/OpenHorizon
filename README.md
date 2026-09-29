@@ -33,7 +33,10 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build
 ctest --test-dir build
 FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build   # also the checks against real data
+scripts/run-tests.sh                                           # all of it offscreen, scenarios included
 ```
+
+Contributing, testing and the git hooks: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Run
 
@@ -41,7 +44,7 @@ FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build   # also the checks 
 ./build/src/fh1 --game /path/to/extracted/disc
 ```
 
-The folder is the disc root (holding `default.xex` and `media`) or the `media` folder itself. It is remembered in `~/.config/fh1-native/settings.ini`, so later starts need no options. `fh1 --help` lists the rest: `--car ALF_8C_08` picks the car by its media name, `--race FR02` starts a race at once, `--time 20:00` sets the time of day, `--manual` gives a manual gearbox.
+The folder is the disc root (holding `default.xex` and `media`) or the `media` folder itself. It is remembered in `~/.config/fh1-native/settings.ini`, so later starts need no options. The other options are the window size (`--width`, `--height`, `--fullscreen`) and `--log`. Choices without a menu yet are settings in the same file: `car = ALF_8C_08` (a media name), `manual = true` for a manual gearbox, `metric = false` for miles per hour, `debug = true` for a verbose console.
 
 Each run writes its full log, debug messages included, to `~/.local/state/fh1-native/fh1.log` (under `$XDG_STATE_HOME` when set), replacing the previous one; `--log FILE` writes it elsewhere. Attach it to bug reports.
 
