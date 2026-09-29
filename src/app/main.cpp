@@ -1,10 +1,12 @@
 // Forza Horizon, running natively: reads the settings and the few command
-// line options a player needs, opens the window and runs the game. Testing
-// goes through the scenario tests and scripts/, not through options here.
+// line options a player needs, opens the window, shows the title screen and
+// runs the game. Testing goes through the scenario tests and scripts/, not
+// through options here.
 
 #include "base/Log.h"
 #include "base/Settings.h"
 #include "game/Game.h"
+#include "game/Title.h"
 #include "platform/Window.h"
 
 #include <cstdio>
@@ -98,6 +100,14 @@ int main(int argc, char** argv)
 
     try {
         fh::Window win(window);
+        {
+            // Closed before the game starts, so its audio device is gone
+            // when the game opens one.
+            fh::Title title(win, options.gameDir);
+            if (!title.run()) {
+                return 0;
+            }
+        }
         fh::Game game(win, options);
         return game.run();
     } catch (const std::exception& e) {

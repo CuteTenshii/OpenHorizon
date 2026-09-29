@@ -11,11 +11,13 @@
 #include "car/CarPhysics.h"
 #include "game/Game.h"
 #include "game/Race.h"
+#include "game/Title.h"
 #include "platform/Input.h"
 #include "platform/Window.h"
 
 #include <glm/glm.hpp>
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -134,6 +136,46 @@ float headingOf(const glm::vec3& direction)
 float angleBetween(float a, float b)
 {
     return std::abs(std::remainder(a - b, 2.0F * 3.14159265F));
+}
+
+/// Runs the title screen at the scenarios' fixed step with `button` held
+/// for one frame, then released.
+bool titleFrames(fh::Title& title, float seconds, std::optional<fh::Button> button = std::nullopt)
+{
+    std::array<bool, static_cast<std::size_t>(fh::Button::Count)> previous{};
+    bool started = false;
+    for (float t = 0.0F; t < seconds; t += kStep) {
+        fh::InputState input;
+        input.previousButtons = previous;
+        if (button && t == 0.0F) {
+            input.buttons[static_cast<std::size_t>(*button)] = true;
+        }
+        previous = input.buttons;
+        started = title.frame(input, kStep);
+    }
+    return started;
+}
+
+TEST(titleScreenWaitsForStart)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Title title(window(), dir);
+    CHECK(!titleFrames(title, 3.0F));
+    CHECK(title.screen().hasMovie());
+    CHECK(title.screen().musicPlaying());
+    CHECK(title.screen().pressStartText() == "PRESS START");
+
+    // B is polled on the title and does nothing.
+    CHECK(!titleFrames(title, 0.5F, fh::Button::B));
+    // Past the 53 s idle the screen fades out and comes straight back.
+    CHECK(!titleFrames(title, 60.0F));
+    CHECK(title.screen().isShown());
+
+    CHECK(titleFrames(title, kStep, fh::Button::Start));
+    CHECK(!title.screen().musicPlaying());
 }
 
 TEST(pauseMenuStopsTheGame)
