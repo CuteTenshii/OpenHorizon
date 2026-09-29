@@ -11,9 +11,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace fh::render {
@@ -58,14 +62,45 @@ public:
     bool setMatrix(XenosConstants& constants, std::string_view name, const glm::mat4& value) const;
     bool setBool(XenosConstants& constants, std::string_view name, bool value) const;
 
+    /// The float registers a named constant takes in every stage that
+    /// declares it, looked up once so a draw can fill the constant without
+    /// a search by name. Empty when the program does not declare it.
+    struct FloatSlot {
+        struct Register {
+            xenos::ShaderStage stage = xenos::ShaderStage::Vertex;
+            std::uint32_t index = 0;
+            std::uint32_t count = 0;
+        };
+        std::vector<Register> registers;
+
+        bool empty() const { return registers.empty(); }
+    };
+    FloatSlot floatSlot(std::string_view name) const;
+    /// set() through a slot of this program.
+    static void set(XenosConstants& constants, const FloatSlot& slot, const glm::vec4& value);
+    /// setMatrix() through a slot of this program.
+    static void setMatrix(XenosConstants& constants, const FloatSlot& slot, const glm::mat4& value);
+
     /// Loads the literal constants and the constant table defaults of both
     /// stages into `constants`.
     void loadDefaults(XenosConstants& constants) const;
 
 private:
+    struct NameHash {
+        using is_transparent = void;
+        std::size_t operator()(std::string_view name) const { return std::hash<std::string_view>{}(name); }
+    };
+
+    /// The constants of `name`, as indices into the source's table.
+    const std::vector<std::uint32_t>* constantsNamed(std::string_view name) const;
+
     std::string m_name;
     xenos::ShaderProgramSource m_source;
     Shader m_shader;
+    /// A car's draw sets some thirty constants by name for each of its
+    /// passes, a hundred or so draws a car; a hash lookup keeps that from
+    /// comparing every name of the table each time.
+    std::unordered_map<std::string, std::vector<std::uint32_t>, NameHash, std::equal_to<>> m_byName;
 };
 
 /// A stream buffer holding the constant blocks of a batch of draws: blocks
@@ -78,8 +113,17 @@ public:
     XenosConstantStream& operator=(const XenosConstantStream&) = delete;
 
     void clear();
-    /// Appends `constants`; returns the index to bind() after upload().
-    std::size_t append(const XenosConstants& constants);
+    /// Appends a copy of `base` edited by `fill`, which is handed the copy
+    /// where it sits in the stream's staging memory. Filling it there, rather
+    /// than filling a XenosConstants and appending that, saves copying its
+    /// 8 KB twice for every draw. Returns the index to bind() after
+    /// upload().
+    template <typename Fill> std::size_t append(const XenosConstants& base, Fill&& fill)
+    {
+        XenosConstants& constants = stage(base);
+        std::forward<Fill>(fill)(constants);
+        return commit(constants);
+    }
     void upload();
     /// Binds the blocks of draw `index` to the translator's binding points.
     void bind(std::size_t index) const;
@@ -93,11 +137,19 @@ private:
     };
 
     std::size_t place(std::size_t bytes);
+    /// A copy of `base` in the staging memory, valid until the next place().
+    XenosConstants& stage(const XenosConstants& base);
+    /// Records the draw of the constants stage() returned last.
+    std::size_t commit(const XenosConstants& constants);
 
     GLuint m_buffer = 0;
     std::size_t m_capacity = 0;
     std::size_t m_alignment = 256;
-    std::vector<std::uint8_t> m_staging;
+    /// Not a vector: growing one zeroes the bytes that are about to be
+    /// overwritten, 8 KB a draw.
+    std::unique_ptr<std::uint8_t[]> m_staging;
+    std::size_t m_stagingSize = 0;
+    std::size_t m_stagingCapacity = 0;
     std::vector<Offsets> m_draws;
 };
 

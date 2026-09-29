@@ -6,9 +6,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <map>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 namespace fh::render {
@@ -133,6 +136,26 @@ GLenum blendFactor(std::uint32_t d3dBlend)
     }
 }
 
+/// The shaders' names of CarRenderer's per-draw constants, in the order of
+/// CarRenderer::Constant.
+constexpr std::array kConstantNames{"matWVP", "matWV", "matW", "matWInvT", "c_eyePosWS", "c_vsEyePosWS",
+    "pack_partPosition", "uv1CompressionFactors", "uv2CompressionFactors", "shCompressionFactors", "vsUseMorph",
+    "q_ModelToWorld", "tireRotation", "wheelScale", "tireDeformation", "wheelMorph", "shDirectionalLightI",
+    "shHemisphericalLightR", "shHemisphericalLightG", "shHemisphericalLightB", "shDirectionalColour", "PaintColor"};
+
+/// Texture units whose binding draw() tracks, enough for every sampler
+/// unit of the translated shaders (pixel s0 to s15, vertex from 16).
+constexpr std::size_t kTextureUnits = 32;
+/// Stands for a unit whose binding is not known yet: no texture name.
+constexpr GLuint kUnknownTexture = ~GLuint{0};
+bool sameBlend(const std::optional<carmodel::CarPass::Blend>& a, const std::optional<carmodel::CarPass::Blend>& b)
+{
+    if (a.has_value() != b.has_value()) {
+        return false;
+    }
+    return !a || (a->enable == b->enable && a->source == b->source && a->destination == b->destination);
+}
+
 /// The pass's own blending, else the engine's for its draw list: none for
 /// the opaque list, source alpha over the scene for the translucent one
 /// (the state the detail glass techniques' Cleanup passes restore).
@@ -231,6 +254,19 @@ CarRenderer::CarRenderer(const carmodel::CarModel& model)
         m_textures.push_back(Texture::fromMipChain(texture.chain, colour));
     }
 
+    m_boundsCentre = (mesh.boundsMin + mesh.boundsMax) * 0.5F;
+    m_boundsRadius = glm::length(mesh.boundsMax - mesh.boundsMin) * 0.5F;
+    // Every vertex of a corner part lies within its box's half diagonal of
+    // the box's centre, and that centre within the tyre's half diagonal of
+    // the hub, the tyre being the corner's largest part; twice the largest
+    // half diagonal of a corner part therefore holds the whole corner
+    // however the wheel steers, spins or travels on its suspension.
+    for (const CarMesh::Batch& batch : m_batches) {
+        if (m_nodes[batch.node].corner) {
+            m_wheelRadius = std::max(m_wheelRadius, 2.0F * m_ranges[batch.range].packedPosition.w);
+        }
+    }
+
     m_cache = programCache();
     std::map<std::string, std::vector<Pass>> byTechnique;
     m_passes.reserve(m_batches.size());
@@ -250,12 +286,32 @@ CarRenderer::CarRenderer(const carmodel::CarModel& model)
                     auto defaults = std::make_shared<XenosConstants>();
                     pass.program->loadDefaults(*defaults);
                     pass.defaults = std::move(defaults);
+                    auto slots = std::make_shared<ConstantSlots>();
+                    static_assert(kConstantNames.size() == std::tuple_size_v<ConstantSlots>);
+                    for (std::size_t i = 0; i < slots->size(); ++i) {
+                        (*slots)[i] = pass.program->floatSlot(kConstantNames[i]);
+                    }
+                    pass.slots = std::move(slots);
                     passes.push_back(std::move(pass));
                 }
             }
             known = byTechnique.emplace(batch.technique, std::move(passes)).first;
         }
         m_passes.push_back(known->second);
+        for (Pass& pass : m_passes.back()) {
+            pass.textures = texturesFor(*pass.program, batch);
+            for (const bool metallic : {false, true}) {
+                ParameterSlots& resolved = pass.parameters[metallic ? 1 : 0];
+                if (const ShaderSettings::Parameters* parameters = settingsFor(batch, metallic)) {
+                    for (const auto& [name, value] : *parameters) {
+                        XenosProgram::FloatSlot slot = pass.program->floatSlot(name);
+                        if (!slot.empty()) {
+                            resolved.emplace_back(std::move(slot), value);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -284,39 +340,46 @@ glm::mat4 CarRenderer::nodeTransform(const CarMesh::Node& node, const CarPose& p
     return glm::translate(m, -node.pivot);
 }
 
-void CarRenderer::fillConstants(XenosConstants& c, const XenosProgram& program, const FrameParams& frame,
-    const CarPose& pose, const CarMesh::Batch& batch, const glm::mat4& world) const
+void CarRenderer::fillConstants(XenosConstants& c, const Pass& pass, const FrameParams& frame, const CarPose& pose,
+    const CarMesh::Batch& batch, const glm::mat4& world) const
 {
+    const ConstantSlots& slots = *pass.slots;
+    const auto set = [&](Constant constant, const glm::vec4& value) {
+        XenosProgram::set(c, slots[static_cast<std::size_t>(constant)], value);
+    };
+    const auto setMatrix = [&](Constant constant, const glm::mat4& value) {
+        XenosProgram::setMatrix(c, slots[static_cast<std::size_t>(constant)], value);
+    };
     const carmodel::CarMesh::Node& node = m_nodes[batch.node];
     // The game's world is ours mirrored in Z (the carbins store the game's
     // coordinates; see CarBin), so its matrices are ours conjugated by that
     // mirror and its vectors ours with z negated.
     const glm::mat4 gameWorld = kMirrorZ * world;
     const glm::mat4 gameView = frame.view * kMirrorZ;
-    program.setMatrix(c, "matWVP", frame.projection * gameView * gameWorld);
-    program.setMatrix(c, "matWV", gameView * gameWorld);
-    program.setMatrix(c, "matW", gameWorld);
-    program.setMatrix(c, "matWInvT", glm::inverseTranspose(gameWorld));
+    setMatrix(Constant::WorldViewProjection, frame.projection * gameView * gameWorld);
+    setMatrix(Constant::WorldView, gameView * gameWorld);
+    setMatrix(Constant::World, gameWorld);
+    setMatrix(Constant::WorldInverseTranspose, glm::inverseTranspose(gameWorld));
     const glm::vec4 eye(glm::vec3(kMirrorZ * glm::vec4(frame.cameraPosition, 1.0F)), 1.0F);
-    program.set(c, "c_eyePosWS", eye);
-    program.set(c, "c_vsEyePosWS", eye);
+    set(Constant::EyePosition, eye);
+    set(Constant::VertexEyePosition, eye);
 
     const CarMesh::VertexRange& range = m_ranges[batch.range];
-    program.set(c, "pack_partPosition", range.packedPosition);
-    program.set(c, "uv1CompressionFactors", batch.uv0);
-    program.set(c, "uv2CompressionFactors", batch.uv1);
-    program.set(c, "shCompressionFactors", glm::vec4(node.shCompression, 0.0F, 0.0F));
+    set(Constant::PartPosition, range.packedPosition);
+    set(Constant::Uv1Compression, batch.uv0);
+    set(Constant::Uv2Compression, batch.uv1);
+    set(Constant::ShCompression, glm::vec4(node.shCompression, 0.0F, 0.0F));
     // x = 0 skips the damage morph fetch: the undamaged shape (0x82E69640
     // sets 1 only for parts with morph data on a damaged car's LOD).
-    program.set(c, "vsUseMorph", glm::vec4(0.0F));
-    program.set(c, "q_ModelToWorld", modelToWorldQuaternion(gameWorld));
+    set(Constant::UseMorph, glm::vec4(0.0F));
+    set(Constant::ModelToWorld, modelToWorldQuaternion(gameWorld));
     // The wheel shaders spin and scale the wheel themselves; the node's
     // matrix already does both, so they get the identity: a rotation of
     // (cos 0, sin 0) and a scale of 1 (see the tread and rim_V2 vertex
     // shaders, which multiply the radial and axial coordinates by
     // wheelScale.x and .y and rotate by tireRotation.xy).
-    program.set(c, "tireRotation", glm::vec4(1.0F, 0.0F, 0.0F, 0.0F));
-    program.set(c, "wheelScale", glm::vec4(1.0F, 1.0F, 0.0F, 0.0F));
+    set(Constant::TireRotation, glm::vec4(1.0F, 0.0F, 0.0F, 0.0F));
+    set(Constant::WheelScale, glm::vec4(1.0F, 1.0F, 0.0F, 0.0F));
     // The tyre shaders clamp the height of every vertex, after that
     // rotation, to between tireDeformation.z - .y + 0.001 and .y, flattening
     // the tyre where it meets the ground (tire and tread vertex shaders,
@@ -324,35 +387,63 @@ void CarRenderer::fillConstants(XenosConstants& c, const XenosProgram& program, 
     // bounds of plus and minus the part's box diagonal leave every vertex
     // where the model has it. wheelMorph.z scales a bulge that then stays 0.
     const float reach = range.packedPosition.w;
-    program.set(c, "tireDeformation", glm::vec4(0.0F, reach, -reach, 0.0F));
-    program.set(c, "wheelMorph", glm::vec4(0.0F));
+    set(Constant::TireDeformation, glm::vec4(0.0F, reach, -reach, 0.0F));
+    set(Constant::WheelMorph, glm::vec4(0.0F));
 
     const SceneLighting& light = frame.lighting;
     const glm::mat3 toObject = glm::transpose(rotationPart(gameWorld));
     const glm::vec3 up(0.0F, 1.0F, 0.0F);
     const glm::vec3 toSun = mirrorZ(-light.sunDirection);
     const glm::vec4 directional = rotateSh(shDirectional(toSun), toObject);
-    program.set(c, "shDirectionalLightI", directional);
-    program.set(c, "shHemisphericalLightR",
+    set(Constant::ShDirectionalLight, directional);
+    set(Constant::ShHemisphereRed,
         rotateSh(shHemisphere(up, light.carAmbientTop.r, light.carAmbientBottom.r), toObject));
-    program.set(c, "shHemisphericalLightG",
+    set(Constant::ShHemisphereGreen,
         rotateSh(shHemisphere(up, light.carAmbientTop.g, light.carAmbientBottom.g), toObject));
-    program.set(c, "shHemisphericalLightB",
+    set(Constant::ShHemisphereBlue,
         rotateSh(shHemisphere(up, light.carAmbientTop.b, light.carAmbientBottom.b), toObject));
-    program.set(c, "shDirectionalColour", directionalColour(light.sunColour));
+    set(Constant::ShDirectionalColour, directionalColour(light.sunColour));
 
     // Material parameters of the settings files, then the car's paint.
-    const ShaderSettings::Parameters* parameters = settingsFor(batch, pose);
-    if (parameters != nullptr) {
-        for (const auto& [name, value] : *parameters) {
-            program.set(c, name, value);
-        }
+    for (const auto& [slot, value] : pass.parameters[pose.metallic ? 1 : 0]) {
+        XenosProgram::set(c, slot, value);
     }
-    program.set(c, "PaintColor", glm::vec4(pose.paint, 1.0F));
-
+    set(Constant::PaintColour, glm::vec4(pose.paint, 1.0F));
     c.system.streamBase[kVertexStream] = range.byteOffset / 4;
     c.system.streamBase[kMorphStream] = 0;
     c.system.streamBase[kDamageStream] = 0;
+}
+
+bool CarRenderer::inView(const FrameParams& frame, const CarPose& pose) const
+{
+    // The frustum's side planes and the plane through the eye facing along
+    // the view (w = 0), from the rows of the view-projection matrix; unlike
+    // the near and far planes they do not depend on the depth convention
+    // (reversed, infinite far plane).
+    const glm::mat4 viewProjection = frame.projection * frame.view;
+    const glm::vec4 row0(viewProjection[0][0], viewProjection[1][0], viewProjection[2][0], viewProjection[3][0]);
+    const glm::vec4 row1(viewProjection[0][1], viewProjection[1][1], viewProjection[2][1], viewProjection[3][1]);
+    const glm::vec4 row3(viewProjection[0][3], viewProjection[1][3], viewProjection[2][3], viewProjection[3][3]);
+    const std::array<glm::vec4, 5> planes{row3 + row0, row3 - row0, row3 + row1, row3 - row1, row3};
+    const auto outside = [&](const glm::vec3& centre, float radius) {
+        for (const glm::vec4& plane : planes) {
+            const float length = glm::length(glm::vec3(plane));
+            if (length > 0.0F && glm::dot(glm::vec3(plane), centre) + plane.w < -radius * length) {
+                return true;
+            }
+        }
+        return false;
+    };
+    // Car space is not scaled, so radii carry over to world space.
+    if (!outside(glm::vec3(pose.body * glm::vec4(m_boundsCentre, 1.0F)), m_boundsRadius)) {
+        return true;
+    }
+    for (const glm::vec3& hub : pose.hubs) {
+        if (m_wheelRadius > 0.0F && !outside(glm::vec3(pose.body * glm::vec4(hub, 1.0F)), m_wheelRadius)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool CarRenderer::wheelBatchVisible(const CarMesh::Batch& batch, const CarPose& pose) const
@@ -373,18 +464,20 @@ bool CarRenderer::wheelBatchVisible(const CarMesh::Batch& batch, const CarPose& 
     return rpm / m_blurRim->maxRpm >= m_blurRim->blendStart;
 }
 
-const ShaderSettings::Parameters* CarRenderer::settingsFor(const CarMesh::Batch& batch, const CarPose& pose) const
+const ShaderSettings::Parameters* CarRenderer::settingsFor(const CarMesh::Batch& batch, bool metallic) const
 {
     const bool wheel = m_nodes[batch.node].kind == CarMesh::NodeKind::Wheel;
     if (wheel) {
         return m_tyreSettings.technique(batch.technique);
     }
-    const auto finish = m_settings.find(pose.metallic ? "Metallic" : "Normal");
+    const auto finish = m_settings.find(metallic ? "Metallic" : "Normal");
     return finish == m_settings.end() ? nullptr : finish->second.technique(batch.technique);
 }
 
-void CarRenderer::bindTextures(const XenosProgram& program, const CarMesh::Batch& batch) const
+std::vector<std::pair<GLuint, GLuint>> CarRenderer::texturesFor(
+    const XenosProgram& program, const CarMesh::Batch& batch) const
 {
+    std::vector<std::pair<GLuint, GLuint>> units;
     for (const xenos::SamplerBinding& sampler : program.source().samplers) {
         // Samplers without a file are render targets the game draws each
         // frame (reflections, mirrors) and read as black here. The shadow
@@ -396,21 +489,24 @@ void CarRenderer::bindTextures(const XenosProgram& program, const CarMesh::Batch
                 texture = &m_textures[index];
             }
         }
-        if (sampler.dimension == xenos::TextureDimension::Cube) {
-            // The environment cube maps are rendered at run time and not
-            // produced here; an empty unit reads as black.
-            glBindTextureUnit(sampler.unit, 0);
-            continue;
-        }
-        texture->bind(sampler.unit);
+        // The environment cube maps are rendered at run time and not
+        // produced here; an empty unit reads as black.
+        const bool cube = sampler.dimension == xenos::TextureDimension::Cube;
+        units.emplace_back(sampler.unit, cube ? 0 : texture->id());
     }
+    return units;
 }
 
 void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool translucent)
 {
     m_draws.clear();
     m_stream.clear();
-    XenosConstants constants;
+    // Traffic spawns all round the player; most of it is off screen, and
+    // sending its hundred or so draws would cost the CPU as much as a car
+    // in view.
+    if (!inView(frame, pose)) {
+        return;
+    }
     for (const CarMesh::Node& node : m_nodes) {
         const glm::mat4 world = nodeTransform(node, pose) * node.placement;
         // Placements flip the file's Z; one that also mirrors (right-hand
@@ -422,9 +518,9 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
                 continue;
             }
             for (const Pass& pass : m_passes[b]) {
-                constants = *pass.defaults;
-                fillConstants(constants, *pass.program, frame, pose, batch, world);
-                m_draws.push_back({b, &pass, m_stream.append(constants), mirrored});
+                const std::size_t constants = m_stream.append(
+                    *pass.defaults, [&](XenosConstants& c) { fillConstants(c, pass, frame, pose, batch, world); });
+                m_draws.push_back({b, &pass, constants, mirrored});
             }
         }
     }
@@ -445,12 +541,37 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
     if (translucent) {
         glDepthMask(GL_FALSE);
     }
+    // A car's draws mostly repeat the state of the one before (the same
+    // program, blending and textures across a node's batches), and the
+    // driver's cost is in validating changed state at each draw, so only
+    // what changes is set.
+    const std::optional<carmodel::CarPass::Blend>* blend = nullptr;
+    std::optional<bool> mirrored;
+    GLuint program = 0;
+    std::array<GLuint, kTextureUnits> bound{};
+    bound.fill(kUnknownTexture);
     for (const Draw& draw : m_draws) {
         const CarMesh::Batch& batch = m_batches[draw.batch];
-        applyBlend(draw.pass->blend, translucent);
-        glFrontFace(draw.mirrored ? GL_CW : GL_CCW);
-        glUseProgram(draw.pass->program->id());
-        bindTextures(*draw.pass->program, batch);
+        if (blend == nullptr || !sameBlend(*blend, draw.pass->blend)) {
+            applyBlend(draw.pass->blend, translucent);
+            blend = &draw.pass->blend;
+        }
+        if (mirrored != draw.mirrored) {
+            glFrontFace(draw.mirrored ? GL_CW : GL_CCW);
+            mirrored = draw.mirrored;
+        }
+        if (program != draw.pass->program->id()) {
+            program = draw.pass->program->id();
+            glUseProgram(program);
+        }
+        for (const auto& [unit, texture] : draw.pass->textures) {
+            if (unit >= bound.size() || bound[unit] != texture) {
+                glBindTextureUnit(unit, texture);
+                if (unit < bound.size()) {
+                    bound[unit] = texture;
+                }
+            }
+        }
         m_stream.bind(draw.constants);
         glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT,
             reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t)));

@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace fh::render {
@@ -60,11 +61,50 @@ public:
     void draw(const FrameParams& frame, const CarPose& pose, bool translucent);
 
 private:
+    /// The constants fillConstants() sets on every draw.
+    enum class Constant : std::size_t {
+        WorldViewProjection,
+        WorldView,
+        World,
+        WorldInverseTranspose,
+        EyePosition,
+        VertexEyePosition,
+        PartPosition,
+        Uv1Compression,
+        Uv2Compression,
+        ShCompression,
+        UseMorph,
+        ModelToWorld,
+        TireRotation,
+        WheelScale,
+        TireDeformation,
+        WheelMorph,
+        ShDirectionalLight,
+        ShHemisphereRed,
+        ShHemisphereGreen,
+        ShHemisphereBlue,
+        ShDirectionalColour,
+        PaintColour,
+        Count,
+    };
+    using ConstantSlots = std::array<XenosProgram::FloatSlot, static_cast<std::size_t>(Constant::Count)>;
+    /// A material parameter of the settings files, resolved to its program's
+    /// registers.
+    using ParameterSlots = std::vector<std::pair<XenosProgram::FloatSlot, glm::vec4>>;
+
     struct Pass {
         std::shared_ptr<XenosProgram> program;
+        /// The program's slots for the per-draw constants.
+        std::shared_ptr<const ConstantSlots> slots;
         std::optional<carmodel::CarPass::Blend> blend;
         /// The program's constants with its defaults and literals loaded.
         std::shared_ptr<const XenosConstants> defaults;
+        /// The texture on each of the program's sampler units for the
+        /// batch the pass draws; 0 leaves a unit empty.
+        std::vector<std::pair<GLuint, GLuint>> textures;
+        /// The material parameters for the batch the pass draws, for the
+        /// normal finish and the metallic one.
+        std::array<ParameterSlots, 2> parameters;
     };
 
     struct Draw {
@@ -75,11 +115,16 @@ private:
     };
 
     glm::mat4 nodeTransform(const carmodel::CarMesh::Node& node, const CarPose& pose) const;
-    void fillConstants(XenosConstants& c, const XenosProgram& program, const FrameParams& frame, const CarPose& pose,
+    void fillConstants(XenosConstants& c, const Pass& pass, const FrameParams& frame, const CarPose& pose,
         const carmodel::CarMesh::Batch& batch, const glm::mat4& world) const;
-    void bindTextures(const XenosProgram& program, const carmodel::CarMesh::Batch& batch) const;
-    const carmodel::ShaderSettings::Parameters* settingsFor(
-        const carmodel::CarMesh::Batch& batch, const CarPose& pose) const;
+    /// The (unit, texture) pairs `program` samples for `batch`.
+    std::vector<std::pair<GLuint, GLuint>> texturesFor(
+        const XenosProgram& program, const carmodel::CarMesh::Batch& batch) const;
+    const carmodel::ShaderSettings::Parameters* settingsFor(const carmodel::CarMesh::Batch& batch, bool metallic) const;
+
+    /// Whether any of the car can be in the view: its bounding spheres
+    /// against the sides of the view frustum and the plane of the eye.
+    bool inView(const FrameParams& frame, const CarPose& pose) const;
 
     /// Whether batch `batch` of a corner node shows at the wheel's speed.
     bool wheelBatchVisible(const carmodel::CarMesh::Batch& batch, const CarPose& pose) const;
@@ -94,6 +139,11 @@ private:
     /// Passes of each batch's technique, by batch.
     std::vector<std::vector<Pass>> m_passes;
     std::vector<Texture> m_textures;
+    /// A sphere round the model at rest (car space), and the radius round
+    /// each hub that holds everything turning or steering with the wheel.
+    glm::vec3 m_boundsCentre{0.0F};
+    float m_boundsRadius = 0.0F;
+    float m_wheelRadius = 0.0F;
     Texture m_black;
     Texture m_white;
     GLuint m_vao = 0;
