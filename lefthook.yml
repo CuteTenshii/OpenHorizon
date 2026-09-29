@@ -1,0 +1,17 @@
+# Git hooks, run by Lefthook (https://lefthook.dev). Install Lefthook, then
+# run `lefthook install` once in the repository.
+
+pre-commit:
+  commands:
+    # Only the lines being committed: much of the code predates
+    # .clang-format, and reformatting whole files would bury real changes.
+    format:
+      glob: "*.{cpp,h}"
+      run: git clang-format --staged --diff --quiet {staged_files}
+
+pre-push:
+  commands:
+    # Builds and runs the unit tests and car checks; the scenario tests take
+    # minutes and run with scripts/run-tests.sh.
+    tests:
+      run: scripts/run-tests.sh build -E tst_scenarios
