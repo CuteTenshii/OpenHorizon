@@ -1,6 +1,6 @@
 # Contributing
 
-This is a native Linux reimplementation of Forza Horizon (Xbox 360, 2012). Before changing anything, keep three rules in mind.
+This is a native reimplementation of Forza Horizon (Xbox 360, 2012) for Linux and Windows. Before changing anything, keep three rules in mind.
 
 1. **New code, the game's data.** The engine, the simulation and the rules are written here from scratch. Recompiling or emulating the Xbox 360 executable (XenonRecomp and similar) is out of scope. The game's own files are read at runtime from your copy of the disc.
 2. **No game data in the repository.** Tests and tools read the disc from `FH1_GAME_DIR`; nothing extracted from it is committed.
@@ -13,7 +13,7 @@ You need the build dependencies listed in the [README](README.md#build), an extr
 ```sh
 cmake -S . -B build -G Ninja
 cmake --build build
-./build/src/fh1 --game /path/to/extracted/disc   # remembered in ~/.config/fh1-native/settings.ini
+./build/src/fh1 --game /path/to/extracted/disc   # remembered in the settings file (README, "Run")
 lefthook install                                 # once, to enable the hooks
 ```
 
@@ -47,6 +47,7 @@ When a player reports a bug, first write the scenario or car check that shows it
 ## Code
 
 - C++20, the style in `.clang-format`. The pre-commit hook checks the lines you are committing (`git clang-format --staged`); much of the code predates the file, so do not reformat whole files in unrelated changes.
+- Portable to Linux (GCC, Clang) and Windows (MSVC, MinGW-w64). Anything that differs between the two goes through `src/base/Host.h`: the player's folders, environment variables, positional reads, durable writes. Text turns into a path with `fh::pathFromUtf8` and back with `fh::pathToUtf8`, never `path::string()`, which throws on Windows for names outside the code page. No POSIX headers or compiler extensions elsewhere. To check the Windows side from Linux, cross-build with the `windows-mingw-cross` preset (MinGW-w64 and vcpkg) and run the tests under Wine.
 - Zero compiler warnings, and clean under `.clang-tidy` (`cmake --build build --target tidy`). If a check is wrong for this code, switch it off in `.clang-tidy` with the reason, rather than suppressing it line by line.
 - Comments explain why, not what. No TODOs or placeholders: write the whole thing, or leave it out and document what is missing.
 - User-visible text comes from the game's string tables wherever the game has it, and avoids em dashes otherwise.

@@ -1,6 +1,6 @@
 # fh1-native-x64
 
-A native Linux reimplementation of Forza Horizon (Xbox 360, 2012), written in C++20 from scratch. It reads the game's own files from your copy of the disc at runtime. It does not recompile or emulate the Xbox 360 executable: the engine, the car simulation and the game rules are new code, built from the game's data and from studying how the original uses it.
+A native reimplementation of Forza Horizon (Xbox 360, 2012) for Linux and Windows, written in C++20 from scratch. It reads the game's own files from your copy of the disc at runtime. It does not recompile or emulate the Xbox 360 executable: the engine, the car simulation and the game rules are new code, built from the game's data and from studying how the original uses it.
 
 The repository contains no game data.
 
@@ -26,7 +26,9 @@ The repository contains no game data.
 
 ## Build
 
-Requires CMake 3.21 or newer, a C++20 compiler (GCC 13 or Clang 17), and the development packages of SDL3, OpenGL, glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavutil, libswresample), zlib and shaderc (used only by the shader check tool and its test). The first configure downloads lzx and xds; `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` and `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>` build against local checkouts instead.
+### Linux
+
+Requires CMake 3.21 or newer, a C++20 compiler (GCC 13 or Clang 17), and the development packages of SDL3, OpenGL (with `GL/glcorearb.h`), glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavformat, libavutil), zlib and shaderc (used only by the shader check tool and its test). The first configure downloads lzx and xds; `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` and `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>` build against local checkouts instead.
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -36,6 +38,24 @@ FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build   # also the checks 
 scripts/run-tests.sh                                           # all of it offscreen, scenarios included
 ```
 
+### Windows
+
+Requires Visual Studio 2022 (the "Desktop development with C++" workload, which brings CMake and Ninja) and [vcpkg](https://github.com/microsoft/vcpkg). The dependencies are listed in `vcpkg.json` and pinned by its `builtin-baseline`; vcpkg builds them on the first configure, which takes a while (FFmpeg and shaderc are the long ones).
+
+1. Clone vcpkg and bootstrap it: `git clone https://github.com/microsoft/vcpkg C:\vcpkg`, then `C:\vcpkg\bootstrap-vcpkg.bat`.
+2. Set `VCPKG_ROOT` to that folder (`setx VCPKG_ROOT C:\vcpkg`, then open a new terminal).
+3. From a "Developer PowerShell for VS 2022":
+
+```powershell
+cmake --preset windows-release        # or windows-debug
+cmake --build --preset windows-release
+ctest --preset windows-release
+```
+
+Visual Studio can also open the folder directly and offers the same presets. The executables land in `build-windows\src` with the DLLs they need copied next to them.
+
+The Windows build is cross-compiled from Linux with MinGW-w64 and its tests run under Wine: the `windows-mingw-cross` preset, with `VCPKG_ROOT` set and MinGW-w64 GCC and nasm (for FFmpeg) installed. MSVC itself has not built this code yet.
+
 Contributing, testing and the git hooks: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Run
@@ -44,9 +64,20 @@ Contributing, testing and the git hooks: see [CONTRIBUTING.md](CONTRIBUTING.md).
 ./build/src/fh1 --game /path/to/extracted/disc
 ```
 
-The folder is the disc root (holding `default.xex` and `media`) or the `media` folder itself. It is remembered in `~/.config/fh1-native/settings.ini`, so later starts need no options. The other options are the window size (`--width`, `--height`, `--fullscreen`) and `--log`. Choices without a menu yet are settings in the same file: `car = ALF_8C_08` (a media name), `manual = true` for a manual gearbox, `metric = false` for miles per hour, `debug = true` for a verbose console.
+On Windows, `build-windows\src\fh1.exe --game D:\path\to\extracted\disc`.
 
-Each run writes its full log, debug messages included, to `~/.local/state/fh1-native/fh1.log` (under `$XDG_STATE_HOME` when set), replacing the previous one; `--log FILE` writes it elsewhere. Attach it to bug reports.
+The folder is the disc root (holding `default.xex` and `media`) or the `media` folder itself. It is remembered in the settings file (see below), so later starts need no options. The other options are the window size (`--width`, `--height`, `--fullscreen`) and `--log`. Choices without a menu yet are settings in the same file: `car = ALF_8C_08` (a media name), `manual = true` for a manual gearbox, `metric = false` for miles per hour, `debug = true` for a verbose console.
+
+Each run writes its full log, debug messages included, to `fh1.log`, replacing the previous one; `--log FILE` writes it elsewhere. Attach it to bug reports.
+
+Where the game keeps its files:
+
+| File | Linux | Windows |
+|------|-------|---------|
+| Settings (`settings.ini`) | `~/.config/fh1-native` (`$XDG_CONFIG_HOME`) | `%APPDATA%\fh1-native` |
+| Saved profile (`profile`) | `~/.local/share/fh1-native` (`$XDG_DATA_HOME`) | `%LOCALAPPDATA%\fh1-native` |
+| Log (`fh1.log`) | `~/.local/state/fh1-native` (`$XDG_STATE_HOME`) | `%LOCALAPPDATA%\fh1-native\logs` |
+| Shader cache (`shaders`) | `~/.cache/fh1-native` (`$XDG_CACHE_HOME`) | `%LOCALAPPDATA%\fh1-native\cache` |
 
 ### Controls
 

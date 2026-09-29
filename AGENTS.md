@@ -4,7 +4,7 @@ This file guides coding agents (and people) working in this repository.
 
 ## What this is
 
-A from-scratch native Linux (x86-64) reimplementation of Forza Horizon (Xbox 360, 2012) in C++20. It reads the game's own files from an extracted disc at runtime. Recompiling or emulating the Xbox 360 executable (XenonRecomp and similar tools) is out of scope by design: engine, simulation and rules are new code, informed by the game's data and by reading its code. The repository holds no game data.
+A from-scratch native reimplementation of Forza Horizon (Xbox 360, 2012) in C++20, for Linux (x86-64) and Windows (x64, MSVC or MinGW-w64 with vcpkg). It reads the game's own files from an extracted disc at runtime. Recompiling or emulating the Xbox 360 executable (XenonRecomp and similar tools) is out of scope by design: engine, simulation and rules are new code, informed by the game's data and by reading its code. The repository holds no game data.
 
 Knowledge sources outside the repo:
 - The extracted disc: pass it with `--game`, or set `FH1_GAME_DIR`; the game remembers it in its settings file.
@@ -26,6 +26,8 @@ cmake --build build --target format      # clang-format every source (.clang-for
 cmake --build build --target format-check
 cmake --build build --target tidy        # clang-tidy over the compilation database (.clang-tidy)
 ```
+
+Windows builds take their dependencies from `vcpkg.json` (set `VCPKG_ROOT`): `cmake --preset windows-release` with MSVC on Windows, or `cmake --preset windows-mingw-cross -B <dir>` from Linux with MinGW-w64 and nasm installed, whose tests then run under Wine (`WINEPATH` naming `vcpkg_installed/x64-mingw-dynamic-release/bin` and the MinGW runtime's `bin`; the same offscreen rules apply, and the GL cases skip there for want of a context).
 
 `lzx` and `xds` come from their git repos via FetchContent, pinned by commit in the root `CMakeLists.txt`. To work against local checkouts use `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` / `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>`.
 
@@ -61,7 +63,7 @@ Step-by-step procedures for recurring work live in `.agents/skills/<name>/SKILL.
 
 Libraries, bottom up (targets in `src/CMakeLists.txt` and per-folder `CMakeLists.txt`):
 
-- `fh1base` (`src/base`, `src/vfs`): logging with `std::format`, `BeReader` for bounds-checked big-endian reads (Xbox data is big-endian; FSB audio headers are the exception), `DataError`, a priority `JobPool`, settings. `Vfs` mounts the disc's loose files plus every archive in `media/zipmanifest.xml` at its own path minus `.zip` (so `media/physics.zip` provides `media/physics/...`), matching paths case-insensitively with or without `game:\`.
+- `fh1base` (`src/base`, `src/vfs`): `Host` for everything that differs between Linux and Windows (per-user folders, environment, UTF-8 paths, positional reads, durable writes), logging with `std::format`, `BeReader` for bounds-checked big-endian reads (Xbox data is big-endian; FSB audio headers are the exception), `DataError`, a priority `JobPool`, settings. `Vfs` mounts the disc's loose files plus every archive in `media/zipmanifest.xml` at its own path minus `.zip` (so `media/physics.zip` provides `media/physics/...`), matching paths case-insensitively with or without `game:\`.
 - `fh1data` (`src/data`, `src/car`): SQLite access to `media/db/gamedb.slt`, the LSB2 string tables (database text like `_&202713995` resolves through `Localisation`), `CarSpec` (a car's physics gathered from about fifteen linked gamedb tables, converted to SI) and `CarPhysics` (360 Hz vehicle model).
 - `fh1world` (`src/world`): track world formats (render models, PVS tables, hex zone grid, zone placements, procedural scatter sets, textures and shader vertex layouts), a `WorldIndex` of every drawable chunk, and `buildTileMesh`, which turns a list of chunks into GPU-ready interleaved geometry. `TrackWorld::load` ties them together.
 - `fh1collision` (`src/collision`): the game's `.fiz` collision meshes (surface type per triangle, per-route barrier triangles) indexed by the track's `.col`, and `surfaceTypes.xml`.
@@ -80,6 +82,7 @@ How a frame fits together (`game/Game.cpp`):
 
 - World space is the game's and is left-handed: x east, y up, z north. Car space: x right, y up, z forward, origin on the ground below the middle of the wheelbase. A positive rotation about y (as glm computes it) is a right turn. Render model files store Z negated; the parsers flip it. `Camera::view()` mirrors Z so OpenGL shows the world the right way round, and world triangles are wound so back-face culling works after that mirror.
 - Units come from the data: gamedb stores curb weight in 100 kg, springs in N/mm, dampers in kN·s/m, peak power in 100 W; aero forces are pounds-force at 100 mph. `CarSpec` converts on load, and each such conversion is commented with its evidence.
+- Code stays portable to Windows: OS-specific calls live in `src/base/Host.*` only, and text becomes a path through `fh::pathFromUtf8` / `fh::pathToUtf8` (never `path::string()` or a `std::string` constructor). Dependencies come from the system on Linux and from `vcpkg.json` on Windows; a new one goes in both, found as a CMake package first and through pkg-config second (see the root `CMakeLists.txt`).
 - Doc comments (`///`) on formats say which facts were verified against the data and which are inferred. Keep that distinction when extending them. Any fitted or guessed constant says so in its comment.
 - Comments explain why, not what; no decorative dividers, no TODO or placeholder comments. User-visible text avoids em dashes.
 - Commits follow Conventional Commits with the area as scope (`feat(car): ...`, `fix(render): ...`), one concern per commit, body explaining why.
