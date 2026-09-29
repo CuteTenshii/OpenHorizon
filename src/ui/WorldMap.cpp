@@ -1201,12 +1201,15 @@ void WorldMap::draw(int width, int height)
     // The renderer points the material's texture stage at its target
     // (0x82892a60); this material has no image of its own, so the target
     // becomes its one layer, mapped over the rectangle's UVs (v runs up
-    // the mesh, the target's rows down). The material's diffuse colour
-    // applies as it does to every textured material.
+    // the mesh, the target's rows down). The material's peach diffuse
+    // colour is not multiplied in: the render target stage replaces the
+    // material's colour, and multiplying it turned the map's natural
+    // greens and blues into a sepia desert, unlike the game.
     for (DrawItem& item : items) {
         if (item.isText || item.material != impl.viewportMaterial) {
             continue;
         }
+        item.model.color = glm::vec4(1.0F, 1.0F, 1.0F, item.model.color.a);
         if (item.model.layers.empty()) {
             item.model.layers.emplace_back();
         }
