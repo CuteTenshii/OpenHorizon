@@ -296,6 +296,15 @@ void Window::toggleFullscreen()
     SDL_SetWindowFullscreen(m_window, m_fullscreen);
 }
 
+void Window::setSize(int width, int height)
+{
+    SDL_SetWindowSize(m_window, width, height);
+    // The request is asynchronous on some video drivers; without the sync a
+    // frame drawn next could still see the old size.
+    SDL_SyncWindow(m_window);
+    SDL_GetWindowSizeInPixels(m_window, &m_width, &m_height);
+}
+
 void Window::setTitle(const std::string& title)
 {
     SDL_SetWindowTitle(m_window, title.c_str());

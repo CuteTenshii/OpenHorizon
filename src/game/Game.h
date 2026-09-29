@@ -102,6 +102,8 @@ public:
     const render::Camera& camera() const { return m_camera; }
     bool menuShown() const { return menuOpen(); }
     bool pauseShown() const { return m_pause && m_pause->isOpen(); }
+    /// The pause menu, or nullptr when its scenes could not be loaded.
+    const ui::PauseMenu* pauseMenu() const { return m_pause.get(); }
     bool mapShown() const { return m_map && m_map->isOpen(); }
     /// Whether the last frame drew the world (the map screen does not).
     bool worldDrawn() const { return m_worldDrawn; }

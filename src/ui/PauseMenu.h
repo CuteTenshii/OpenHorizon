@@ -125,6 +125,16 @@ struct PauseMenuEntry {
     std::string text;
 };
 
+/// How far right an entry's text and its brush stroke (the entry's Crisp
+/// Tape, the black stroke under the text) reach as last drawn, in the
+/// scene's design units: the text at its baseline, the stroke where its
+/// texture ends (SUPER_STACKER slides that texture along the tape rather
+/// than resizing the tape, so the tape's mesh reaches far past it).
+struct PauseEntryExtent {
+    float textRight = 0.0F;
+    float strokeRight = 0.0F;
+};
+
 /// The entries the builder (0x827de1b0) lists for `context`, in order,
 /// with their text from the string tables it names. Entries whose text is
 /// missing from the disc (downloadable content: HORIZON RALLY, CAR
@@ -178,6 +188,9 @@ public:
     int focus() const;
     /// Whether a confirmation message box is up.
     bool confirming() const;
+    /// The extents of the entries shown, in order, as the last draw() laid
+    /// them out; empty before the first draw.
+    std::vector<PauseEntryExtent> entryExtents() const;
 
 private:
     struct Impl;

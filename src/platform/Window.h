@@ -47,6 +47,9 @@ public:
     void setMouseCaptured(bool captured);
     bool mouseCaptured() const { return m_mouseCaptured; }
     void toggleFullscreen();
+    /// Resizes a windowed window to `width` x `height` and waits for the
+    /// change, so width() and height() report the new drawable size at once.
+    void setSize(int width, int height);
     void setTitle(const std::string& title);
 
     /// Sets the pad's rumble motors, each 0 to 1, for `milliseconds`.

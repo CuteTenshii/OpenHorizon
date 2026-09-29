@@ -14,6 +14,7 @@
 #include "game/Title.h"
 #include "platform/Input.h"
 #include "platform/Window.h"
+#include "ui/PauseMenu.h"
 
 #include <glm/glm.hpp>
 
@@ -22,9 +23,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -202,6 +206,53 @@ TEST(pauseMenuStopsTheGame)
     // B is the help bar's RESUME.
     session.press(fh::Button::B);
     CHECK(!session.game().pauseShown());
+}
+
+/// Every shown pause entry's text ends inside its brush stroke.
+void checkPauseEntriesFit(const fh::Game& game)
+{
+    const fh::ui::PauseMenu* menu = game.pauseMenu();
+    CHECK(menu != nullptr);
+    if (menu == nullptr) {
+        return;
+    }
+    const std::vector<fh::ui::PauseEntryExtent> extents = menu->entryExtents();
+    CHECK_EQ(extents.size(), menu->entries().size());
+    for (std::size_t i = 0; i < extents.size() && i < menu->entries().size(); ++i) {
+        if (extents[i].textRight > extents[i].strokeRight) {
+            std::fprintf(stderr, "  %s: text reaches %.1f, its stroke %.1f\n", menu->entries()[i].text.c_str(),
+                static_cast<double>(extents[i].textRight), static_cast<double>(extents[i].strokeRight));
+        }
+        CHECK(extents[i].textRight <= extents[i].strokeRight);
+    }
+}
+
+// A player's pause menu at a desktop size showed MULTIPLAYER running off
+// its bar. The window sizes are the common desktop ones; the menu is laid
+// out in the scene's design units, so it must fit at every one.
+TEST(pauseMenuEntriesFitTheirBars)
+{
+    if (!gameDir()) {
+        return;
+    }
+    Session session({});
+    CHECK(session.waitForCar());
+    session.run(1.0F, {});
+    session.press(fh::Button::Start);
+    for (const auto& [width, height] : {std::pair{1600, 900}, std::pair{1920, 1080}, std::pair{2560, 1440}}) {
+        window().setSize(width, height);
+        session.run(1.0F, {});
+        CHECK(session.game().pauseShown());
+        checkPauseEntriesFit(session.game());
+        session.capture(std::format("pause_{}x{}", width, height));
+    }
+    // The focused entry plays its own slide (FOCUSBELOW) with the pink bar.
+    session.press(fh::Button::DpadDown);
+    session.run(1.0F, {});
+    CHECK_EQ(session.game().pauseMenu()->focus(), 1);
+    checkPauseEntriesFit(session.game());
+    session.capture("pause_multiplayer_2560x1440");
+    window().setSize(640, 360);
 }
 
 TEST(mapReplacesTheWorld)
