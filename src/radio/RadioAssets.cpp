@@ -1,16 +1,12 @@
 #include "RadioAssets.h"
 
 #include "base/Error.h"
+#include "base/Host.h"
 #include "base/Log.h"
 #include "vfs/Vfs.h"
 
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
-#include <cerrno>
-#include <cstring>
 #include <format>
+#include <memory>
 
 namespace fh::radio {
 
@@ -41,35 +37,11 @@ std::string readText(const Vfs& vfs, const std::string& path)
 
 /// An open bank file and its parsed headers.
 struct RadioAssets::BankFile {
-    int fd = -1;
+    std::unique_ptr<ReadOnlyFile> file;
     std::string path;
     std::optional<audio::FsbBank> bank;
 
-    ~BankFile()
-    {
-        if (fd >= 0) {
-            ::close(fd);
-        }
-    }
-
-    std::size_t readAt(std::uint64_t offset, std::span<std::uint8_t> out) const
-    {
-        std::size_t done = 0;
-        while (done < out.size()) {
-            const ssize_t got = ::pread(fd, out.data() + done, out.size() - done, static_cast<off_t>(offset + done));
-            if (got < 0) {
-                if (errno == EINTR) {
-                    continue;
-                }
-                throw DataError("{}: read failed at 0x{:x}: {}", path, offset + done, std::strerror(errno));
-            }
-            if (got == 0) {
-                break;
-            }
-            done += static_cast<std::size_t>(got);
-        }
-        return done;
-    }
+    std::size_t readAt(std::uint64_t offset, std::span<std::uint8_t> out) const { return file->readAt(offset, out); }
 
     static std::shared_ptr<BankFile> open(const Vfs& vfs, const std::string& gamePath)
     {
@@ -77,27 +49,19 @@ struct RadioAssets::BankFile {
         if (!host) {
             throw DataError("{}: not found as a loose file; the radio streams its banks from loose files", gamePath);
         }
-        auto file = std::make_shared<BankFile>();
-        file->path = host->string();
-        file->fd = ::open(file->path.c_str(), O_RDONLY | O_CLOEXEC);
-        if (file->fd < 0) {
-            throw DataError("{}: cannot open: {}", file->path, std::strerror(errno));
-        }
-        struct stat info {};
-        if (::fstat(file->fd, &info) != 0) {
-            throw DataError("{}: cannot stat: {}", file->path, std::strerror(errno));
-        }
+        auto bankFile = std::make_shared<BankFile>();
+        bankFile->path = pathToUtf8(*host);
+        bankFile->file = std::make_unique<ReadOnlyFile>(*host);
         Bytes first(audio::FsbBank::kFileHeaderSize);
-        if (file->readAt(0, first) != first.size()) {
-            throw DataError("{}: too short for an FSB header", file->path);
+        if (bankFile->readAt(0, first) != first.size()) {
+            throw DataError("{}: too short for an FSB header", bankFile->path);
         }
-        Bytes headers(audio::FsbBank::headersSize(first, file->path));
-        if (file->readAt(0, headers) != headers.size()) {
-            throw DataError("{}: the sample headers run past the end of the file", file->path);
+        Bytes headers(audio::FsbBank::headersSize(first, bankFile->path));
+        if (bankFile->readAt(0, headers) != headers.size()) {
+            throw DataError("{}: the sample headers run past the end of the file", bankFile->path);
         }
-        file->bank = audio::FsbBank::parseHeaders(std::move(headers), static_cast<std::uint64_t>(info.st_size),
-            file->path);
-        return file;
+        bankFile->bank = audio::FsbBank::parseHeaders(std::move(headers), bankFile->file->size(), bankFile->path);
+        return bankFile;
     }
 };
 

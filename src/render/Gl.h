@@ -7,6 +7,13 @@
 // glcorearb.h declares prototypes when GL_GLEXT_PROTOTYPES is defined at
 // all, which would clash with the loaded pointers of the same names.
 #undef GL_GLEXT_PROTOTYPES
+// On Windows glcorearb.h includes windows.h unless APIENTRY is defined,
+// and windows.h's macros (near, far, DrawText and many more) would then
+// rewrite names across every file that draws. The GL calling convention is
+// all glcorearb.h needs from it.
+#if defined(_WIN32) && !defined(APIENTRY)
+#define APIENTRY __stdcall
+#endif
 #include <GL/glcorearb.h>
 
 #define FH_GL_FUNCTIONS(X)                                                                                             \

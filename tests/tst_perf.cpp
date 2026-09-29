@@ -15,6 +15,7 @@
 
 #include "TestHarness.h"
 
+#include "base/Host.h"
 #include "base/Log.h"
 #include "car/CarPhysics.h"
 #include "game/Game.h"
@@ -369,10 +370,12 @@ TEST(freeRoamDrawingStaysInBudget)
 
 int main(int argc, char** argv)
 {
-    setenv("SDL_VIDEO_DRIVER", "offscreen", 0);
-    setenv("SDL_AUDIO_DRIVER", "dummy", 0);
-    setenv("XDG_CACHE_HOME", (std::filesystem::temp_directory_path() / "fh1-scenarios-cache").c_str(), 1);
-    setenv("XDG_DATA_HOME", (std::filesystem::temp_directory_path() / "fh1-perf-data").c_str(), 1);
+    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen", false);
+    fh::setEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy", false);
+    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache),
+        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-scenarios-cache"));
+    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Data),
+        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-perf-data"));
     fh::openLogFile(std::filesystem::temp_directory_path() / "fh1-perf.log");
     try {
         window();

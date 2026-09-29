@@ -12,6 +12,7 @@
 #include "audio/AudioLibrary.h"
 #include "audio/Fev.h"
 #include "base/Bytes.h"
+#include "base/Host.h"
 #include "platform/Window.h"
 #include "ui/AnarkFormats.h"
 #include "ui/LoadingScreen.h"
@@ -783,10 +784,10 @@ int main(int argc, char** argv)
 {
     // Never open a window on the desktop or play through the speakers, nor
     // write to the player's own shader cache.
-    setenv("SDL_VIDEO_DRIVER", "offscreen", 0);
-    setenv("SDL_AUDIO_DRIVER", "dummy", 0);
+    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen", false);
+    fh::setEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy", false);
     const std::filesystem::path cache = std::filesystem::temp_directory_path() / "fh1-tst-menu-cache";
-    setenv("XDG_CACHE_HOME", cache.c_str(), 1);
+    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache), fh::pathToUtf8(cache));
     const int result = fh::test::runAllTests(argc > 1 ? argv[1] : "");
     std::filesystem::remove_all(cache);
     return result;

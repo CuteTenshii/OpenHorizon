@@ -1,11 +1,11 @@
 #include "GlProgram.h"
 
+#include "base/Host.h"
 #include "base/Log.h"
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <format>
 #include <fstream>
@@ -15,8 +15,6 @@
 #include <system_error>
 #include <utility>
 #include <vector>
-
-#include <unistd.h>
 
 namespace fh::render {
 
@@ -111,7 +109,7 @@ CacheState makeState()
     GLint formats = 0;
     glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &formats);
     if (formats > 0) {
-        state.directory = programCacheDirectory(std::getenv("XDG_CACHE_HOME"), std::getenv("HOME"));
+        state.directory = programCacheDirectory();
     }
     // Some window systems hand out an address for any name, so the
     // extension string decides rather than the pointer.
@@ -126,12 +124,12 @@ CacheState makeState()
         std::error_code error;
         std::filesystem::create_directories(state.directory, error);
         if (error) {
-            logWarning("shaders: no program cache in {}: {}", state.directory.string(), error.message());
+            logWarning("shaders: no program cache in {}: {}", pathToUtf8(state.directory), error.message());
             state.directory.clear();
         }
     }
     logInfo("shaders: program cache {}, parallel compile {}",
-        state.directory.empty() ? std::string("off") : state.directory.string(), state.parallel ? "on" : "off");
+        state.directory.empty() ? std::string("off") : pathToUtf8(state.directory), state.parallel ? "on" : "off");
     return state;
 }
 
@@ -206,7 +204,7 @@ std::optional<CachedBinary> readEntry(const std::filesystem::path& path, std::st
 bool writeEntry(const std::filesystem::path& path, std::string_view key, const CachedBinary& binary)
 {
     std::filesystem::path temporary = path;
-    temporary += std::format(".{}.tmp", ::getpid());
+    temporary += std::format(".{}.tmp", processId());
     {
         std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
         if (!out) {
@@ -265,18 +263,10 @@ GLuint startCompile(GLenum stage, std::string_view source)
 
 } // namespace
 
-std::filesystem::path programCacheDirectory(const char* xdgCacheHome, const char* home)
+std::filesystem::path programCacheDirectory()
 {
-    // The base directory specification ignores relative values.
-    std::filesystem::path base;
-    if (xdgCacheHome && *xdgCacheHome && std::filesystem::path(xdgCacheHome).is_absolute()) {
-        base = xdgCacheHome;
-    } else if (home && *home && std::filesystem::path(home).is_absolute()) {
-        base = std::filesystem::path(home) / ".cache";
-    } else {
-        return {};
-    }
-    return base / "fh1-native" / "shaders";
+    const std::filesystem::path folder = userFolder(UserFolder::Cache);
+    return folder.empty() ? folder : folder / "shaders";
 }
 
 std::string programCacheKey(std::string_view driver, std::string_view vertex, std::string_view fragment)

@@ -1,3 +1,9 @@
+add_executable(tst_base TestHarness.h tst_base.cpp)
+target_compile_options(tst_base PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_base PRIVATE fh1base)
+# UTF-8 paths, user folders and the file system on host paths; needs no disc.
+add_test(NAME tst_base COMMAND tst_base)
+
 add_executable(tst_world TestHarness.h tst_world.cpp)
 target_compile_options(tst_world PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_world PRIVATE fh1world)

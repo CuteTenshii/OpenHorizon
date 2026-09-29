@@ -4,6 +4,7 @@
 
 #include "TestHarness.h"
 
+#include "base/Host.h"
 #include "platform/Window.h"
 #include "render/GlProgram.h"
 
@@ -33,7 +34,8 @@ void main()
 }
 )";
 
-/// The folder the GL tests point XDG_CACHE_HOME at, emptied by main().
+/// The folder the tests point the user cache folder's variable at,
+/// emptied by main().
 std::filesystem::path& cacheHome()
 {
     static std::filesystem::path path;
@@ -76,16 +78,12 @@ TEST(cacheKeyIsStableAndCoversEveryInput)
         != fh::render::programCacheKey("d", "fragment", "vertex"));
 }
 
-TEST(cacheFolderFollowsTheXdgRules)
+TEST(cacheFolderIsInTheUserCacheFolder)
 {
-    using fh::render::programCacheDirectory;
-    CHECK_EQ(programCacheDirectory("/x/cache", "/home/u"), std::filesystem::path("/x/cache/fh1-native/shaders"));
-    CHECK_EQ(programCacheDirectory(nullptr, "/home/u"), std::filesystem::path("/home/u/.cache/fh1-native/shaders"));
-    CHECK_EQ(programCacheDirectory("", "/home/u"), std::filesystem::path("/home/u/.cache/fh1-native/shaders"));
-    // Relative values are to be ignored.
-    CHECK_EQ(programCacheDirectory("relative", "/home/u"), std::filesystem::path("/home/u/.cache/fh1-native/shaders"));
-    CHECK(programCacheDirectory(nullptr, nullptr).empty());
-    CHECK(programCacheDirectory("relative", "also/relative").empty());
+    // main() points the cache's variable at cacheHome(); the folder rules
+    // themselves are tst_base's.
+    CHECK(fh::render::programCacheDirectory().native().starts_with(cacheHome().native()));
+    CHECK_EQ(fh::render::programCacheDirectory().filename(), std::filesystem::path("shaders"));
 }
 
 TEST(programsRoundTripThroughTheCache)
@@ -98,7 +96,7 @@ TEST(programsRoundTripThroughTheCache)
         std::fprintf(stderr, "skipped: the driver has no program binary formats\n");
         return;
     }
-    CHECK(file.string().starts_with(cacheHome().string()));
+    CHECK(file.native().starts_with(cacheHome().native()));
     const fh::render::ProgramCacheStats before = fh::render::programCacheStats();
 
     const GLuint cold = fh::render::linkProgram("cold", kVertex, kFragment);
@@ -202,11 +200,11 @@ TEST(brokenSourcesThrowWithTheirName)
 int main(int argc, char** argv)
 {
     // Never open a window on the desktop, and never touch the real cache.
-    setenv("SDL_VIDEO_DRIVER", "offscreen", 0);
-    setenv("SDL_AUDIO_DRIVER", "dummy", 0);
+    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen", false);
+    fh::setEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy", false);
     cacheHome() = std::filesystem::temp_directory_path() / "fh1-tst-render-cache";
     std::filesystem::remove_all(cacheHome());
-    setenv("XDG_CACHE_HOME", cacheHome().c_str(), 1);
+    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache), fh::pathToUtf8(cacheHome()));
     const int result = fh::test::runAllTests(argc > 1 ? argv[1] : "");
     std::filesystem::remove_all(cacheHome());
     return result;

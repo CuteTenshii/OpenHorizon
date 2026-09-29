@@ -8,6 +8,7 @@
 #include "TestHarness.h"
 
 #include "audio/MixSnapshots.h"
+#include "base/Host.h"
 #include "base/Log.h"
 #include "car/CarPhysics.h"
 #include "game/Game.h"
@@ -31,6 +32,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -45,6 +47,10 @@ namespace {
 /// The game runs at a fixed 60 Hz so every run of a scenario is the same.
 constexpr float kStep = 1.0F / 60.0F;
 
+bool haveOpenGl();
+
+/// The disc, or null (and the scenario skips) when FH1_GAME_DIR is not set
+/// or the machine has no OpenGL context for the game, as under Wine.
 const char* gameDir()
 {
     const char* dir = std::getenv("FH1_GAME_DIR");
@@ -52,7 +58,7 @@ const char* gameDir()
         std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
         return nullptr;
     }
-    return dir;
+    return haveOpenGl() ? dir : nullptr;
 }
 
 /// An empty profile folder under the temporary directory.
@@ -76,6 +82,20 @@ fh::Window& window()
         return options;
     }());
     return instance;
+}
+
+bool haveOpenGl()
+{
+    static const bool available = [] {
+        try {
+            window();
+            return true;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "skipped: no OpenGL context (%s)\n", e.what());
+            return false;
+        }
+    }();
+    return available;
 }
 
 /// What the player holds during a stretch of a scenario.
@@ -999,14 +1019,16 @@ TEST(loadingScreenStaysUntilTheStartIsReady)
 int main(int argc, char** argv)
 {
     // Never open a window on the desktop or play through the speakers.
-    setenv("SDL_VIDEO_DRIVER", "offscreen", 0);
-    setenv("SDL_AUDIO_DRIVER", "dummy", 0);
+    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen", false);
+    fh::setEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy", false);
     // Nor write to the player's own shader cache; this folder persists
     // between runs, so later runs also exercise the cached path.
-    setenv("XDG_CACHE_HOME", (std::filesystem::temp_directory_path() / "fh1-scenarios-cache").c_str(), 1);
+    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache),
+        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-scenarios-cache"));
     // Nor the player's own profile: every Session names its own folder, and
     // this catches any game made without one.
-    setenv("XDG_DATA_HOME", (std::filesystem::temp_directory_path() / "fh1-scenarios-data").c_str(), 1);
+    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Data),
+        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-scenarios-data"));
     fh::openLogFile(std::filesystem::temp_directory_path() / "fh1-scenarios.log");
     return fh::test::runAllTests(argc > 1 ? argv[1] : "");
 }

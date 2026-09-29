@@ -19,8 +19,8 @@ LogLevel logLevel();
 /// be opened; logging to standard error carries on either way.
 bool openLogFile(const std::filesystem::path& path);
 
-/// `$XDG_STATE_HOME/fh1-native/fh1.log`, by default
-/// `~/.local/state/fh1-native/fh1.log`.
+/// `fh1.log` in the State user folder: `~/.local/state/fh1-native` on
+/// Linux, `%LOCALAPPDATA%\fh1-native\logs` on Windows (see UserFolder).
 std::filesystem::path defaultLogPath();
 
 /// True if a message at `level` goes anywhere.

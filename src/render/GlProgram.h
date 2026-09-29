@@ -13,9 +13,10 @@ namespace fh::render {
 /// Linked GLSL programs, kept between runs as the driver's own binaries
 /// (glGetProgramBinary) so a second start skips compiling.
 ///
-/// The cache lives in `$XDG_CACHE_HOME/fh1-native/shaders`, or
-/// `~/.cache/fh1-native/shaders` when that variable is unset or relative
-/// (the XDG base directory rules). An entry is keyed by the two sources and
+/// The cache lives in `shaders` in the Cache user folder:
+/// `~/.cache/fh1-native/shaders` on Linux (under `$XDG_CACHE_HOME` when that
+/// is an absolute path), `%LOCALAPPDATA%\fh1-native\cache\shaders` on
+/// Windows (see fh::UserFolder). An entry is keyed by the two sources and
 /// the driver's GL_VENDOR, GL_RENDERER and GL_VERSION, so a driver update or
 /// a changed shader never loads a stale binary. When the driver refuses a
 /// binary anyway (glProgramBinary leaves the program unlinked, which the
@@ -31,9 +32,8 @@ namespace fh::render {
 /// Everything here runs on the thread that owns the GL context; the cache
 /// reads the driver's strings and the environment on first use.
 
-/// The cache folder for the given XDG_CACHE_HOME and HOME values (either
-/// may be null); empty when neither gives an absolute path.
-std::filesystem::path programCacheDirectory(const char* xdgCacheHome, const char* home);
+/// The cache folder; empty when the environment names no user cache folder.
+std::filesystem::path programCacheDirectory();
 
 /// The cache key of a program: 32 hex digits of a 128-bit FNV-1a hash over
 /// the driver description and both sources, each prefixed with its length

@@ -1,5 +1,7 @@
 #include "Wav.h"
 
+#include "base/Host.h"
+
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -69,7 +71,7 @@ void writeWav(const std::filesystem::path& path, const PcmBuffer& pcm, WavFormat
     std::ofstream out(path, std::ios::binary);
     out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
     if (!out) {
-        throw DataError("cannot write {}", path.string());
+        throw DataError("cannot write {}", pathToUtf8(path));
     }
 }
 

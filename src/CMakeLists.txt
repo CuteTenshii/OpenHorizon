@@ -2,6 +2,8 @@ add_library(fh1base STATIC
     base/Bytes.cpp
     base/Bytes.h
     base/Error.h
+    base/Host.cpp
+    base/Host.h
     base/JobPool.cpp
     base/JobPool.h
     base/Settings.cpp
@@ -14,6 +16,10 @@ add_library(fh1base STATIC
 target_include_directories(fh1base PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(fh1base PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(fh1base PUBLIC lzx::lzx pugixml::pugixml Threads::Threads)
+if(WIN32)
+    # Host.cpp: SHGetKnownFolderPath (shell32) and CoTaskMemFree (ole32).
+    target_link_libraries(fh1base PRIVATE shell32 ole32)
+endif()
 
 add_executable(fh1vfs ../tools/fh1vfs.cpp)
 target_compile_options(fh1vfs PRIVATE ${FH1N_WARNINGS})

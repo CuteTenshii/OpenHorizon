@@ -1,6 +1,7 @@
 #include "Settings.h"
 
 #include "Bytes.h"
+#include "Host.h"
 #include "Log.h"
 
 #include <algorithm>
@@ -26,13 +27,11 @@ std::string trim(const std::string& text)
 
 std::filesystem::path Settings::defaultPath()
 {
-    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg) {
-        return std::filesystem::path(xdg) / "fh1-native" / "settings.ini";
+    const std::filesystem::path folder = userFolder(UserFolder::Config);
+    if (folder.empty()) {
+        return std::filesystem::path("fh1-native-settings.ini");
     }
-    if (const char* home = std::getenv("HOME"); home && *home) {
-        return std::filesystem::path(home) / ".config" / "fh1-native" / "settings.ini";
-    }
-    return std::filesystem::path("fh1-native-settings.ini");
+    return folder / "settings.ini";
 }
 
 Settings Settings::load()
@@ -99,7 +98,7 @@ bool Settings::save() const
     std::filesystem::create_directories(m_path.parent_path(), error);
     std::ofstream out(m_path);
     if (!out) {
-        logWarning("settings: cannot write {}", m_path.string());
+        logWarning("settings: cannot write {}", pathToUtf8(m_path));
         return false;
     }
     // Sorted, so the file stays stable between saves.

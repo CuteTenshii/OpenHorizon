@@ -1,9 +1,10 @@
 #include "Log.h"
 
+#include "Host.h"
+
 #include <atomic>
 #include <chrono>
 #include <cstdio>
-#include <cstdlib>
 #include <mutex>
 #include <string>
 #include <system_error>
@@ -66,15 +67,11 @@ bool logEnabled(LogLevel level)
 
 std::filesystem::path defaultLogPath()
 {
-    std::filesystem::path base;
-    if (const char* xdg = std::getenv("XDG_STATE_HOME"); xdg && *xdg) {
-        base = xdg;
-    } else if (const char* home = std::getenv("HOME"); home && *home) {
-        base = std::filesystem::path(home) / ".local" / "state";
-    } else {
-        base = std::filesystem::temp_directory_path();
+    const std::filesystem::path folder = userFolder(UserFolder::State);
+    if (folder.empty()) {
+        return std::filesystem::temp_directory_path() / "fh1-native" / "fh1.log";
     }
-    return base / "fh1-native" / "fh1.log";
+    return folder / "fh1.log";
 }
 
 bool openLogFile(const std::filesystem::path& path)
@@ -83,9 +80,14 @@ bool openLogFile(const std::filesystem::path& path)
     if (path.has_parent_path()) {
         std::filesystem::create_directories(path.parent_path(), error);
     }
+#ifdef _WIN32
+    // The wide-character open, so a folder name outside the code page works.
+    std::FILE* file = _wfopen(path.c_str(), L"w");
+#else
     std::FILE* file = std::fopen(path.c_str(), "w");
+#endif
     if (!file) {
-        logWarning("log: cannot write {}", path.string());
+        logWarning("log: cannot write {}", pathToUtf8(path));
         return false;
     }
     // Line buffered so the last lines before a crash reach the disk.
@@ -98,7 +100,7 @@ bool openLogFile(const std::filesystem::path& path)
         g_file = file;
         g_fileOpen = true;
     }
-    logInfo("log: writing to {}", path.string());
+    logInfo("log: writing to {}", pathToUtf8(path));
     return true;
 }
 

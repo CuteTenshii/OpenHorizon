@@ -1,5 +1,6 @@
 #include "Vfs.h"
 
+#include "base/Host.h"
 #include "base/Log.h"
 
 #include <lzx/zip.h>
@@ -17,14 +18,14 @@ Bytes readHostFile(const std::filesystem::path& path)
 {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
-        throw DataError("cannot open {}", path.string());
+        throw DataError("cannot open {}", pathToUtf8(path));
     }
     in.seekg(0, std::ios::end);
     const auto size = static_cast<std::size_t>(in.tellg());
     in.seekg(0, std::ios::beg);
     Bytes data(size);
     if (size > 0 && !in.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size))) {
-        throw DataError("cannot read {}", path.string());
+        throw DataError("cannot read {}", pathToUtf8(path));
     }
     return data;
 }
@@ -38,7 +39,11 @@ std::string parentKey(const std::string& key)
 
 } // namespace
 
-Vfs::Vfs() = default;
+Vfs::Vfs()
+{
+    raiseOpenFileLimit();
+}
+
 Vfs::~Vfs() = default;
 
 std::string Vfs::normalize(std::string_view path)
@@ -84,13 +89,14 @@ void Vfs::indexLooseFiles(
              root, std::filesystem::directory_options::follow_directory_symlink, error);
          it != std::filesystem::recursive_directory_iterator(); it.increment(error)) {
         if (error) {
-            logWarning("vfs: while indexing {}: {}", root.string(), error.message());
+            logWarning("vfs: while indexing {}: {}", pathToUtf8(root), error.message());
             break;
         }
         if (!it->is_regular_file(error)) {
             continue;
         }
-        const std::string relative = std::filesystem::relative(it->path(), root, error).generic_string();
+        // normalize() turns Windows' backslashes into the game's slashes.
+        const std::string relative = pathToUtf8(std::filesystem::relative(it->path(), root, error));
         into.try_emplace(normalize(relative), it->path());
     }
 }
@@ -104,7 +110,7 @@ void Vfs::mountDisc(const std::filesystem::path& root)
         // The media folder itself: its files are addressed as media/...
         discRoot = root.parent_path();
     } else {
-        throw DataError("{} holds neither a media folder nor zipmanifest.xml", root.string());
+        throw DataError("{} holds neither a media folder nor zipmanifest.xml", pathToUtf8(root));
     }
     m_discRoot = discRoot;
 
@@ -119,16 +125,16 @@ void Vfs::mountDisc(const std::filesystem::path& root)
         }
     }
     m_discFiles = std::move(files);
-    logInfo("vfs: {} loose files under {}", m_discFiles.size(), discRoot.string());
+    logInfo("vfs: {} loose files under {}", m_discFiles.size(), pathToUtf8(discRoot));
 
     const auto manifestFile = m_discFiles.find("media/zipmanifest.xml");
     if (manifestFile == m_discFiles.end()) {
-        throw DataError("{} has no media/zipmanifest.xml", discRoot.string());
+        throw DataError("{} has no media/zipmanifest.xml", pathToUtf8(discRoot));
     }
     pugi::xml_document manifest;
     const pugi::xml_parse_result parsed = manifest.load_file(manifestFile->second.c_str());
     if (!parsed) {
-        throw DataError("{}: {}", manifestFile->second.string(), parsed.description());
+        throw DataError("{}: {}", pathToUtf8(manifestFile->second), parsed.description());
     }
     int mounted = 0;
     for (const pugi::xml_node zip : manifest.child("ZipFiles").children("Zip")) {
@@ -151,7 +157,7 @@ void Vfs::addOverlay(const std::filesystem::path& root)
 {
     std::unordered_map<std::string, std::filesystem::path> files;
     indexLooseFiles(root, files);
-    logInfo("vfs: overlay {} with {} files", root.string(), files.size());
+    logInfo("vfs: overlay {} with {} files", pathToUtf8(root), files.size());
     m_overlays.insert(m_overlays.begin(), std::move(files));
 }
 
@@ -172,9 +178,9 @@ const lzx::ZipArchive* Vfs::open(const Mount& mount) const
     if (!mount.archive && !mount.failed) {
         try {
             mount.archive = std::make_shared<const lzx::ZipArchive>(lzx::ZipArchive::open(mount.file));
-            logDebug("vfs: opened {} ({} entries)", mount.file.string(), mount.archive->entries().size());
+            logDebug("vfs: opened {} ({} entries)", pathToUtf8(mount.file), mount.archive->entries().size());
         } catch (const std::exception& e) {
-            logError("vfs: cannot open {}: {}", mount.file.string(), e.what());
+            logError("vfs: cannot open {}: {}", pathToUtf8(mount.file), e.what());
             mount.failed = true;
         }
     }
@@ -246,7 +252,7 @@ std::optional<Bytes> Vfs::read(std::string_view path) const
             try {
                 return archive->read(*entry);
             } catch (const std::exception& e) {
-                throw DataError("{} in {}: {}", inner, mount->file.string(), e.what());
+                throw DataError("{} in {}: {}", inner, pathToUtf8(mount->file), e.what());
             }
         }
     }

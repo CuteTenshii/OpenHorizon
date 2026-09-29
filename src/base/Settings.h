@@ -7,9 +7,10 @@
 
 namespace fh {
 
-/// The player's settings, from `$XDG_CONFIG_HOME/fh1-native/settings.ini`
-/// (by default `~/.config/fh1-native/settings.ini`): `key = value` lines,
-/// `#` comments. Command-line options override them.
+/// The player's settings, from `settings.ini` in the Config user folder
+/// (`~/.config/fh1-native` on Linux, `%APPDATA%\fh1-native` on Windows; see
+/// UserFolder): `key = value` lines of UTF-8, `#` comments. Command-line
+/// options override them.
 class Settings {
 public:
     /// Reads the settings file if it exists; a missing file gives defaults.

@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -752,9 +753,11 @@ TEST(crowdSetLoadsFromADisc)
         writer.finish();
     }
 
-    fh::Vfs vfs;
-    vfs.mountDisc(root);
-    const sp::CrowdSet crowd = sp::CrowdSet::load(vfs, "testtrack");
+    // Held by pointer so it can close the archive before the folder goes:
+    // Windows refuses to delete a file that is still open.
+    auto vfs = std::make_unique<fh::Vfs>();
+    vfs->mountDisc(root);
+    const sp::CrowdSet crowd = sp::CrowdSet::load(*vfs, "testtrack");
     CHECK_EQ(crowd.groups().size(), std::size_t {3});
     CHECK_EQ(crowd.spectators().size(), std::size_t {3 + 2 + 1});
     CHECK_EQ(crowd.models().size(), std::size_t {2});
@@ -811,6 +814,7 @@ TEST(crowdSetLoadsFromADisc)
     CHECK(billboard.frame.view == sp::SpriteView::StandingFront);
     CHECK(billboard.height > 0.0F);
 
+    vfs.reset();
     std::filesystem::remove_all(root);
 }
 

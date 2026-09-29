@@ -1,12 +1,20 @@
 #include "Overlay.h"
 
+#include "base/Bytes.h"
+#include "base/Host.h"
+
+#ifndef _WIN32
 #include <fontconfig/fontconfig.h>
+#endif
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <stdexcept>
+#include <system_error>
+#include <vector>
 
 namespace fh::render {
 
@@ -60,6 +68,48 @@ void main()
 }
 )";
 
+#ifdef _WIN32
+
+/// Windows has no fontconfig, so the pattern's family and weight pick a
+/// file of the fonts every Windows installation ships. Generic families
+/// map to the system's own choices (Segoe UI for sans-serif, as the shell
+/// uses; Consolas for monospace); a named family is tried as its file
+/// name. Arial is the last resort.
+std::string findFont(const std::string& pattern)
+{
+    const std::size_t colon = pattern.find(':');
+    const std::string family = toLower(pattern.substr(0, colon));
+    const bool bold = colon != std::string::npos && toLower(pattern.substr(colon)).find("bold") != std::string::npos;
+    std::vector<std::string> candidates;
+    if (family.empty() || family == "sans-serif" || family == "sans") {
+        candidates = {bold ? "segoeuib.ttf" : "segoeui.ttf"};
+    } else if (family == "serif") {
+        candidates = {bold ? "timesbd.ttf" : "times.ttf"};
+    } else if (family == "monospace" || family == "mono") {
+        candidates = {bold ? "consolab.ttf" : "consola.ttf"};
+    } else {
+        std::string file;
+        for (const char c : family) {
+            if (c != ' ') {
+                file.push_back(c);
+            }
+        }
+        candidates = {file + (bold ? "bd.ttf" : ".ttf"), file + ".ttf"};
+    }
+    candidates.emplace_back(bold ? "arialbd.ttf" : "arial.ttf");
+    const std::filesystem::path folder = systemFontFolder();
+    for (const std::string& candidate : candidates) {
+        const std::filesystem::path path = folder / candidate;
+        std::error_code error;
+        if (!folder.empty() && std::filesystem::is_regular_file(path, error)) {
+            return pathToUtf8(path);
+        }
+    }
+    throw std::runtime_error("no font matches \"" + pattern + "\" in " + pathToUtf8(folder));
+}
+
+#else
+
 std::string findFont(const std::string& pattern)
 {
     if (!FcInit()) {
@@ -84,6 +134,8 @@ std::string findFont(const std::string& pattern)
     }
     return path;
 }
+
+#endif
 
 /// Decodes one code point and advances `i`; invalid bytes become U+FFFD.
 char32_t nextCodePoint(std::string_view text, std::size_t& i)
