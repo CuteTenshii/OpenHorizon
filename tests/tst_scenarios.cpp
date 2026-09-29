@@ -19,6 +19,7 @@
 #include "platform/Input.h"
 #include "platform/Window.h"
 #include "render/FrameStats.h"
+#include "render/TrackPrograms.h"
 #include "render/WorldRenderer.h"
 #include "ui/Navigation.h"
 #include "ui/PauseMenu.h"
@@ -1102,6 +1103,42 @@ TEST(raceShowsItsRoutePropsUntilItEnds)
     CHECK_EQ(world->eventRoute(), 0);
     CHECK(world->eventChunksIncluded() != raceChunks);
     session.capture("race_props_after");
+}
+
+// Flags, water, waterfalls, flipbook screens and swaying trees animate on
+// TimeGain, the presentation's clock: it runs with the game and stops while
+// the game is paused.
+TEST(trackAnimationClockStopsWhilePaused)
+{
+    if (!gameDir()) {
+        return;
+    }
+    Session session({});
+    CHECK(session.waitForCar());
+    session.run(2.0F, {});
+    fh::Game& game = session.game();
+    const fh::render::WorldRenderer* world = game.worldRenderer();
+    CHECK(world != nullptr);
+    if (world == nullptr) {
+        return;
+    }
+    const float running = world->timeGain().x;
+    CHECK(running > 1.0F);
+    CHECK_NEAR(running, fh::render::TrackFrameConstants::timeGain(game.animationTime()).x, 0.05);
+    CHECK_NEAR(world->timeGain().w, 1.0, 1e-6);
+
+    session.press(fh::Button::Start);
+    CHECK(game.pauseShown());
+    session.run(0.1F, {});
+    const float paused = world->timeGain().x;
+    session.run(2.0F, {});
+    CHECK_NEAR(world->timeGain().x, paused, 1e-6);
+
+    session.press(fh::Button::B);
+    CHECK(!game.pauseShown());
+    session.run(1.0F, {});
+    CHECK(world->timeGain().x > paused + 0.9F);
+    CHECK_NEAR(fh::render::TrackFrameConstants::timeGain(28800.0F + 5.0F).x, 5.0, 0.01);
 }
 
 } // namespace

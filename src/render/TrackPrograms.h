@@ -75,12 +75,40 @@ inline constexpr std::uint32_t kFirstTrackTexture = 4;
 struct TrackFrameConstants {
     std::array<glm::vec4, 256> c{};
 
+    /// Seconds after which the presentation's clock (TimeGain.x) starts
+    /// again from zero.
+    static constexpr float kPresentationClockWrap = 28800.0F;
+
     /// Fills the constants for a camera and lighting: the camera's matrix
     /// (world matrices are identity, as ShadedMesh bakes placements into its
-    /// vertices), fog, sun and ambient colours. `model` places moving
-    /// objects: it becomes WorldMatrix and joins WorldViewProjMatrix.
+    /// vertices), fog, sun and ambient colours, and TimeGain from
+    /// `presentationSeconds`, the seconds the world has run unpaused since
+    /// the track was loaded (see timeGain()). `model` places moving objects:
+    /// it becomes WorldMatrix and joins WorldViewProjMatrix.
     static TrackFrameConstants make(const glm::mat4& viewProjection, const glm::mat4& inverseView,
-        const glm::vec3& camera, const SceneLighting& lighting, const glm::mat4& model = glm::mat4(1.0F));
+        const glm::vec3& camera, const SceneLighting& lighting, float presentationSeconds,
+        const glm::mat4& model = glm::mat4(1.0F));
+
+    /// TimeGain (c249) for `presentationSeconds`, which every animated
+    /// track effect (flags, water, waterfalls, flipbook screens, swaying
+    /// trees) reads in its x as the time its animation has run.
+    ///
+    /// Verified in the executable: the scene writer (0x824441B8) stores
+    /// c249 from its scene block, whose x the track presentation fills
+    /// (0x82469F40) from the presentation's float clock. The presentation's
+    /// update (CPresentation, 0x82491618) adds the frame's time to that
+    /// clock, subtracting 28800 once it reaches 28800 s; it starts at 0
+    /// when the presentation is made (0x82E93DF0). The game loop hands the
+    /// update the frame's time scaled by the game speed (0x824141A8,
+    /// 0x824142A8) and, while the game is paused (CPauseGame, byte 12 of
+    /// the game object, 0x8241419C), 0 (0x824C5138), so the clock stops
+    /// with the pause. Over Colorado's 173 effects only x and w of c249 are
+    /// read; y, z and w keep the effects' own default (0, 1, 1), which all
+    /// 369 constant tables declaring TimeGain give it. Missing: the game
+    /// writes into w a value of the presentation's settings (+596 of the
+    /// block at CTrackPresentation + 192, 0x8246A01C) whose meaning was not
+    /// found, and into y and z values no effect reads.
+    static glm::vec4 timeGain(float presentationSeconds);
 };
 
 /// The track effects' Default passes translated to GLSL and linked, one per

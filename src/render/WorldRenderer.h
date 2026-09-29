@@ -127,6 +127,8 @@ struct FrameParams {
     glm::mat4 projection{1.0F};
     glm::vec3 cameraPosition{0.0F};
     SceneLighting lighting;
+    /// Seconds the world has run unpaused since the track was loaded: the
+    /// clock the track effects animate with (TrackFrameConstants::timeGain).
     float time = 0.0F;
 };
 
@@ -206,6 +208,8 @@ public:
     /// Chunks of event props the tiles include under the current route and
     /// hidden chunks, all levels of detail.
     std::size_t eventChunksIncluded() const { return m_eventChunksIncluded; }
+    /// TimeGain (TrackFrameConstants::timeGain) as the last draw() set it.
+    glm::vec4 timeGain() const { return m_timeGain; }
     /// Starts drawing `chunks` as one movable object, built in the
     /// background; returns its handle.
     int addDynamic(std::vector<std::uint32_t> chunks);
@@ -335,6 +339,7 @@ private:
     int m_eventRoute = kFreeRoamRoute;
     std::vector<bool> m_hiddenChunks;
     std::size_t m_eventChunksIncluded = 0;
+    glm::vec4 m_timeGain{0.0F};
     world::WorldTileGrid m_grid;
     std::vector<TileState> m_tiles;
     std::unordered_map<std::uint32_t, TextureSlot> m_textures;

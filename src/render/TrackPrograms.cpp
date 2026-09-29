@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstring>
 #include <map>
 #include <set>
@@ -45,6 +46,7 @@ constexpr std::array kFrameNames{
     FrameName{"ambColor", 221},
     FrameName{"FogConsts", 241},
     FrameName{"FogColor", 242},
+    FrameName{"TimeGain", 249},
     FrameName{"ViewInvMatrix", 243},
     FrameName{"viewInv", 243},
     FrameName{"sunDir", 250},
@@ -289,8 +291,15 @@ glm::vec4 row(const glm::mat4& m, int i)
 
 } // namespace
 
+glm::vec4 TrackFrameConstants::timeGain(float presentationSeconds)
+{
+    const float clock
+        = presentationSeconds - kPresentationClockWrap * std::floor(presentationSeconds / kPresentationClockWrap);
+    return {clock, 0.0F, 1.0F, 1.0F};
+}
+
 TrackFrameConstants TrackFrameConstants::make(const glm::mat4& viewProjection, const glm::mat4& inverseView,
-    const glm::vec3& camera, const SceneLighting& lighting, const glm::mat4& model)
+    const glm::vec3& camera, const SceneLighting& lighting, float presentationSeconds, const glm::mat4& model)
 {
     TrackFrameConstants f;
     // The shaders compute dp4(register, position) per clip component, so
@@ -330,6 +339,7 @@ TrackFrameConstants TrackFrameConstants::make(const glm::mat4& viewProjection, c
     f.c[214] = glm::vec4(
         lighting.fogHeightFadeStart, lighting.fogHeightFadeEnd, lighting.fogHeightFadeAmount, lighting.fogScatterPower);
     f.c[215] = glm::vec4(lighting.fogScatterColour, lighting.fogScatterRamp);
+    f.c[249] = timeGain(presentationSeconds);
     return f;
 }
 

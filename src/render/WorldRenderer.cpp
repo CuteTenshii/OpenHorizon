@@ -871,14 +871,16 @@ void WorldRenderer::draw(const FrameParams& frame)
 
     // Frame constants: the static world's, then one block per moving object.
     std::vector<TrackFrameConstants> blocks;
-    blocks.push_back(TrackFrameConstants::make(viewProjection, inverseView, frame.cameraPosition, frame.lighting));
+    blocks.push_back(
+        TrackFrameConstants::make(viewProjection, inverseView, frame.cameraPosition, frame.lighting, frame.time));
+    m_timeGain = blocks.front().c[249];
     for (const auto& [handle, dynamic] : m_dynamics) {
         if (!dynamic.mesh) {
             continue;
         }
         const auto slot = static_cast<std::uint32_t>(blocks.size());
         blocks.push_back(TrackFrameConstants::make(
-            viewProjection, inverseView, frame.cameraPosition, frame.lighting, dynamic.transform));
+            viewProjection, inverseView, frame.cameraPosition, frame.lighting, frame.time, dynamic.transform));
         touchTextures(*dynamic.mesh);
         collect(*dynamic.mesh, slot);
         if (dynamic.mesh->scattered) {

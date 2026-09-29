@@ -2733,9 +2733,9 @@ bool Game::frame(const InputState& controls, float dt)
         // After the menus, so the frame that opens the pause menu is already
         // paused, as the car's simulation is. The pause stops the world's
         // clocks with it: the time of day, and the clock the world's
-        // animation runs on (inferred: the game's world shaders take no time
-        // of their own, none of the 371 .fxobj files declares one, so
-        // nothing of the world moves while the game is paused).
+        // animation runs on (the game updates its presentation's clock, the
+        // track effects' TimeGain, with 0 while paused; see
+        // render::TrackFrameConstants::timeGain).
         setPaused(menuOpen());
         if (!m_paused) {
             m_timeOfDay->advance(dt);
