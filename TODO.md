@@ -12,7 +12,6 @@ What is left before this plays like Forza Horizon, from player reports and from 
 | Cars | Models are broken (rear body cut off, misplaced side panel, glass shows noise, tyres wrong) and use a hand-written shader. | .carbin decoding fixes and the game's car shaders through the Xenos translator. |
 | World | Shading looks wrong, forests are missing, the sky has no clouds, sun or moon. | Track shaders through the Xenos translator, the forest layers, sky objects. |
 | Effects | No tyre smoke, dust or other particles. | The game's particle system. |
-| HUD | No radio display; no icons on the minimap. | The game's radio now-playing element and map icons. |
 | Menus | No pause menu or full-screen map. | The game's pause menu and world map scenes. |
 | Controls | Pad layout partly assumed (Back changes view; the map should be on Back). | Reading the game's controller layout, then rebinding. |
 | Props | The 100 discount flyers ("upgrade signs") cannot be smashed. | Spawning them as breakables with their model, and counting them. |
@@ -27,7 +26,7 @@ What is left before this plays like Forza Horizon, from player reports and from 
 - Radio in races: the game's `StartRadioFlowForEvent` (a named track timed to the start) is implemented in the radio but not called; gameplay DJ lines, positional stations and forced playlists are not played.
 - Traffic: road classes and roads come from racing lines as a stand-in, because the `.nav` segments are not decoded for traffic yet.
 - Smashable masses: `physicsdefinitions.bin` is not read.
-- Minimap: route lines, the mini leaderboard and text shadows are not drawn (their data or code was not found).
+- Minimap and HUD: route lines, the mini leaderboard, text shadows, career decorations on icons and the "radio tuning" note are not shown (their data or trigger was not found).
 - The HUD's rev dial looks lighter in play than in the HUD tool; needs a reference from the real game.
 
 ## Not started
