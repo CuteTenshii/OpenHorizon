@@ -65,6 +65,8 @@ add_library(fh1engine STATIC
     game/AiDriver.h
     game/CameraSettings.cpp
     game/CameraSettings.h
+    game/DrivingLine.cpp
+    game/DrivingLine.h
     game/Flyers.cpp
     game/Flyers.h
     game/Game.cpp
@@ -91,6 +93,8 @@ add_library(fh1engine STATIC
     physics/WorldCollision.h
     render/CarRenderer.cpp
     render/CarRenderer.h
+    render/DrivingLineRenderer.cpp
+    render/DrivingLineRenderer.h
     render/FrameRenderer.cpp
     render/FrameRenderer.h
     render/FrameStats.cpp

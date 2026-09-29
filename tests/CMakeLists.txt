@@ -84,6 +84,12 @@ target_link_libraries(tst_activities PRIVATE fh1engine)
 # The Colorado test inside runs only when FH1_GAME_DIR names an extracted disc.
 add_test(NAME tst_activities COMMAND tst_activities)
 
+add_executable(tst_race TestHarness.h tst_race.cpp)
+target_compile_options(tst_race PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_race PRIVATE fh1engine)
+# The driving line's rules on synthetic lines; needs no disc.
+add_test(NAME tst_race COMMAND tst_race)
+
 add_executable(tst_scenarios TestHarness.h tst_scenarios.cpp)
 target_compile_options(tst_scenarios PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_scenarios PRIVATE fh1engine)
