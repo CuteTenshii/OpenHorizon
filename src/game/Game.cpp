@@ -299,6 +299,13 @@ Game::Game(Window& window, const GameOptions& options)
 
 Game::~Game()
 {
+    // Ending the game without QUIT or run() (the scenarios, a thrown
+    // error): the same save on leaving, while every system still exists.
+    try {
+        saveProfileOnExit();
+    } catch (const std::exception& e) {
+        logWarning("profile: not saved on exit: {}", e.what());
+    }
     // Both wait out their running jobs on the pool, which must outlive them;
     // the world the jobs read is a member destroyed after this body.
     m_worldRenderer.reset();
@@ -1801,6 +1808,13 @@ void Game::updateActivities(const glm::vec3& from)
 // game writes on a job while play goes on (0x825659e8 queues it, and a
 // request during a write saves again after it); the file here is small
 // enough to write at once.
+//
+// Leaving the game also saves, once: QUIT in the pause menu, closing the
+// window, or the game object going away without either. The console game
+// has no such moment (its QUIT goes back to the splash screen, and the
+// console is switched off, not the game closed); the player chose it so the
+// roads driven since the last save are not lost. It is this engine's rule,
+// not the game's.
 
 void Game::loadProfile()
 {
@@ -1850,6 +1864,16 @@ void Game::requestProfileSave(std::string_view reason)
         logInfo("profile: save requested ({})", reason);
         m_profileSaveRequested = true;
     }
+}
+
+void Game::saveProfileOnExit()
+{
+    if (m_exitSaved || !m_profile) {
+        return;
+    }
+    m_exitSaved = true;
+    logInfo("profile: saving on exit");
+    saveProfile();
 }
 
 void Game::saveProfile()
@@ -2536,6 +2560,7 @@ bool Game::updateMenus(const ui::MenuInput& input, float dt)
         break;
     case ui::PauseAction::Quit:
         // QUIT leaves the game for the desktop.
+        saveProfileOnExit();
         return false;
     default:
         break;
@@ -2886,6 +2911,8 @@ int Game::run()
         m_frameStats->mark(render::FrameStats::Part::Present);
         m_frameStats->endFrame(m_lastPhysicsSteps, m_vehicles.size());
     }
+    // The window closed, or QUIT (which saved already).
+    saveProfileOnExit();
     return 0;
 }
 

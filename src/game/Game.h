@@ -287,6 +287,8 @@ private:
     void requestProfileSave(std::string_view reason);
     /// Gathers the systems' state into the profile and writes it.
     void saveProfile();
+    /// Saves once as the game ends; see "The profile" in Game.cpp.
+    void saveProfileOnExit();
     void updateCamera(float dt);
     render::FrameParams frameParams() const;
     void drawVehicles(const render::FrameParams& frame);
@@ -493,6 +495,8 @@ private:
     std::unique_ptr<profile::ProfileStore> m_profileStore;
     bool m_profileSaveRequested = false;
     std::size_t m_profileSaves = 0;
+    /// The save on leaving the game has been made.
+    bool m_exitSaved = false;
     /// The activities' texts, looked up once.
     struct ActivityTexts {
         std::string enterNow;

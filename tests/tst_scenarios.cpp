@@ -130,6 +130,9 @@ public:
         frame({});
     }
 
+    /// As press(), for a button that may quit the game: false when it did.
+    bool pressMayQuit(fh::Button button) { return step({}, button) && step({}, std::nullopt); }
+
     /// Saves the last frame when FH1_CAPTURE_DIR asks for screenshots.
     void capture(const std::string& name)
     {
@@ -140,7 +143,10 @@ public:
     }
 
 private:
-    void frame(const Hold& hold, std::optional<fh::Button> button = std::nullopt)
+    void frame(const Hold& hold, std::optional<fh::Button> button = std::nullopt) { CHECK(step(hold, button)); }
+
+    /// One frame; false when the game quits.
+    bool step(const Hold& hold, std::optional<fh::Button> button)
     {
         fh::InputState input;
         input.previousButtons = m_previousButtons;
@@ -152,7 +158,7 @@ private:
             input.buttons[static_cast<std::size_t>(*button)] = true;
         }
         m_previousButtons = input.buttons;
-        CHECK(m_game->frame(input, kStep));
+        return m_game->frame(input, kStep);
     }
 
     std::unique_ptr<fh::Game> m_game;
@@ -838,6 +844,79 @@ TEST(progressIsKeptAcrossRestarts)
         }
         CHECK_EQ(kept, static_cast<std::size_t>(std::count(driven.begin(), driven.end(), true)));
     }
+}
+
+// The player chose that leaving the game keeps the roads driven since the
+// last save, which the console game has no moment for: QUIT in the pause
+// menu saves, and so does ending the game any other way.
+TEST(quittingKeepsTheRoadsDriven)
+{
+    if (!gameDir()) {
+        return;
+    }
+    // Colorado's road_094, as in drivenRoadsColourTheMap, far from any
+    // speed trap, outpost or discount sign.
+    fh::GameOptions options;
+    options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
+    options.spawnHeading = 3.14159265F;
+    options.profileDir = freshProfileDir("quit");
+    const auto drivenCount = [](const std::vector<bool>& nodes) {
+        return static_cast<std::size_t>(std::count(nodes.begin(), nodes.end(), true));
+    };
+    const auto keeps = [](const std::vector<bool>& before, const std::vector<bool>& now) {
+        for (std::size_t node = 0; node < before.size(); ++node) {
+            if (before[node] && (node >= now.size() || !now[node])) {
+                return false;
+            }
+        }
+        return true;
+    };
+    const auto visited = [](Session& session) {
+        const fh::ui::Navigation* navigation = session.game().navigation();
+        return navigation != nullptr ? navigation->coverage().visitedNodes() : std::vector<bool>{};
+    };
+    std::vector<bool> beforeQuit;
+    {
+        Session session(options);
+        CHECK(session.waitForCar());
+        session.run(4.0F, {.throttle = 0.7F});
+        session.run(3.0F, {.brake = 1.0F});
+        CHECK_EQ(session.game().profileSaves(), std::size_t{0});
+        beforeQuit = visited(session);
+        CHECK(drivenCount(beforeQuit) > 1);
+        session.press(fh::Button::Start);
+        const fh::ui::PauseMenu* menu = session.game().pauseMenu();
+        CHECK(menu != nullptr);
+        if (menu == nullptr) {
+            return;
+        }
+        for (std::size_t i = 0; i < menu->entries().size()
+            && menu->entries()[static_cast<std::size_t>(menu->focus())].item != fh::ui::PauseItem::Quit;
+            ++i) {
+            session.press(fh::Button::DpadDown);
+        }
+        CHECK(menu->entries()[static_cast<std::size_t>(menu->focus())].item == fh::ui::PauseItem::Quit);
+        CHECK(session.pressMayQuit(fh::Button::A));
+        CHECK(menu->confirming());
+        // EXIT SINGLE PLAYER, confirmed: the game quits, saving once.
+        CHECK(!session.pressMayQuit(fh::Button::A));
+        CHECK_EQ(session.game().profileSaves(), std::size_t{1});
+    }
+    std::vector<bool> beforeClose;
+    {
+        Session session(options);
+        CHECK(session.waitForCar());
+        CHECK(keeps(beforeQuit, visited(session)));
+        // Then further down the road, and the game simply ends (the window
+        // closed).
+        session.run(12.0F, {.throttle = 0.7F});
+        CHECK_EQ(session.game().profileSaves(), std::size_t{0});
+        beforeClose = visited(session);
+        CHECK(drivenCount(beforeClose) > drivenCount(beforeQuit));
+    }
+    Session session(options);
+    CHECK(session.waitForCar());
+    CHECK(keeps(beforeClose, visited(session)));
 }
 
 // A Horizon outpost (GasStation_01, the GASSTATION_001 zone) is discovered
