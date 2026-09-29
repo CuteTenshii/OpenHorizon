@@ -3,8 +3,9 @@
 // built here, and, when FH1_GAME_DIR names an extracted disc, the pause
 // menu's entries for free roam and races with their texts from the string
 // tables, the structure of the scenes the screens bind, the map's tunables,
-// background tiles and cursor area, and the title's movie and music.
-// Nothing here needs an OpenGL context.
+// background tiles and cursor area, and the title's movie and music. The
+// loading screen's cases draw it in an offscreen OpenGL context and skip
+// without one.
 
 #include "TestHarness.h"
 
@@ -12,6 +13,7 @@
 #include "audio/AudioLibrary.h"
 #include "audio/Fev.h"
 #include "base/Bytes.h"
+#include "platform/Window.h"
 #include "ui/AnarkFormats.h"
 #include "ui/LoadingScreen.h"
 #include "ui/MenuCommon.h"
@@ -20,15 +22,28 @@
 #include "ui/PauseMenu.h"
 #include "ui/Presentation.h"
 #include "ui/TitleScreen.h"
+#include "ui/UiRenderer.h"
 #include "ui/UiSounds.h"
+#include "ui/VectorFont.h"
 #include "ui/WorldMap.h"
 #include "vfs/Vfs.h"
 
+#include <glm/glm.hpp>
 #include <pugixml.hpp>
+#include <xds/xds.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
+#include <filesystem>
+#include <format>
+#include <map>
+#include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -455,6 +470,167 @@ TEST(disc_loading_tips_resolve_from_the_string_tables)
     CHECK(scene.contractParameter(root, "MATERIAL_BACKGROUND") >= 0);
 }
 
+/// One offscreen context for the loading screen's cases, or null when this
+/// machine has none (the cases then skip).
+fh::Window* glWindow()
+{
+    static std::unique_ptr<fh::Window> instance = [] {
+        fh::WindowOptions options;
+        options.width = 64;
+        options.height = 64;
+        options.hidden = true;
+        options.vsync = false;
+        try {
+            return std::make_unique<fh::Window>(options);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "skipped: no OpenGL context (%s)\n", e.what());
+            return std::unique_ptr<fh::Window>();
+        }
+    }();
+    return instance.get();
+}
+
+/// The UI textures the bars are drawn with, decoded once.
+class DecodedTextures {
+public:
+    explicit DecodedTextures(const fh::Vfs& vfs)
+        : m_vfs(vfs)
+    {
+    }
+
+    const xds::Image* get(const std::string& path)
+    {
+        const auto it = m_images.find(path);
+        if (it != m_images.end()) {
+            return it->second ? &*it->second : nullptr;
+        }
+        std::optional<xds::Image> image;
+        if (const std::optional<fh::Bytes> data = m_vfs.read(path)) {
+            image = xds::Texture::parse(std::span<const std::uint8_t>(*data)).decodeLevel(0);
+        }
+        const auto& stored = m_images.emplace(path, std::move(image)).first->second;
+        return stored ? &*stored : nullptr;
+    }
+
+private:
+    const fh::Vfs& m_vfs;
+    std::map<std::string, std::optional<xds::Image>> m_images;
+};
+
+/// How opaque `model` draws at the layer-space point `at`: its colour's
+/// alpha times each layer's texel alpha, sampled as UiRenderer does (a
+/// clamped layer is transparent outside its square). 0 off the mesh.
+float opacityAt(const DrawModel& model, glm::vec2 at, DecodedTextures& textures)
+{
+    const glm::mat4 inverse = glm::inverse(model.world);
+    const glm::vec4 local = inverse * glm::vec4(at, model.world[3].z, 1.0F);
+    const std::vector<MeshVertex>& vertices = model.mesh->vertices;
+    const std::vector<std::uint16_t>& indices = model.mesh->indices;
+    for (std::size_t t = 0; t + 2 < indices.size(); t += 3) {
+        const MeshVertex& a = vertices[indices[t]];
+        const MeshVertex& b = vertices[indices[t + 1]];
+        const MeshVertex& c = vertices[indices[t + 2]];
+        const glm::vec2 ab = glm::vec2(b.position) - glm::vec2(a.position);
+        const glm::vec2 ac = glm::vec2(c.position) - glm::vec2(a.position);
+        const glm::vec2 ap = glm::vec2(local) - glm::vec2(a.position);
+        const float area = ab.x * ac.y - ab.y * ac.x;
+        if (area == 0.0F) {
+            continue;
+        }
+        const float wb = (ap.x * ac.y - ap.y * ac.x) / area;
+        const float wc = (ab.x * ap.y - ab.y * ap.x) / area;
+        const float wa = 1.0F - wb - wc;
+        constexpr float kEdge = -1e-4F;
+        if (wa < kEdge || wb < kEdge || wc < kEdge) {
+            continue;
+        }
+        const glm::vec3 uv(a.uv * wa + b.uv * wb + c.uv * wc, 1.0F);
+        float opacity = model.color.a;
+        for (const DrawModel::Layer& layer : model.layers) {
+            const xds::Image* image = textures.get(layer.texture);
+            if (image == nullptr) {
+                return 0.0F;
+            }
+            glm::vec2 st(glm::dot(layer.uvRow0, uv), glm::dot(layer.uvRow1, uv));
+            for (int axis = 0; axis < 2; ++axis) {
+                const TextureWrap wrap = axis == 0 ? layer.wrapU : layer.wrapV;
+                float& value = st[axis];
+                if (wrap == TextureWrap::Clamp) {
+                    if (value < 0.0F || value > 1.0F) {
+                        return 0.0F;
+                    }
+                } else if (wrap == TextureWrap::Repeat) {
+                    value -= std::floor(value);
+                } else {
+                    value = 1.0F - std::abs(value - 2.0F * std::floor(0.5F * value) - 1.0F);
+                }
+            }
+            const auto x
+                = std::min(static_cast<std::uint32_t>(st.x * static_cast<float>(image->width)), image->width - 1);
+            const auto y
+                = std::min(static_cast<std::uint32_t>(st.y * static_cast<float>(image->height)), image->height - 1);
+            opacity
+                *= static_cast<float>(image->rgba[(static_cast<std::size_t>(y) * image->width + x) * 4 + 3]) / 255.0F;
+        }
+        return opacity;
+    }
+    return 0.0F;
+}
+
+// The player's report: on the DISCOUNT SIGNS tip the text straddled the
+// edges of its brush bars and the top of its first line was lost under the
+// title's dark bar. Every line's capitals, from the baseline to the cap
+// height and along the whole line, must lie on the opaque part of the bar
+// the scene puts under that line.
+TEST(disc_loading_tip_lines_sit_on_their_bars)
+{
+    const char* dir = gameDir();
+    if (!dir || !glWindow()) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    // Seed 33 draws the tip of the report first.
+    LoadingScreen screen(vfs, "en", 33);
+    screen.show("freeroam");
+    CHECK(screen.tip() != nullptr && screen.tip()->title == "DISCOUNT SIGNS");
+    FontLibrary fonts(vfs, "en");
+    DecodedTextures textures(vfs);
+    constexpr float kStep = 1.0F / 60.0F;
+    for (const auto& [width, height] : {std::array{1920, 1080}, std::array{1280, 720}}) {
+        // Three seconds in, the tip is held at its full display.
+        for (int frame = 0; frame < 180; ++frame) {
+            screen.update(kStep);
+            screen.draw(width, height);
+        }
+        const std::vector<LoadingTipLine> lines = screen.tipLines();
+        CHECK_EQ(lines.size(), std::size_t{3});
+        for (std::size_t i = 0; i < lines.size(); ++i) {
+            const LoadingTipLine& line = lines[i];
+            const VectorFont* font = fonts.font(line.text.font);
+            CHECK(font != nullptr);
+            if (font == nullptr) {
+                continue;
+            }
+            for (const TextLineLayout& laid : layoutText(*font, line.text)) {
+                const float capTop = laid.baseline + font->capHeight() * line.text.size;
+                for (const float x : {laid.x, laid.x + 0.5F * laid.width, laid.x + laid.width}) {
+                    for (const float y : {laid.baseline, capTop}) {
+                        const glm::vec4 at = line.text.world * glm::vec4(x, y, 0.0F, 1.0F);
+                        const float opacity = opacityAt(line.bar, glm::vec2(at), textures);
+                        if (opacity < 0.5F) {
+                            std::fprintf(stderr, "  %dx%d line %zu \"%s\": (%.1f, %.1f) on its bar at %.2f\n", width,
+                                height, i + 1, line.text.text.c_str(), static_cast<double>(x), static_cast<double>(y),
+                                static_cast<double>(opacity));
+                        }
+                        CHECK(opacity >= 0.5F);
+                    }
+                }
+            }
+        }
+    }
+}
+
 TEST(disc_title_scene_binds_the_movie_and_the_prompt)
 {
     const char* dir = gameDir();
@@ -609,5 +785,13 @@ TEST(disc_ui_sounds_resolve_to_uiingame_events)
 
 int main(int argc, char** argv)
 {
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
+    // Never open a window on the desktop or play through the speakers, nor
+    // write to the player's own shader cache.
+    setenv("SDL_VIDEO_DRIVER", "offscreen", 0);
+    setenv("SDL_AUDIO_DRIVER", "dummy", 0);
+    const std::filesystem::path cache = std::filesystem::temp_directory_path() / "fh1-tst-menu-cache";
+    setenv("XDG_CACHE_HOME", cache.c_str(), 1);
+    const int result = fh::test::runAllTests(argc > 1 ? argv[1] : "");
+    std::filesystem::remove_all(cache);
+    return result;
 }

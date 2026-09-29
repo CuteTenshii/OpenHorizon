@@ -2,6 +2,7 @@
 
 #include "AnarkFormats.h"
 #include "Presentation.h"
+#include "SuperStacker.h"
 #include "UiRenderer.h"
 #include "VectorFont.h"
 
@@ -14,6 +15,8 @@
 #include <array>
 #include <format>
 #include <limits>
+#include <string>
+#include <vector>
 
 namespace fh::ui {
 
@@ -98,12 +101,18 @@ struct LoadingScreen::Impl {
     UiRenderer renderer;
     LoadingDefinitions definitions;
     std::mt19937 random;
+    /// Every SUPER_STACKER of the scene: the title's (its crisp tape, smudge
+    /// tape and dirt), the statistic's and each line's (its Pill_Big).
+    SuperStackers stackers;
 
     int rootContract = -1;
     int title = -1;
     int tipLayout = -1;
     int backgroundMaterial = -1;
     std::array<int, kLines> lines{};
+    /// Each line's brush bar, -1 where the scene has none.
+    std::array<int, kLines> bars{};
+    std::size_t linesUsed = 0;
     float lineWidth = 0.0F;
     TextStyle lineStyle;
 
@@ -122,6 +131,9 @@ struct LoadingScreen::Impl {
     float timer = 0.0F;
     bool whooshed = false;
     bool shown = false;
+    /// Whether the scene has been laid out since it was shown, so its
+    /// world transforms are those drawn.
+    bool drawn = false;
 };
 
 LoadingScreen::Impl::Impl(const Vfs& vfs, const std::string& language, std::uint32_t seed)
@@ -142,10 +154,19 @@ LoadingScreen::Impl::Impl(const Vfs& vfs, const std::string& language, std::uint
     tipLayout = scene.contractParameter(rootContract, "COMPONENT_TIP_INFO");
     backgroundMaterial = scene.contractParameter(rootContract, "MATERIAL_BACKGROUND");
     for (int i = 0; i < kLines; ++i) {
-        lines[static_cast<std::size_t>(i)] = scene.contractParameter(rootContract, std::format("TEXT_LINE_{}", i + 1));
+        const auto index = static_cast<std::size_t>(i);
+        lines[index] = scene.contractParameter(rootContract, std::format("TEXT_LINE_{}", i + 1));
+        bars[index] = -1;
+        if (lines[index] >= 0) {
+            const std::vector<int> pills = scene.childrenNamed(scene.parent(lines[index]), "Pill_Big");
+            if (!pills.empty()) {
+                bars[index] = pills.front();
+            }
+        }
     }
     lineWidth = textBoxWidth(scene, lines[0]);
     lineStyle = textStyle(scene, lines[0]);
+    stackers.bind(scene, renderer);
 }
 
 void LoadingScreen::Impl::pickBackground()
@@ -224,6 +245,7 @@ void LoadingScreen::Impl::showTip()
         split.push_back(wrapped.substr(start, end - start));
         start = end + 1;
     }
+    linesUsed = std::min(split.size(), lines.size());
     for (int i = 0; i < kLines; ++i) {
         const bool used = static_cast<std::size_t>(i) < split.size();
         if (used && lines[static_cast<std::size_t>(i)] >= 0) {
@@ -267,6 +289,8 @@ void LoadingScreen::show(std::string_view groupName)
 {
     Impl& impl = *m_impl;
     impl.scene.reset();
+    impl.drawn = false;
+    impl.linesUsed = 0;
     impl.scene.fireEvent(impl.rootContract, "SHOW");
     impl.pickBackground();
     impl.group = impl.definitions.find(groupName);
@@ -323,7 +347,9 @@ void LoadingScreen::draw(int width, int height)
     if (!impl.shown) {
         return;
     }
+    impl.stackers.layout(impl.scene, impl.renderer);
     std::vector<DrawItem> items = impl.scene.evaluate();
+    impl.drawn = true;
     // The background image goes into the background material's texture
     // (MATERIAL_BACKGROUND).
     for (DrawItem& item : items) {
@@ -350,6 +376,28 @@ const LoadingTip* LoadingScreen::tip() const
 const std::string& LoadingScreen::background() const
 {
     return m_impl->backgroundPath;
+}
+
+std::vector<LoadingTipLine> LoadingScreen::tipLines() const
+{
+    const Impl& impl = *m_impl;
+    std::vector<LoadingTipLine> out;
+    if (!impl.drawn || !impl.tip) {
+        return out;
+    }
+    std::vector<DrawItem> items = impl.scene.evaluate();
+    applyTextScale(items);
+    for (std::size_t i = 0; i < impl.linesUsed; ++i) {
+        const auto text = std::ranges::find_if(
+            items, [&](const DrawItem& item) { return item.isText && item.element == impl.lines[i]; });
+        const auto bar = std::ranges::find_if(
+            items, [&](const DrawItem& item) { return !item.isText && item.element == impl.bars[i]; });
+        if (text == items.end() || bar == items.end()) {
+            continue;
+        }
+        out.push_back({text->text, bar->model});
+    }
+    return out;
 }
 
 } // namespace fh::ui
