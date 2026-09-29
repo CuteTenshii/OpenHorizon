@@ -47,18 +47,26 @@ Each run writes its full log, debug messages included, to `~/.local/state/fh1-na
 
 ### Controls
 
+The pad follows the game's default controller layout.
+
 | Action | Keyboard | Xbox pad |
 |--------|----------|----------|
 | Throttle, brake | W, S (or arrows) | Right, left trigger |
 | Steer | A, D (or arrows) | Left stick |
 | Handbrake | Space | A |
 | Shift up, down (manual) | E, Q | B, X |
-| Camera | C | Y or right stick click |
+| Start an event at its start point | Enter | X |
+| Change the view | C | RB |
+| Look around, look back | Right mouse button and mouse, V | Right stick, right stick click |
+| Radio station | Page Up, Page Down | D-pad left, right |
+| Pause menu | Escape | Start |
+| Map | M | Back |
+| Menus | Arrows, Enter, Escape | D-pad or left stick, A, B |
+| Map cursor, zoom | W, A, S, D, then Q and E | Left stick, right stick |
 | Free camera | F, then mouse and WASD, Q and E | |
 | Reset the car | R | |
-| Debug statistics | Tab | Back |
+| Debug statistics | Tab or F3 | |
 | Fullscreen | F11 | |
-| Leave a race, quit | Escape | |
 
 ## Tools
 
