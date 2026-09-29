@@ -59,6 +59,8 @@ add_library(fh1engine STATIC
     game/AiDriver.h
     game/CameraSettings.cpp
     game/CameraSettings.h
+    game/Flyers.cpp
+    game/Flyers.h
     game/Game.cpp
     game/Game.h
     game/GameObjects.cpp

@@ -779,8 +779,13 @@ TEST(readsZonePlacements)
     second.blockId = 0xFFFFFFFF;
     second.blockName = "FR04_NODE";
     second.blockBytes = {0x93, 0xCE};
-    const auto placements = world::TrackPlacements::readZone(zoneFile({first, second}));
-    CHECK_EQ(placements.size(), std::size_t{2});
+    TestPlacement flyer;
+    flyer.draw = 9;
+    flyer.blockId = 0xA2;
+    flyer.blockName = "flyer_007";
+    flyer.blockBytes = {0x00, 0x15};
+    const auto placements = world::TrackPlacements::readZone(zoneFile({first, second, flyer}));
+    CHECK_EQ(placements.size(), std::size_t{3});
     CHECK_EQ(placements[0].first, 3U);
     CHECK_EQ(placements[1].first, 7U);
     const world::Placement& p = placements[0].second;
@@ -798,6 +803,13 @@ TEST(readsZonePlacements)
     CHECK(!event.belongsToEvent("FR0"));
     CHECK(event.belongsToRace("FR99", 206));
     CHECK(!event.belongsToRace("FR99", 12));
+    CHECK(event.gameplayId.empty());
+    CHECK(p.gameplayId.empty());
+    const world::Placement& gameplay = placements[2].second;
+    CHECK(!gameplay.eventProp);
+    CHECK(gameplay.eventTag.empty());
+    CHECK(gameplay.eventRoutes.empty());
+    CHECK_EQ(gameplay.gameplayId, std::string("flyer_007"));
 
     Bytes truncated = zoneFile({first, second});
     truncated.resize(truncated.size() - 10);
@@ -1208,6 +1220,12 @@ TEST(loadsColorado)
     CHECK_NEAR(static_cast<double>(colorado.placements->scatterInstanceCount()), 128600.0, 500.0);
     const world::WorldIndex& index = colorado.index;
     CHECK_NEAR(static_cast<double>(index.placedCount() - index.scatteredCount()), 48000.0, 1000.0);
+    // The 100 discount signs, one placed chunk each.
+    std::size_t flyers = 0;
+    for (const world::WorldChunk& chunk : index.chunks()) {
+        flyers += chunk.placed && chunk.placement.gameplayId.starts_with("flyer_") ? 1 : 0;
+    }
+    CHECK_EQ(flyers, std::size_t{100});
     std::size_t backdrop = 0;
     for (const world::WorldChunk& chunk : index.chunks()) {
         if (chunk.backdrop) {

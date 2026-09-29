@@ -11,6 +11,7 @@
 #include "data/StringTable.h"
 #include "game/AiDriver.h"
 #include "game/CameraSettings.h"
+#include "game/Flyers.h"
 #include "game/GameObjects.h"
 #include "game/Race.h"
 #include "game/RaceData.h"
@@ -195,6 +196,9 @@ private:
     std::optional<radio::RadioNowPlaying> m_radioPanel;
     std::vector<std::unique_ptr<Vehicle>> m_vehicles;
     std::optional<Smashables> m_smashables;
+    /// The discount signs and which were smashed; missing if the game
+    /// mode lists none.
+    std::optional<Flyers> m_flyers;
     /// Renderer handle of each loose smashable, by body index.
     std::unordered_map<std::size_t, int> m_debrisHandles;
     /// World chunks the renderer leaves out: those of loose smashables.

@@ -117,9 +117,10 @@ std::vector<std::pair<std::uint32_t, Placement>> TrackPlacements::readZone(ByteV
                 placement.eventProp = true;
             }
             const ByteView name = r.bytes(kBlockTrailerBytes);
-            if (eventBlock && placement.eventTag.empty()) {
-                const auto end = std::find(name.begin(), name.end(), std::uint8_t{0});
-                placement.eventTag.assign(name.begin(), end);
+            const auto end = std::find(name.begin(), name.end(), std::uint8_t{0});
+            std::string& target = eventBlock ? placement.eventTag : placement.gameplayId;
+            if (target.empty()) {
+                target.assign(name.begin(), end);
             }
         }
         placements.emplace_back(draws[k], std::move(placement));

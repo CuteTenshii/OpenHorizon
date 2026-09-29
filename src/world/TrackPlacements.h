@@ -54,6 +54,14 @@ struct Placement {
     /// by every race run on it. Props with an eventTag mostly list route 0,
     /// the free-roam session's.
     std::vector<std::uint8_t> eventRoutes;
+    /// The GameplayID of the `Ribbon_00/GameObjs.xml` entry the prop stands
+    /// for, named by a block that is not an event block: "flyer_001" to
+    /// "flyer_100" (the discount signs), "speed_camera_NNN",
+    /// "average_speed_NNN". Empty for other props. Verified on Colorado:
+    /// each of the 100 flyer names is on the placements of one model only,
+    /// at its GameObjs.xml position to the millimetre, with the object's
+    /// XAxis as row 0 and its ZAxis as row 2 negated.
+    std::string gameplayId;
 
     /// True if the prop belongs to the event whose HorizonEventID is
     /// `eventId`, by its eventTag (ignoring case).
@@ -80,7 +88,8 @@ struct Placement {
 ///         and a 32-byte NUL-padded name; a is 0xFFFFFFFF for event props
 ///         (see Placement::eventProp), whose m bytes are
 ///         Placement::eventRoutes and whose name, when not empty, is
-///         Placement::eventTag
+///         Placement::eventTag; in other blocks a non-empty name is
+///         Placement::gameplayId
 ///
 /// A zone file lists the draws the game draws while the camera is in that
 /// zone (ZoneGrid says where each zone is), so zones overlap and a draw

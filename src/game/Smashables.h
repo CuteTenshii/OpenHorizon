@@ -17,6 +17,7 @@ class Vfs;
 
 namespace world {
 class WorldIndex;
+struct TrackWorld;
 } // namespace world
 
 /// The breakable props of a track: signs, fences, marker poles, cones and
@@ -27,6 +28,13 @@ class WorldIndex;
 /// placement is matched by position to the placed render models of the world
 /// index, so the object's models can leave the static world when it is hit.
 /// All pieces at one position move as one object.
+///
+/// The discount signs ("flyers", type Flyer in SmashableObjectTypes.xml) are
+/// not in CollObjs.xml. Each is one zone placement of a render model whose
+/// record names the sign's GameObjs.xml GameplayID (see
+/// world::Placement::gameplayId); those placements become bodies too, framed
+/// by the placement's rotation so a sign standing at an angle gets a shape
+/// along its board rather than along the world axes.
 ///
 /// The game describes each object type's mass and collision shape in the
 /// track's PhysicsDefinitions.bin, which is not decoded yet; here an
@@ -41,9 +49,15 @@ public:
         /// The chunks of its finest level, drawn once it moves.
         std::vector<std::uint32_t> finestChunks;
         std::string type;
-        /// World bounds as placed; the body's frame starts axis-aligned
-        /// with its centre here.
+        /// The GameObjs.xml GameplayID the object stands for ("flyer_042"),
+        /// or empty for plain props.
+        std::string gameplayId;
+        /// Where the body's frame is as placed: the centre of its bounds
+        /// and, for a flyer, its placement's rotation (plain props start
+        /// axis-aligned).
         glm::vec3 restCentre{0.0F};
+        glm::quat restOrientation{1.0F, 0.0F, 0.0F, 0.0F};
+        /// Half the size of its bounds along the body's axes.
         glm::vec3 halfExtents{0.1F};
         float mass = 10.0F;
         /// Spheres in the body frame.
@@ -64,8 +78,12 @@ public:
     };
 
     /// Reads the track's placements and matches them against the world
-    /// index. Placements without a matching model are skipped.
+    /// index. Placements without a matching model are skipped. Throws
+    /// DataError if CollObjs.xml is missing or malformed.
     static Smashables load(const Vfs& vfs, std::string_view track, const world::WorldIndex& index);
+    /// As above, plus the discount signs, whose model bounds are read from
+    /// the world's archive.
+    static Smashables load(const Vfs& vfs, std::string_view track, const world::TrackWorld& world);
 
     const std::vector<Body>& bodies() const { return m_bodies; }
     std::size_t bodyCount() const { return m_bodies.size(); }
@@ -85,7 +103,13 @@ public:
     /// loose.
     std::vector<std::size_t> reset();
 
+    /// The body standing for GameObjs.xml object `gameplayId` (ignoring
+    /// case), or nullptr.
+    const Body* findGameplayObject(std::string_view gameplayId) const;
+
 private:
+    void addFlyers(const world::TrackWorld& world);
+    void addBody(Body body);
     void knockLoose(std::size_t index);
     std::vector<std::size_t> nearby(const glm::vec3& point, float radius) const;
     static std::uint64_t cellKey(int x, int z);

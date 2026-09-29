@@ -234,10 +234,15 @@ void Game::loadWorld()
     m_worldRenderer = std::make_unique<render::WorldRenderer>(*m_world, *m_jobs);
     m_collision = std::make_unique<physics::WorldCollision>(*m_world, *m_jobs, m_vfs, m_options.track);
     try {
-        m_smashables = Smashables::load(m_vfs, m_options.track, m_world->index);
+        m_smashables = Smashables::load(m_vfs, m_options.track, *m_world);
         m_collision->setExcludedChunks(m_smashables->chunkMask());
     } catch (const std::exception& e) {
         logWarning("smashables: {}", e.what());
+    }
+    try {
+        m_flyers = Flyers::load(m_vfs, m_options.track);
+    } catch (const std::exception& e) {
+        logWarning("flyers: {}", e.what());
     }
     m_hiddenChunks.assign(m_world->index.chunks().size(), false);
 
@@ -463,6 +468,12 @@ void Game::collideSmashables(Vehicle& vehicle)
     for (std::size_t index : m_smashables->collideCar(*vehicle.physics, spheres)) {
         const Smashables::Body& body = m_smashables->bodies()[index];
         logDebug("smashed {} ({:.0f} kg) at {:.1f} m/s", body.type, body.mass, vehicle.physics->speed());
+        // Only the player's car collects: the reward is a discount on the
+        // player's upgrades and the notification is the player's.
+        if (vehicle.role == Vehicle::Role::Player && m_flyers && m_flyers->collect(body.gameplayId)) {
+            logInfo("discount sign {} smashed: {}/{}, upgrade discount {}", body.gameplayId,
+                m_flyers->collectedCount(), m_flyers->total(), m_flyers->upgradeDiscount());
+        }
         for (std::uint32_t chunk : body.chunks) {
             m_hiddenChunks[chunk] = true;
         }

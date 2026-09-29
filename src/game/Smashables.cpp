@@ -3,14 +3,20 @@
 #include "base/Error.h"
 #include "base/Log.h"
 #include "vfs/Vfs.h"
+#include "world/RenderMesh.h"
+#include "world/TrackWorld.h"
 #include "world/WorldIndex.h"
 
+#include <lzx/zip.h>
 #include <pugixml.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <limits>
+#include <map>
+#include <optional>
 
 namespace fh {
 
@@ -28,6 +34,10 @@ constexpr float kMinMass = 3.0F;
 constexpr float kMaxMass = 250.0F;
 constexpr float kRestitution = 0.25F;
 constexpr float kFriction = 0.6F;
+/// GameplayIDs of the discount signs: flyer_001 to flyer_100 in Colorado's
+/// GameObjs.xml, the names the game's own check compares (the string
+/// "flyer_" is compared over six characters at 0x8259115c).
+constexpr std::string_view kFlyerPrefix = "flyer_";
 
 std::uint64_t positionKey(const glm::vec3& p)
 {
@@ -51,6 +61,39 @@ std::string baseType(std::string_view physicsType)
         name.resize(dot);
     }
     return name;
+}
+
+/// Mass, inertia and collision spheres from the body's half extents.
+void shapeBody(Smashables::Body& body)
+{
+    const glm::vec3 size = body.halfExtents * 2.0F;
+    body.mass = std::clamp(size.x * size.y * size.z * kDensity, kMinMass, kMaxMass);
+    body.inverseInertia = glm::vec3(12.0F / (body.mass * (size.y * size.y + size.z * size.z)),
+        12.0F / (body.mass * (size.x * size.x + size.z * size.z)),
+        12.0F / (body.mass * (size.x * size.x + size.y * size.y)));
+
+    // A row of spheres along the longest side, as thick as the middle
+    // extent: a pole becomes a stack, a fence a line.
+    const glm::vec3 h = body.halfExtents;
+    int longAxis = 0;
+    if (h.y > h[longAxis]) {
+        longAxis = 1;
+    }
+    if (h.z > h[longAxis]) {
+        longAxis = 2;
+    }
+    std::array<float, 3> sorted{h.x, h.y, h.z};
+    std::sort(sorted.begin(), sorted.end());
+    const float radius = std::clamp(sorted[1], 0.08F, 0.6F);
+    const float length = h[longAxis];
+    const int count = std::clamp(static_cast<int>(std::ceil(length / radius)), 1, 8);
+    body.spheres.clear();
+    for (int k = 0; k < count; ++k) {
+        glm::vec3 centre(0.0F);
+        const float t = count == 1 ? 0.0F : static_cast<float>(k) / static_cast<float>(count - 1);
+        centre[longAxis] = -length + radius + t * std::max(2.0F * (length - radius), 0.0F);
+        body.spheres.emplace_back(centre, radius);
+    }
 }
 
 glm::mat3 worldInverseInertia(const Smashables::Body& body)
@@ -82,7 +125,7 @@ void applyBodyImpulse(Smashables::Body& body, const glm::vec3& impulse, const gl
 glm::vec3 sphereCentre(const Smashables::Body& body, const glm::vec4& sphere)
 {
     if (!body.loose) {
-        return body.restCentre + glm::vec3(sphere);
+        return body.restCentre + body.restOrientation * glm::vec3(sphere);
     }
     return body.position + body.orientation * glm::vec3(sphere);
 }
@@ -96,9 +139,9 @@ glm::mat4 Smashables::Body::displacement() const
     }
     glm::mat4 current = glm::mat4_cast(orientation);
     current[3] = glm::vec4(position, 1.0F);
-    glm::mat4 rest(1.0F);
-    rest[3] = glm::vec4(-restCentre, 1.0F);
-    return current * rest;
+    glm::mat4 rest = glm::mat4_cast(restOrientation);
+    rest[3] = glm::vec4(restCentre, 1.0F);
+    return current * glm::inverse(rest);
 }
 
 std::uint64_t Smashables::cellKey(int x, int z)
@@ -175,40 +218,96 @@ Smashables Smashables::load(const Vfs& vfs, std::string_view track, const world:
         body.chunks = std::move(group.chunks);
         body.restCentre = (lo + hi) * 0.5F;
         body.halfExtents = glm::max((hi - lo) * 0.5F, glm::vec3(0.05F));
-        const glm::vec3 size = body.halfExtents * 2.0F;
-        body.mass = std::clamp(size.x * size.y * size.z * kDensity, kMinMass, kMaxMass);
-        body.inverseInertia = glm::vec3(12.0F / (body.mass * (size.y * size.y + size.z * size.z)),
-            12.0F / (body.mass * (size.x * size.x + size.z * size.z)),
-            12.0F / (body.mass * (size.x * size.x + size.y * size.y)));
-
-        // A row of spheres along the longest side, as thick as the middle
-        // extent: a pole becomes a stack, a fence a line.
-        const glm::vec3 h = body.halfExtents;
-        int longAxis = 0;
-        if (h.y > h[longAxis]) {
-            longAxis = 1;
-        }
-        if (h.z > h[longAxis]) {
-            longAxis = 2;
-        }
-        float sorted[3] = {h.x, h.y, h.z};
-        std::sort(sorted, sorted + 3);
-        const float radius = std::clamp(sorted[1], 0.08F, 0.6F);
-        const float length = h[longAxis];
-        const int count = std::clamp(static_cast<int>(std::ceil(length / radius)), 1, 8);
-        for (int k = 0; k < count; ++k) {
-            glm::vec3 centre(0.0F);
-            const float t = count == 1 ? 0.0F : static_cast<float>(k) / static_cast<float>(count - 1);
-            centre[longAxis] = -length + radius + t * std::max(2.0F * (length - radius), 0.0F);
-            body.spheres.emplace_back(centre, radius);
-        }
-        const auto cx = static_cast<int>(std::floor(body.restCentre.x / kBodyCell));
-        const auto cz = static_cast<int>(std::floor(body.restCentre.z / kBodyCell));
-        result.m_cells[cellKey(cx, cz)].push_back(result.m_bodies.size());
-        result.m_bodies.push_back(std::move(body));
+        shapeBody(body);
+        result.addBody(std::move(body));
     }
     logInfo("smashables: {} objects from {} placements", result.m_bodies.size(), placements);
     return result;
+}
+
+Smashables Smashables::load(const Vfs& vfs, std::string_view track, const world::TrackWorld& world)
+{
+    Smashables result = load(vfs, track, world.index);
+    result.addFlyers(world);
+    return result;
+}
+
+void Smashables::addBody(Body body)
+{
+    const auto cx = static_cast<int>(std::floor(body.restCentre.x / kBodyCell));
+    const auto cz = static_cast<int>(std::floor(body.restCentre.z / kBodyCell));
+    m_cells[cellKey(cx, cz)].push_back(m_bodies.size());
+    m_bodies.push_back(std::move(body));
+}
+
+void Smashables::addFlyers(const world::TrackWorld& world)
+{
+    const auto& chunks = world.index.chunks();
+    // Every level of a sign shares one placement, so they group by name.
+    std::map<std::string, std::vector<std::uint32_t>> byId;
+    for (std::uint32_t i = 0; i < chunks.size(); ++i) {
+        const world::WorldChunk& chunk = chunks[i];
+        if (chunk.placed && !chunk.scattered && !m_chunkMask[i]
+            && startsWithNoCase(chunk.placement.gameplayId, kFlyerPrefix)) {
+            byId[chunk.placement.gameplayId].push_back(i);
+        }
+    }
+    const auto& entries = world.archive->entries();
+    std::size_t added = 0;
+    for (auto& [id, members] : byId) {
+        const world::Placement& placement = chunks[members.front()].placement;
+        // The model's own bounds, in the parser's coordinates, which the
+        // placement maps to the world.
+        glm::vec3 lo(std::numeric_limits<float>::max());
+        glm::vec3 hi(std::numeric_limits<float>::lowest());
+        float finestBand = std::numeric_limits<float>::max();
+        for (std::uint32_t c : members) {
+            const std::optional<world::RenderMeshHeader> header = world::rendermesh::readHeader(
+                world::readEntryPrefix(*world.archive, entries[chunks[c].entry], world::rendermesh::kHeaderBytes));
+            if (header) {
+                lo = glm::min(lo, header->boundsMin);
+                hi = glm::max(hi, header->boundsMax);
+            }
+            finestBand = std::min(finestBand, chunks[c].bandStart);
+        }
+        // Placement::apply maps a parsed point p to x·row0 + y·row1 − z·row2,
+        // so these are the model's axes in the world.
+        const auto& r = placement.rows;
+        const glm::mat3 axes(glm::vec3(r[0], r[1], r[2]), glm::vec3(r[3], r[4], r[5]), -glm::vec3(r[6], r[7], r[8]));
+        const glm::vec3 scale(glm::length(axes[0]), glm::length(axes[1]), glm::length(axes[2]));
+        if (lo.x > hi.x || glm::determinant(axes) <= 0.0F || scale.x <= 0.0F || scale.y <= 0.0F || scale.z <= 0.0F) {
+            logWarning("smashables: {} has no usable model or placement; left static", id);
+            continue;
+        }
+        Body body;
+        body.type = "Flyer";
+        body.gameplayId = id;
+        body.restCentre = placement.apply((lo + hi) * 0.5F);
+        body.restOrientation
+            = glm::normalize(glm::quat_cast(glm::mat3(axes[0] / scale.x, axes[1] / scale.y, axes[2] / scale.z)));
+        body.halfExtents = glm::max((hi - lo) * 0.5F * scale, glm::vec3(0.05F));
+        for (std::uint32_t c : members) {
+            m_chunkMask[c] = true;
+            if (chunks[c].bandStart <= finestBand) {
+                body.finestChunks.push_back(c);
+            }
+        }
+        body.chunks = std::move(members);
+        shapeBody(body);
+        addBody(std::move(body));
+        ++added;
+    }
+    logInfo("smashables: {} discount signs", added);
+}
+
+const Smashables::Body* Smashables::findGameplayObject(std::string_view gameplayId) const
+{
+    for (const Body& body : m_bodies) {
+        if (!body.gameplayId.empty() && iequals(body.gameplayId, gameplayId)) {
+            return &body;
+        }
+    }
+    return nullptr;
 }
 
 std::vector<std::size_t> Smashables::nearby(const glm::vec3& point, float radius) const
@@ -244,7 +343,7 @@ void Smashables::knockLoose(std::size_t index)
     body.sleeping = false;
     body.sleepTimer = 0.0F;
     body.position = body.restCentre;
-    body.orientation = glm::quat(1.0F, 0.0F, 0.0F, 0.0F);
+    body.orientation = body.restOrientation;
     body.velocity = glm::vec3(0.0F);
     body.angularVelocity = glm::vec3(0.0F);
     m_loose.push_back(index);
