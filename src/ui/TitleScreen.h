@@ -53,17 +53,19 @@ public:
     static constexpr float kFadeOutSeconds = 2.0F;
 
     /// What one call asks for, in order: the scene events to fire at the
-    /// root contract, then the music change, then the action.
+    /// root contract, the UI sounds to play (ui4audio.xml names), then the
+    /// music change, then the action.
     struct Step {
         std::vector<std::string_view> events;
+        std::vector<std::string_view> sounds;
         bool startMusic = false;
         bool stopMusic = false;
         TitleAction action = TitleAction::None;
     };
 
     /// Entering the screen without a profile (0x82855fa0, 0x8283d0e0):
-    /// CONTROLLER_ONLY, the music, FADE_IN due in kFadeInDelay updates, the
-    /// idle timer from zero.
+    /// CONTROLLER_ONLY, PressStartSlideOn (0x82856418), the music, FADE_IN
+    /// due in kFadeInDelay updates, the idle timer from zero.
     Step enter();
     /// `fadeOutComplete` is whether the scene fired FADE_OUT_COMPLETE at the
     /// root contract since the last update.
@@ -169,6 +171,8 @@ public:
     double movieTime() const;
     /// Whether the title music is playing.
     bool musicPlaying() const;
+    /// The UI sounds the screen has played, in order; empty without sound.
+    std::vector<std::string> soundsPlayed() const;
 
 private:
     struct Impl;

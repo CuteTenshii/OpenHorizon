@@ -8,6 +8,7 @@
 
 #include "TestHarness.h"
 
+#include "audio/AudioDevice.h"
 #include "audio/AudioLibrary.h"
 #include "audio/Fev.h"
 #include "base/Bytes.h"
@@ -19,6 +20,7 @@
 #include "ui/PauseMenu.h"
 #include "ui/Presentation.h"
 #include "ui/TitleScreen.h"
+#include "ui/UiSounds.h"
 #include "ui/WorldMap.h"
 #include "vfs/Vfs.h"
 
@@ -233,6 +235,53 @@ TEST(title_prompt_goes_to_the_attract_after_53_idle_seconds)
     }
     CHECK(fires(flow.update({}, kStep, false), "FADE_IN"));
     CHECK(flow.update(start, kStep, false).action == TitleAction::Start);
+}
+
+bool plays(const TitleFlow::Step& step, std::string_view sound)
+{
+    return std::find(step.sounds.begin(), step.sounds.end(), sound) != step.sounds.end();
+}
+
+TEST(title_prompt_plays_its_slide_cues)
+{
+    // CSplash plays PressStartSlideOn on entering (0x82856418) and
+    // PressStartSlideOff on Start (0x82856510).
+    TitleFlow flow;
+    const TitleFlow::Step enter = flow.enter();
+    CHECK(plays(enter, "PressStartSlideOn"));
+    CHECK(!plays(enter, "PressStartSlideOff"));
+    CHECK(flow.update({}, 0.1F, false).sounds.empty());
+    MenuInput start;
+    start.start = true;
+    const TitleFlow::Step pressed = flow.update(start, 0.1F, false);
+    CHECK(plays(pressed, "PressStartSlideOff"));
+    CHECK(flow.resume().sounds.empty());
+}
+
+TEST(ui_sound_table_matches_names_without_case)
+{
+    const UiSoundTable table = UiSoundTable::parse(R"(<ui4audio><defaults>
+    <event play="Pause"                     group="UIInGame/UI/Nav"        cue="HUD_Pause" />
+    <event play="MAP_AmbientBackgroundLoop" group="UIInGame/UI/HorizonMap" cue="MAP_AmbientBackgroundLoop" isLooping="true"/>
+    <event play="SpeedTrapFlash"            group="General/SpeedCamera"    cue="ShutterSound" />
+    <event play="VO_PopUp_OthersStorefront" ggroup="UIInGame/UI/Blank"     cue="Blank" />
+  </defaults><overrides><override name="Showroom">
+    <event play="Accept"                    group="UIInGame/UI/Blank"      cue="Blank" />
+  </override></overrides></ui4audio>)",
+        "test");
+    CHECK_EQ(table.size(), std::size_t{2});
+    const UiSound* pause = table.find("pause");
+    CHECK(pause != nullptr);
+    if (pause) {
+        CHECK_EQ(pause->event, std::string("UI/Nav/HUD_Pause"));
+        CHECK(!pause->looping);
+    }
+    const UiSound* map = table.find("Map_AmbientBackgroundLoop");
+    CHECK(map != nullptr && map->looping);
+    CHECK(table.find("SpeedTrapFlash") == nullptr);
+    CHECK(table.find("VO_PopUp_OthersStorefront") == nullptr);
+    CHECK(table.find("Accept") == nullptr);
+    CHECK_THROWS(UiSoundTable::parse("<ui4audio/>", "test"));
 }
 
 TEST(title_idle_timer_holds_while_the_sign_in_step_has_the_input)
@@ -495,6 +544,65 @@ TEST(disc_title_music_is_the_front_end_ambience)
     CHECK_EQ(event->layers[0].sounds.size(), std::size_t{1});
     CHECK_EQ(project->soundDefinition(event->layers[0].sounds[0].soundDefinition).name,
         std::string("/FrontEnd/PressStart_Music"));
+}
+
+TEST(disc_ui_sounds_resolve_to_uiingame_events)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const UiSoundTable table = UiSoundTable::load(vfs);
+    CHECK_EQ(table.size(), std::size_t{754});
+    fh::audio::AudioLibrary library(vfs);
+    const auto project = library.project("Game:\\Media\\Audio\\UI\\UIInGame\\UIInGame.fev");
+    const auto event = [&](std::string_view name) -> std::string {
+        const UiSound* sound = table.find(name);
+        return sound ? sound->event : std::string();
+    };
+    // The names the pause flow, the pause menu, the map and the title play.
+    CHECK_EQ(event("Pause"), std::string("UI/Nav/HUD_Pause"));
+    CHECK_EQ(event("UnPause"), std::string("UI/Nav/HUD_UnPause"));
+    CHECK_EQ(event("Accept"), std::string("UI/Nav/Accept"));
+    CHECK_EQ(event("Cancel"), std::string("UI/Nav/Back"));
+    CHECK_EQ(event("Map_AmbientBackgroundLoop"), std::string("UI/HorizonMap/MAP_AmbientBackgroundLoop"));
+    CHECK_EQ(event("PressStartSlideOn"), std::string("UI/Blank/Blank"));
+    CHECK_EQ(event("PressStartSlideOff"), std::string("UI/Blank/Blank"));
+    for (const std::string_view name : {"Pause", "UnPause", "Accept", "Cancel", "Map_AmbientBackgroundLoop",
+             "PressStartSlideOn", "PressStartSlideOff"}) {
+        CHECK(project->findEvent(event(name)) != nullptr);
+    }
+
+    // Played on a device with no output: the pause sound sounds, a second
+    // Accept restarts the first (the event allows one playback), the map's
+    // loop stays started while RadioIsPlaying keeps its only sound silent.
+    fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
+    UiSounds sounds(vfs, device.mixer(), library, fh::audio::kMasterBus);
+    sounds.play("Pause");
+    CHECK(sounds.isPlaying("Pause"));
+    CHECK_EQ(device.mixer().activeVoiceCount(), std::size_t{1});
+    device.render(48000 * 3);
+    CHECK_EQ(device.mixer().activeVoiceCount(), std::size_t{0});
+    CHECK(!sounds.isPlaying("pause"));
+    sounds.play("Accept");
+    sounds.play("Accept");
+    device.render(256);
+    CHECK_EQ(device.mixer().activeVoiceCount(), std::size_t{1});
+    device.render(48000 * 3);
+    sounds.play("Map_AmbientBackgroundLoop");
+    sounds.setParameter("Map_AmbientBackgroundLoop", "RadioIsPlaying", 1.0F);
+    device.render(4800);
+    CHECK(sounds.isPlaying("Map_AmbientBackgroundLoop"));
+    CHECK_EQ(device.mixer().activeVoiceCount(), std::size_t{0});
+    sounds.setParameter("Map_AmbientBackgroundLoop", "RadioIsPlaying", 0.0F);
+    CHECK_EQ(device.mixer().activeVoiceCount(), std::size_t{1});
+    sounds.stop("Map_AmbientBackgroundLoop");
+    CHECK(!sounds.isPlaying("Map_AmbientBackgroundLoop"));
+    sounds.play("PressStartSlideOn");
+    CHECK_EQ(sounds.played().size(), std::size_t{5});
+    CHECK_EQ(sounds.played().back(), std::string("PressStartSlideOn"));
 }
 
 } // namespace

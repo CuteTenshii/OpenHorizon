@@ -3,6 +3,7 @@
 #include "MovieRenderer.h"
 #include "Presentation.h"
 #include "UiRenderer.h"
+#include "UiSounds.h"
 #include "VectorFont.h"
 
 #include "audio/AudioLibrary.h"
@@ -11,8 +12,6 @@
 #include "base/Log.h"
 #include "vfs/Vfs.h"
 
-#include <pugixml.hpp>
-
 #include <optional>
 
 namespace fh::ui {
@@ -20,47 +19,11 @@ namespace fh::ui {
 namespace {
 
 constexpr const char* kScene = "media/ui/scenes/ui4/120_p_pre_splash";
-/// The UI sound table the game's sound names resolve through.
-constexpr const char* kUiSounds = "media/audio/ui/ui4audio.xml";
 /// The project of the "UIInGame" sound groups, as the executable names it.
 constexpr const char* kUiProject = "Game:\\Media\\Audio\\UI\\UIInGame\\UIInGame.fev";
-constexpr std::string_view kUiProjectName = "UIInGame/";
 /// Entry 0 of the front-end ambience table (0x828e24a8), which CSplash
 /// starts on entering.
 constexpr const char* kAmbience = "SplashScreen";
-
-/// The event a UI sound name plays: its ui4audio.xml group, without the
-/// project name, and cue.
-struct UiSound {
-    std::string event;
-    bool looping = false;
-};
-
-std::optional<UiSound> findUiSound(const Vfs& vfs, std::string_view play)
-{
-    const std::optional<std::string> text = vfs.readText(kUiSounds);
-    if (!text) {
-        return std::nullopt;
-    }
-    pugi::xml_document document;
-    if (!document.load_buffer(text->data(), text->size())) {
-        throw DataError("{}: not XML", kUiSounds);
-    }
-    for (const pugi::xml_node node : document.child("ui4audio").child("defaults").children("event")) {
-        if (play != node.attribute("play").as_string()) {
-            continue;
-        }
-        const std::string_view group = node.attribute("group").as_string();
-        if (!group.starts_with(kUiProjectName)) {
-            return std::nullopt;
-        }
-        UiSound sound;
-        sound.event = std::string(group.substr(kUiProjectName.size())) + "/" + node.attribute("cue").as_string();
-        sound.looping = node.attribute("isLooping").as_bool();
-        return sound;
-    }
-    return std::nullopt;
-}
 
 /// The scene's root contract: the behaviour under the scene element that
 /// carries TEXT_PRESS_START. Its class name is stored as ")_Splash".
@@ -98,6 +61,7 @@ struct TitleScreen::Impl {
     std::unique_ptr<MovieRenderer> movie;
     std::optional<UiSound> ambience;
     std::unique_ptr<audio::EventInstance> music;
+    std::unique_ptr<UiSounds> sounds;
 
     TitleFlow flow;
     bool shown = false;
@@ -150,9 +114,16 @@ TitleScreen::Impl::Impl(const Vfs& vfs, TitleAudio titleAudio, const std::string
     }
 
     if (audio.mixer && audio.library) {
-        ambience = findUiSound(vfs, kAmbience);
-        if (!ambience) {
-            logError("{}: no {} sound in the UIInGame project", kUiSounds, kAmbience);
+        try {
+            sounds = std::make_unique<UiSounds>(vfs, *audio.mixer, *audio.library, audio.bus);
+            const UiSoundTable table = UiSoundTable::load(vfs);
+            if (const UiSound* entry = table.find(kAmbience)) {
+                ambience = *entry;
+            } else {
+                logError("ui4audio.xml: no {} sound in the UIInGame project", kAmbience);
+            }
+        } catch (const DataError& e) {
+            logError("title sounds: {}", e.what());
         }
     }
 }
@@ -196,6 +167,7 @@ TitleFlow::Step TitleFlow::enter()
     Step step;
     // No Kinect sensor: the prompt asks for the controller only.
     step.events.emplace_back("CONTROLLER_ONLY");
+    step.sounds.emplace_back("PressStartSlideOn");
     step.startMusic = true;
     m_fadeInPending = true;
     m_fadeInDelay = kFadeInDelay;
@@ -235,6 +207,7 @@ TitleFlow::Step TitleFlow::update(const MenuInput& input, float dt, bool fadeOut
     // The input handler (0x8285c290) does nothing while +629 is set; B is
     // polled after A and Start but its result is not used.
     if (!m_waiting && !m_fadingOut && (input.accept || input.start)) {
+        step.sounds.emplace_back("PressStartSlideOff");
         step.events.emplace_back("START_OUTRO");
         m_waiting = true;
         step.action = TitleAction::Start;
@@ -271,6 +244,11 @@ TitleAction TitleScreen::Impl::apply(const TitleFlow::Step& step)
 {
     for (const std::string_view event : step.events) {
         scene.fireEvent(rootContract, event);
+    }
+    if (sounds) {
+        for (const std::string_view sound : step.sounds) {
+            sounds->play(sound);
+        }
     }
     if (step.startMusic) {
         startMusic();
@@ -388,6 +366,11 @@ double TitleScreen::movieTime() const
 bool TitleScreen::musicPlaying() const
 {
     return m_impl->music && m_impl->music->isStarted();
+}
+
+std::vector<std::string> TitleScreen::soundsPlayed() const
+{
+    return m_impl->sounds ? m_impl->sounds->played() : std::vector<std::string>();
 }
 
 } // namespace fh::ui

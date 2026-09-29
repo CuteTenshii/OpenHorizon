@@ -19,6 +19,8 @@ add_library(fh1ui STATIC
     SuperStacker.h
     TitleScreen.cpp
     TitleScreen.h
+    UiSounds.cpp
+    UiSounds.h
     UiRenderer.cpp
     UiRenderer.h
     VectorFont.cpp
