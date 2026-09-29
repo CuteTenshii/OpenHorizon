@@ -39,6 +39,11 @@ find_package(OpenGL REQUIRED)
 find_package(glm REQUIRED CONFIG)
 find_package(pugixml REQUIRED CONFIG)
 find_package(SQLite3 REQUIRED)
+# CMake 4.3 renamed the module's target to SQLite3::SQLite3 and kept
+# SQLite::SQLite3 as an alias; releases before it only define the old name.
+if(NOT TARGET SQLite3::SQLite3)
+    add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+endif()
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavcodec libavutil libswresample)
