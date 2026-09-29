@@ -40,6 +40,16 @@ struct HudMapMarker {
     float heading = 0.0F;
 };
 
+/// A line for the minimap, matched against the map profile's group filters.
+struct HudMapLine {
+    /// {"type", "route"} for the sat-nav route, {"type", "group_route"} for
+    /// a group's route, {"type", "track"} for a race's course.
+    std::string key;
+    std::string value;
+    /// World x and z, in order.
+    std::vector<glm::vec2> points;
+};
+
 /// What the HUD shows in one frame. Each field feeds the HUD control the
 /// game itself drives with it; the comments name that control.
 struct HudState {
@@ -57,8 +67,14 @@ struct HudState {
     float redlineRpm = 7000.0F;
     float maxRpm = 8000.0F;
 
-    /// Driving assists (0x8289b278 fires ABS_ON/OFF, STM_ON/OFF and
-    /// TCS_ON/OFF when they change).
+    /// The assist lights (0x8289b278 fires ABS_ON/OFF, STM_ON/OFF and
+    /// TCS_ON/OFF when these change; they start off). The car answers them
+    /// from its state (vtable +836, +844, +840: 0x82ddf7e0, 0x82ddf830,
+    /// 0x82ddf808), so they light while the assist acts, not while it is
+    /// switched on: ABS when two of the car's fields (+3020 and +3436) are
+    /// set, which reads as enabled and working (inferred), STM when +3016 is
+    /// set, TCS while a value at +3004 exceeds 0.1, which reads as how hard
+    /// traction control is cutting in (inferred).
     bool absOn = false;
     bool stmOn = false;
     bool tcsOn = false;
@@ -107,8 +123,14 @@ struct HudState {
     glm::vec2 playerMapPosition{0.0F};
     float playerHeading = 0.0F;
     float speedMetresPerSecond = 0.0F;
-    /// Race starts and other cars for the minimap.
+    /// Race starts, checkpoints ({"checkpoint_type", "checkpoint"}) and
+    /// other cars for the minimap.
     std::vector<HudMapMarker> mapMarkers;
+    /// Route and course lines for the minimap.
+    std::vector<HudMapLine> mapLines;
+    /// Metres to the sat-nav destination; empty (or 0) hides the readout
+    /// below the minimap (HUD_SAT_NAV, 0x828b0768).
+    std::optional<float> destinationDistance;
 
     /// Set on the frame a radio panel request arrives (for the radio module,
     /// on the frame Radio::takeHudRequest() returns one), empty otherwise.

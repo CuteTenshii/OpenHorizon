@@ -1,5 +1,6 @@
 #include "Hud.h"
 
+#include "MenuCommon.h"
 #include "Minimap.h"
 #include "Presentation.h"
 #include "UiRenderer.h"
@@ -107,6 +108,7 @@ struct Hud::Impl {
     void setupGauge(const HudState& state);
     void updateGauge(const HudState& state);
     void updateAssists(const HudState& state);
+    void updateSatNav(const HudState& state);
     void updateRace(const HudState& state);
     void updateTimers(const HudState& state);
     void updatePositions(const HudState& state);
@@ -114,6 +116,9 @@ struct Hud::Impl {
     void updatePrompt(const HudState& state);
     void updateRadio(const HudState& state);
     void handleFiredEvents();
+    void bindStackers();
+    void layoutStackers();
+    float textWidth(int element);
     void setRadioStation(int station);
     void setRadioTrack(const std::string& title, const std::string& artist);
     void showRadio();
@@ -209,6 +214,10 @@ struct Hud::Impl {
 
     std::optional<bool> sessionRace;
 
+    int satNavContract = -1;
+    int satNavDistance = -1;
+    float shownDistance = 0.0F;
+
     int radioContract = -1;
     int radioControl = -1;
     int radioIcons = -1;
@@ -225,6 +234,38 @@ struct Hud::Impl {
     bool radioTrackShown = true;
     bool radioArtistShown = true;
     bool radioTuningShown = false;
+
+    /// A SUPER_STACKER contract as its attach (0x828cf6a8) captures it: the
+    /// elements it lines up and the models it stretches under them, with
+    /// the values they had when the scene loaded, which every layout starts
+    /// from again.
+    struct StackedElement {
+        int element = -1;
+        bool text = false;
+        float x0 = 0.0F;
+        /// The width the text was authored at, times its scale.
+        float trim = 0.0F;
+    };
+    struct StackScaler {
+        int element = -1;
+        /// The model's first image, whose texture the scaler slides.
+        int image = -1;
+        float size = 0.0F;
+        int first = 0;
+        int last = 0;
+        int mode = 0;
+        float x0 = 0.0F;
+        float scale0 = 1.0F;
+        float u0 = 0.0F;
+        float uScale0 = 1.0F;
+    };
+    struct Stacker {
+        int alignment = 1;
+        bool positionText = true;
+        std::vector<StackedElement> elements;
+        std::vector<StackScaler> scalers;
+    };
+    std::vector<Stacker> stackers;
 };
 
 Hud::Impl::Impl(const Vfs& vfs, const std::string& track, const std::string& language)
@@ -325,6 +366,9 @@ void Hud::Impl::bind()
     const int lockedText = parameter(promptContract, "TEXT_LOCKED");
     promptLocked = lockedText >= 0 ? scene.parent(lockedText) : -1;
 
+    satNavContract = scene.contract(parameter(hudContract, "COMPONENT_SAT_NAV"), "HUD_SAT_NAV");
+    satNavDistance = parameter(satNavContract, "TEXT_TARGET_DISTANCE");
+
     const int radio = parameter(hudContract, "COMPONENT_RADIO");
     radioContract = scene.contract(radio, "HUD_RADIO");
     radioControl = parameter(radioContract, "RADIO_CONTROL");
@@ -342,6 +386,183 @@ void Hud::Impl::bind()
     }
     mapModelViewport = parameter(mapContract, "MODEL_VIEWPORT");
     mapMaterial = parameter(mapContract, "MATERIAL_VIEWPORT");
+
+    bindStackers();
+}
+
+float Hud::Impl::textWidth(int element)
+{
+    const FbfRecord* record = scene.record(element);
+    if (!record) {
+        return 0.0F;
+    }
+    const float size = scene.attribute(element, attr::Size).value_or(static_cast<float>(record->text.size));
+    const float tracking = scene.attribute(element, attr::Tracking).value_or(record->text.tracking);
+    return renderer.measure(
+        record->text.font, scene.text(element), size * kTextPointsToUnits, tracking * kTextPointsToUnits);
+}
+
+void Hud::Impl::bindStackers()
+{
+    stackers.clear();
+    for (int owner = 0; owner < static_cast<int>(scene.elementCount()); ++owner) {
+        const int contract = scene.contract(owner, "SUPER_STACKER");
+        if (contract < 0) {
+            continue;
+        }
+        const auto integer = [&](std::string_view name, int fallback) {
+            const std::optional<float> value = scene.contractNumber(contract, name);
+            return value ? static_cast<int>(*value) : fallback;
+        };
+        Stacker stacker;
+        // The defaults are the attach's (0x828cf6a8) when a scene leaves a
+        // parameter out: left alignment, text positioned, a scaler over the
+        // first element only.
+        stacker.alignment = integer("ALIGNMENT", 1);
+        stacker.positionText = scene.contractFlag(contract, "POSITION_TEXT").value_or(true);
+        const int count = integer("NUM_ELEMENTS", 0);
+        for (int i = 0; i < count; ++i) {
+            StackedElement stacked;
+            stacked.element = parameter(contract, std::format("ELEMENT_{}", i));
+            // A path that names nothing keeps its place in the numbering the
+            // scalers refer to, with no width.
+            if (stacked.element < 0) {
+                stacker.elements.push_back(stacked);
+                continue;
+            }
+            stacked.x0 = scene.attribute(stacked.element, attr::PositionX).value_or(0.0F);
+            if (const FbfRecord* record = scene.record(stacked.element); record && record->kind == FbfKind::Text) {
+                stacked.text = true;
+                // The width the editor stored, else the text's width now.
+                const float authored
+                    = record->text.authoredWidth >= 0.0F ? record->text.authoredWidth : textWidth(stacked.element);
+                stacked.trim = authored * scene.attribute(stacked.element, attr::ScaleX).value_or(1.0F);
+            }
+            stacker.elements.push_back(stacked);
+        }
+        const int scalers = integer("NUM_SCALERS", 0);
+        for (int i = 0; i < scalers; ++i) {
+            StackScaler scaler;
+            scaler.element = parameter(contract, std::format("SCALER_{}", i));
+            const std::optional<float> size = scene.contractNumber(contract, std::format("SCALER_{}_SIZE", i));
+            // A scaler without a size cannot convert widths to scale; the
+            // attach's default for it was not traced, so such scalers stay
+            // as authored.
+            if (scaler.element < 0 || !size || *size == 0.0F) {
+                continue;
+            }
+            scaler.size = *size;
+            scaler.first = std::clamp(integer(std::format("SCALER_{}_FIRST_ELEMENT", i), 0), 0,
+                std::max(static_cast<int>(stacker.elements.size()) - 1, 0));
+            // -1 runs to the last element.
+            scaler.last = integer(std::format("SCALER_{}_LAST_ELEMENT", i), 0);
+            if (scaler.last != -1) {
+                scaler.last = std::clamp(
+                    scaler.last, scaler.first, std::max(static_cast<int>(stacker.elements.size()) - 1, scaler.first));
+            }
+            scaler.mode = integer(std::format("SCALER_{}_MODE", i), 0);
+            const std::string uvMagic = std::format("SCALER_{}_UVMAGIC", i);
+            if (scene.contractFlag(contract, uvMagic).value_or(false) || integer(uvMagic, 0) != 0) {
+                scaler.mode = 1;
+            }
+            scaler.x0 = scene.attribute(scaler.element, attr::PositionX).value_or(0.0F);
+            scaler.scale0 = scene.attribute(scaler.element, attr::ScaleX).value_or(1.0F);
+            for (const int material : scene.children(scaler.element)) {
+                if (scene.kind(material) != ElementKind::Material) {
+                    continue;
+                }
+                for (const int image : scene.children(material)) {
+                    if (scene.kind(image) == ElementKind::Image) {
+                        scaler.image = image;
+                        break;
+                    }
+                }
+                break;
+            }
+            if (scaler.image >= 0) {
+                scaler.u0 = scene.attribute(scaler.image, attr::PositionU).value_or(0.0F);
+                scaler.uScale0 = scene.attribute(scaler.image, attr::ScaleU).value_or(1.0F);
+            }
+            stacker.scalers.push_back(scaler);
+        }
+        if (!stacker.elements.empty()) {
+            stackers.push_back(std::move(stacker));
+        }
+    }
+}
+
+/// The SUPER_STACKER layout (widths 0x828ca920, placement 0x828cfab8,
+/// called together from the contract's slot 5, 0x828d1e08): each
+/// text counts for the width it has grown by since it was authored, the
+/// elements move by the widths before them and by the alignment, and each
+/// scaler stretches its model under a run of elements. It writes only x
+/// positions, x scales and texture offsets, from the values captured at
+/// attach, so running it every frame gives the same result as running it
+/// when a text changes. What makes the game run it was not traced.
+void Hud::Impl::layoutStackers()
+{
+    for (const Stacker& stacker : stackers) {
+        const std::size_t count = stacker.elements.size();
+        std::vector<float> widths(count, 0.0F);
+        std::vector<float> starts(count + 1, 0.0F);
+        for (std::size_t i = 0; i < count; ++i) {
+            const StackedElement& stacked = stacker.elements[i];
+            if (stacked.text) {
+                const float scale = scene.attribute(stacked.element, attr::ScaleX).value_or(1.0F);
+                widths[i] = textWidth(stacked.element) * scale - stacked.trim;
+            }
+            starts[i + 1] = starts[i] + widths[i];
+        }
+        const float total = starts[count];
+        const float offset = stacker.alignment == 0 ? -0.5F * total : stacker.alignment == 2 ? -total : 0.0F;
+        for (std::size_t i = 0; i < count; ++i) {
+            const StackedElement& stacked = stacker.elements[i];
+            if (stacked.element < 0) {
+                continue;
+            }
+            float x = stacked.x0 + starts[i] + offset;
+            if (stacked.text) {
+                if (!stacker.positionText) {
+                    continue;
+                }
+                const auto align = static_cast<int>(scene.attribute(stacked.element, attr::HorzAlign).value_or(0.0F));
+                x += align == 1 ? 0.5F * widths[i] : align == 2 ? widths[i] : 0.0F;
+            }
+            scene.setAttribute(stacked.element, attr::PositionX, x);
+        }
+        for (const StackScaler& scaler : stacker.scalers) {
+            const float start = starts[static_cast<std::size_t>(scaler.first)];
+            const float end = scaler.last < 0 ? total : starts[static_cast<std::size_t>(scaler.last) + 1];
+            const float span = end - start;
+            if (scaler.mode == 1) {
+                // The model keeps its size and slides along with its texture
+                // going the other way, so more of the texture's length shows.
+                const float uScale
+                    = scaler.image >= 0 ? scene.attribute(scaler.image, attr::ScaleU).value_or(1.0F) : 1.0F;
+                const float shift = span * uScale / (scaler.scale0 * scaler.size);
+                float x = scaler.x0 + start + offset;
+                float u = 0.0F;
+                if (scaler.u0 >= 0.0F) {
+                    u = std::clamp(scaler.u0 - shift, 0.0F, 1.0F);
+                } else {
+                    u = std::clamp(scaler.u0 + shift, -1.0F, 0.0F);
+                    x += span;
+                }
+                if (scaler.image >= 0) {
+                    scene.setAttribute(scaler.image, attr::PositionU, u);
+                }
+                scene.setAttribute(scaler.element, attr::PositionX, x);
+                continue;
+            }
+            const float scale = scaler.scale0 + span / scaler.size;
+            scene.setAttribute(scaler.element, attr::PositionX, scaler.x0 + start + offset + 0.5F * span);
+            scene.setAttribute(scaler.element, attr::ScaleX, scale);
+            if (scaler.mode == 2 && scaler.image >= 0) {
+                scene.setAttribute(scaler.image, attr::ScaleU, scaler.uScale0 * scale);
+                scene.setAttribute(scaler.image, attr::PositionU, scaler.u0 * scale);
+            }
+        }
+    }
 }
 
 void Hud::Impl::startSession(bool race)
@@ -350,9 +571,11 @@ void Hud::Impl::startSession(bool race)
     gaugeTop = -1.0F;
     gaugeRedline = -1.0F;
     previousSwoosh = 0.0F;
-    abs.reset();
-    stm.reset();
-    tcs.reset();
+    shownDistance = 0.0F;
+    // The HUD's constructor (0x828a9744) clears the three.
+    abs = false;
+    stm = false;
+    tcs = false;
     timerLinesShown = 0;
     countdownStage = 0;
     promptShown = false;
@@ -530,6 +753,34 @@ void Hud::Impl::updateAssists(const HudState& state)
     report(tcs, state.tcsOn, "TCS_ON", "TCS_OFF");
 }
 
+void Hud::Impl::updateSatNav(const HudState& state)
+{
+    // HUD_SAT_NAV's distance (0x828b0768): SHOW_TARGET when a distance
+    // appears, the text whenever it changes, HIDE_TARGET when it goes to 0.
+    // The text is the game's unit value formatter (0x82d6fbd0 with unit
+    // type 10 and one decimal, as the call passes); its kilometre or mile
+    // template (UnitStrings IDS_Units_Kilometers and IDS_Units_Miles) and
+    // the metre-to-mile factor (1609.344, a constant of the executable) are
+    // taken to be what that unit type selects (inferred: its table was not
+    // traced).
+    const float distance = state.destinationDistance.value_or(0.0F);
+    if (distance != 0.0F) {
+        if (shownDistance == 0.0F) {
+            fire(satNavContract, "SHOW_TARGET");
+        }
+        if (distance != shownDistance) {
+            const float value = state.metric ? distance / 1000.0F : distance / 1609.344F;
+            text(satNavDistance,
+                replaceAll(strings.get(kUnitStrings, state.metric ? "IDS_Units_Kilometers" : "IDS_Units_Miles"), "{0}",
+                    std::format("{:.1f}", value)));
+            shownDistance = distance;
+        }
+    } else if (shownDistance != 0.0F) {
+        fire(satNavContract, "HIDE_TARGET");
+        shownDistance = 0.0F;
+    }
+}
+
 void Hud::Impl::updateRace(const HudState& state)
 {
     if (!state.inRace) {
@@ -684,8 +935,13 @@ void Hud::Impl::drawMinimap(const HudState& state, int width, int height)
     for (const HudMapMarker& marker : state.mapMarkers) {
         markers.push_back({marker.key, marker.value, marker.position, marker.heading});
     }
-    const GLuint texture
-        = minimap->render(state.playerMapPosition, state.playerHeading, state.speedMetresPerSecond, size, markers);
+    std::vector<MapLine> lines;
+    lines.reserve(state.mapLines.size());
+    for (const HudMapLine& line : state.mapLines) {
+        lines.push_back({line.key, line.value, line.points});
+    }
+    const GLuint texture = minimap->render(
+        state.playerMapPosition, state.playerHeading, state.speedMetresPerSecond, size, markers, lines);
     renderer.setTextureOverride("@minimap", texture);
 }
 
@@ -774,6 +1030,7 @@ void Hud::draw(const HudState& state, int width, int height)
     }
     impl.updateGauge(state);
     impl.updateAssists(state);
+    impl.updateSatNav(state);
     impl.updateRace(state);
     impl.updateTimers(state);
     impl.updatePositions(state);
@@ -782,7 +1039,9 @@ void Hud::draw(const HudState& state, int width, int height)
     impl.updateRadio(state);
     impl.scene.update(state.dt);
     impl.handleFiredEvents();
+    impl.layoutStackers();
     std::vector<DrawItem> items = impl.scene.evaluate();
+    applyTextScale(items);
     impl.drawMinimap(state, width, height);
     // The material's first image is where the game points the map's render
     // target (0x82892a60).

@@ -137,6 +137,29 @@ glm::vec4 colorOf(const MapSymbolizer& symbolizer)
     return symbolizer.primary.value_or(glm::vec4(255.0F)) / 255.0F;
 }
 
+/// The point `ratio` of the way along a line by length, heading along the
+/// segment it falls on.
+MapMarker pointAlong(const MapLine& line, float ratio)
+{
+    float total = 0.0F;
+    for (std::size_t i = 1; i < line.points.size(); ++i) {
+        total += glm::length(line.points[i] - line.points[i - 1]);
+    }
+    float remaining = std::clamp(ratio, 0.0F, 1.0F) * total;
+    for (std::size_t i = 1; i < line.points.size(); ++i) {
+        const glm::vec2 a = line.points[i - 1];
+        const glm::vec2 b = line.points[i];
+        const float length = glm::length(b - a);
+        if (remaining <= length || i + 1 == line.points.size()) {
+            const float t = length > 0.0F ? std::min(remaining / length, 1.0F) : 0.0F;
+            const glm::vec2 d = b - a;
+            return {line.key, line.value, a + d * t, std::atan2(d.x, d.y)};
+        }
+        remaining -= length;
+    }
+    return {line.key, line.value, line.points.front(), 0.0F};
+}
+
 enum class IconOrientation : std::uint8_t { None, Entity, Facing };
 
 /// How an icon symbolizer turns, as the symbolizer factories set it: the
@@ -395,6 +418,9 @@ MapProfile MapProfile::parse(std::string_view xml, const std::string& source, st
                     symbolizer.atlasRows = std::max(1, atlas.attribute("y_slots").as_int(1));
                 }
                 symbolizer.texture = node.child("Texture").attribute("value").as_string();
+                if (const pugi::xml_node ratio = node.child("PlacementRatio")) {
+                    symbolizer.placementRatio = attributeFloat(ratio, "value", 0.0F);
+                }
                 group.symbolizers.push_back(std::move(symbolizer));
             }
             profile.groups.push_back(std::move(group));
@@ -449,8 +475,14 @@ MinimapCamera MinimapCamera::follow(
 
     MinimapCamera camera;
     camera.distance = distance;
+    // 0x82da2388 turns straight down, (0, -1, 0) (the constant at
+    // 0x82041090), about the horizontal axis across the heading by the
+    // elevation: the elevation is measured from the vertical, so 70 degrees
+    // looks 20 degrees below the horizon. That the turn goes forwards, not
+    // backwards, is inferred (the car is placed below the centre of the
+    // view, which only works looking ahead).
     const glm::vec3 flat(std::sin(heading), 0.0F, std::cos(heading));
-    camera.forward = flat * std::cos(elevation) - glm::vec3(0.0F, 1.0F, 0.0F) * std::sin(elevation);
+    camera.forward = flat * std::sin(elevation) - glm::vec3(0.0F, 1.0F, 0.0F) * std::cos(elevation);
     camera.right = glm::normalize(glm::cross(glm::vec3(0.0F, 1.0F, 0.0F), camera.forward));
     camera.up = glm::cross(camera.forward, camera.right);
     camera.scaleY = 1.0F / std::tan(fov * 0.5F);
@@ -626,8 +658,8 @@ void MinimapRenderer::buildRoads()
     m_roadVertexCount = m_vertices.size();
 }
 
-GLuint MinimapRenderer::render(
-    glm::vec2 position, float heading, float speedMetresPerSecond, int size, const std::vector<MapMarker>& markers)
+GLuint MinimapRenderer::render(glm::vec2 position, float heading, float speedMetresPerSecond, int size,
+    const std::vector<MapMarker>& markers, const std::vector<MapLine>& lines)
 {
     size = std::max(8, size);
     ensureTarget(size);
@@ -640,13 +672,37 @@ GLuint MinimapRenderer::render(
     all.insert(all.end(), markers.begin(), markers.end());
     all.push_back({kPlayerFilterTag, kPlayerFilterValue, position, heading});
     for (const MapGroup& group : m_profile.groups) {
+        std::vector<const MapLine*> matchedLines;
+        for (const MapLine& line : lines) {
+            if (!group.filterTag.empty() && line.key == group.filterTag && line.value == group.filterValue
+                && line.points.size() >= 2) {
+                matchedLines.push_back(&line);
+            }
+        }
+        for (const MapSymbolizer& symbolizer : group.symbolizers) {
+            const int technique = lineTechnique(symbolizer.type);
+            if (technique < 0 || matchedLines.empty()) {
+                continue;
+            }
+            Batch batch;
+            batch.sortOrder = symbolizer.sortOrder;
+            batch.technique = technique;
+            batch.first = m_vertices.size();
+            for (const MapLine* line : matchedLines) {
+                appendLine(line->points, 2.0F * symbolizer.size, colorOf(symbolizer), symbolizer.type != "line_nocaps");
+            }
+            batch.count = m_vertices.size() - batch.first;
+            if (batch.count > 0) {
+                m_batches.push_back(batch);
+            }
+        }
         std::vector<const MapMarker*> matched;
         for (const MapMarker& marker : all) {
             if (!group.filterTag.empty() && marker.key == group.filterTag && marker.value == group.filterValue) {
                 matched.push_back(&marker);
             }
         }
-        if (matched.empty()) {
+        if (matched.empty() && matchedLines.empty()) {
             continue;
         }
         for (const MapSymbolizer& symbolizer : group.symbolizers) {
@@ -666,7 +722,19 @@ GLuint MinimapRenderer::render(
             }
             const float scale = symbolizer.dynamicSize ? kDynamicSizeBase : 1.0F;
             const float reference = symbolizer.dynamicSize ? kDynamicSizeReference : 1.0F;
-            for (const MapMarker* marker : matched) {
+            // Icons on line entities sit at their PlacementRatio along the
+            // line, turned with the segment there.
+            std::vector<MapMarker> onLines;
+            if (symbolizer.placementRatio) {
+                for (const MapLine* line : matchedLines) {
+                    onLines.push_back(pointAlong(*line, *symbolizer.placementRatio));
+                }
+            }
+            std::vector<const MapMarker*> targets = matched;
+            for (const MapMarker& marker : onLines) {
+                targets.push_back(&marker);
+            }
+            for (const MapMarker* marker : targets) {
                 const glm::vec3 centre(marker->position.x, 0.0F, marker->position.y);
                 const float depth = camera.depth(centre);
                 const float halfSize = symbolizer.size * (scale + (1.0F - scale) * depth / reference);

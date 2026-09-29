@@ -636,6 +636,20 @@ std::optional<float> Presentation::contractNumber(int contractElement, std::stri
     return std::nullopt;
 }
 
+std::optional<bool> Presentation::contractFlag(int contractElement, std::string_view parameter) const
+{
+    if (contractElement < 0) {
+        return std::nullopt;
+    }
+    const std::uint32_t hash = anarkHash(parameter);
+    for (const Attribute& attribute : m_files.bgf.elements[static_cast<std::size_t>(contractElement)].attributes) {
+        if (attribute.hash == hash && attribute.type == static_cast<std::uint8_t>(AttributeType::ContractString)) {
+            return attribute.raw != 0;
+        }
+    }
+    return std::nullopt;
+}
+
 bool Presentation::fireEvent(int owner, std::string_view event)
 {
     const auto it = m_logic.find(owner);

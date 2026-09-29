@@ -80,6 +80,9 @@ struct MapSymbolizer {
     int atlasRows = 1;
     /// Game path of the texture, relative to media/ui/textures.
     std::string texture;
+    /// `<PlacementRatio>`: where along a line entity an icon goes, 0 at its
+    /// first point and 1 at its last.
+    std::optional<float> placementRatio;
 };
 
 /// A `<Group>`: its symbolizers apply to entities whose tag matches the
@@ -129,6 +132,16 @@ struct MapMarker {
     float heading = 0.0F;
 };
 
+/// A line the map shows, matched against the profile's group filters like
+/// a marker: {"type", "route"} for the sat-nav route (CMapEntityRoute),
+/// {"type", "track"} for a race's course (CMapEntityTrack).
+struct MapLine {
+    std::string key;
+    std::string value;
+    /// World x and z, in order.
+    std::vector<glm::vec2> points;
+};
+
 /// The activity_type a career event's map entity carries, by its
 /// Events.CareerEventStyle (0x8250b9c8 via 0x82534cb0): 1, 4 and 6 "race",
 /// 2 "streetrace", 3 "exhibition", 5 "nemesisrace"; empty for the others.
@@ -158,8 +171,8 @@ struct MinimapCamera {
 
     /// The camera 0x82584fc0 and 0x82da2388 set up: `speed` in metres per
     /// second picks the distance, elevation and field of view between the
-    /// tunables' ends; the camera looks along the car's heading, pitched
-    /// down by the elevation, from that distance, and is then moved along
+    /// tunables' ends; the camera looks along the car's heading, tilted up
+    /// from straight down by the elevation, from that distance, and is then moved along
     /// the ground so the car lands at the tuned height in the viewport
     /// (0x82da0fe8). `aspect` is the viewport's height over its width, which
     /// the projection divides the across scale by.
@@ -185,7 +198,7 @@ public:
     /// starts, other cars) drawn by the profile's icon symbolizers. Leaves
     /// the framebuffer and viewport as it found them.
     GLuint render(glm::vec2 position, float heading, float speedMetresPerSecond, int size,
-        const std::vector<MapMarker>& markers = {});
+        const std::vector<MapMarker>& markers = {}, const std::vector<MapLine>& lines = {});
 
     /// The activity markers loaded for the track.
     const std::vector<MapMarker>& activityMarkers() const { return m_activityMarkers; }

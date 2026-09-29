@@ -159,6 +159,13 @@ public:
     int contractParameter(int contractElement, std::string_view parameter) const;
     /// The value of a contract's numeric parameter (types 17 and 19).
     std::optional<float> contractNumber(int contractElement, std::string_view parameter) const;
+    /// The value of a contract's flag parameter (type 20, such as
+    /// SUPER_STACKER's POSITION_TEXT), read as the game's contract code reads
+    /// it: nonzero is set.
+    std::optional<bool> contractFlag(int contractElement, std::string_view parameter) const;
+    /// The render data record an element was exported with, or nullptr
+    /// (behaviours and elements the render data leaves out).
+    const FbfRecord* record(int element) const { return m_nodes[static_cast<std::size_t>(element)].record; }
     /// The element a path such as "parent.parent.HUD_RADIO_CONTRACT" names,
     /// walked from `from` as contract paths are. -1 if missing.
     int resolvePath(int from, std::string_view path) const;

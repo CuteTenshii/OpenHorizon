@@ -1840,6 +1840,27 @@ ui::HudState Game::hudState(float dt) const
             }
             state.standings.push_back(m_vehicles[racer->vehicle]->name);
         }
+        // The course ahead as the minimap's route, and the metres left to
+        // the finish under it. Which map entity type the game gives a race's
+        // course was not traced; "route" is what the reference screenshots
+        // show (the profile's green line with the finish flag at its end).
+        const RacingLine& line = m_race->line();
+        if (!own.finished && line.points.size() > 1) {
+            ui::HudMapLine course{"type", "route", {}};
+            course.points.push_back(state.playerMapPosition);
+            const auto count = static_cast<std::ptrdiff_t>(line.points.size());
+            const auto next = static_cast<std::ptrdiff_t>(std::ceil(own.lineIndex));
+            const std::ptrdiff_t end = line.loop ? next + count : count;
+            for (std::ptrdiff_t i = next; i < end; ++i) {
+                const glm::vec3& at = line.points[static_cast<std::size_t>(i % count)].position;
+                course.points.emplace_back(at.x, at.z);
+            }
+            state.mapLines.push_back(std::move(course));
+            const float left = m_race->distance() - own.progress;
+            if (left > 0.0F) {
+                state.destinationDistance = left;
+            }
+        }
     }
     for (const EventStart& start : m_eventStarts) {
         const std::string_view type = ui::careerEventActivityType(m_events[start.event].careerEventStyle);

@@ -18,6 +18,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <xds/xds.h>
 
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -47,7 +48,8 @@ int usage()
         "                                 [--size WxH] [--time S] [--rpm R] [--rpm-rate R]\n"
         "                                 [--speed S] [--metric] [--at X,Z] [--heading DEG]\n"
         "                                 [--track NAME] [--radio STATION[,TITLE[,ARTIST]]] [--radio-tuning]\n"
-        "                                 [--marker KEY=VALUE@X,Z[,DEG]]...\n"
+        "                                 [--marker KEY=VALUE@X,Z[,DEG]]... [--backdrop R,G,B]\n"
+        "                                 [--line KEY=VALUE@X,Z;X,Z;...]... [--distance METRES]\n"
         "  DISC      the extracted disc (its root or its media folder)\n"
         "  PATH      a scene without extension, such as 947_HUD or\n"
         "            media/cars/<car>/digitalgauge/dash_<car>_p; a texture's game path\n"
@@ -168,6 +170,13 @@ int dumpScene(const fh::Vfs& vfs, const std::string& path, bool attributes)
                     line += " " + record.image.path;
                 } else if (record.kind == FbfKind::Text) {
                     line += std::format(" font {} size {}", record.text.font, record.text.size);
+                } else if (record.kind == FbfKind::Material) {
+                    static constexpr std::array<const char*, 5> kBlend{
+                        "zero", "one", "srcalpha", "invsrcalpha", "other"};
+                    const glm::vec4& d = record.material.diffuse;
+                    line += std::format(" diffuse ({:.2f} {:.2f} {:.2f} {:.2f}) blend {}/{}", d.r, d.g, d.b, d.a,
+                        kBlend[static_cast<std::size_t>(record.material.sourceBlend)],
+                        kBlend[static_cast<std::size_t>(record.material.destinationBlend)]);
                 }
                 break;
             }
@@ -278,7 +287,7 @@ fh::WindowOptions hiddenWindow()
 
 /// Draws the ground half of the backdrop so the HUD is seen over both a
 /// light and a dark picture.
-void drawBackdrop(UiRenderer& renderer, int width, int height)
+void drawBackdrop(UiRenderer& renderer, int width, int height, const std::optional<glm::vec3>& flat)
 {
     static const Mesh quad = [] {
         Mesh mesh;
@@ -288,6 +297,15 @@ void drawBackdrop(UiRenderer& renderer, int width, int height)
         return mesh;
     }();
     renderer.begin(width, height);
+    if (flat) {
+        DrawModel fill;
+        fill.mesh = &quad;
+        fill.color = glm::vec4(*flat, 1.0F);
+        fill.world = glm::scale(glm::mat4(1.0F), glm::vec3(4000.0F, 4000.0F, 1.0F));
+        renderer.drawModel(fill);
+        renderer.end();
+        return;
+    }
     DrawModel ground;
     ground.mesh = &quad;
     ground.color = glm::vec4(0.18F, 0.2F, 0.17F, 1.0F);
@@ -388,6 +406,10 @@ struct RenderOptions {
     std::optional<HudRadioRequest> radio;
     bool radioTuning = false;
     std::vector<HudMapMarker> markers;
+    std::vector<HudMapLine> lines;
+    std::optional<float> distance;
+    /// A flat backdrop colour (display values 0 to 1) instead of the scene.
+    std::optional<glm::vec3> backdrop;
     glm::vec2 at{-1500.0F, 800.0F};
     float headingDegrees = 35.0F;
     int width = 1280;
@@ -443,6 +465,8 @@ HudState sampleState(const RenderOptions& options)
     state.speedMetresPerSecond = state.speedKmh / 3.6F;
     state.radioTuning = options.radioTuning;
     state.mapMarkers = options.markers;
+    state.mapLines = options.lines;
+    state.destinationDistance = options.distance;
     return state;
 }
 
@@ -467,7 +491,7 @@ int renderHud(const fh::Vfs& vfs, const std::string& out, const RenderOptions& o
             state.countdownElapsed = options.countdown - kStep * static_cast<float>(frames - 1 - frame);
         }
         target.clear();
-        drawBackdrop(backdrop, options.width, options.height);
+        drawBackdrop(backdrop, options.width, options.height, options.backdrop);
         const auto start = std::chrono::steady_clock::now();
         hud.draw(state, options.width, options.height);
         glFinish();
@@ -596,6 +620,43 @@ int main(int argc, char** argv)
                         marker.heading = glm::radians(std::stof(spec.substr(second + 1)));
                     }
                     options.markers.push_back(marker);
+                } else if (arg == "--line") {
+                    // KEY=VALUE@X,Z;X,Z;...
+                    const std::string spec = value();
+                    const std::size_t equals = spec.find('=');
+                    const std::size_t at = spec.find('@');
+                    if (equals == std::string::npos || at == std::string::npos) {
+                        return usage();
+                    }
+                    HudMapLine line;
+                    line.key = spec.substr(0, equals);
+                    line.value = spec.substr(equals + 1, at - equals - 1);
+                    std::size_t start = at + 1;
+                    while (start < spec.size()) {
+                        const std::size_t end = spec.find(';', start);
+                        const std::string point
+                            = spec.substr(start, end == std::string::npos ? std::string::npos : end - start);
+                        const std::size_t comma = point.find(',');
+                        if (comma == std::string::npos) {
+                            return usage();
+                        }
+                        line.points.emplace_back(std::stof(point.substr(0, comma)), std::stof(point.substr(comma + 1)));
+                        start = end == std::string::npos ? spec.size() : end + 1;
+                    }
+                    options.lines.push_back(line);
+                } else if (arg == "--distance") {
+                    options.distance = std::stof(value());
+                } else if (arg == "--backdrop") {
+                    // R,G,B in 0-255
+                    const std::string rgb = value();
+                    const std::size_t a = rgb.find(',');
+                    const std::size_t b = rgb.find(',', a + 1);
+                    if (a == std::string::npos || b == std::string::npos) {
+                        return usage();
+                    }
+                    options.backdrop = glm::vec3(std::stof(rgb.substr(0, a)), std::stof(rgb.substr(a + 1, b - a - 1)),
+                                           std::stof(rgb.substr(b + 1)))
+                        / 255.0F;
                 } else if (arg == "--radio-tuning") {
                     options.radioTuning = true;
                 } else if (arg == "--track") {

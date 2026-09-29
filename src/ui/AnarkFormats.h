@@ -322,6 +322,12 @@ struct FbfText {
     int verticalAlign = 1;
     float tracking = 0.0F;
     float leading = 0.0F;
+    /// The width of the authored text in scene units as the editor measured
+    /// it (render data 1008; -1 before). SUPER_STACKER reads it from the
+    /// runtime's copy of the record (+216) as the width its layout grows
+    /// from; the scenes' values agree with the text measured at 96/72 of its
+    /// size ("ARTIST NAME" in horizon_b 15: 115).
+    float authoredWidth = -1.0F;
     /// Present when the record carries an effects block.
     std::optional<FbfTextEffects> effects;
 };
@@ -419,7 +425,7 @@ struct Mesh {
 ///       Custom renderer (kind 11): u32
 ///       Text: u32, u32 n + text, u32 n + string id, f32, f32, u32 n + font,
 ///             u32 size, u32 horizontal align, u32 vertical align, u32,
-///             u32, f32 tracking, f32 leading, u32, u8, [1008: f32],
+///             u32, f32 tracking, f32 leading, u32, u8, [1008: f32 authored width],
 ///             [1007+: u8 effects flag, if set FbfTextEffects as
 ///             u8, 6 x f32, u8, 5 x f32, u8, 3 x f32]
 ///       Camera: 64 bytes; Layer: 24 bytes; Light: 104 bytes

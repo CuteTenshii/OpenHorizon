@@ -114,7 +114,7 @@ void readText(BeReader& in, std::uint32_t version, FbfText& text)
     in.skip(4);
     in.skip(1);
     if (version >= 1008) {
-        in.skip(4);
+        text.authoredWidth = in.f32();
     }
     if (version >= 1007 && in.u8() != 0) {
         FbfTextEffects effects;

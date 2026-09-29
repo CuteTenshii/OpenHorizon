@@ -470,6 +470,7 @@ TEST(fbf_reads_records_and_meshes)
     CHECK_EQ(text.text.size, 48);
     CHECK_EQ(text.text.horizontalAlign, 2);
     CHECK_NEAR(text.text.tracking, -1.0, 1e-6);
+    CHECK_NEAR(text.text.authoredWidth, 47.0, 1e-6);
     const FbfRecord& material = file.records[3];
     CHECK(material.kind == FbfKind::Material);
     CHECK_NEAR(material.material.diffuse.b, 0.5, 1e-6);
@@ -985,7 +986,8 @@ TEST(map_profile_reads_groups)
       <Symbolizer type="line_fade_lr" sort_order="90"><Size value="14"/>
         <ColourPrimary r="0" g="0" b="0" a="128"/></Symbolizer>
       <Symbolizer type="icon" sort_order="600"><DynamicSize value="45"/>
-        <Atlas x="2" y="3" x_slots="8" y_slots="8"/><Texture value="horizon\map\icons\sheet.tga"/></Symbolizer>
+        <Atlas x="2" y="3" x_slots="8" y_slots="8"/><Texture value="horizon\map\icons\sheet.tga"/>
+        <PlacementRatio value="0.5"/></Symbolizer>
       <Filter tag="road_type" value="b"/>
     </Group>
   </Profile>
@@ -1003,6 +1005,8 @@ TEST(map_profile_reads_groups)
         CHECK(group.symbolizers[1].dynamicSize);
         CHECK_EQ(group.symbolizers[1].atlasY, 3);
         CHECK_EQ(group.symbolizers[1].texture, std::string("horizon\\map\\icons\\sheet.tga"));
+        CHECK_NEAR(group.symbolizers[1].placementRatio.value_or(-1.0F), 0.5, 1e-6);
+        CHECK(!group.symbolizers[0].placementRatio);
     }
     CHECK_THROWS(MapProfile::parse(xml, "test.xml", "missing"));
 }
@@ -1040,6 +1044,8 @@ TEST(minimap_camera_follows_the_car)
     for (const float heading : {0.0F, 1.0F, -2.5F}) {
         const MinimapCamera slow = MinimapCamera::follow(tuning, car, heading, 0.0F, 1.0F);
         CHECK_NEAR(slow.distance, 500.0, 1e-3);
+        // The elevation is measured from straight down.
+        CHECK_NEAR(slow.forward.y, -std::cos(glm::radians(70.0F)), 1e-5);
         const glm::vec2 onScreen = project(slow, glm::vec3(car.x, 0.0F, car.y));
         CHECK_NEAR(onScreen.x, 0.0, 1e-4);
         CHECK(onScreen.y < -0.2F && onScreen.y > -0.4F);
@@ -1199,6 +1205,52 @@ TEST(disc_fonts_cover_latin1)
     }
     const VectorFont* digits = fonts.font("DG2_lcd");
     CHECK(digits != nullptr && digits->glyph(U'7') != nullptr);
+}
+
+// The render data keeps each text's width as the editor measured it. Our
+// measure at 96/72 of the size must agree for SUPER_STACKER, which grows its
+// bars by the difference, to leave the authored strings where they were.
+TEST(disc_hud_authored_text_widths)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const Presentation hud(SceneFiles::load(vfs, "media/ui/scenes/ui4/947_HUD"));
+    FontLibrary fonts(vfs, "en");
+    std::vector<float> ratios;
+    for (int element = 0; element < static_cast<int>(hud.elementCount()); ++element) {
+        const FbfRecord* record = hud.record(element);
+        const std::string shown = hud.text(element);
+        if (!record || record->kind != FbfKind::Text || record->text.authoredWidth <= 0.0F || record->text.size <= 0
+            || shown.find_first_not_of(' ') == std::string::npos) {
+            continue;
+        }
+        const FbfText& text = record->text;
+        const VectorFont* font = fonts.font(text.font);
+        if (!font) {
+            continue;
+        }
+        const auto size = static_cast<float>(text.size);
+        const float measured = font->measure(shown, text.tracking / size) * size * (96.0F / 72.0F);
+        ratios.push_back(measured / text.authoredWidth);
+        if (shown == "ARTIST NAME" || shown == "RADIO OFF") {
+            std::fprintf(stderr, "  \"%s\" %s %d: authored %.1f, measured %.1f\n", shown.c_str(), text.font.c_str(),
+                text.size, static_cast<double>(text.authoredWidth), static_cast<double>(measured));
+            CHECK_NEAR(measured, text.authoredWidth, 0.05 * text.authoredWidth);
+        }
+    }
+    CHECK(ratios.size() > 20);
+    if (ratios.empty()) {
+        return;
+    }
+    std::ranges::sort(ratios);
+    const float median = ratios[ratios.size() / 2];
+    std::fprintf(stderr, "  %zu texts, measured over authored: median %.3f, from %.3f to %.3f\n", ratios.size(),
+        static_cast<double>(median), static_cast<double>(ratios.front()), static_cast<double>(ratios.back()));
+    CHECK_NEAR(median, 1.0, 0.05);
 }
 
 TEST(disc_hud_scene_structure)
