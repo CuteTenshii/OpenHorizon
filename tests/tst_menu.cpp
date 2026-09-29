@@ -9,6 +9,7 @@
 
 #include "base/Bytes.h"
 #include "ui/AnarkFormats.h"
+#include "ui/LoadingScreen.h"
 #include "ui/MenuCommon.h"
 #include "ui/Minimap.h"
 #include "ui/PauseMenu.h"
@@ -173,7 +174,7 @@ TEST(disc_pause_entries_follow_the_builder)
     UiStrings strings(vfs, "en");
     PauseMenuContext freeRoam;
     CHECK(texts(pauseMenuEntries(freeRoam, strings))
-        == std::vector<std::string>({"MAP", "MULTIPLAYER", "PHOTO MODE", "MESSAGE CENTER", "MY PROFILE", "QUIT"}));
+        == std::vector<std::string>({"MAP", "MULTIPLAYER", "PHOTO MODE", "MY PROFILE", "QUIT"}));
     PauseMenuContext race;
     race.freeRoam = false;
     CHECK(texts(pauseMenuEntries(race, strings))
@@ -256,6 +257,48 @@ TEST(disc_map_data_is_where_the_map_reads_it)
         }
     }
     CHECK_EQ(areas, 1);
+}
+
+TEST(disc_loading_tips_resolve_from_the_string_tables)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    UiStrings strings(vfs, "en");
+    const LoadingDefinitions definitions = LoadingDefinitions::load(vfs, strings);
+    const LoadingTipGroup* freeRoam = definitions.find("freeroam");
+    CHECK(freeRoam != nullptr);
+    if (!freeRoam) {
+        return;
+    }
+    CHECK_EQ(freeRoam->tipCount, 2);
+    CHECK(freeRoam->random);
+    bool raceEncounters = false;
+    for (const LoadingTip& tip : freeRoam->tips) {
+        CHECK_NEAR(tip.displayTime, 8.0, 1e-6);
+        CHECK_EQ(tip.layout, 1);
+        if (tip.title == "RACE ENCOUNTERS") {
+            raceEncounters = true;
+            CHECK(tip.message.starts_with("See a fellow Horizon racer"));
+        }
+    }
+    CHECK(raceEncounters);
+    CHECK(definitions.find("stats") != nullptr);
+    CHECK(definitions.find("stats")->tips.empty());
+    for (int i = 1; i <= 10; ++i) {
+        CHECK(vfs.exists(std::format("media/ui/textures/horizon/loading/bgloadingimages/image{}.xds", i)));
+    }
+
+    const Presentation scene(SceneFiles::load(vfs, "media/ui/scenes/ui4/2_c_ini_loading"));
+    const int root = scene.contract(0, "UIContract");
+    for (int i = 1; i <= 8; ++i) {
+        CHECK(scene.contractParameter(root, std::format("TEXT_LINE_{}", i)) >= 0);
+    }
+    CHECK_NEAR(textBoxWidth(scene, scene.contractParameter(root, "TEXT_LINE_1")), 0.385 * 1280.0, 1e-2);
+    CHECK(scene.contractParameter(root, "MATERIAL_BACKGROUND") >= 0);
 }
 
 } // namespace

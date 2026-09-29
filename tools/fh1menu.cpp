@@ -9,6 +9,7 @@
 #include "platform/Window.h"
 #include "render/Gl.h"
 #include "ui/AnarkFormats.h"
+#include "ui/LoadingScreen.h"
 #include "ui/MenuCommon.h"
 #include "ui/PauseMenu.h"
 #include "ui/Presentation.h"
@@ -44,6 +45,7 @@ int usage()
     std::fprintf(stderr,
         "usage: fh1menu DISC contracts SCENE [--names FILE]\n"
         "       fh1menu DISC pause OUT.png [--race] [--steps KEYS] [--size WxH] [--time S]\n"
+        "       fh1menu DISC loading OUT.png [--group NAME] [--seed N] [--size WxH] [--time S]\n"
         "       fh1menu DISC map OUT.png [--track NAME] [--at X,Z] [--heading DEG] [--move DX,DY --move-time S]\n"
         "                                [--zoom Z --zoom-time S] [--steps KEYS] [--size WxH] [--time S]\n"
         "  DISC       the extracted disc (its root or its media folder)\n"
@@ -54,6 +56,8 @@ int usage()
         "  pause      draws the pause menu of a free-roam session (a race with --race) after the menu inputs\n"
         "             in KEYS, one per frame: u d (up, down), a (A), b (B); then runs --time seconds\n"
         "             more; set SDL_VIDEO_DRIVER=offscreen to render without a window\n"
+        "  loading    draws the loading screen with a tip of the LoadingDefs.xml group NAME (default\n"
+        "             freeroam), after --time seconds (default 3)\n"
         "  map        draws the full-screen map opened with the player at X,Z facing DEG (0 north, 90 east) and\n"
         "             the track's race starts, after holding the left stick at DX,DY for --move-time seconds,\n"
         "             the right stick at Z (positive zooms in) for --zoom-time seconds, and the KEYS\n");
@@ -285,8 +289,8 @@ const char* actionName(PauseAction action)
         return "restart";
     case PauseAction::RetireFromEvent:
         return "retire from event";
-    case PauseAction::QuitToTitle:
-        return "quit to title";
+    case PauseAction::Quit:
+        return "quit";
     case PauseAction::OpenMap:
         return "open map";
     case PauseAction::OpenMultiplayer:
@@ -501,6 +505,26 @@ glm::vec2 parsePair(const std::string& text)
     return {std::stof(text.substr(0, comma)), std::stof(text.substr(comma + 1))};
 }
 
+int renderLoading(const fh::Vfs& vfs, const std::string& out, const std::string& group, std::uint32_t seed,
+    float seconds, int width, int height)
+{
+    fh::Window window(hiddenWindow());
+    OffscreenTarget target(width, height);
+    LoadingScreen screen(vfs, "en", seed);
+    screen.show(group);
+    constexpr float kStep = 1.0F / 60.0F;
+    for (int i = 0; i < std::max(1, static_cast<int>(seconds / kStep)); ++i) {
+        screen.update(kStep);
+        target.clear();
+        screen.draw(width, height);
+    }
+    if (const LoadingTip* tip = screen.tip()) {
+        std::printf("tip: %s: %s\n", tip->title.c_str(), tip->message.c_str());
+    }
+    std::printf("background: %s\n", screen.background().c_str());
+    return writePng(out, target.read()) ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -548,6 +572,30 @@ int main(int argc, char** argv)
                 }
             }
             return renderPause(vfs, std::string(args[0]), options);
+        }
+        if (command == "loading" && !args.empty()) {
+            std::string group = "freeroam";
+            std::uint32_t seed = 0;
+            float seconds = 3.0F;
+            int width = 1280;
+            int height = 720;
+            for (std::size_t i = 1; i + 1 < args.size(); i += 2) {
+                const std::string value(args[i + 1]);
+                if (args[i] == "--group") {
+                    group = value;
+                } else if (args[i] == "--seed") {
+                    seed = static_cast<std::uint32_t>(std::stoul(value));
+                } else if (args[i] == "--time") {
+                    seconds = std::stof(value);
+                } else if (args[i] == "--size") {
+                    if (!parseSize(value, width, height)) {
+                        return usage();
+                    }
+                } else {
+                    return usage();
+                }
+            }
+            return renderLoading(vfs, std::string(args[0]), group, seed, seconds, width, height);
         }
         if (command == "map" && !args.empty()) {
             MapOptions options;

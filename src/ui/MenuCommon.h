@@ -146,6 +146,37 @@ private:
     std::vector<std::string> m_icons;
 };
 
+/// How much larger the game draws a text element than its size taken as
+/// ems of the vector font. The render data stores, next to each text's
+/// size, the width its authored string had in the editor (the f32 that
+/// render data 1008 adds to text records, read at 0x82f2cbe0); over the
+/// scenes' sample strings that width is 1.30 to 1.38 times the string
+/// measured at its size in ems ("BUTTON" in horizon_e 36: 220 against 164;
+/// "BUTTON TEXT" in horizon_b 14: 112 against 81; "GAME PAUSED" at 13: 118
+/// against 91; "22" in horizon_b 15: 22 against 17; "TITLETEXTGOESHERE" in
+/// horizon_e 36: 554 against 414; "0" in horizon_e 54: 54 against 40;
+/// "PLEASE WAIT" in horizon_e 16: 156 against 119; the loading tip's
+/// placeholder in horizon_a 16: 493 against 360), which is the 96/72 of a
+/// point size drawn in pixels. The runtime's own mapping from size to glyph
+/// scale was not traced (the text setup at 0x82f2a1e8 passes the size
+/// through a per-font factor that returns 1, 0x825ecbd8). The HUD draws
+/// through UiRenderer without this factor.
+inline constexpr float kTextPointsToUnits = 4.0F / 3.0F;
+
+/// Scales the size of every text item by kTextPointsToUnits.
+void applyTextScale(std::vector<DrawItem>& items);
+
+/// The width of a text element's box in design units: its boxwidth
+/// attribute, a fraction of the scene's width (the text setup at 0x82f2a1e8
+/// multiplies the render data's copy by the screen width). 0 when unset.
+float textBoxWidth(const Presentation& scene, int element);
+/// The font and size a text element is authored with.
+struct TextStyle {
+    std::string font;
+    float size = 0.0F;
+};
+TextStyle textStyle(const Presentation& scene, int element);
+
 /// Breaks `text` into lines no wider than `width` design units when drawn
 /// with `measure`, at spaces, keeping the text's own line breaks. A word
 /// wider than the line keeps a line to itself. The Anark runtime wraps text

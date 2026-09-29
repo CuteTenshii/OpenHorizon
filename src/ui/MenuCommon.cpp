@@ -103,6 +103,48 @@ MenuInput MenuInputReader::read(const InputState& input)
     return out;
 }
 
+void applyTextScale(std::vector<DrawItem>& items)
+{
+    for (DrawItem& item : items) {
+        if (item.isText) {
+            item.text.size *= kTextPointsToUnits;
+            item.text.tracking *= kTextPointsToUnits;
+            item.text.leading *= kTextPointsToUnits;
+        }
+    }
+}
+
+float textBoxWidth(const Presentation& scene, int element)
+{
+    if (element < 0) {
+        return 0.0F;
+    }
+    const BgfFile& bgf = scene.files().bgf;
+    const std::uint32_t boxWidth = anarkHash("boxwidth");
+    for (const Attribute& attribute : bgf.elements[static_cast<std::size_t>(element)].attributes) {
+        if (attribute.hash == boxWidth) {
+            return attribute.asFloat() * static_cast<float>(bgf.width);
+        }
+    }
+    return 0.0F;
+}
+
+TextStyle textStyle(const Presentation& scene, int element)
+{
+    TextStyle style;
+    if (element < 0) {
+        return style;
+    }
+    const std::uint32_t id = scene.files().bgf.elements[static_cast<std::size_t>(element)].id;
+    for (const FbfRecord& record : scene.files().fbf.records) {
+        if (record.id == id && record.kind == FbfKind::Text) {
+            style.font = record.text.font;
+            style.size = static_cast<float>(record.text.size);
+        }
+    }
+    return style;
+}
+
 std::string helpIconTexture(HelpIcon icon)
 {
     return texturePathForScene(kHelpIcons[static_cast<std::size_t>(icon)]);

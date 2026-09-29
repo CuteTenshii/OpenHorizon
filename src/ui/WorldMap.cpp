@@ -1214,6 +1214,7 @@ void WorldMap::draw(int width, int height)
         item.model.layers.front().imageName = "@worldmap";
     }
     impl.help.apply(items);
+    applyTextScale(items);
     impl.renderer.begin(width, height);
     impl.renderer.draw(items);
     impl.renderer.end();

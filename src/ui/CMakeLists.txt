@@ -3,6 +3,8 @@ add_library(fh1ui STATIC
     AnarkFormats.h
     Hud.cpp
     Hud.h
+    LoadingScreen.cpp
+    LoadingScreen.h
     MenuCommon.cpp
     MenuCommon.h
     Minimap.cpp

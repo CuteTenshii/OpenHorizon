@@ -50,9 +50,11 @@ enum class PauseAction {
     /// QUIT RACE, confirmed in the "RETIRE FROM EVENT" message box
     /// (onRetire).
     RetireFromEvent,
-    /// QUIT, confirmed in its message box: back to the title screen
-    /// (onQuit, then unload_to_splash in media/gamemodes/pause.xml).
-    QuitToTitle,
+    /// QUIT, confirmed in its message box ("Are you sure you want to quit
+    /// Horizon single player?", EXIT SINGLE PLAYER): onQuit, then
+    /// unload_to_splash in media/gamemodes/pause.xml, which leaves the
+    /// game session. With no front end here, the game exits.
+    Quit,
     /// MAP: the map screen, which returns to the pause menu when left with
     /// B (map_flow_pause in pause.xml enters pause_screen.enterBack).
     OpenMap,
@@ -93,10 +95,12 @@ struct PauseMenuContext {
     /// profile byte at +2391, and the flag 0x827466f8 reads); both checks
     /// are false in an ordinary session.
     bool photoModeAvailable = true;
-    /// MESSAGE CENTER: listed in free roam, and in other modes only when
-    /// 0x826f73b8 allows it, which was not traced; false leaves it out of
-    /// races.
-    bool messageCentreOutsideFreeRoam = false;
+    /// The check 0x824ac908 makes on the profile's session descriptor:
+    /// false when its byte +88 is 0, which the festival game has (the
+    /// first-time career, 0x82701110, only runs with it 0); HORIZON RALLY
+    /// needs it true. What the non-zero values of the byte stand for was
+    /// not identified.
+    bool alternateProfileMode = false;
     /// MULTIPLAYER: hidden in modes 3 and 20 and when the menu's flag +520
     /// is set (0x827daf18); also gates QUIT.
     bool multiplayerAvailable = true;
@@ -124,7 +128,9 @@ struct PauseMenuEntry {
 /// The entries the builder (0x827de1b0) lists for `context`, in order,
 /// with their text from the string tables it names. Entries whose text is
 /// missing from the disc (downloadable content: HORIZON RALLY, CAR
-/// CHALLENGES) are left out.
+/// CHALLENGES) are left out, and so is MESSAGE CENTER, an Xbox LIVE
+/// feature the game does not list offline, as this reimplementation always
+/// is.
 std::vector<PauseMenuEntry> pauseMenuEntries(const PauseMenuContext& context, UiStrings& strings);
 
 /// The game's pause menu (CPauseMenu on media/ui/scenes/ui4/925_pause_menu,

@@ -44,7 +44,7 @@ std::vector<PauseMenuEntry> pauseMenuEntries(const PauseMenuContext& context, Ui
             out.push_back({item, strings.get(table, id)});
         }
     };
-    if (context.firstTimeCareer) {
+    if (context.firstTimeCareer && !context.alternateProfileMode) {
         add(PauseItem::Resume, kHelpButtons, "IDS_Resume");
         add(PauseItem::Quit, kPauseMenu, "IDS_Quit");
         return out;
@@ -65,7 +65,7 @@ std::vector<PauseMenuEntry> pauseMenuEntries(const PauseMenuContext& context, Ui
     // tables are not on the disc; `add` leaves them out when their text is
     // missing, which it always is here.
     add(PauseItem::CarChallenges, kCarChallenges, "IDS_PauseMenu_CarChallenges");
-    if (context.freeRoam) {
+    if (context.freeRoam && context.alternateProfileMode) {
         add(PauseItem::HorizonRally, kMain, "IDS_HorizonRally");
     }
     if (context.multiplayerAvailable && !context.inMission) {
@@ -74,9 +74,8 @@ std::vector<PauseMenuEntry> pauseMenuEntries(const PauseMenuContext& context, Ui
     if (context.photoModeAvailable) {
         add(PauseItem::PhotoMode, kPauseMenu, "IDS_Photo");
     }
-    if ((context.freeRoam || context.messageCentreOutsideFreeRoam) && !context.inMission) {
-        add(PauseItem::MessageCentre, kPauseMenu, "IDS_MessageCentre");
-    }
+    // MESSAGE CENTER (0x82700f38) is an Xbox LIVE feature: offline, as
+    // this reimplementation always is, the game does not list it.
     if (context.sponsorChallenges) {
         add(PauseItem::SponsorChallenges, kPauseMenu, "IDS_SponsorChallenge");
     }
@@ -181,25 +180,12 @@ void PauseMenu::Impl::bindPopup()
     popupTitle = popup.contractParameter(boxContract, "TEXT_TITLE");
     popupMessage = popup.contractParameter(boxContract, "TEXT_MESSAGE");
     popupHelp.bind(popup, popup.contractParameter(root, "COMPONENT_HELP_BUTTON_BAR"));
-    if (popupMessage >= 0) {
-        // The message element has wordwrap set and a boxwidth of 0.313,
-        // which, read as a fraction of the 1280-unit design width, spans
-        // the popup's panel (inferred from that fit).
-        const BgfElement& element = popup.files().bgf.elements[static_cast<std::size_t>(popupMessage)];
-        const std::uint32_t boxWidth = anarkHash("boxwidth");
-        for (const Attribute& attribute : element.attributes) {
-            if (attribute.hash == boxWidth) {
-                popupWrapWidth = attribute.asFloat() * static_cast<float>(popup.files().bgf.width);
-            }
-        }
-        const std::uint32_t id = element.id;
-        for (const FbfRecord& record : popup.files().fbf.records) {
-            if (record.id == id) {
-                popupFont = record.text.font;
-                popupFontSize = static_cast<float>(record.text.size);
-            }
-        }
-    }
+    // The message element has wordwrap set; its box spans the popup's
+    // panel.
+    popupWrapWidth = textBoxWidth(popup, popupMessage);
+    const TextStyle style = textStyle(popup, popupMessage);
+    popupFont = style.font;
+    popupFontSize = style.size;
 }
 
 void PauseMenu::Impl::show()
@@ -276,8 +262,9 @@ void PauseMenu::Impl::openConfirmation(const Confirmation& value)
     if (popupMessage >= 0) {
         std::string message = value.message;
         if (popupWrapWidth > 0.0F && !popupFont.empty()) {
-            message = wrapText(message, popupWrapWidth,
-                [&](const std::string& line) { return renderer.measure(popupFont, line, popupFontSize); });
+            message = wrapText(message, popupWrapWidth, [&](const std::string& line) {
+                return renderer.measure(popupFont, line, popupFontSize * kTextPointsToUnits);
+            });
         }
         popup.setText(popupMessage, std::move(message));
     }
@@ -313,7 +300,7 @@ PauseAction PauseMenu::Impl::select()
         openConfirmation(
             {strings.get(kPauseMenu, "IDS_Quit"), strings.get(kPauseMenu, "IDS_QuitRace_Desc_SinglePlayer"),
                 strings.get(kHelpButtons, "IDS_Quit_QuitSinglePlayer"), strings.get(kHelpButtons, "IDS_Cancel"),
-                PauseAction::QuitToTitle});
+                PauseAction::Quit});
         return PauseAction::None;
     case PauseItem::Multiplayer:
         return PauseAction::OpenMultiplayer;
@@ -433,10 +420,12 @@ void PauseMenu::draw(int width, int height)
     impl.renderer.begin(width, height);
     std::vector<DrawItem> items = impl.pause.evaluate();
     impl.pauseHelp.apply(items);
+    applyTextScale(items);
     impl.renderer.draw(items);
     if (impl.confirmation) {
         std::vector<DrawItem> popupItems = impl.popup.evaluate();
         impl.popupHelp.apply(popupItems);
+        applyTextScale(popupItems);
         impl.renderer.draw(popupItems);
     }
     impl.renderer.end();
