@@ -6,7 +6,6 @@ What is left before this plays like Forza Horizon, from player reports and from 
 
 | Area | Problem | Work |
 |------|---------|------|
-| Sound | A constant squeak or rub while driving. The tyre skid event gets made-up inputs (slip angle = slip x 4, slip ratio 0, load 1). | Per-wheel tyre audio from the game's FMOD project and code. |
 | Cars | Models are broken (rear body cut off, misplaced side panel, glass shows noise, tyres wrong) and use a hand-written shader. | .carbin decoding fixes and the game's car shaders through the Xenos translator. |
 | World | Shading looks wrong, forests are missing, the sky has no clouds, sun or moon. | Track shaders through the Xenos translator, the forest layers, sky objects. |
 | Effects | No tyre smoke, dust or other particles. | The game's particle system. |
@@ -15,6 +14,7 @@ What is left before this plays like Forza Horizon, from player reports and from 
 
 - Driving: 0-60 (14.5%) and quarter-mile medians are worse since the game's traction control, which does not act at take-off, replaced the made-up one; the standing-start clutch model is not traced. The game's stability management and traction control only act above 30 mph, so powerful old rear-drive cars can still spin at low speed.
 - Flyers: the "{0}/{1} DISCOUNT SIGNS SMASHED" notification is not shown, and their mass comes from the guessed density rule.
+- Car sounds: wind, suspension bottom-out, transmission whine and surface-change one-shots exist on the disc but are not played; the player's four tyres play centred.
 - Pause menu: its entries for multiplayer, photo mode, message center and my profile lead nowhere yet; QUIT exits the game.
 - Parking brake: a stopped car should hold still. The game switches `CPlayerCarParkingBrake` on and off through flow states (`media/gamemodes/state_definitions.xml`); what it does while on is in the code, not yet read.
 - Race AI: in autopilot races the AI regularly hits scenery at corners and loses tens of seconds, before and after the steering rewrite.
