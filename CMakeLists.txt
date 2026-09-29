@@ -119,22 +119,14 @@ endif()
 # Every Windows executable carries cmake/fh1-native.manifest, which makes
 # UTF-8 the process code page, so text read from the command line, the
 # environment or narrow-string file APIs is UTF-8 as on Linux. MSVC merges
-# a .manifest source into the one its linker writes; MinGW links it as a
-# resource.
-if(WIN32)
-    if(NOT MSVC)
-        enable_language(RC)
-    endif()
+# a .manifest source into the one its linker writes.
+if(MSVC)
     function(fh1n_add_manifests directory)
         get_property(targets DIRECTORY ${directory} PROPERTY BUILDSYSTEM_TARGETS)
         foreach(target IN LISTS targets)
             get_target_property(type ${target} TYPE)
             if(type STREQUAL "EXECUTABLE")
-                if(MSVC)
-                    target_sources(${target} PRIVATE ${CMAKE_SOURCE_DIR}/cmake/fh1-native.manifest)
-                else()
-                    target_sources(${target} PRIVATE ${CMAKE_SOURCE_DIR}/cmake/fh1-native-manifest.rc)
-                endif()
+                target_sources(${target} PRIVATE ${CMAKE_SOURCE_DIR}/cmake/fh1-native.manifest)
             endif()
         endforeach()
         get_property(subdirectories DIRECTORY ${directory} PROPERTY SUBDIRECTORIES)

@@ -4,7 +4,7 @@ This file guides coding agents (and people) working in this repository.
 
 ## What this is
 
-A from-scratch native reimplementation of Forza Horizon (Xbox 360, 2012) in C++20, for Linux (x86-64) and Windows (x64, MSVC or MinGW-w64 with vcpkg). It reads the game's own files from an extracted disc at runtime. Recompiling or emulating the Xbox 360 executable (XenonRecomp and similar tools) is out of scope by design: engine, simulation and rules are new code, informed by the game's data and by reading its code. The repository holds no game data.
+A from-scratch native reimplementation of Forza Horizon (Xbox 360, 2012) in C++20, for Linux (x86-64) and Windows (x64, Visual Studio with vcpkg). It reads the game's own files from an extracted disc at runtime. Recompiling or emulating the Xbox 360 executable (XenonRecomp and similar tools) is out of scope by design: engine, simulation and rules are new code, informed by the game's data and by reading its code. The repository holds no game data.
 
 Knowledge sources outside the repo:
 - The extracted disc: pass it with `--game`, or set `FH1_GAME_DIR`; the game remembers it in its settings file.
@@ -27,7 +27,7 @@ cmake --build build --target format-check
 cmake --build build --target tidy        # clang-tidy over the compilation database (.clang-tidy)
 ```
 
-Windows builds take their dependencies from `vcpkg.json` (set `VCPKG_ROOT`): `cmake --preset windows-release` with MSVC on Windows, or `cmake --preset windows-mingw-cross -B <dir>` from Linux with MinGW-w64 and nasm installed, whose tests then run under Wine (`WINEPATH` naming `vcpkg_installed/x64-mingw-dynamic-release/bin` and the MinGW runtime's `bin`; the same offscreen rules apply, and the GL cases skip there for want of a context).
+Windows builds use Visual Studio (MSVC) with dependencies from `vcpkg.json` (set `VCPKG_ROOT`): `cmake --preset windows-release`. MSVC can't run on this Linux machine: CI's Windows job builds and tests it on every push, so push and read that job's result to check Windows-specific changes.
 
 `lzx` and `xds` come from their git repos via FetchContent, pinned by commit in the root `CMakeLists.txt`. To work against local checkouts use `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` / `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>`.
 

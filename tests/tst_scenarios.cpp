@@ -53,7 +53,8 @@ constexpr float kStep = 1.0F / 60.0F;
 bool haveOpenGl();
 
 /// The disc, or null (and the scenario skips) when FH1_GAME_DIR is not set
-/// or the machine has no OpenGL context for the game, as under Wine.
+/// or the machine has no OpenGL context for the game, as on a CI runner
+/// without a GPU.
 const char* gameDir()
 {
     const char* dir = std::getenv("FH1_GAME_DIR");

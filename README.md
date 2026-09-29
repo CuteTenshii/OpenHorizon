@@ -40,11 +40,11 @@ scripts/run-tests.sh                                           # all of it offsc
 
 ### Windows
 
-Requires Visual Studio 2022 (the "Desktop development with C++" workload, which brings CMake and Ninja) and [vcpkg](https://github.com/microsoft/vcpkg). The dependencies are listed in `vcpkg.json` and pinned by its `builtin-baseline`; vcpkg builds them on the first configure, which takes a while (FFmpeg and shaderc are the long ones).
+Requires Visual Studio 2022 or later (the "Desktop development with C++" workload, which brings CMake and Ninja) and [vcpkg](https://github.com/microsoft/vcpkg). The dependencies are listed in `vcpkg.json` and pinned by its `builtin-baseline`; vcpkg builds them on the first configure, which takes a while (FFmpeg and shaderc are the long ones).
 
 1. Clone vcpkg and bootstrap it: `git clone https://github.com/microsoft/vcpkg C:\vcpkg`, then `C:\vcpkg\bootstrap-vcpkg.bat`.
 2. Set `VCPKG_ROOT` to that folder (`setx VCPKG_ROOT C:\vcpkg`, then open a new terminal).
-3. From a "Developer PowerShell for VS 2022":
+3. From a Visual Studio "Developer PowerShell":
 
 ```powershell
 cmake --preset windows-release        # or windows-debug
@@ -53,8 +53,6 @@ ctest --preset windows-release
 ```
 
 Visual Studio can also open the folder directly and offers the same presets. The executables land in `build-windows\src` with the DLLs they need copied next to them.
-
-The Windows build is cross-compiled from Linux with MinGW-w64 and its tests run under Wine: the `windows-mingw-cross` preset, with `VCPKG_ROOT` set and MinGW-w64 GCC and nasm (for FFmpeg) installed. MSVC itself has not built this code yet.
 
 Contributing, testing and the git hooks: see [CONTRIBUTING.md](CONTRIBUTING.md).
 

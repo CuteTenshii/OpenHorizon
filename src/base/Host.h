@@ -28,7 +28,7 @@ std::uint32_t processId();
 /// Raises the number of files the process may hold open at once to what
 /// the game's file system needs: a disc mounts 524 archives, and each stays
 /// open once read. The Windows C runtime allows 512 stdio streams unless
-/// told otherwise (std::ifstream sits on them with both MSVC and MinGW), so
+/// told otherwise (std::ifstream sits on them with MSVC's runtime), so
 /// there it is raised to the runtime's maximum of 8192. Linux's default of
 /// 1024 descriptors is already enough, so this does nothing there. Safe to
 /// call more than once.
