@@ -815,6 +815,7 @@ TEST(loadingScreenStaysUntilTheStartIsReady)
     CHECK(!status.screenShown);
     CHECK_EQ(status.pendingJobs, std::size_t{0});
     CHECK(status.nearbyWorldReady);
+    CHECK_EQ(status.programsPending, std::size_t{0});
     CHECK(status.playerCarReady);
     CHECK(status.radioReady);
     CHECK_EQ(status.trafficPending, std::size_t{0});

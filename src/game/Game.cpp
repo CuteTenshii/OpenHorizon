@@ -590,8 +590,13 @@ void Game::spawnPlayer()
 // loads the game hides behind its black-out and fade instead: this game's
 // radio starts only once its stream is decoded and traffic models load on
 // workers, so without the wait both would start in view. It also waits for
-// the job pool to drain, which covers tile rebuilds at every level of
-// detail in view and their textures, not just those nearby.
+// every track effect to be linked (the game's shaders are precompiled on
+// the disc) and for the job pool to drain, which covers tile rebuilds at
+// every level of detail in view and their textures, not just those nearby.
+
+/// Linking track effects in slices keeps the loading screen moving; the
+/// slice is our choice, a quarter of a 60 Hz frame, not the game's.
+constexpr std::chrono::microseconds kPrecompileSlice{4000};
 
 std::optional<Game::FadeOptions> Game::loadFadeIn(const Vfs& vfs)
 {
@@ -648,8 +653,8 @@ float Game::fadeAlpha() const
 
 bool Game::streamingDone() const
 {
-    if (!m_playerPlaced || !m_worldRenderer->nearbyReady() || m_jobs->outstanding() > 0
-        || !m_collision->readyAt(player().physics->position())) {
+    if (!m_playerPlaced || !m_worldRenderer->nearbyReady() || m_worldRenderer->programsPending() > 0
+        || m_jobs->outstanding() > 0 || !m_collision->readyAt(player().physics->position())) {
         return false;
     }
     // Car models load with their car here, so a car in the world has its
@@ -680,6 +685,9 @@ void Game::updateLoading(float dt)
     switch (m_loadPhase) {
     case LoadPhase::Streaming:
     case LoadPhase::Starting:
+        if (m_worldRenderer->programsPending() > 0) {
+            m_worldRenderer->precompile(kPrecompileSlice);
+        }
         break;
     case LoadPhase::Fading:
         m_fadeElapsed += dt;
@@ -756,6 +764,7 @@ Game::LoadingStatus Game::loadingStatus() const
     status.fading = m_loadPhase == LoadPhase::Fading;
     status.pendingJobs = m_jobs->outstanding();
     status.nearbyWorldReady = m_worldRenderer && m_worldRenderer->nearbyReady();
+    status.programsPending = m_worldRenderer ? m_worldRenderer->programsPending() : 0;
     status.playerCarReady = m_playerPlaced && m_modelCache.contains(player().spec->id) && (player().engine || !m_audio);
     status.radioReady = radioReady() && (!m_radio || m_loadPhase != LoadPhase::Streaming);
     status.trafficPending = trafficPending();
@@ -2670,8 +2679,16 @@ bool Game::frame(const InputState& controls, float dt)
         // The map is its own screen: the game swaps to the map scene and
         // stops drawing the world, so nothing of it shows through.
         const bool mapOpen = m_map && m_map->isOpen();
-        m_worldDrawn = !mapOpen;
-        if (mapOpen) {
+        // Behind the loading screen the world waits for its effects, which
+        // it would otherwise link one by one as it draws.
+        const bool worldHidden = (m_loadPhase == LoadPhase::Streaming || m_loadPhase == LoadPhase::Starting)
+            && m_worldRenderer->programsPending() > 0;
+        m_worldDrawn = !mapOpen && !worldHidden;
+        if (worldHidden) {
+            m_present.bind();
+            glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        } else if (mapOpen) {
             m_present.bind();
             glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

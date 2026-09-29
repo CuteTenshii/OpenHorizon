@@ -120,6 +120,8 @@ public:
         /// The tiles around the camera have their geometry and textures at
         /// the level of detail it needs.
         bool nearbyWorldReady = false;
+        /// Track effects not linked yet.
+        std::size_t programsPending = 0;
         /// The player's car is on the ground with its model and engine
         /// sound (those that could be loaded at all).
         bool playerCarReady = false;
@@ -344,7 +346,7 @@ private:
     std::unique_ptr<ui::Navigation> m_navigation;
     /// The game's loading screen, shown until the start is loaded.
     std::unique_ptr<ui::LoadingScreen> m_loading;
-    /// Where the start of play is: waiting for the world and cars
+    /// Where the start of play is: waiting for the world, cars and effects
     /// (Streaming), starting the radio and the first traffic (Starting),
     /// fading in from black (Fading), then driving.
     enum class LoadPhase { Streaming, Starting, Fading, Playing };
