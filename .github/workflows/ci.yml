@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux build and tests
+    # SDL3 is packaged from Ubuntu 25.04 on; ubuntu-latest is still 24.04.
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build g++ pkg-config \
+            libsdl3-dev libgl-dev libegl-dev libglm-dev libpugixml-dev libsqlite3-dev \
+            libfreetype-dev libfontconfig-dev libavcodec-dev libavformat-dev libavutil-dev \
+            libswresample-dev zlib1g-dev libshaderc-dev
+
+      - uses: actions/checkout@v4
+
+      # There is no game data here: every test that needs the disc skips itself
+      # without FH1_GAME_DIR, and the GL cases skip when no context can be made.
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        env:
+          SDL_VIDEO_DRIVER: offscreen
+          SDL_AUDIO_DRIVER: dummy
+        run: ctest --test-dir build --output-on-failure -LE 'perf|slow'
+
+  format:
+    name: Formatting of changed lines
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Much of the code predates .clang-format, so only the lines a pull
+      # request changes are checked, as the pre-commit hook does.
+      - name: Check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git clang-format --diff --quiet "$BASE_SHA"
