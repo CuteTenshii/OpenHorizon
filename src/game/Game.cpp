@@ -452,14 +452,7 @@ void Game::spawnPlayer()
     if (m_loading) {
         m_loading->hide();
     }
-    const bool firstPlacement = !m_playerPlaced;
     m_playerPlaced = true;
-    if (firstPlacement && m_options.openScreen == "pause" && m_pause) {
-        m_pause->open(ui::PauseMenuContext{});
-    } else if (firstPlacement && m_options.openScreen == "map" && m_map) {
-        m_mapFromPause = false;
-        m_map->open(worldMapState());
-    }
     m_chaseVelocity = glm::vec3(0.0F);
     logInfo("car placed at height {:.1f}", player().physics->position().y);
     if (!m_options.race.empty()) {
@@ -475,7 +468,7 @@ void Game::spawnPlayer()
 
 CarControls Game::readPlayerControls(float /*dt*/)
 {
-    const InputState& in = m_window.input();
+    const InputState& in = input();
     CarControls controls;
     float keyThrottle = (in.held(Key::W) || in.held(Key::Up)) ? 1.0F : 0.0F;
     float keyBrake = (in.held(Key::S) || in.held(Key::Down)) ? 1.0F : 0.0F;
@@ -501,10 +494,6 @@ CarControls Game::readPlayerControls(float /*dt*/)
     controls.handbrake = (in.held(Key::Space) || in.held(Button::A)) ? 1.0F : 0.0F;
     controls.shiftUp = in.pressed(Key::E) || in.pressed(Button::B);
     controls.shiftDown = in.pressed(Key::Q) || in.pressed(Button::X);
-    if (m_options.demoDrive) {
-        controls.throttle = 1.0F;
-        controls.steer = 0.15F * std::sin(m_time * 0.4F);
-    }
     // A stopped car with neither pedal pressed holds itself on the
     // handbrake, so it does not roll away on a slope. This is not the
     // game's rule (its physics and assist step have none; its parking
@@ -710,7 +699,7 @@ void Game::updateRadio(float dt)
     if (!m_radio) {
         return;
     }
-    const InputState& in = m_window.input();
+    const InputState& in = input();
     // "To change radio stations press left and right on the d-pad", as the
     // game's loading tip says; Page Up and Down stand in on a keyboard.
     if (in.pressed(Button::DpadRight) || in.pressed(Key::PageDown)) {
@@ -977,7 +966,7 @@ void Game::updateRace(float dt)
             player().controls = CarControls{};
             player().controls.brake = 0.4F;
         }
-        const InputState& in = m_window.input();
+        const InputState& in = input();
         if (m_resultsTime > kResultsSeconds || in.pressed(Key::Enter) || in.pressed(Button::A)) {
             logInfo("race {} finished in {} ({})", m_race->event().horizonId, formatTime(m_race->player()->finishTime),
                 ordinal(m_race->player()->finishPlace));
@@ -1308,7 +1297,7 @@ void Game::updateEventStarts()
             break;
         }
     }
-    const InputState& in = m_window.input();
+    const InputState& in = input();
     // Starting an event is the layout's Activate action, which the default
     // layout puts on the shift-down button, X.
     if (!menuOpen() && m_nearbyStart && car.speed() < 4.0F && (in.pressed(Key::Enter) || in.pressed(Button::X))) {
@@ -1360,7 +1349,7 @@ void Game::drawEventStarts(const glm::mat4& viewProjection)
 
 void Game::updateCamera(float dt)
 {
-    const InputState& in = m_window.input();
+    const InputState& in = input();
     const CameraSettings* ini = m_cameraSettings ? &*m_cameraSettings : nullptr;
     const auto setting = [ini](std::string_view key, float fallback) { return ini ? ini->get(key, fallback) : fallback; };
     if (m_cameraMode == CameraMode::Free || !m_playerPlaced) {
@@ -1905,7 +1894,7 @@ bool Game::menuOpen() const
 
 ui::MenuInput Game::readMenuInput()
 {
-    const InputState& in = m_window.input();
+    const InputState& in = input();
     ui::MenuInput menu = m_menuInput.read(in);
     menu.up = menu.up || in.pressed(Key::Up);
     menu.down = menu.down || in.pressed(Key::Down);
@@ -2127,26 +2116,20 @@ bool Game::saveScreenshot(const std::filesystem::path& path)
     return true;
 }
 
-int Game::run()
+bool Game::frame(const InputState& controls, float dt)
 {
-    auto last = std::chrono::steady_clock::now();
     using Part = render::FrameStats::Part;
-    while (m_window.pumpEvents()) {
+    {
+        m_input = &controls;
         m_frameStats->beginFrame();
         int physicsSteps = 0;
-        const auto now = std::chrono::steady_clock::now();
-        const float dt = std::min(std::chrono::duration<float>(now - last).count(), 0.1F);
-        last = now;
         m_time += dt;
-        const InputState& in = m_window.input();
-        if (!menuOpen()) {
-            m_timeOfDay->advance(dt);
-        }
+        const InputState& in = input();
 
         const ui::MenuInput menuInput = readMenuInput();
         if (menuOpen()) {
             if (!updateMenus(menuInput, dt)) {
-                break;
+                return false;
             }
         } else if (in.pressed(Key::Escape) && m_window.mouseCaptured()) {
             m_window.setMouseCaptured(false);
@@ -2164,7 +2147,7 @@ int Game::run()
             if (m_race) {
                 endRace();
             } else {
-                break;
+                return false;
             }
         }
         if (in.pressed(Key::F11)) {
@@ -2202,6 +2185,11 @@ int Game::run()
                 player().physics->recover(*m_collision);
             }
         }
+        // After the menus, so the frame that opens the pause menu is already
+        // paused, as the car's simulation is.
+        if (!menuOpen()) {
+            m_timeOfDay->advance(dt);
+        }
         updateEventStarts();
 
         const glm::vec3 focus = m_playerPlaced ? player().physics->position() : m_spawnPosition;
@@ -2233,13 +2221,6 @@ int Game::run()
             updateParticles(dt);
             updateAudio(dt);
             updateRadio(dt);
-            if (m_options.demoDrive && secondTicked(m_time, dt)) {
-                const CarPhysics& car = *player().physics;
-                const GroundHit& ground = car.wheels()[0].ground;
-                logInfo("demo: v {:.1f} m/s, rpm {:.0f}, gear {}, at {:.0f} {:.0f}, surface {} (grip {:.2f}, drag {:.3f})",
-                    car.forwardSpeed(), car.engineRpm(), car.gear(), car.position().x, car.position().z,
-                    ground.surface, ground.grip, ground.drag);
-            }
             if (m_race && m_race->player() && secondTicked(m_time, dt)) {
                 const Race::Racer* own = m_race->player();
                 const CarPhysics& car = *player().physics;
@@ -2269,6 +2250,7 @@ int Game::run()
         // The map is its own screen: the game swaps to the map scene and
         // stops drawing the world, so nothing of it shows through.
         const bool mapOpen = m_map && m_map->isOpen();
+        m_worldDrawn = !mapOpen;
         if (mapOpen) {
             m_present.bind();
             glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
@@ -2301,18 +2283,26 @@ int Game::run()
         m_frameStats->mark(Part::DrawOther);
 
         ++m_frameCount;
-        const bool finished = m_options.frames && m_frameCount >= *m_options.frames;
-        if (finished && !m_options.screenshot.empty()) {
-            saveScreenshot(m_options.screenshot);
-        }
         m_present.present();
         m_frameStats->endGpuFrame();
-        m_window.swapBuffers();
-        m_frameStats->mark(Part::Present);
-        m_frameStats->endFrame(physicsSteps, m_vehicles.size());
-        if (finished) {
+        m_lastPhysicsSteps = physicsSteps;
+    }
+    return true;
+}
+
+int Game::run()
+{
+    auto last = std::chrono::steady_clock::now();
+    while (m_window.pumpEvents()) {
+        const auto now = std::chrono::steady_clock::now();
+        const float dt = std::min(std::chrono::duration<float>(now - last).count(), 0.1F);
+        last = now;
+        if (!frame(m_window.input(), dt)) {
             break;
         }
+        m_window.swapBuffers();
+        m_frameStats->mark(render::FrameStats::Part::Present);
+        m_frameStats->endFrame(m_lastPhysicsSteps, m_vehicles.size());
     }
     return 0;
 }

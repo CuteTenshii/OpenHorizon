@@ -62,24 +62,16 @@ struct GameOptions {
     std::string spawnObject;
     std::optional<glm::vec2> spawnAt;
     std::optional<float> spawnHeading;
-    /// Stop after this many frames and, with `screenshot`, save the last one.
-    std::optional<int> frames;
-    std::filesystem::path screenshot;
     bool manualGearbox = false;
-    /// Holds full throttle with a slight steer, for checking the driving
-    /// without a player.
-    bool demoDrive = false;
     /// Start time in seconds after midnight; the game's own 16:00 otherwise.
     std::optional<float> startTime;
     /// Starts this race (Events.HorizonEventID) straight away.
     std::string race;
-    /// Lets the AI drive the player's car in a race, for testing.
+    /// Lets the AI drive the player's car in a race; the scenario tests use
+    /// it to run races through.
     bool autopilot = false;
     /// Kilometres rather than miles per hour on the speedometer.
     bool metric = true;
-    /// "pause" or "map": opens that screen once the car is placed, so an
-    /// offscreen run can capture it.
-    std::string openScreen;
 };
 
 /// Free roam and races: the track's world streamed around the player's car,
@@ -93,9 +85,28 @@ public:
     Game(const Game&) = delete;
     Game& operator=(const Game&) = delete;
 
-    /// Runs until the window closes or the frame limit is reached. Returns
-    /// the process exit code.
+    /// Runs until the window closes or the player quits, on the window's
+    /// input and clock. Returns the process exit code.
     int run();
+    /// Runs one frame of `dt` seconds with `controls` as the player's input
+    /// and draws it into the game's 16:9 picture, without presenting it to
+    /// the window. Returns false when the player quits. The scenario tests
+    /// drive the game through this with scripted input and a fixed step.
+    bool frame(const InputState& controls, float dt);
+    /// Saves the last drawn 16:9 picture as PNG.
+    bool saveScreenshot(const std::filesystem::path& path);
+
+    /// Read-only state for the scenario tests.
+    bool playerPlaced() const { return m_playerPlaced; }
+    const CarPhysics& playerCar() const { return *m_vehicles.front()->physics; }
+    const render::Camera& camera() const { return m_camera; }
+    bool menuShown() const { return menuOpen(); }
+    bool pauseShown() const { return m_pause && m_pause->isOpen(); }
+    bool mapShown() const { return m_map && m_map->isOpen(); }
+    /// Whether the last frame drew the world (the map screen does not).
+    bool worldDrawn() const { return m_worldDrawn; }
+    float timeOfDaySeconds() const { return m_timeOfDay ? m_timeOfDay->seconds() : 0.0F; }
+    const Race* race() const { return m_race.get(); }
 
 private:
     struct BodySphere {
@@ -188,7 +199,6 @@ private:
     void updateRadio(float dt);
     void drawRaceHud();
     void drawLoading(const std::string& message);
-    bool saveScreenshot(const std::filesystem::path& path);
 
     Window& m_window;
     GameOptions m_options;
@@ -203,6 +213,11 @@ private:
     std::unique_ptr<render::FrameRenderer> m_frame;
     std::unique_ptr<render::FrameStats> m_frameStats;
     render::PresentTarget m_present;
+    /// The input of the frame being run.
+    const InputState* m_input = nullptr;
+    const InputState& input() const { return *m_input; }
+    bool m_worldDrawn = false;
+    int m_lastPhysicsSteps = 0;
     std::unique_ptr<render::WorldRenderer> m_worldRenderer;
     std::unique_ptr<render::Overlay> m_overlay;
     /// The game's own HUD scene; the plain overlay HUD stands in without it.
