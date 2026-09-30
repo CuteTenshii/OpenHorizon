@@ -164,6 +164,14 @@ target_link_libraries(tst_postprocess PRIVATE fh1engine)
 # Colorado case runs only when FH1_GAME_DIR names an extracted disc.
 add_test(NAME tst_postprocess COMMAND tst_postprocess)
 
+add_executable(tst_cutscenes TestHarness.h tst_cutscenes.cpp)
+target_compile_options(tst_cutscenes PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_cutscenes PRIVATE fh1engine)
+# The cutscene clock, triggers, fades and cameras on synthetic cutscenes;
+# the disc's race and free-roam cutscenes only when FH1_GAME_DIR names an
+# extracted disc.
+add_test(NAME tst_cutscenes COMMAND tst_cutscenes)
+
 add_executable(tst_scenarios RoadFollower.h TestHarness.h tst_scenarios.cpp)
 target_compile_options(tst_scenarios PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_scenarios PRIVATE fh1engine)

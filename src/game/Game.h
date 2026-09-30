@@ -26,6 +26,7 @@
 #include "game/Race.h"
 #include "game/RaceData.h"
 #include "game/RenderScenario.h"
+#include "game/ScreenFade.h"
 #include "game/Smashables.h"
 #include "game/SpeedTraps.h"
 #include "game/TimeOfDay.h"
@@ -487,15 +488,7 @@ private:
     LoadPhase m_loadPhase = LoadPhase::Streaming;
     std::chrono::steady_clock::time_point m_loadStart = std::chrono::steady_clock::now();
     /// The fade_in state's FadeOptions (state_definitions.xml).
-    struct FadeOptions {
-        float duration = 0.0F;
-        float hold = 0.0F;
-        /// CurveType "S" rather than "Linear".
-        bool sCurve = false;
-        glm::vec3 colour{0.0F};
-    };
     std::optional<FadeOptions> m_fadeIn;
-    static std::optional<FadeOptions> loadFadeIn(const Vfs& vfs);
     float m_fadeElapsed = 0.0F;
     /// Initial traffic placements still to try (CEnableTraffic's initial
     /// spawn).

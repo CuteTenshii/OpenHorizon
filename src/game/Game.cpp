@@ -180,7 +180,10 @@ Game::Game(Window& window, const GameOptions& options)
         m_database = std::make_unique<Database>(m_vfs.readOrThrow("media/db/gamedb.slt"));
         m_strings = std::make_unique<Localisation>(m_vfs, "en");
     });
-    m_fadeIn = loadFadeIn(m_vfs);
+    m_fadeIn = loadStateFade(m_vfs, "fade_in");
+    if (!m_fadeIn) {
+        logWarning("fade: no fade_in state in media/gamemodes/state_definitions.xml; no fade after loading");
+    }
     m_frame = std::make_unique<render::FrameRenderer>();
     m_shadowPass = std::make_unique<render::ShadowPass>();
     try {
@@ -673,30 +676,6 @@ void Game::spawnPlayer()
 /// slice is our choice, a quarter of a 60 Hz frame, not the game's.
 constexpr std::chrono::microseconds kPrecompileSlice{4000};
 
-std::optional<Game::FadeOptions> Game::loadFadeIn(const Vfs& vfs)
-{
-    const std::optional<std::string> text = vfs.readText("media/gamemodes/state_definitions.xml");
-    pugi::xml_document doc;
-    if (!text || !doc.load_buffer(text->data(), text->size())) {
-        logWarning("fade: no media/gamemodes/state_definitions.xml; no fade after loading");
-        return std::nullopt;
-    }
-    const pugi::xpath_node node = doc.select_node("//State[@id='fade_in']/Behaviour[@id='CFadeIn']/FadeOptions");
-    if (!node) {
-        logWarning("fade: no fade_in state; no fade after loading");
-        return std::nullopt;
-    }
-    const pugi::xml_node options = node.node();
-    FadeOptions fade;
-    fade.duration = options.attribute("Duration").as_float();
-    fade.hold = options.attribute("HoldDuration").as_float();
-    // The curve names map through the table at 0x82084730: Linear 0, S 1.
-    fade.sCurve = std::string_view(options.attribute("CurveType").as_string()) == "S";
-    fade.colour = glm::vec3(options.attribute("Color.x").as_float(), options.attribute("Color.y").as_float(),
-        options.attribute("Color.z").as_float());
-    return fade;
-}
-
 float Game::fadeAlpha() const
 {
     if (m_loadPhase == LoadPhase::Streaming || m_loadPhase == LoadPhase::Starting) {
@@ -705,25 +684,7 @@ float Game::fadeAlpha() const
     if (m_loadPhase == LoadPhase::Playing || !m_fadeIn) {
         return 0.0F;
     }
-    // The fader's update (0x8297BE60) clamps its clock to the duration and
-    // evaluates the fade-in at 0x82902E08: opaque up to the shorter of the
-    // duration and the hold, clear from the longer on, a straight ramp
-    // between, shaped by the curve (0x829004A0: S is (1 - cos(pi x)) / 2).
-    const FadeOptions& fade = *m_fadeIn;
-    const float t = std::min(m_fadeElapsed, fade.duration);
-    if (t >= fade.duration) {
-        return 0.0F;
-    }
-    const float from = std::min(fade.duration, fade.hold);
-    const float to = std::max(fade.duration, fade.hold);
-    float x = 0.0F;
-    if (t <= from) {
-        x = 1.0F;
-    } else if (t < to) {
-        x = 1.0F - (t - from) / (to - from);
-    }
-    x = std::clamp(x, 0.0F, 1.0F);
-    return fade.sCurve ? (1.0F - std::cos(kPi * x)) * 0.5F : x;
+    return fadeInOpacity(*m_fadeIn, m_fadeElapsed);
 }
 
 bool Game::streamingDone() const

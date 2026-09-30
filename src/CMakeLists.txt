@@ -79,6 +79,8 @@ add_library(fh1engine STATIC
     game/AiDriver.h
     game/CameraSettings.cpp
     game/CameraSettings.h
+    game/Cutscenes.cpp
+    game/Cutscenes.h
     game/DrivingLine.cpp
     game/DrivingLine.h
     game/Flyers.cpp
@@ -99,6 +101,8 @@ add_library(fh1engine STATIC
     game/RaceData.h
     game/RenderScenario.cpp
     game/RenderScenario.h
+    game/ScreenFade.cpp
+    game/ScreenFade.h
     game/Smashables.cpp
     game/Smashables.h
     game/SpeedTraps.cpp
