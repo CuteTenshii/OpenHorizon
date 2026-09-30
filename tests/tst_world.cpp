@@ -31,6 +31,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <initializer_list>
 #include <optional>
 #include <random>
 #include <string>
@@ -343,7 +344,7 @@ Bytes pvsFile(const std::vector<std::uint32_t>& textureIds, const std::vector<st
     w.u32(0x1234);
     w.u32(0x5678);
     // The real file has seven unexplained bytes here.
-    for (const std::uint8_t b : {0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x00}) {
+    for (const std::uint8_t b : std::initializer_list<std::uint8_t>{0x00, 0x00, 0x32, 0x00, 0x00, 0x00, 0x00}) {
         w.u8(b);
     }
     w.u32(static_cast<std::uint32_t>(textureIds.size()));
@@ -1139,7 +1140,8 @@ TEST(decodesAndEncodesTextures)
     constexpr std::uint32_t kDxt1Swapped = 18 | (1 << 6);
     Bytes tiled;
     for (int block = 0; block < 32 * 32; ++block) {
-        for (const std::uint8_t b : {0xF8, 0x00, 0xF8, 0x00, 0x00, 0x00, 0x00, 0x00}) {
+        for (const std::uint8_t b :
+            std::initializer_list<std::uint8_t>{0xF8, 0x00, 0xF8, 0x00, 0x00, 0x00, 0x00, 0x00}) {
             tiled.push_back(b);
         }
     }
