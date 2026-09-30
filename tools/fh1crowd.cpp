@@ -215,11 +215,11 @@ int listNear(const spectators::CrowdSet& crowd, float x, float z, float radius)
         const std::string clip = person.animation >= 0
             ? crowd.animations()[static_cast<std::size_t>(person.animation)].name
             : std::string("-");
-        std::printf("%7u  %9.2f %7.2f %9.2f  heading %5.1f  %-18s %-8s %-16s phase %5.2f  %s%s%s\n", i,
+        std::printf("%7u  %9.2f %7.2f %9.2f  heading %5.1f  %-18s %-8s %-16s frame %4d  %s%s%s\n", i,
             static_cast<double>(person.position.x), static_cast<double>(person.position.y),
             static_cast<double>(person.position.z),
             static_cast<double>(person.heading * 180.0F / std::numbers::pi_v<float>),
-            className(crowd, person.crowdClass).c_str(), model.c_str(), clip.c_str(), static_cast<double>(person.phase),
+            className(crowd, person.crowdClass).c_str(), model.c_str(), clip.c_str(), person.startFrame,
             group.name.c_str(), group.eventTag.empty() ? "" : " ", group.eventTag.c_str());
     }
     return 0;
@@ -265,7 +265,9 @@ int exportObj(const spectators::CrowdSet& crowd, const std::filesystem::path& ob
         const spectators::SpectatorModel& model = crowd.models()[modelIndex];
         std::vector<glm::vec3> positions;
         if (person.animation >= 0) {
-            positions = crowd.skinnedPositions(modelIndex, static_cast<std::uint32_t>(person.animation), person.phase);
+            const spectators::AnimationClip& clip = crowd.animations()[static_cast<std::size_t>(person.animation)].clip;
+            positions = crowd.skinnedPositions(modelIndex, static_cast<std::uint32_t>(person.animation),
+                static_cast<float>(person.startFrame) / clip.framesPerSecond());
         } else {
             for (std::size_t v = 0; v < model.mesh.vertexCount(); ++v) {
                 const float* f = &model.mesh.vertices[v * spectators::SpectatorMesh::kFloatsPerVertex];

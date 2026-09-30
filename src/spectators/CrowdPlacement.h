@@ -17,21 +17,26 @@ struct PlacedSpectator {
     /// World position (X east, Y up, Z north), where the person's feet (or,
     /// for seated classes, seat) go.
     glm::vec3 position {0.0F};
-    /// Facing as stored: 256 steps of a full turn.
+    /// Facing as stored: b / 255 of a full turn (see headingRadians()).
     std::uint8_t heading = 0;
     /// Index of the crowd class: spectators.xml's `id` minus one (verified
     /// by the classes that come in pairs, such as SatShoulders_stand and
     /// _sit, whose instances coincide).
     std::uint8_t crowdClass = 0;
-    /// The record's last four bytes, not used by this library: a byte that
-    /// is 0 or 1, then three bytes that are zero on most records.
+    /// The record's last four bytes. Verified in the game's person decoder
+    /// (0x82EB99E0) and its callers: `flags` (0 or 1) marks a person the game
+    /// only ever draws as a sprite (the "billboard-only" byte the crowd
+    /// cull at 0x82ECAB38 skips and the sprite instance packer at
+    /// 0x82EDE0D8 turns into a negative size); `extra` is the person's tint,
+    /// red, green and blue, each byte / 255.
     std::uint8_t flags = 0;
     std::array<std::uint8_t, 3> extra {0, 0, 0};
 
     /// Direction faced, in radians clockwise from north (+Z) seen from above:
-    /// the person looks along (sin h, 0, cos h), h = heading / 256 of a
-    /// turn. Verified against the racing lines: of the standing people with
-    /// one within 30 m, 93-95% face it (fh1crowd validate).
+    /// the person looks along (sin h, 0, cos h), h = heading / 255 of a turn
+    /// (the game's decoder, 0x82EB99E0, whose sine and cosine are 0x82420E30
+    /// and 0x8242EBA8). Verified against the racing lines: of the standing
+    /// people with one within 30 m, 93-95% face it (fh1crowd validate).
     float headingRadians() const;
 };
 
@@ -98,8 +103,8 @@ struct WalkPath {
 /// the event's HorizonEventID with a suffix ("_15" for crowds), and the
 /// route ids list the races, or route 0 for free roam, that show the set.
 /// Sets without the block are always shown. The quantisation and the layout
-/// are verified; what the flags byte and the three last bytes mean is not
-/// known.
+/// are verified; the flags byte and the three last bytes are the
+/// billboard-only mark and the tint (see PlacedSpectator).
 struct CrowdPlacementSet {
     std::string name;
     glm::vec3 boundsMin {0.0F};

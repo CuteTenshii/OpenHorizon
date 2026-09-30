@@ -33,7 +33,9 @@ constexpr std::uint32_t kMaxSegments = 65536;
 constexpr std::array<std::size_t, 3> kPointOrder {1, 0, 2};
 constexpr std::uint32_t kMaxNameLength = 1024;
 constexpr float kQuantumSteps = 65535.0F;
-constexpr float kHeadingSteps = 256.0F;
+/// The game's person decoder (0x82EB99E0) turns the heading byte into
+/// b / 255 of a full turn.
+constexpr float kHeadingSteps = 255.0F;
 
 glm::vec3 readVec3(BeReader& r)
 {

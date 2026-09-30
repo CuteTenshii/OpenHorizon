@@ -75,8 +75,8 @@ struct SpectatorConfig {
         std::vector<WeightedAnimation> idles;
         /// Played when the crowd gets excited (cars passing, a finish).
         std::vector<WeightedAnimation> cheers;
-        /// `randomsize`; absent on most classes, where the game's default
-        /// applies (not known; taken as true).
+        /// `randomsize`; absent on most classes, where the game's parser
+        /// gives true (its default argument at 0x8320E4F8).
         std::optional<bool> randomSize;
         /// `offsetX/Y/Z`, metres; zero wherever the disc sets them.
         glm::vec3 offset {0.0F};

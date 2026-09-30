@@ -5,6 +5,7 @@
 
 #include "TestHarness.h"
 
+#include "spectators/CrowdDraw.h"
 #include "spectators/CrowdSet.h"
 #include "vfs/Vfs.h"
 
@@ -607,8 +608,9 @@ TEST(crowdPlacementSetsParseBothLayouts)
     CHECK_EQ(set.spectators.size(), std::size_t {2});
     CHECK(near(set.spectators[0].position, {0.0F, 0.0F, 0.0F}, 1e-4F));
     CHECK(near(set.spectators[1].position, {100.0F, 5.0F, 200.0F}, 1e-3F));
-    CHECK_NEAR(set.spectators[0].headingRadians(), std::numbers::pi / 2.0, 1e-6);
-    CHECK_NEAR(set.spectators[1].headingRadians(), 3.0 * std::numbers::pi / 2.0, 1e-6);
+    // b / 255 of a turn, as the game's decoder reads it.
+    CHECK_NEAR(set.spectators[0].headingRadians(), 64.0 / 255.0 * 2.0 * std::numbers::pi, 1e-6);
+    CHECK_NEAR(set.spectators[1].headingRadians(), 192.0 / 255.0 * 2.0 * std::numbers::pi, 1e-6);
     CHECK_EQ(set.spectators[1].crowdClass, 8);
     CHECK_EQ(set.spectators[1].flags, 1);
     CHECK(near(set.boundsMin, {1.0F, 1.0F, 1.0F}, 1e-6F));
@@ -660,7 +662,8 @@ TEST(spritesChooseCellsByViewAngle)
     CHECK_EQ(layout.cellCount(), 192);
     const glm::vec3 facing(0.0F, 0.0F, 1.0F);
     const glm::vec3 origin(0.0F);
-    sp::SpriteFrame frame = sp::chooseSprite(layout, 2, false, facing, origin, {0.0F, 1.0F, 10.0F});
+    // Model 2's cells start at 18; standing people take three views.
+    sp::SpriteFrame frame = sp::chooseSprite(layout, 18, false, facing, origin, {0.0F, 1.0F, 10.0F});
     CHECK(frame.view == sp::SpriteView::StandingFront);
     CHECK_EQ(frame.cell, 19);
     CHECK_NEAR(frame.uvMin.x, 19.0 * 64.0 / 2048.0, 1e-6);
@@ -673,11 +676,15 @@ TEST(spritesChooseCellsByViewAngle)
     frame = sp::chooseSprite(layout, 0, false, facing, origin, {-10.0F, 0.0F, 0.0F});
     CHECK(frame.view == sp::SpriteView::StandingSide);
     CHECK(frame.mirrored);
-    frame = sp::chooseSprite(layout, 1, true, facing, origin, {10.0F, 0.0F, 10.0F});
+    // The first class's six views start three cells in (model 1: 9 + 3).
+    frame = sp::chooseSprite(layout, 12, true, facing, origin, {10.0F, 0.0F, 10.0F});
     CHECK(frame.view == sp::SpriteView::SeatedTurned45);
     CHECK_EQ(frame.cell, 9 + 6);
-    CHECK(sp::chooseSprite(layout, 1, true, facing, origin, {10.0F, 0.0F, -1.0F}).view == sp::SpriteView::SeatedSide);
-    CHECK(sp::chooseSprite(layout, 1, true, facing, origin, {0.0F, 0.0F, -10.0F}).view == sp::SpriteView::SeatedBack);
+    CHECK(sp::chooseSprite(layout, 12, true, facing, origin, {10.0F, 0.0F, -1.0F}).view == sp::SpriteView::SeatedSide);
+    CHECK(sp::chooseSprite(layout, 12, true, facing, origin, {0.0F, 0.0F, -10.0F}).view == sp::SpriteView::SeatedBack);
+    CHECK(sp::chooseSprite(layout, 12, true, facing, origin, {0.0F, 0.0F, 10.0F}).view == sp::SpriteView::SeatedFront);
+    // Between 90 and 135 degrees the six views keep the side cell.
+    CHECK(sp::chooseSprite(layout, 12, true, facing, origin, {10.0F, 0.0F, -9.0F}).view == sp::SpriteView::SeatedSide);
 
     fh::world::RgbaImage atlas;
     atlas.width = 128;
@@ -693,6 +700,72 @@ TEST(spritesChooseCellsByViewAngle)
     CHECK_NEAR(metrics.groundRow, 110.0, 1e-6);
     const sp::SpriteMetrics none = sp::measureSprites(atlas, {0.0F});
     CHECK_NEAR(none.groundRow, 128.0, 1e-6);
+}
+
+TEST(crowdDrawFollowsTheGamesRules)
+{
+    namespace draw = sp::draw;
+    // Models are whole within 60 m and gone at 80 m.
+    CHECK_NEAR(draw::modelFade(10.0F, draw::kModelFade), 1.0, 1e-6);
+    CHECK_NEAR(draw::modelFade(70.0F, draw::kModelFade), 0.5, 1e-6);
+    CHECK_NEAR(draw::modelFade(80.0F, draw::kModelFade), 0.0, 1e-6);
+    CHECK_NEAR(draw::modelFade(190.0F, draw::kWalkerFade), 0.5, 1e-6);
+    // Sprites come in from 40 to 60 m and go from 650 to 700 m; those of
+    // billboard-only people show from the camera out.
+    CHECK_NEAR(draw::spriteFade(30.0F, false), 0.0, 1e-6);
+    CHECK_NEAR(draw::spriteFade(50.0F, false), 0.5, 1e-6);
+    CHECK_NEAR(draw::spriteFade(100.0F, false), 1.0, 1e-6);
+    CHECK_NEAR(draw::spriteFade(675.0F, false), 0.5, 1e-6);
+    CHECK_NEAR(draw::spriteFade(700.0F, false), 0.0, 1e-6);
+    CHECK_NEAR(draw::spriteFade(5.0F, true), 1.0, 1e-6);
+    CHECK_NEAR(draw::spriteFade(800.0F, true), 0.0, 1e-6);
+
+    // Eight people within 10 m: the band's cap of five sends three on to the
+    // next level; a person past 90 m takes the last band, clamped to the
+    // model's four levels.
+    std::vector<float> distances(8, 5.0F);
+    distances.push_back(20.0F);
+    distances.push_back(95.0F);
+    const std::vector<int> lods = draw::modelLods(distances, 4);
+    CHECK((lods == std::vector<int>{0, 0, 0, 0, 0, 1, 1, 1, 1, 3}));
+
+    // The shader's arc cosine is within 1e-4 of the true one.
+    for (const float c : {-1.0F, -0.7F, -0.2F, 0.0F, 0.3F, 0.707F, 0.95F, 1.0F}) {
+        CHECK_NEAR(draw::shaderArcCos(c), std::acos(c), 1e-4);
+    }
+    // Three views: front within 45 degrees, back past 135, side between;
+    // six views: a column every 22.5 degrees from the front.
+    const glm::vec2 north(0.0F, 1.0F);
+    CHECK_EQ(draw::spriteColumn(north, glm::normalize(glm::vec2(0.5F, 1.0F)), false).column, 1);
+    CHECK_EQ(draw::spriteColumn(north, glm::vec2(1.0F, 0.0F), false).column, 2);
+    CHECK_EQ(draw::spriteColumn(north, glm::normalize(glm::vec2(0.5F, -1.0F)), false).column, 0);
+    for (int step = 0; step <= 4; ++step) {
+        const float angle = static_cast<float>(step) * std::numbers::pi_v<float> / 8.0F;
+        const glm::vec2 toCamera(std::sin(angle), std::cos(angle));
+        CHECK_EQ(draw::spriteColumn(north, toCamera, true).column, step + 1);
+    }
+    // The front and back views are never mirrored.
+    CHECK(!draw::spriteColumn(north, glm::vec2(-0.1F, 1.0F), true).mirrored);
+    CHECK(draw::spriteColumn(north, glm::vec2(-1.0F, 0.0F), true).mirrored);
+
+    // The crowd's generator and the C runtime's rand().
+    draw::CrowdRandom random(0);
+    CHECK_EQ(random.next(), 0U);
+    CHECK_EQ(random.next(), 21468U);
+    CHECK_EQ(random.next(), 9988U);
+    draw::CrtRandom crt;
+    CHECK_EQ(crt.next(), 41U);
+    CHECK_EQ(crt.next(), 18467U);
+
+    // Three clips of equal weight fill 17, 17 and 16 of the 50 slots.
+    const std::vector<std::uint32_t> clips{7, 8, 9};
+    const std::vector<float> weights{1.0F, 1.0F, 1.0F};
+    const std::vector<std::uint32_t> table = draw::clipTable(clips, weights);
+    CHECK_EQ(table.size(), draw::kClipSlots);
+    CHECK_EQ(std::count(table.begin(), table.end(), 7U), 17);
+    CHECK_EQ(std::count(table.begin(), table.end(), 8U), 17);
+    CHECK_EQ(std::count(table.begin(), table.end(), 9U), 16);
+    CHECK(draw::clipTable({}, {}).empty());
 }
 
 TEST(sessionsChooseGroups)
@@ -766,16 +839,18 @@ TEST(crowdSetLoadsFromADisc)
     CHECK_EQ(crowd.walkPaths().size(), std::size_t {1});
     CHECK(crowd.report().legacyFile.has_value());
     CHECK_EQ(crowd.report().unknownClassInstances, 1);
-    // Missing: the cheer clip, two textures, the sprites and the shadow; and
-    // the person of an unknown class.
-    CHECK_EQ(crowd.report().failures.size(), std::size_t {6});
+    // Missing: two textures, the sprites and the shadow; and the person of
+    // an unknown class. The class's cheer names a clip its skeleton lacks,
+    // which the game leaves out, as the load does.
+    CHECK_EQ(crowd.report().failures.size(), std::size_t{5});
+    CHECK(crowd.classes()[0].cheers.empty());
     CHECK_EQ(crowd.spriteTexture(), -1);
 
     const sp::Spectator& first = crowd.spectators()[0];
     CHECK_EQ(first.crowdClass, 0);
     CHECK(first.model == 0 || first.model == 1);
     CHECK_EQ(first.animation, 0);
-    CHECK(first.phase >= 0.0F && first.phase <= crowd.animations()[0].clip.duration);
+    CHECK(first.startFrame >= 0 && first.startFrame < crowd.animations()[0].clip.frameCount);
     CHECK(near(crowd.spectators()[1].position, {100.0F, 0.25F, 100.0F}, 1e-3F));
 
     const std::vector<std::uint32_t> nearCentre = crowd.spectatorsNear(50.0F, 50.0F, 10.0F);
@@ -799,9 +874,9 @@ TEST(crowdSetLoadsFromADisc)
     const auto walkerIndex = static_cast<std::uint32_t>(crowd.spectators().size() - 1);
     CHECK(near(crowd.walkerAt(walkerIndex, 0.0F, heading), walker.position, 1e-4F));
     const glm::vec3 later = crowd.walkerAt(walkerIndex, 2.0F, heading);
-    // 1.4 m/s along the path, lifted by the Walkers class's offset.
+    // 1 m/s along the path, lifted by the Walkers class's offset.
     CHECK(
-        near(later, crowd.walkPaths()[0].path.pointAt(walker.walkStart + 2.8F) + glm::vec3(0.0F, 0.25F, 0.0F), 1e-3F));
+        near(later, crowd.walkPaths()[0].path.pointAt(walker.walkStart + 2.0F) + glm::vec3(0.0F, 0.25F, 0.0F), 1e-3F));
 
     const std::vector<glm::mat4> matrices = crowd.skinMatrices(0, 0, 0.0F);
     CHECK_EQ(matrices.size(), std::size_t {2});
@@ -810,8 +885,10 @@ TEST(crowdSetLoadsFromADisc)
     // Spectator space mirrors X, so the clip's +2 m along X becomes -2 m.
     CHECK(near(skinned[0], {-0.5F - 2.0F, -0.5F, 0.0F}, 1e-4F));
 
+    // The game gives the first class six views, from the model's fourth
+    // cell on, whatever the class is called.
     const sp::SpriteBillboard billboard = crowd.spriteFor(0, {0.0F, 1.0F, 10.0F});
-    CHECK(billboard.frame.view == sp::SpriteView::StandingFront);
+    CHECK(billboard.frame.view == sp::SpriteView::SeatedFront);
     CHECK(billboard.height > 0.0F);
 
     vfs.reset();
@@ -836,9 +913,42 @@ TEST(coloradoCrowd)
     CHECK_EQ(crowd.textures().size(), std::size_t {22});
     CHECK_EQ(crowd.skeletons().size(), std::size_t {3});
     CHECK_EQ(crowd.report().unknownClassInstances, 0);
-    // Street_stand names two clips the disc does not have.
-    CHECK_EQ(crowd.report().failures.size(), std::size_t {2});
+    // Street_stand names two clips (Stand_Cheer_08 and _10) that its
+    // skeleton does not list; the game leaves them out of the class, and
+    // so does the load.
+    CHECK_EQ(crowd.report().failures.size(), std::size_t{0});
+    for (const sp::CrowdClass& crowdClass : crowd.classes()) {
+        if (crowdClass.name == "Street_stand") {
+            CHECK_EQ(crowdClass.cheers.size(), std::size_t{10});
+        }
+    }
     CHECK(crowd.report().legacyFile.has_value() && crowd.report().legacyFile->entryCount == 0);
+
+    // The people as the set's init places them.
+    std::size_t riders = 0;
+    std::size_t billboardOnly = 0;
+    for (const sp::Spectator& person : crowd.spectators()) {
+        CHECK(person.animation >= 0);
+        if (person.animation >= 0) {
+            CHECK(person.startFrame < crowd.animations()[static_cast<std::size_t>(person.animation)].clip.frameCount);
+        }
+        CHECK(person.modelScale >= 0.95F && person.modelScale <= 1.05F);
+        CHECK(person.spriteCell < 20 * 9);
+        billboardOnly += person.billboardOnly ? 1 : 0;
+        if (person.leader >= 0) {
+            ++riders;
+            CHECK(person.spriteCell < 0);
+            const glm::vec3 carrier = crowd.spectators()[static_cast<std::size_t>(person.leader)].position;
+            CHECK(carrier.x == person.position.x && carrier.z == person.position.z);
+        }
+    }
+    // Every shoulder rider of the disc has a carrier under them.
+    CHECK_EQ(riders, std::size_t{866});
+    CHECK(billboardOnly > 0);
+    for (const sp::CrowdClass& crowdClass : crowd.classes()) {
+        CHECK_EQ(crowdClass.idleTable.size(), sp::draw::kClipSlots);
+        CHECK_EQ(crowdClass.cheerTable.size(), crowdClass.cheers.empty() ? std::size_t{0} : sp::draw::kClipSlots);
+    }
 
     for (const sp::SpectatorAnimation& animation : crowd.animations()) {
         const sp::AnimationClip& clip = animation.clip;

@@ -15,9 +15,9 @@ namespace fh::spectators {
 /// `media/spectators/sprites.xds` (DXT1, 2048x768, 1-bit alpha) is an atlas
 /// of 64x128 cells, row-major, 9 per model in the order of spectators.xml's
 /// <models> list (verified: the clothes of each group of cells match the
-/// model's texture in that order). The game draws them for distant people
-/// instead of the skinned meshes (its render controls "CrowdDrawSprites" and
-/// "CrowdSpriteDistScale"). Within a model's 9 cells (read off the atlas):
+/// model's texture in that order). The game draws them for the people past
+/// the skinned meshes' reach (see CrowdDraw.h). Within a model's 9 cells
+/// (read off the atlas):
 ///
 ///     0 standing, back     3 seated, back
 ///     1 standing, front    4 seated, front
@@ -79,14 +79,13 @@ struct SpriteFrame {
     bool mirrored = false;
 };
 
-/// Chooses the cell for a person at `position` facing `facing` (horizontal,
-/// world coordinates) seen from `camera`: front within 45 degrees of facing
-/// the camera and back beyond 135 for standing people; for seated ones the
-/// nearest of the five front-to-side cells up to 112.5 degrees, then side up
-/// to 135, then back. The side cells are mirrored when the person's facing
-/// points to the camera's left on screen. The thresholds are this library's
-/// choice; the game's are not known.
-SpriteFrame chooseSprite(const SpriteAtlasLayout& layout, int modelIndex, bool seated, const glm::vec3& facing,
+/// Chooses the cell for a person whose cells start at `baseCell` (the
+/// model's first cell, plus three for six-view classes; see
+/// Spectator::spriteCell), at `position` facing `facing` (horizontal, world
+/// coordinates), seen from `camera`, by the game's billboard vertex shader
+/// (draw::spriteColumn()): the view is the cell `baseCell` + column, and a
+/// mirrored cell is drawn flipped left to right.
+SpriteFrame chooseSprite(const SpriteAtlasLayout& layout, int baseCell, bool sixViews, const glm::vec3& facing,
     const glm::vec3& position, const glm::vec3& camera);
 
 /// Measures the atlas: `atlas` is its decoded top level, `modelHeights` the

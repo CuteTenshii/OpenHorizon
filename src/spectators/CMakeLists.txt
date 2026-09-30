@@ -1,6 +1,8 @@
 add_library(fh1spectators STATIC
     CrowdAnimation.cpp
     CrowdAnimation.h
+    CrowdDraw.cpp
+    CrowdDraw.h
     CrowdPlacement.cpp
     CrowdPlacement.h
     CrowdSet.cpp

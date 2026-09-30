@@ -1,5 +1,7 @@
 #include "CrowdSet.h"
 
+#include "CrowdDraw.h"
+
 #include "base/Log.h"
 #include "vfs/Vfs.h"
 #include "world/Archive.h"
@@ -7,6 +9,7 @@
 
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/packing.hpp>
 
 #include <lzx/zip.h>
 #include <xds/xds.h>
@@ -23,12 +26,17 @@ namespace {
 
 constexpr std::string_view kRoot = "media/spectators";
 constexpr float kCellSize = 32.0F;
-/// Metres a second; the data gives no speed, so this is a brisk walk.
-constexpr float kWalkingSpeed = 1.4F;
-constexpr std::uint64_t kModelSalt = 0x9E3779B97F4A7C15ULL;
-constexpr std::uint64_t kAnimationSalt = 0xC2B2AE3D27D4EB4FULL;
-constexpr std::uint64_t kPhaseSalt = 0x165667B19E3779F9ULL;
 constexpr std::uint64_t kDensitySalt = 0x27D4EB2F165667C5ULL;
+/// The class whose sprites take six views: stored class 0 (0x82EDDF08).
+constexpr int kSixViewClassId = 1;
+/// Stored class bytes the init treats apart (0x82EDDB64, 0x82EDDCE4,
+/// 0x82EDE0D0): the shoulder carriers ("SatShoulders_stand") and those
+/// riding on them ("SatShoulders_sit").
+constexpr std::uint8_t kCarrierClass = 9;
+constexpr std::uint8_t kRiderClass = 10;
+/// The lower end of the size factor's draw (0x82EDDD78, 0.1 at
+/// 0x82000C88).
+constexpr float kSizeFactorMin = 0.1F;
 constexpr std::size_t kDdsHeaderBytes = 128;
 constexpr std::size_t kDdsHeightOffset = 0x0C;
 constexpr std::size_t kDdsWidthOffset = 0x10;
@@ -61,29 +69,6 @@ int cellOf(float value)
 bool isSeatedSuffix(std::string_view suffix)
 {
     return iequals(suffix, "_sit");
-}
-
-/// Picks from weighted choices with `unit` in [0, 1).
-int pickWeighted(const std::vector<WeightedChoice>& choices, double unit)
-{
-    double total = 0.0;
-    for (const WeightedChoice& choice : choices) {
-        total += std::max(choice.weight, 0.0F);
-    }
-    if (choices.empty()) {
-        return -1;
-    }
-    if (!(total > 0.0)) {
-        return static_cast<int>(choices[static_cast<std::size_t>(unit * static_cast<double>(choices.size()))].index);
-    }
-    double target = unit * total;
-    for (const WeightedChoice& choice : choices) {
-        target -= std::max(choice.weight, 0.0F);
-        if (target < 0.0) {
-            return static_cast<int>(choice.index);
-        }
-    }
-    return static_cast<int>(choices.back().index);
 }
 
 world::TextureSurface::Format surfaceFormat(std::uint32_t format, bool& supported)
@@ -492,14 +477,25 @@ void CrowdSet::loadSprites(const Vfs& vfs)
 
 void CrowdSet::resolveClasses()
 {
+    // The game looks a class's clips up among its skeleton's clips and
+    // leaves out the names it does not find (0x8320E740-0x8320E7E4).
     const auto resolveAnimations = [&](const std::vector<SpectatorConfig::WeightedAnimation>& names,
-                                       const std::string& className) {
+                                       const std::string& className, int skeleton) {
         std::vector<WeightedChoice> out;
         for (const SpectatorConfig::WeightedAnimation& animation : names) {
-            const int index = findAnimation(animation.name);
+            int index = -1;
+            if (skeleton >= 0) {
+                for (const std::uint32_t clip : m_skeletons[static_cast<std::size_t>(skeleton)].animations) {
+                    if (iequals(m_animations[clip].name, animation.name)) {
+                        index = static_cast<int>(clip);
+                        break;
+                    }
+                }
+            }
             if (index < 0) {
-                m_report.failures.push_back(
-                    std::format("crowd class {} names clip {}, which no skeleton loads", className, animation.name));
+                m_report.warnings.push_back(
+                    std::format("crowd class {} names clip {}, which its skeleton lacks; left out, as the game does",
+                        className, animation.name));
                 continue;
             }
             out.push_back({static_cast<std::uint32_t>(index), animation.weight});
@@ -534,8 +530,20 @@ void CrowdSet::resolveClasses()
                 }
             }
         }
-        crowdClass.idles = resolveAnimations(definition.idles, definition.name);
-        crowdClass.cheers = resolveAnimations(definition.cheers, definition.name);
+        crowdClass.idles = resolveAnimations(definition.idles, definition.name, crowdClass.skeleton);
+        crowdClass.cheers = resolveAnimations(definition.cheers, definition.name, crowdClass.skeleton);
+        const auto table = [](const std::vector<WeightedChoice>& choices) {
+            std::vector<std::uint32_t> clips;
+            std::vector<float> weights;
+            for (const WeightedChoice& choice : choices) {
+                clips.push_back(choice.index);
+                weights.push_back(choice.weight);
+            }
+            return draw::clipTable(clips, weights);
+        };
+        crowdClass.idleTable = table(crowdClass.idles);
+        crowdClass.cheerTable = table(crowdClass.cheers);
+        crowdClass.sixSpriteViews = definition.id == kSixViewClassId;
         m_classes.push_back(std::move(crowdClass));
     }
 }
@@ -595,29 +603,35 @@ void CrowdSet::placeSpectators(const std::vector<CrowdPlacementSet>& sets, const
     for (std::size_t c = 0; c < m_classes.size(); ++c) {
         classById.emplace(m_classes[c].id, static_cast<int>(c));
     }
-    const auto place = [&](Spectator spectator, std::uint8_t storedClass, std::uint64_t key) {
+    const auto classOf = [&](std::uint8_t storedClass) {
         const auto found = classById.find(storedClass + 1);
         if (found == classById.end()) {
             ++m_report.unknownClassInstances;
-        } else {
-            spectator.crowdClass = found->second;
-            const CrowdClass& crowdClass = m_classes[static_cast<std::size_t>(found->second)];
-            spectator.seated = crowdClass.seated;
-            spectator.position += crowdClass.offset;
-            if (!crowdClass.models.empty()) {
-                const auto pick = static_cast<std::size_t>(
-                    unitHash(key, kModelSalt) * static_cast<double>(crowdClass.models.size()));
-                spectator.model = static_cast<int>(crowdClass.models[std::min(pick, crowdClass.models.size() - 1)]);
-            }
-            spectator.animation = pickWeighted(crowdClass.idles, unitHash(key, kAnimationSalt));
-            if (spectator.animation >= 0) {
-                spectator.phase = static_cast<float>(unitHash(key, kPhaseSalt))
-                    * m_animations[static_cast<std::size_t>(spectator.animation)].clip.duration;
-            }
+            return -1;
         }
-        m_grid[cellKey(cellOf(spectator.position.x), cellOf(spectator.position.z))].push_back(
+        return found->second;
+    };
+    // The idle clip and its frame, drawn in that order (0x82EDDE18).
+    const auto startClip = [&](Spectator& person, const CrowdClass& crowdClass, draw::CrowdRandom& random) {
+        if (crowdClass.idleTable.empty()) {
+            return;
+        }
+        person.animation = static_cast<int>(crowdClass.idleTable[random.next() % draw::kClipSlots]);
+        const auto frames = static_cast<std::uint32_t>(
+            std::max(m_animations[static_cast<std::size_t>(person.animation)].clip.frameCount, 1));
+        person.startFrame = static_cast<int>(random.next() % frames);
+    };
+    const auto modelOf = [&](const CrowdClass& crowdClass, std::size_t variant) {
+        if (crowdClass.models.empty()) {
+            return -1;
+        }
+        return static_cast<int>(
+            crowdClass.models[std::min(variant % crowdClass.models.size(), crowdClass.models.size() - 1)]);
+    };
+    const auto add = [&](const Spectator& person) {
+        m_grid[cellKey(cellOf(person.position.x), cellOf(person.position.z))].push_back(
             static_cast<std::uint32_t>(m_spectators.size()));
-        m_spectators.push_back(spectator);
+        m_spectators.push_back(person);
     };
 
     for (std::size_t s = 0; s < sets.size(); ++s) {
@@ -637,28 +651,85 @@ void CrowdSet::placeSpectators(const std::vector<CrowdPlacementSet>& sets, const
         group.boundsMax = placement.boundsMax;
         group.first = static_cast<std::uint32_t>(m_spectators.size());
         const auto groupIndex = static_cast<std::uint32_t>(m_groups.size());
-        std::uint64_t key = static_cast<std::uint64_t>(groupIndex) << 32;
-        for (const PlacedSpectator& placed : placement.spectators) {
-            Spectator spectator;
-            spectator.position = placed.position;
-            spectator.heading = placed.headingRadians();
-            spectator.group = groupIndex;
-            spectator.flags = placed.flags;
-            spectator.extra = placed.extra;
-            place(spectator, placed.crowdClass, key++);
-        }
-        for (const WalkPath& path : placement.walkPaths) {
-            Spectator spectator;
-            spectator.group = groupIndex;
-            spectator.walkPath = static_cast<int>(m_walkPaths.size());
-            spectator.walkStart = static_cast<float>(unitHash(key, kPhaseSalt)) * path.loopLength();
+        // The init reseeds the set's generator with its person count
+        // (0x82EDD948) and places the walkers before the people.
+        draw::CrowdRandom random(static_cast<std::uint32_t>(placement.spectators.size()));
+
+        for (std::size_t w = 0; w < placement.walkPaths.size(); ++w) {
+            const WalkPath& path = placement.walkPaths[w];
+            Spectator walker;
+            walker.group = groupIndex;
+            walker.walkPath = static_cast<int>(m_walkPaths.size());
+            walker.crowdClass = classOf(path.crowdClass);
+            walker.walkStart = random.range(0.0F, 1.0F) * path.length;
             glm::vec3 direction(0.0F, 0.0F, 1.0F);
-            spectator.position = path.pointAt(spectator.walkStart, &direction);
-            spectator.heading = std::atan2(direction.x, direction.z);
+            walker.position = path.pointAt(walker.walkStart, &direction);
+            walker.heading = std::atan2(direction.x, direction.z);
+            if (walker.crowdClass >= 0) {
+                const CrowdClass& crowdClass = m_classes[static_cast<std::size_t>(walker.crowdClass)];
+                walker.seated = crowdClass.seated;
+                walker.position += crowdClass.offset;
+                startClip(walker, crowdClass, random);
+                walker.model = modelOf(crowdClass, w);
+            }
             m_walkPaths.push_back({groupIndex, path});
-            place(spectator, path.crowdClass, key++);
+            add(walker);
+        }
+
+        const auto firstPerson = static_cast<std::uint32_t>(m_spectators.size());
+        std::vector<std::uint32_t> carriers;
+        for (std::size_t i = 0; i < placement.spectators.size(); ++i) {
+            if (placement.spectators[i].crowdClass == kCarrierClass) {
+                carriers.push_back(static_cast<std::uint32_t>(i));
+            }
+        }
+        for (std::size_t i = 0; i < placement.spectators.size(); ++i) {
+            const PlacedSpectator& placed = placement.spectators[i];
+            Spectator person;
+            person.position = placed.position;
+            person.heading = placed.headingRadians();
+            person.group = groupIndex;
+            person.flags = placed.flags;
+            person.extra = placed.extra;
+            person.billboardOnly = placed.flags != 0;
+            person.tint = glm::vec3(placed.extra[0], placed.extra[1], placed.extra[2]) / 255.0F;
+            person.crowdClass = classOf(placed.crowdClass);
+            if (person.crowdClass >= 0) {
+                const CrowdClass& crowdClass = m_classes[static_cast<std::size_t>(person.crowdClass)];
+                person.seated = crowdClass.seated;
+                // Sizes (0x82EDDD6C): a draw only for classes with randomsize.
+                person.sizeFactor = crowdClass.randomSize.value_or(true) ? random.range(kSizeFactorMin, 1.0F) : 1.0F;
+                person.modelScale = glm::unpackHalf1x16(glm::packHalf1x16(
+                    draw::kSpriteSizeMin + (draw::kSpriteSizeMax - draw::kSpriteSizeMin) * person.sizeFactor));
+                // The class's models in turn, one per person (0x82EDDDEC).
+                person.model = modelOf(crowdClass, i);
+                startClip(person, crowdClass, random);
+                // The class offset turns with the person (0x82EDDF28).
+                const glm::vec3 right(std::cos(person.heading), 0.0F, -std::sin(person.heading));
+                person.position += right * crowdClass.offset.x + glm::vec3(0.0F, crowdClass.offset.y, 0.0F)
+                    + person.facing() * crowdClass.offset.z;
+                person.sixSpriteViews = crowdClass.sixSpriteViews;
+                if (placed.crowdClass != kRiderClass && person.model >= 0) {
+                    const int configModel = m_models[static_cast<std::size_t>(person.model)].configModel;
+                    person.spriteCell = SpriteAtlasLayout::cell(configModel, SpriteView::StandingBack)
+                        + (person.sixSpriteViews ? static_cast<int>(SpriteView::SeatedBack) : 0);
+                }
+                if (placed.crowdClass == kRiderClass) {
+                    // The first carrier of the set standing on the same
+                    // quantised x and z, wherever it comes in the set.
+                    for (const std::uint32_t j : carriers) {
+                        const PlacedSpectator& carrier = placement.spectators[j];
+                        if (carrier.position.x == placed.position.x && carrier.position.z == placed.position.z) {
+                            person.leader = static_cast<int>(firstPerson + j);
+                            break;
+                        }
+                    }
+                }
+            }
+            add(person);
         }
         group.count = static_cast<std::uint32_t>(m_spectators.size()) - group.first;
+        group.randomState = random.state();
         m_groups.push_back(std::move(group));
     }
     if (m_report.unknownClassInstances > 0) {
@@ -790,18 +861,51 @@ std::vector<glm::vec3> CrowdSet::skinnedPositions(std::uint32_t model, std::uint
 SpriteBillboard CrowdSet::spriteFor(std::uint32_t spectator, const glm::vec3& camera) const
 {
     const Spectator& person = m_spectators.at(spectator);
-    const int configModel = person.model >= 0 ? m_models[static_cast<std::size_t>(person.model)].configModel : 0;
     SpriteBillboard billboard;
-    billboard.frame
-        = chooseSprite(m_spriteLayout, configModel, person.seated, person.facing(), person.position, camera);
-    billboard.width = m_spriteMetrics.cellWidthMetres();
-    billboard.height = m_spriteMetrics.cellHeightMetres();
-    const float belowGround = (static_cast<float>(SpriteAtlasLayout::kCellHeight) - m_spriteMetrics.groundRow)
-        * m_spriteMetrics.metresPerTexel;
-    const float classOffset
-        = person.crowdClass >= 0 ? m_classes[static_cast<std::size_t>(person.crowdClass)].billboardOffsetY : 0.0F;
-    billboard.bottomCentre = person.position + glm::vec3(0.0F, classOffset - belowGround, 0.0F);
+    billboard.frame = chooseSprite(m_spriteLayout, std::max(person.spriteCell, 0), person.sixSpriteViews,
+        person.facing(), person.position, camera);
+    // The billboard vertex shader's quad: 2 x 0.5 m wide and 2 m tall, of
+    // which 0.9 and 0.95 are used, scaled by the person's size.
+    const float size
+        = draw::kSpriteSizeMin + (draw::kSpriteSizeMax - draw::kSpriteSizeMin) * std::abs(person.sizeFactor);
+    billboard.width = 2.0F * draw::kSpriteHalfWidth * draw::kSpriteUvScale.x * size;
+    billboard.height = draw::kSpriteHeight * draw::kSpriteUvScale.y * size;
+    billboard.bottomCentre = person.position;
     return billboard;
+}
+
+std::uint32_t CrowdSet::bindSkeleton(std::uint32_t animation) const
+{
+    for (const CrowdSkeleton& owner : m_skeletons) {
+        if (std::find(owner.animations.begin(), owner.animations.end(), animation) == owner.animations.end()) {
+            continue;
+        }
+        for (std::size_t s = 0; s < m_skeletons.size(); ++s) {
+            if (iequals(m_skeletons[s].suffix, owner.suffix) && !m_skeletons[s].skeleton.bones.empty()) {
+                return static_cast<std::uint32_t>(s);
+            }
+        }
+    }
+    return 0;
+}
+
+void CrowdSet::frameSkinMatrices(std::uint32_t animation, int frame, std::span<glm::mat4> out) const
+{
+    if (animation >= m_animations.size() || m_skeletons.empty()) {
+        throw DataError("frameSkinMatrices: clip {} out of range", animation);
+    }
+    const AnimationClip& clip = m_animations[animation].clip;
+    const Skeleton& bind = m_skeletons[bindSkeleton(animation)].skeleton;
+    if (!bind.sameHierarchy(clip.skeleton) || out.size() < clip.boneCount()) {
+        throw DataError("clip {} does not fit its skeleton", clip.name);
+    }
+    const int at = std::clamp(frame, 0, std::max(clip.frameCount - 1, 0));
+    std::vector<BonePose> pose(clip.boneCount());
+    for (std::size_t b = 0; b < pose.size(); ++b) {
+        pose[b] = clip.pose(at, b);
+    }
+    spectators::skinMatrices(clip.skeleton, bind, pose, out.first(clip.boneCount()));
+    mirrorToSpectatorSpace(out.first(clip.boneCount()));
 }
 
 } // namespace fh::spectators

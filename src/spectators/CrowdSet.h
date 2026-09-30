@@ -26,17 +26,17 @@ class Vfs;
 
 /// Spectators: the crowds of the festival, of race starts and along routes.
 ///
-/// How the game draws them, from the data and the executable's strings: each
-/// placed person is a skinned low-poly mesh (four levels of detail, one
-/// 256x256 DXT1 texture, two bones a vertex) animated by skeletal clips at 30
-/// frames a second, and far away an unanimated sprite from a shared atlas
-/// with a blob shadow (`shadow.dds`) under it. Placements come from crowd
-/// placement sets in the track's bin.zip (CrowdPlacement.h), each naming a
-/// crowd class of spectators.xml; the class picks the skeleton (standing or
-/// seated), the people that can appear and the idle and cheer clips. Which
-/// person and clip an instance gets is not stored; the game chooses at
-/// random, and this library chooses by a hash of the instance so a load is
-/// repeatable.
+/// How the game draws them (see CrowdDraw.h for the draw itself): the
+/// people of the track's crowd placement sets (CrowdPlacement.h) are each
+/// a sprite from a shared atlas, and near the camera also a skinned
+/// low-poly mesh (four levels of detail, one 256x256 DXT1 texture, two
+/// bones a vertex) animated by skeletal clips. Each person names a crowd
+/// class of spectators.xml, which picks the skeleton (standing or seated),
+/// the people that can appear and the idle and cheer clips. Which person,
+/// clip and frame an instance gets is not stored: the set's init
+/// (CProceduralCharacters, 0x82EDD8A8) draws them from a generator seeded
+/// with the set's person count, and this library draws them the same way
+/// (see placeSpectators()).
 namespace fh::spectators {
 
 /// Spectator space: the skinned mesh files' coordinates mirrored in X, so
@@ -152,6 +152,15 @@ struct CrowdClass {
     glm::vec3 offset {0.0F};
     float billboardOffsetY = 0.0F;
     std::optional<bool> randomSize;
+    /// The 50-slot tables the game draws a clip from, indices into
+    /// CrowdSet::animations() (draw::clipTable()); empty when the class has
+    /// no clip of the kind.
+    std::vector<std::uint32_t> idleTable;
+    std::vector<std::uint32_t> cheerTable;
+    /// Whether the sprites of the class's people take six views (the seated
+    /// cells) instead of three: the game gives six to the first class only
+    /// (the instance packer at 0x82EDDF08 compares the class with 0).
+    bool sixSpriteViews = false;
 };
 
 /// One crowd placement set of the track.
@@ -169,6 +178,9 @@ struct CrowdGroup {
     /// Its people: CrowdSet::spectators()[first .. first + count).
     std::uint32_t first = 0;
     std::uint32_t count = 0;
+    /// The set's generator after its people were placed; the game keeps
+    /// drawing from it when their clips end.
+    std::uint32_t randomState = 0;
 
     /// Sets without an event block are shown whatever the player does.
     bool alwaysShown() const { return !hasEventBlock; }
@@ -192,14 +204,36 @@ struct Spectator {
     int model = -1;
     /// Index into CrowdSet::animations() of the idle clip, -1 without one.
     int animation = -1;
-    /// Seconds into the clip at time 0, so neighbours do not move in step.
-    float phase = 0.0F;
+    /// The clip's frame at load, so neighbours do not move in step.
+    int startFrame = 0;
+    /// Scale of the model: 0.95 to 1.05 by the size factor, stored by the
+    /// game as a 16-bit float (0x82EDDD90, constants at 0x833A5690/94).
+    float modelScale = 1.0F;
+    /// The size factor: a draw from 0.1 to 1 for classes with randomsize
+    /// (the default, 0x8320E4F8), 1 otherwise. The sprite's size is 0.95 to
+    /// 1.05 by it (draw::kSpriteSizeMin).
+    float sizeFactor = 1.0F;
+    /// Drawn only as a sprite (PlacedSpectator::flags).
+    bool billboardOnly = false;
+    /// The person's tint, 0 to 1 (PlacedSpectator::extra).
+    glm::vec3 tint{0.0F};
+    /// First sprite cell of the person's model in the atlas (the model's
+    /// nine cells, plus three for six-view classes), -1 for people the game
+    /// gives no sprite: those of the class after the shoulder carriers
+    /// ("SatShoulders_sit"), who ride on another person (0x82EDE0D0).
+    int spriteCell = -1;
+    bool sixSpriteViews = false;
+    /// For those riders, the index into CrowdSet::spectators() of the first
+    /// shoulder carrier of the set standing at the same x and z, whose clip
+    /// and frame they play (0x82EDDCE4); -1 otherwise.
+    int leader = -1;
     /// Index into CrowdSet::groups().
     std::uint32_t group = 0;
     bool seated = false;
     /// For people who walk, the index into CrowdSet::walkPaths() of their
-    /// path and how far along it they are at time 0; -1 for people who
-    /// stay where they are placed.
+    /// path and how far along it they are at time 0 (a draw from 0 to 1 of
+    /// the path's stated length, 0x82EC06D0); -1 for people who stay where
+    /// they are placed.
     int walkPath = -1;
     float walkStart = 0.0F;
     /// The record's flags and last bytes (see PlacedSpectator).
@@ -304,10 +338,23 @@ public:
     /// The model's vertices skinned the same way, in spectator space, in
     /// vertex order.
     std::vector<glm::vec3> skinnedPositions(std::uint32_t model, std::uint32_t animation, float time) const;
+    /// Skinning matrices in spectator space of animation `animation` at
+    /// whole frame `frame`, one per bone, for the models of the skeleton
+    /// the clip belongs to (bindSkeleton()). `out` needs one entry per bone
+    /// of the clip.
+    void frameSkinMatrices(std::uint32_t animation, int frame, std::span<glm::mat4> out) const;
+    /// Index into skeletons() of the skeleton whose bind pose the models
+    /// playing `animation` were made for: the first with the suffix of the
+    /// first skeleton that lists the clip.
+    std::uint32_t bindSkeleton(std::uint32_t animation) const;
+
     /// Where person `spectator` is at `time` seconds and the heading they
     /// face: their placement for people who stand or sit, a point moving
-    /// along the path at 1.4 m/s (a chosen speed) for walkers.
+    /// along the path at kWalkingSpeed for walkers.
     glm::vec3 walkerAt(std::uint32_t spectator, float time, float& heading) const;
+    /// Metres a second walkers move along their path: the walker's speed
+    /// field, 1 (0x82EDD9E0), times the frame's time (0x82EC0630).
+    static constexpr float kWalkingSpeed = 1.0F;
     /// The sprite to draw for person `spectator` seen from `camera`.
     SpriteBillboard spriteFor(std::uint32_t spectator, const glm::vec3& camera) const;
 

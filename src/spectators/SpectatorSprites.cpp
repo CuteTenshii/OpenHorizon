@@ -1,19 +1,16 @@
 #include "SpectatorSprites.h"
 
+#include "CrowdDraw.h"
+
 #include <glm/geometric.hpp>
 
 #include <algorithm>
 #include <cmath>
-#include <numbers>
 
 namespace fh::spectators {
 
 namespace {
 
-constexpr float kFrontLimit = 45.0F;
-constexpr float kBackLimit = 135.0F;
-constexpr float kSeatedStep = 22.5F;
-constexpr int kSeatedTurnedCells = 4;
 constexpr std::uint8_t kOpaque = 128;
 
 } // namespace
@@ -29,46 +26,23 @@ void SpriteAtlasLayout::cellRect(int cell, glm::vec2& uvMin, glm::vec2& uvMax) c
     uvMax = {(x + kCellWidth) / w, (y + kCellHeight) / h};
 }
 
-SpriteFrame chooseSprite(const SpriteAtlasLayout& layout, int modelIndex, bool seated, const glm::vec3& facing,
+SpriteFrame chooseSprite(const SpriteAtlasLayout& layout, int baseCell, bool sixViews, const glm::vec3& facing,
     const glm::vec3& position, const glm::vec3& camera)
 {
     glm::vec2 toCamera(camera.x - position.x, camera.z - position.z);
     glm::vec2 face(facing.x, facing.z);
-    if (glm::length(toCamera) < 1e-4F) {
-        toCamera = face;
-    }
     if (glm::length(face) < 1e-4F) {
         face = {0.0F, 1.0F};
     }
-    toCamera = glm::normalize(toCamera);
-    face = glm::normalize(face);
-    const float angle
-        = std::acos(std::clamp(glm::dot(face, toCamera), -1.0F, 1.0F)) * 180.0F / std::numbers::pi_v<float>;
-
-    // The camera looks along -toCamera; with Y up in the left-handed world
-    // its right on screen is (view.z, -view.x).
-    const glm::vec2 view = -toCamera;
-    const glm::vec2 screenRight(view.y, -view.x);
-    const bool facesLeft = glm::dot(face, screenRight) < 0.0F;
-
-    SpriteFrame frame;
-    if (seated) {
-        if (angle > kBackLimit) {
-            frame.view = SpriteView::SeatedBack;
-        } else {
-            const int step = std::min(static_cast<int>(std::lround(angle / kSeatedStep)), kSeatedTurnedCells);
-            frame.view = static_cast<SpriteView>(static_cast<int>(SpriteView::SeatedFront) + step);
-            frame.mirrored = step > 0 && facesLeft;
-        }
-    } else if (angle < kFrontLimit) {
-        frame.view = SpriteView::StandingFront;
-    } else if (angle > kBackLimit) {
-        frame.view = SpriteView::StandingBack;
-    } else {
-        frame.view = SpriteView::StandingSide;
-        frame.mirrored = facesLeft;
+    if (glm::length(toCamera) < 1e-4F) {
+        toCamera = face;
     }
-    frame.cell = SpriteAtlasLayout::cell(modelIndex, frame.view);
+    const draw::SpriteColumn column = draw::spriteColumn(glm::normalize(face), glm::normalize(toCamera), sixViews);
+    SpriteFrame frame;
+    frame.cell = baseCell + column.column;
+    frame.mirrored = column.mirrored;
+    const int cellInModel = frame.cell % SpriteAtlasLayout::kCellsPerModel;
+    frame.view = static_cast<SpriteView>(std::clamp(cellInModel, 0, static_cast<int>(SpriteView::SeatedSide)));
     layout.cellRect(frame.cell, frame.uvMin, frame.uvMax);
     return frame;
 }
