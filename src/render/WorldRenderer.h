@@ -157,10 +157,27 @@ void setSceneLighting(Shader& shader, const SceneLighting& lighting);
 /// threads whenever the camera crosses one of a tile's level-of-detail
 /// edges, and the textures their batches use are decoded in the background
 /// and uploaded once ready. Until a tile's new geometry, textures and
-/// programs are all in, the old version stays on screen, so moving never
-/// shows holes. Every batch draws with its material's own track effect,
-/// translated from the game's microcode (TrackPrograms), reading the
-/// converted vertices (world::ShadedMesh) from a storage buffer.
+/// programs are all in, the old version stays on screen. Every batch draws
+/// with its material's own track effect, translated from the game's
+/// microcode (TrackPrograms), reading the converted vertices
+/// (world::ShadedMesh) from a storage buffer.
+///
+/// What is loaded depends on where the camera is, never on where it looks,
+/// so turning round or looking back finds everything there: a tile holds
+/// every chunk whose band ends beyond the camera's distance to the tile
+/// less kPrefetchDistance (an engine choice: the streaming scenario drives
+/// with no chunk late, where builds take 25 ms at the median and 0.3 s at
+/// worst). What is drawn is picked chunk by chunk every frame, as the game
+/// does for each draw (0x824701B8): a chunk is drawn while the camera's
+/// zone lists it and the camera's 3D distance to its bounds lies in its
+/// band. The game measures to the draw's oriented box and to the box of a
+/// procedural copy's cell; the chunk's world bounds stand in for both, so
+/// levels switch a little nearer than in the game. The scene pass also
+/// leaves out the chunks of a tile outside the view. Not applied: the
+/// game's scaling of the second level's end by the field of view
+/// (0x82470D18), whose input was not traced, and the cross-fades of the
+/// procedural copies (see ScatterPass); the zone-file models themselves
+/// switch levels without a fade in the game too.
 ///
 /// Where the driver has bindless textures (see TrackPrograms), a draw binds
 /// nothing between the batches of one tile: every texture a visible tile
@@ -209,7 +226,25 @@ public:
     /// uploads whatever the workers finished. Call once per frame on the GL
     /// thread before draw().
     void update(const glm::vec3& camera);
+    /// Draws the visible tiles' opaque batches and procedural copies, and
+    /// gathers their blending batches for drawTranslucent().
     void draw(const FrameParams& frame);
+    /// Draws the blending batches (road blends, decals, lakes, glows and
+    /// light shafts) that the last draw() gathered, over the sky.
+    ///
+    /// Verified: the scene view's render (0x824744D0) has the track
+    /// presentation (slot 300, 0x82469B18) draw its opaque passes (mask 1
+    /// pass 0 at 0x824751AC, mask 8 pass 0 at 0x82475368), the sky at the
+    /// end of the mask 8 pass (0x8246B474-0x8246B4DC: slot 104, 0x8249C2C0,
+    /// calls CRealtimeSky's draw 0x82E37A18), and only then, after turning
+    /// on AlphaBlendEnable (render state 60) and state 308 and turning off
+    /// state 96, the mask 2 pass 1 (0x824755B0). Inferred: that pass draws
+    /// the blending effects, whose Default passes set exactly those three
+    /// states (lake_anim_norm_opac_refl_3, the h_vblnd and h_road blends,
+    /// light_pollution). Missing: how the game assigns a batch to a pass and
+    /// how it orders the batches within one; they keep draw()'s grouping
+    /// by program.
+    void drawTranslucent();
 
     /// Leaves out the chunks `hidden` marks (indexed like the world index's
     /// chunks); tiles holding changed chunks are rebuilt, keeping their old
@@ -309,10 +344,37 @@ public:
 
     /// Tiles farther than this are not drawn, in metres.
     void setDrawDistance(float metres) { m_drawDistance = metres; }
+    float drawDistance() const { return m_drawDistance; }
     const Stats& stats() const { return m_stats; }
     /// True once the tiles around the last update position have geometry
     /// and textures, for holding a loading screen.
     bool nearbyReady() const { return m_nearbyReady; }
+
+    /// The tiles the world is streamed in, indexed like the tile arguments
+    /// below.
+    const world::WorldTileGrid& grid() const { return m_grid; }
+    /// The chunks (indices into the world index's chunks) of the geometry
+    /// tile `tile` has on the GPU: empty until its first build is in.
+    const std::vector<std::uint32_t>& drawnChunks(std::size_t tile) const { return m_tiles[tile].drawnChunks; }
+    /// Whether chunk `chunk`, when its tile has it on the GPU, was drawn as
+    /// of the last update(): the camera's zone lists it (WorldChunk::zones)
+    /// and the camera's 3D distance to its bounds lies in its band.
+    bool chunkDrawn(std::uint32_t chunk) const { return chunk < m_chunkDrawn.size() && m_chunkDrawn[chunk] != 0; }
+    /// Chunks are loaded this far in metres before the camera comes within
+    /// their band (see update()).
+    static constexpr float kPrefetchDistance = 100.0F;
+    /// One replacement of a tile's geometry on screen, for measuring how
+    /// long streaming takes.
+    struct TileSwap {
+        std::size_t tile = 0;
+        /// Wall-clock seconds from asking for the build to its geometry
+        /// being decoded, and from then to its textures being on the GPU.
+        float buildSeconds = 0.0F;
+        float textureSeconds = 0.0F;
+    };
+    /// The latest replacements, oldest first, up to kTileSwapsKept.
+    const std::deque<TileSwap>& tileSwaps() const { return m_tileSwaps; }
+    static constexpr std::size_t kTileSwapsKept = 8192;
 
 private:
     /// What a tile (or moving object) is built into: the track-effect
@@ -320,6 +382,8 @@ private:
     struct TileBuild {
         world::ShadedMesh shaded;
         world::TileMesh scattered;
+        /// The chunks it was built from.
+        std::vector<std::uint32_t> chunks;
 
         bool empty() const { return shaded.indices.empty() && scattered.indices.empty(); }
         std::vector<std::uint32_t> textureIds() const;
@@ -340,6 +404,20 @@ private:
         std::size_t triangles = 0;
         /// The procedural copies, nullptr when there are none.
         std::shared_ptr<ScatterPass::Mesh> scattered;
+        /// What is drawn of each batch this frame (see selectRanges() and
+        /// selectChunks()): every index for moving objects.
+        std::vector<IndexRange> ranges;
+        std::vector<std::uint32_t> rangeStart;
+        /// The same, less the chunks outside the camera's view, for the
+        /// scene pass while `clipped` is set (see draw()).
+        std::vector<IndexRange> viewRanges;
+        std::vector<std::uint32_t> viewRangeStart;
+        bool clipped = false;
+        bool drawsNothing(std::uint32_t batch, bool view) const
+        {
+            const std::vector<std::uint32_t>& start = view && clipped ? viewRangeStart : rangeStart;
+            return start[batch] == start[batch + 1];
+        }
     };
     struct TileState {
         int builtState = -1;
@@ -350,6 +428,13 @@ private:
         /// mesh on screen.
         std::unique_ptr<TileBuild> pending;
         int pendingState = -1;
+        /// The chunks of `mesh`.
+        std::vector<std::uint32_t> drawnChunks;
+        /// Whether each of drawnChunks was drawn at the last selectChunks().
+        std::vector<std::uint8_t> selection;
+        /// When the build in flight was asked for, and when it came back.
+        std::chrono::steady_clock::time_point requestedAt;
+        std::chrono::steady_clock::time_point builtAt;
     };
     struct BuiltTile {
         std::size_t tile = 0;
@@ -424,6 +509,17 @@ private:
     void touchTextures(const GpuMesh& mesh);
     void evictTextures();
     void collect(const GpuMesh& mesh, std::uint32_t frameSlot);
+    /// Picks the chunks of the tiles on the GPU that the camera draws, by
+    /// the game's rule (see chunkDrawn()), and the index ranges that draw
+    /// them.
+    void selectChunks();
+    /// Writes the selected ranges of `items`' batches as indirect commands
+    /// of `instances` instances each into this frame's command buffer, and
+    /// returns where each item's commands start; the last entry is the end.
+    std::vector<std::uint32_t> prepareCommands(const std::vector<DrawItem>& items, GLsizei instances);
+    /// Draws commands [first, end) of the last prepareCommands(), whose
+    /// item's program, mesh and frame block are bound.
+    void drawCommands(std::uint32_t first, std::uint32_t end, GLsizei instances);
     void drawItems(const std::vector<DrawItem>& items);
     /// drawCubeFace() and drawCubeFaces(): the batches of `m_cubePrograms`
     /// in the tiles and moving objects `wanted` keeps, drawn `instances`
@@ -487,6 +583,32 @@ private:
     GLuint m_cubeFaceBlock = 0;
     /// Instances drawItems() draws of each batch.
     GLsizei m_drawInstances = 1;
+    /// Per chunk of the world index, whether selectChunks() draws it.
+    std::vector<std::uint8_t> m_chunkDrawn;
+    /// Per chunk, whether it is drawn and inside the scene camera's view,
+    /// for tiles the view cuts through.
+    std::vector<std::uint8_t> m_chunkInView;
+    /// Set while draw() draws the scene pass, whose items use the clipped
+    /// ranges.
+    bool m_viewPass = false;
+    /// The layout of glMultiDrawElementsIndirect's commands.
+    struct IndirectCommand {
+        std::uint32_t count = 0;
+        std::uint32_t instances = 0;
+        std::uint32_t firstIndex = 0;
+        std::int32_t baseVertex = 0;
+        std::uint32_t baseInstance = 0;
+    };
+    /// The commands of the pass being drawn, and where they start in the
+    /// frame's command buffer.
+    std::vector<IndirectCommand> m_commands;
+    std::size_t m_commandOffset = 0;
+    /// Command buffers, one per frame in flight like the frame blocks, each
+    /// filled pass after pass from the start of its frame.
+    std::array<GLuint, 3> m_commandBuffers{};
+    std::array<std::size_t, 3> m_commandCapacity{};
+    std::size_t m_commandsUsed = 0;
+    std::uint64_t m_commandsFrame = 0;
     /// Frame blocks of the depth passes, packed one after another over a
     /// frame, with the translator's fixed blocks for them.
     GLuint m_depthFrames = 0;
@@ -535,6 +657,7 @@ private:
     glm::vec3 m_camera{0.0F};
     int m_cameraZone = -1;
     bool m_nearbyReady = false;
+    std::deque<TileSwap> m_tileSwaps;
     Stats m_stats;
 };
 

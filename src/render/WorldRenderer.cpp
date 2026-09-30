@@ -342,6 +342,7 @@ WorldRenderer::~WorldRenderer()
     glDeleteBuffers(1, &m_cubeFixed);
     glDeleteBuffers(1, &m_cubeFrames);
     glDeleteBuffers(1, &m_cubeFaceBlock);
+    glDeleteBuffers(static_cast<GLsizei>(m_commandBuffers.size()), m_commandBuffers.data());
 }
 
 void WorldRenderer::destroy(GpuMesh& mesh)
@@ -374,6 +375,7 @@ std::unique_ptr<WorldRenderer::TileBuild> WorldRenderer::build(const std::vector
     }
     const world::TrackTextures* textures = m_world.textures ? &*m_world.textures : nullptr;
     auto result = std::make_unique<TileBuild>();
+    result->chunks = chunks;
     result->shaded = world::buildShadedMesh(*m_world.archive, m_world.index, placed, m_world.shaders, textures);
     if (!scattered.empty()) {
         result->scattered = world::buildTileMesh(*m_world.archive, m_world.index, scattered, textures);
@@ -402,6 +404,7 @@ std::shared_ptr<WorldRenderer::GpuMesh> WorldRenderer::upload(const TileBuild& b
     glVertexArrayElementBuffer(gpu->vao, gpu->indices);
 
     gpu->batches = mesh.batches;
+    wholeRanges(gpu->batches, gpu->ranges, gpu->rangeStart);
     gpu->programs.reserve(mesh.batches.size());
     for (const world::ShadedMesh::Batch& batch : mesh.batches) {
         gpu->programs.push_back(m_programs.program(batch.shader));
@@ -758,6 +761,7 @@ void WorldRenderer::update(const glm::vec3& camera)
         }
         tile.pending = std::move(result.mesh);
         tile.pendingState = result.state;
+        tile.builtAt = std::chrono::steady_clock::now();
         const float distance = m_grid.distanceTo(m_grid.tiles()[result.tile], camera.x, camera.z);
         for (const std::uint32_t id : tile.pending->textureIds()) {
             requestTexture(id, distance);
@@ -775,12 +779,24 @@ void WorldRenderer::update(const glm::vec3& camera)
         }
         tile.mesh = tile.pending->empty() ? nullptr : upload(*tile.pending);
         tile.builtState = tile.pendingState;
+        tile.drawnChunks = std::move(tile.pending->chunks);
+        tile.selection.clear();
+        if (m_tileSwaps.size() == kTileSwapsKept) {
+            m_tileSwaps.pop_front();
+        }
+        m_tileSwaps.push_back({static_cast<std::size_t>(&tile - m_tiles.data()),
+            std::chrono::duration<float>(tile.builtAt - tile.requestedAt).count(),
+            std::chrono::duration<float>(std::chrono::steady_clock::now() - tile.builtAt).count()});
         tile.pending.reset();
         tile.pendingState = -1;
         ++uploads;
     }
 
-    // Schedule builds for tiles whose level-of-detail state changed.
+    // Schedule builds for tiles whose resident chunks changed: every chunk
+    // whose band ends beyond the camera's horizontal distance to the tile,
+    // less the prefetch distance, so a chunk is on the GPU before the camera
+    // can come within its band, from whichever side and whatever it looks
+    // at. selectChunks() then picks what is drawn.
     bool nearbyReady = true;
     const auto& tiles = m_grid.tiles();
     for (std::size_t i = 0; i < tiles.size(); ++i) {
@@ -790,12 +806,15 @@ void WorldRenderer::update(const glm::vec3& camera)
             if (state.mesh || state.pending) {
                 state.mesh.reset();
                 state.pending.reset();
+                state.drawnChunks.clear();
+                state.selection.clear();
                 state.builtState = -1;
                 state.requestedState = -1;
             }
             continue;
         }
-        const int wanted = m_grid.stateAt(tiles[i], distance);
+        const float reach = std::max(distance - kPrefetchDistance, 0.0F);
+        const int wanted = m_grid.stateAt(tiles[i], reach);
         if (distance < kNearbyRadius && (state.builtState != wanted || state.pending)) {
             nearbyReady = false;
         }
@@ -804,7 +823,8 @@ void WorldRenderer::update(const glm::vec3& camera)
         }
         state.requestedState = wanted;
         state.building = true;
-        std::vector<std::uint32_t> chunks = m_grid.chunksAt(tiles[i], distance);
+        state.requestedAt = std::chrono::steady_clock::now();
+        std::vector<std::uint32_t> chunks = m_grid.chunksBeyond(tiles[i], reach);
         m_jobs.submit(distance, [this, i, wanted, chunks = std::move(chunks), alive = m_alive] {
             if (!alive->load()) {
                 return;
@@ -815,10 +835,110 @@ void WorldRenderer::update(const glm::vec3& camera)
         });
     }
     m_nearbyReady = nearbyReady;
+    selectChunks();
     evictTextures();
     m_stats.pendingJobs = m_jobs.pending();
     m_stats.texturesLoaded = static_cast<std::size_t>(
         std::count_if(m_textures.begin(), m_textures.end(), [](const auto& entry) { return entry.second.ready; }));
+}
+
+void WorldRenderer::selectChunks()
+{
+    const auto& chunks = m_world.index.chunks();
+    if (m_chunkDrawn.size() != chunks.size()) {
+        m_chunkDrawn.assign(chunks.size(), 0);
+    }
+    for (TileState& tile : m_tiles) {
+        if (!tile.mesh) {
+            continue;
+        }
+        bool changed = tile.selection.size() != tile.drawnChunks.size();
+        tile.selection.resize(tile.drawnChunks.size());
+        for (std::size_t k = 0; k < tile.drawnChunks.size(); ++k) {
+            const std::uint32_t c = tile.drawnChunks[k];
+            const world::WorldChunk& chunk = chunks[c];
+            const float distance = glm::length(m_camera - glm::clamp(m_camera, chunk.boundsMin, chunk.boundsMax));
+            const std::uint8_t drawn
+                = distance >= chunk.bandStart && distance < chunk.bandEnd && chunk.visibleFrom(m_cameraZone) ? 1 : 0;
+            m_chunkDrawn[c] = drawn;
+            changed = changed || tile.selection[k] != drawn;
+            tile.selection[k] = drawn;
+        }
+        if (!changed) {
+            continue;
+        }
+        selectRanges(tile.mesh->batches, m_chunkDrawn, tile.mesh->ranges, tile.mesh->rangeStart);
+        if (tile.mesh->scattered) {
+            ScatterPass::Mesh& scattered = *tile.mesh->scattered;
+            selectRanges(scattered.batches, m_chunkDrawn, scattered.ranges, scattered.rangeStart);
+        }
+    }
+}
+
+std::vector<std::uint32_t> WorldRenderer::prepareCommands(const std::vector<DrawItem>& items, GLsizei instances)
+{
+    m_commands.clear();
+    std::vector<std::uint32_t> starts;
+    starts.reserve(items.size() + 1);
+    for (const DrawItem& item : items) {
+        starts.push_back(static_cast<std::uint32_t>(m_commands.size()));
+        const GpuMesh& mesh = *item.mesh;
+        const bool clipped = m_viewPass && mesh.clipped;
+        const std::vector<IndexRange>& ranges = clipped ? mesh.viewRanges : mesh.ranges;
+        const std::vector<std::uint32_t>& start = clipped ? mesh.viewRangeStart : mesh.rangeStart;
+        for (std::uint32_t r = start[item.batch]; r < start[item.batch + 1]; ++r) {
+            // The base instance tells the programs which material to read.
+            m_commands.push_back(
+                {ranges[r].count, static_cast<std::uint32_t>(instances), ranges[r].first, 0, item.batch});
+        }
+    }
+    starts.push_back(static_cast<std::uint32_t>(m_commands.size()));
+    if (!m_bindless || m_commands.empty()) {
+        return starts;
+    }
+    if (m_commandsFrame != m_frame) {
+        m_commandsFrame = m_frame;
+        m_commandsUsed = 0;
+    }
+    const std::size_t ring = m_frame % m_commandBuffers.size();
+    const std::size_t bytes = m_commands.size() * sizeof(IndirectCommand);
+    if (m_commandsUsed + bytes > m_commandCapacity[ring]) {
+        // Draws already made from the old buffer keep it alive until done.
+        glDeleteBuffers(1, &m_commandBuffers[ring]);
+        m_commandCapacity[ring] = std::max((m_commandsUsed + bytes) * 2, m_commandCapacity[ring] * 2);
+        glCreateBuffers(1, &m_commandBuffers[ring]);
+        glNamedBufferStorage(
+            m_commandBuffers[ring], static_cast<GLsizeiptr>(m_commandCapacity[ring]), nullptr, GL_DYNAMIC_STORAGE_BIT);
+        m_commandsUsed = 0;
+    }
+    m_commandOffset = m_commandsUsed;
+    glNamedBufferSubData(m_commandBuffers[ring], static_cast<GLintptr>(m_commandOffset), static_cast<GLsizeiptr>(bytes),
+        m_commands.data());
+    m_commandsUsed += bytes;
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, m_commandBuffers[ring]);
+    return starts;
+}
+
+void WorldRenderer::drawCommands(std::uint32_t first, std::uint32_t end, GLsizei instances)
+{
+    if (first == end) {
+        return;
+    }
+    if (m_bindless) {
+        const std::size_t offset = m_commandOffset + first * sizeof(IndirectCommand);
+        glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT,
+            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(offset)), static_cast<GLsizei>(end - first), 0);
+    } else {
+        for (std::uint32_t k = first; k < end; ++k) {
+            glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(m_commands[k].count), GL_UNSIGNED_INT,
+                reinterpret_cast<const void*>(
+                    static_cast<std::uintptr_t>(m_commands[k].firstIndex) * sizeof(std::uint32_t)),
+                instances);
+        }
+    }
+    for (std::uint32_t k = first; k < end; ++k) {
+        m_stats.triangles += m_commands[k].count / 3;
+    }
 }
 
 bool WorldRenderer::texturesLoaded(const world::ShadedMesh::Batch& batch) const
@@ -840,7 +960,7 @@ void WorldRenderer::collect(const GpuMesh& mesh, std::uint32_t frameSlot)
     for (std::uint32_t b = 0; b < mesh.batches.size(); ++b) {
         const world::ShadedMesh::Batch& batch = mesh.batches[b];
         const TrackPrograms::Program* program = mesh.programs[b];
-        if (program == nullptr || batch.indexCount == 0 || !texturesLoaded(batch)) {
+        if (program == nullptr || mesh.drawsNothing(b, true) || !texturesLoaded(batch)) {
             continue;
         }
         if (batch.backdrop && batch.chunk != world::ShadedMesh::kMergedChunks
@@ -888,10 +1008,12 @@ void WorldRenderer::bindTexture(GLuint unit, GLuint texture)
 
 void WorldRenderer::drawItems(const std::vector<DrawItem>& items)
 {
+    const std::vector<std::uint32_t> starts = prepareCommands(items, m_drawInstances);
     const TrackPrograms::Program* program = nullptr;
     const GpuMesh* mesh = nullptr;
     std::uint32_t frameSlot = 0xFFFFFFFF;
-    for (const DrawItem& item : items) {
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const DrawItem& item = items[i];
         const world::ShadedMesh::Batch& batch = item.mesh->batches[item.batch];
         if (item.program != program) {
             program = item.program;
@@ -915,22 +1037,15 @@ void WorldRenderer::drawItems(const std::vector<DrawItem>& items)
             glBindBufferRange(GL_UNIFORM_BUFFER, trackbinding::kFrame, m_frameBuffer,
                 static_cast<GLintptr>(frameSlot * kFrameBlockBytes), static_cast<GLsizeiptr>(kFrameBlockBytes));
         }
-        const auto* indices
-            = reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t));
-        if (m_bindless) {
-            // The base instance tells the programs which material to read.
-            glDrawElementsInstancedBaseInstance(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT,
-                indices, m_drawInstances, item.batch);
-        } else {
+        if (!m_bindless) {
             glBindBufferRange(GL_UNIFORM_BUFFER, trackbinding::kMaterial, mesh->materials,
                 static_cast<GLintptr>(item.batch * kMaterialBlockBytes), static_cast<GLsizeiptr>(kMaterialBlockBytes));
             bindSamplers(*program, batch);
-            glDrawElementsInstanced(
-                GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT, indices, m_drawInstances);
         }
+        drawCommands(starts[i], starts[i + 1], m_drawInstances);
         ++m_stats.batches;
-        m_stats.triangles += batch.indexCount / 3;
     }
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
 }
 
 void WorldRenderer::draw(const FrameParams& frame)
@@ -946,17 +1061,11 @@ void WorldRenderer::draw(const FrameParams& frame)
 
     const glm::mat4 viewProjection = frame.projection * frame.view;
     const glm::mat4 inverseView = glm::inverse(frame.view);
-    const auto& tiles = m_grid.tiles();
-    for (std::size_t i = 0; i < tiles.size(); ++i) {
-        const TileState& state = m_tiles[i];
-        if (!state.mesh) {
-            continue;
-        }
-        // Cull the whole tile against the view frustum by its bounds.
-        const glm::vec3& lo = tiles[i].boundsMin;
-        const glm::vec3& hi = tiles[i].boundsMax;
-        bool outside = false;
-        for (int plane = 0; plane < 5 && !outside; ++plane) {
+    // Where a box lies against the view frustum's sides and near plane:
+    // 0 outside, 1 across, 2 inside.
+    const auto placeInView = [&viewProjection](const glm::vec3& lo, const glm::vec3& hi) {
+        bool across = false;
+        for (int plane = 0; plane < 5; ++plane) {
             int beyond = 0;
             for (int corner = 0; corner < 8; ++corner) {
                 const glm::vec4 p = viewProjection
@@ -967,14 +1076,45 @@ void WorldRenderer::draw(const FrameParams& frame)
                     : plane == 2               ? p.y + p.w
                     : plane == 3               ? p.w - p.y
                                                : p.w;
-                if (value < 0.0F) {
-                    ++beyond;
-                }
+                beyond += value < 0.0F ? 1 : 0;
             }
-            outside = beyond == 8;
+            if (beyond == 8) {
+                return 0;
+            }
+            across = across || beyond > 0;
         }
-        if (outside) {
+        return across ? 1 : 2;
+    };
+    const auto& chunks = m_world.index.chunks();
+    if (m_chunkInView.size() != chunks.size()) {
+        m_chunkInView.assign(chunks.size(), 0);
+    }
+    const auto& tiles = m_grid.tiles();
+    for (std::size_t i = 0; i < tiles.size(); ++i) {
+        const TileState& state = m_tiles[i];
+        if (!state.mesh) {
             continue;
+        }
+        // Whole tiles first; a tile the view cuts through draws only the
+        // chunks whose bounds it reaches, as the game tests each draw.
+        const int place = placeInView(tiles[i].boundsMin, tiles[i].boundsMax);
+        if (place == 0) {
+            continue;
+        }
+        GpuMesh& mesh = *state.mesh;
+        mesh.clipped = place == 1;
+        if (mesh.scattered) {
+            mesh.scattered->clipped = mesh.clipped;
+        }
+        if (mesh.clipped) {
+            for (const std::uint32_t c : state.drawnChunks) {
+                m_chunkInView[c] = m_chunkDrawn[c] != 0 && placeInView(chunks[c].boundsMin, chunks[c].boundsMax) != 0;
+            }
+            selectRanges(mesh.batches, m_chunkInView, mesh.viewRanges, mesh.viewRangeStart);
+            if (mesh.scattered) {
+                selectRanges(
+                    mesh.scattered->batches, m_chunkInView, mesh.scattered->viewRanges, mesh.scattered->viewRangeStart);
+            }
         }
         ++m_stats.tilesDrawn;
         touchTextures(*state.mesh);
@@ -1063,6 +1203,7 @@ void WorldRenderer::draw(const FrameParams& frame)
     };
     std::sort(m_opaque.begin(), m_opaque.end(), order);
     std::sort(m_blended.begin(), m_blended.end(), order);
+    m_viewPass = true;
     drawItems(m_opaque);
     if (!m_scatterDraws.empty()) {
         applyState(world::TrackShaders::RenderState{});
@@ -1076,10 +1217,31 @@ void WorldRenderer::draw(const FrameParams& frame)
         // The pass binds its own textures and vertex array.
         m_boundTextures.fill(0);
     }
-    // Blending passes (decals, road blends, lakes) after everything opaque.
-    drawItems(m_blended);
+    m_viewPass = false;
 
     // Back to the state the other scene passes expect.
+    applyState(world::TrackShaders::RenderState{});
+    glBindVertexArray(0);
+    glUseProgram(0);
+}
+
+void WorldRenderer::drawTranslucent()
+{
+    if (m_blended.empty()) {
+        return;
+    }
+    // The passes drawn since draw() (the sky, cars, crowds) bind blocks,
+    // buffers and textures of their own.
+    m_boundTextures.fill(0);
+    glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kControlConstants, m_fixedBlocks, kControlOffset,
+        static_cast<GLsizeiptr>(xenos::ControlConstants::kBytes));
+    if (m_bindless) {
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, trackbinding::kTextureHandles, m_handleBuffer);
+    }
+    m_viewPass = true;
+    drawItems(m_blended);
+    m_viewPass = false;
+
     applyState(world::TrackShaders::RenderState{});
     glBindVertexArray(0);
     glUseProgram(0);
@@ -1195,7 +1357,7 @@ void WorldRenderer::drawDepthPass(TrackPrograms& programs, const glm::mat4& view
     const auto gather = [&](const GpuMesh& mesh, std::uint32_t slot) {
         for (std::uint32_t b = 0; b < mesh.batches.size(); ++b) {
             const world::ShadedMesh::Batch& batch = mesh.batches[b];
-            if (batch.indexCount == 0 || !texturesLoaded(batch)) {
+            if (mesh.drawsNothing(b, false) || !texturesLoaded(batch)) {
                 continue;
             }
             if (batch.backdrop && batch.chunk != world::ShadedMesh::kMergedChunks
@@ -1264,10 +1426,12 @@ void WorldRenderer::drawDepthPass(TrackPrograms& programs, const glm::mat4& view
     });
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
+    const std::vector<std::uint32_t> starts = prepareCommands(items, 1);
     const TrackPrograms::Program* program = nullptr;
     const GpuMesh* mesh = nullptr;
     std::uint32_t frameSlot = 0xFFFFFFFF;
-    for (const DrawItem& item : items) {
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const DrawItem& item = items[i];
         const world::ShadedMesh::Batch& batch = item.mesh->batches[item.batch];
         if (item.program != program) {
             program = item.program;
@@ -1300,18 +1464,14 @@ void WorldRenderer::drawDepthPass(TrackPrograms& programs, const glm::mat4& view
                 static_cast<GLintptr>((base + frameSlot) * kFrameBlockBytes),
                 static_cast<GLsizeiptr>(kFrameBlockBytes));
         }
-        const auto* indices
-            = reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t));
-        if (m_bindless) {
-            glDrawElementsInstancedBaseInstance(
-                GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT, indices, 1, item.batch);
-        } else {
+        if (!m_bindless) {
             glBindBufferRange(GL_UNIFORM_BUFFER, trackbinding::kMaterial, mesh->materials,
                 static_cast<GLintptr>(item.batch * kMaterialBlockBytes), static_cast<GLsizeiptr>(kMaterialBlockBytes));
             bindSamplers(*program, batch);
-            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT, indices);
         }
+        drawCommands(starts[i], starts[i + 1], 1);
     }
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glBindVertexArray(0);
@@ -1389,7 +1549,7 @@ void WorldRenderer::drawCubePass(const FrameParams& frame, const glm::mat4& view
     const auto gather = [&](const GpuMesh& mesh, std::uint32_t slot) {
         for (std::uint32_t b = 0; b < mesh.batches.size(); ++b) {
             const world::ShadedMesh::Batch& batch = mesh.batches[b];
-            if (batch.indexCount == 0 || !texturesLoaded(batch)) {
+            if (mesh.drawsNothing(b, false) || !texturesLoaded(batch)) {
                 continue;
             }
             if (batch.backdrop && batch.chunk != world::ShadedMesh::kMergedChunks

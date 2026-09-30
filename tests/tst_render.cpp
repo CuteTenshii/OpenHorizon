@@ -7,6 +7,7 @@
 #include "base/Host.h"
 #include "platform/Window.h"
 #include "render/GlProgram.h"
+#include "render/ScatterPass.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -196,6 +197,56 @@ TEST(brokenSourcesThrowWithTheirName)
 }
 
 } // namespace
+
+// The world draws a chunk's triangles only while the camera is within its
+// band: the batches' runs of chunks become index ranges, adjacent ones
+// merged, and a batch none of whose chunks is drawn gets no range.
+TEST(selectedChunksBecomeMergedIndexRanges)
+{
+    struct Batch {
+        std::uint32_t firstIndex = 0;
+        std::uint32_t indexCount = 0;
+        std::vector<fh::world::ChunkRun> runs;
+    };
+    const std::vector<Batch> batches{
+        {0, 30, {{4, 0, 6}, {5, 6, 12}, {6, 18, 12}}},
+        {30, 9, {{7, 30, 9}}},
+        {39, 12, {{4, 39, 6}, {6, 45, 6}}},
+    };
+    std::vector<std::uint8_t> drawn(8, 0);
+    drawn[5] = 1;
+    drawn[6] = 1;
+    drawn[4] = 1;
+    std::vector<fh::render::IndexRange> ranges;
+    std::vector<std::uint32_t> start;
+    fh::render::selectRanges(batches, drawn, ranges, start);
+    CHECK(start == (std::vector<std::uint32_t>{0, 1, 1, 2}));
+    CHECK_EQ(ranges.size(), std::size_t{2});
+    CHECK_EQ(ranges[0].first, 0U);
+    CHECK_EQ(ranges[0].count, 30U);
+    CHECK_EQ(ranges[1].first, 39U);
+    CHECK_EQ(ranges[1].count, 12U);
+
+    drawn[5] = 0;
+    fh::render::selectRanges(batches, drawn, ranges, start);
+    CHECK(start == (std::vector<std::uint32_t>{0, 2, 2, 3}));
+    CHECK_EQ(ranges[0].count, 6U);
+    CHECK_EQ(ranges[1].first, 18U);
+
+    fh::render::wholeRanges(batches, ranges, start);
+    CHECK(start == (std::vector<std::uint32_t>{0, 1, 2, 3}));
+    CHECK_EQ(ranges[1].first, 30U);
+    CHECK_EQ(ranges[1].count, 9U);
+
+    std::vector<fh::world::ChunkRun> runs;
+    fh::world::appendChunkRun(runs, 3, 0, 6);
+    fh::world::appendChunkRun(runs, 3, 6, 3);
+    fh::world::appendChunkRun(runs, 4, 9, 0);
+    fh::world::appendChunkRun(runs, 4, 9, 3);
+    CHECK_EQ(runs.size(), std::size_t{2});
+    CHECK_EQ(runs[0].indexCount, 9U);
+    CHECK_EQ(runs[1].chunk, 4U);
+}
 
 int main(int argc, char** argv)
 {

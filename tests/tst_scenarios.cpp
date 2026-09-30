@@ -5,6 +5,7 @@
 // FH1_GAME_DIR. With FH1_CAPTURE_DIR set they also save screenshots there,
 // for a person to look at (scripts/capture.sh).
 
+#include "RoadFollower.h"
 #include "TestHarness.h"
 
 #include "audio/MixSnapshots.h"
@@ -2085,6 +2086,212 @@ TEST(raceCrowdShowsAtTheStart)
     }
     session.run(8.0F, {.throttle = 1.0F});
     session.capture("crowd_race_start_far");
+}
+
+/// Watches the world streaming in during a drive, by the game's own rule
+/// for what it draws: a chunk is wanted while the camera's zone lists it
+/// (WorldChunk::zones) and the camera's 3D distance to its bounds lies in
+/// its band (verified in WorldIndex and ScatterSet). Every frame it checks
+/// the wanted chunks of the tiles near the camera against what the
+/// renderer draws: a wanted chunk not drawn is late, a chunk drawn while
+/// not wanted is out of place, and one that comes on screen beyond the end
+/// of its band has popped in where the game would not show it.
+class StreamingProbe {
+public:
+    explicit StreamingProbe(const fh::render::WorldRenderer& world)
+        : m_world(world)
+    {
+    }
+
+    /// Frames a chunk waited from being wanted to being drawn.
+    std::vector<int> delays;
+    /// Chunks still waiting after the last frame, and the longest wait.
+    std::size_t waiting() const { return m_waiting.size(); }
+    /// Chunks that stopped being wanted before they were ever drawn.
+    int neverShown = 0;
+    /// Chunks wanted but not drawn at the first frame watched.
+    std::size_t missingAtStart = 0;
+    /// For every chunk that came on screen in view, how far past the end
+    /// of its band it was, in metres (0 inside it).
+    std::vector<float> appearedBeyondBand;
+    /// Chunk-frames drawn while not wanted.
+    std::size_t drawnUnwanted = 0;
+
+    void frame(const fh::render::Camera& camera)
+    {
+        const fh::world::WorldTileGrid& grid = m_world.grid();
+        const auto& chunks = grid.index().chunks();
+        const glm::mat4 viewProjection = camera.projection(16.0F / 9.0F) * camera.view();
+        const fh::world::ZoneGrid* zones = grid.index().zoneGrid();
+        const int zone = zones != nullptr ? zones->zoneAt(camera.position.x, camera.position.z) : -1;
+        m_drawnBefore.resize(chunks.size(), 0);
+        m_residentFrame.resize(chunks.size(), -1);
+        for (std::size_t t = 0; t < grid.tiles().size(); ++t) {
+            const fh::world::WorldTileGrid::Tile& tile = grid.tiles()[t];
+            if (grid.distanceTo(tile, camera.position.x, camera.position.z) > kStreamingWatchDistance) {
+                continue;
+            }
+            for (const std::uint32_t c : m_world.drawnChunks(t)) {
+                m_residentFrame[c] = m_frame;
+            }
+            for (const std::uint32_t c : tile.chunks) {
+                const fh::world::WorldChunk& chunk = chunks[c];
+                const glm::vec3 nearest = glm::clamp(camera.position, chunk.boundsMin, chunk.boundsMax);
+                const float distance = glm::length(camera.position - nearest);
+                const bool wanted = distance >= chunk.bandStart && distance < chunk.bandEnd && chunk.visibleFrom(zone);
+                const bool drawn = m_world.chunkDrawn(c) && m_residentFrame[c] == m_frame;
+                const auto waiting = m_waiting.find(c);
+                if (wanted && !drawn && waiting == m_waiting.end()) {
+                    m_waiting.emplace(c, m_frame);
+                } else if (waiting != m_waiting.end() && (drawn || !wanted)) {
+                    if (drawn) {
+                        delays.push_back(m_frame - waiting->second);
+                    } else {
+                        ++neverShown;
+                    }
+                    m_waiting.erase(waiting);
+                }
+                drawnUnwanted += drawn && !wanted ? 1 : 0;
+                if (drawn && m_drawnBefore[c] == 0 && m_frame > 0
+                    && inView(viewProjection, chunk.boundsMin, chunk.boundsMax)) {
+                    appearedBeyondBand.push_back(std::max(distance - chunk.bandEnd, 0.0F));
+                }
+                m_drawnBefore[c] = drawn ? 1 : 0;
+            }
+        }
+        if (m_frame == 0) {
+            missingAtStart = m_waiting.size();
+        }
+        ++m_frame;
+    }
+
+private:
+    /// Tiles farther than this are not watched, to keep the frames quick;
+    /// it covers the bands of every prop and procedural copy.
+    static constexpr float kStreamingWatchDistance = 2000.0F;
+
+    static bool inView(const glm::mat4& viewProjection, const glm::vec3& lo, const glm::vec3& hi)
+    {
+        for (int plane = 0; plane < 5; ++plane) {
+            int beyond = 0;
+            for (int corner = 0; corner < 8; ++corner) {
+                const glm::vec4 p = viewProjection
+                    * glm::vec4(
+                        (corner & 1) ? hi.x : lo.x, (corner & 2) ? hi.y : lo.y, (corner & 4) ? hi.z : lo.z, 1.0F);
+                const float value = plane == 0 ? p.x + p.w
+                    : plane == 1               ? p.w - p.x
+                    : plane == 2               ? p.y + p.w
+                    : plane == 3               ? p.w - p.y
+                                               : p.w;
+                beyond += value < 0.0F ? 1 : 0;
+            }
+            if (beyond == 8) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    const fh::render::WorldRenderer& m_world;
+    std::unordered_map<std::uint32_t, int> m_waiting;
+    std::vector<std::uint8_t> m_drawnBefore;
+    /// The last frame each chunk's tile had it on the GPU.
+    std::vector<int> m_residentFrame;
+    int m_frame = 0;
+};
+
+int percentileOf(std::vector<int> values, double fraction)
+{
+    if (values.empty()) {
+        return 0;
+    }
+    std::sort(values.begin(), values.end());
+    return values[static_cast<std::size_t>(fraction * static_cast<double>(values.size() - 1))];
+}
+
+/// How long the streaming scenario drives.
+constexpr float kStreamingDriveSeconds = 45.0F;
+/// The longest a chunk may wait to be shown once in its band, in frames.
+constexpr int kStreamingMaxDelayFrames = 6;
+/// How far past the end of its band a chunk may come on screen, in metres.
+constexpr float kStreamingBandSlack = 25.0F;
+
+// "I see models spawning from nowhere in the map": driving free roam along
+// the roads, every chunk has to be on screen soon after the camera comes
+// within its level-of-detail band.
+TEST(drivingStreamsTheWorldInTime)
+{
+    if (!gameDir()) {
+        return;
+    }
+    Session session({});
+    CHECK(session.waitForCar());
+    fh::Game& game = session.game();
+    const fh::render::WorldRenderer* world = game.worldRenderer();
+    CHECK(world != nullptr);
+    if (world == nullptr) {
+        return;
+    }
+    const std::size_t swapsBefore = world->tileSwaps().size();
+    StreamingProbe probe(*world);
+    CHECK(game.navigation() != nullptr);
+    if (game.navigation() == nullptr) {
+        return;
+    }
+    fh::test::RoadFollower follower(*game.navigation());
+    fh::InputState previous;
+    float driven = 0.0F;
+    for (float t = 0.0F; t < kStreamingDriveSeconds; t += kStep) {
+        fh::InputState input = follower.controls(game.playerCar());
+        input.previousKeys = previous.keys;
+        input.previousButtons = previous.buttons;
+        previous = input;
+        const glm::vec3 before = game.playerCar().position();
+        CHECK(game.frame(input, kStep));
+        driven += glm::length(game.playerCar().position() - before);
+        probe.frame(game.camera());
+    }
+    const auto& swaps = world->tileSwaps();
+    const std::size_t swapCount = swaps.size() - std::min(swapsBefore, swaps.size());
+    std::vector<float> builds;
+    std::vector<float> textures;
+    for (auto it = swaps.end() - static_cast<std::ptrdiff_t>(swapCount); it != swaps.end(); ++it) {
+        builds.push_back(it->buildSeconds);
+        textures.push_back(it->textureSeconds);
+    }
+    std::sort(builds.begin(), builds.end());
+    std::sort(textures.begin(), textures.end());
+    const auto median = [](const std::vector<float>& v) { return v.empty() ? 0.0F : v[v.size() / 2]; };
+    const auto worst = [](const std::vector<float>& v) { return v.empty() ? 0.0F : v.back(); };
+    std::vector<float> beyond = probe.appearedBeyondBand;
+    std::sort(beyond.begin(), beyond.end());
+    const auto appearedBeyond = static_cast<std::size_t>(
+        std::count_if(beyond.begin(), beyond.end(), [](float metres) { return metres > kStreamingBandSlack; }));
+    std::fprintf(stderr,
+        "streaming: %.0f m driven in %.0f s; %zu chunks came on screen in view, %zu more than %.0f m past the end "
+        "of their band (median %.0f m, 95th %.0f m, worst %.0f m past); %zu chunk-frames drawn outside their band "
+        "or zone\n",
+        static_cast<double>(driven), static_cast<double>(kStreamingDriveSeconds), beyond.size(), appearedBeyond,
+        static_cast<double>(kStreamingBandSlack),
+        static_cast<double>(beyond.empty() ? 0.0F : beyond[beyond.size() / 2]),
+        static_cast<double>(beyond.empty() ? 0.0F : beyond[(beyond.size() - 1) * 95 / 100]),
+        static_cast<double>(beyond.empty() ? 0.0F : beyond.back()), probe.drawnUnwanted);
+    std::fprintf(stderr,
+        "streaming: %zu waits for a wanted chunk, frames median %d, 95th %d, worst %d; %d never drawn, %zu missing "
+        "at the start, %zu still waiting; %zu tile swaps, build s median %.3f worst %.3f, texture wait s median "
+        "%.3f worst %.3f\n",
+        probe.delays.size(), percentileOf(probe.delays, 0.5), percentileOf(probe.delays, 0.95),
+        percentileOf(probe.delays, 1.0), probe.neverShown, probe.missingAtStart, probe.waiting(), swapCount,
+        static_cast<double>(median(builds)), static_cast<double>(worst(builds)), static_cast<double>(median(textures)),
+        static_cast<double>(worst(textures)));
+    CHECK(driven > 300.0F);
+    CHECK_EQ(probe.missingAtStart, std::size_t{0});
+    CHECK_EQ(probe.neverShown, 0);
+    CHECK_EQ(probe.waiting(), std::size_t{0});
+    CHECK(percentileOf(probe.delays, 1.0) <= kStreamingMaxDelayFrames);
+    CHECK_EQ(appearedBeyond, std::size_t{0});
+    CHECK_EQ(probe.drawnUnwanted, std::size_t{0});
+    session.capture("streaming_end");
 }
 
 } // namespace

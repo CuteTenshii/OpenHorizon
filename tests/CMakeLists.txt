@@ -164,7 +164,7 @@ target_link_libraries(tst_postprocess PRIVATE fh1engine)
 # Colorado case runs only when FH1_GAME_DIR names an extracted disc.
 add_test(NAME tst_postprocess COMMAND tst_postprocess)
 
-add_executable(tst_scenarios TestHarness.h tst_scenarios.cpp)
+add_executable(tst_scenarios RoadFollower.h TestHarness.h tst_scenarios.cpp)
 target_compile_options(tst_scenarios PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_scenarios PRIVATE fh1engine)
 # The whole game offscreen with scripted controls; skips without
@@ -172,7 +172,7 @@ target_link_libraries(tst_scenarios PRIVATE fh1engine)
 add_test(NAME tst_scenarios COMMAND tst_scenarios)
 set_tests_properties(tst_scenarios PROPERTIES TIMEOUT 1800)
 
-add_executable(tst_perf TestHarness.h tst_perf.cpp)
+add_executable(tst_perf RoadFollower.h TestHarness.h tst_perf.cpp)
 target_compile_options(tst_perf PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_perf PRIVATE fh1engine)
 # Free roam driven along the roads, timed per part of the frame, against a

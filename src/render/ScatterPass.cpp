@@ -183,6 +183,7 @@ std::shared_ptr<ScatterPass::Mesh> ScatterPass::upload(const world::TileMesh& me
     // The colour's four bytes share one float's slot.
     attribute(4, 4, GL_UNSIGNED_BYTE, GL_TRUE, TileMesh::kColour);
     gpu->batches = mesh.batches;
+    wholeRanges(gpu->batches, gpu->ranges, gpu->rangeStart);
     return gpu;
 }
 
@@ -210,9 +211,14 @@ std::size_t ScatterPass::draw(const Mesh& mesh, const std::function<const Textur
         return loaded != nullptr ? loaded : fallback;
     };
     std::size_t triangles = 0;
+    std::vector<GLsizei> counts;
+    std::vector<const void*> offsets;
+    const std::vector<IndexRange>& ranges = mesh.clipped ? mesh.viewRanges : mesh.ranges;
+    const std::vector<std::uint32_t>& rangeStart = mesh.clipped ? mesh.viewRangeStart : mesh.rangeStart;
     glBindVertexArray(mesh.vao);
-    for (const world::TileMesh::Batch& batch : mesh.batches) {
-        if (batch.shading == world::TileMesh::Shading::Water || batch.indexCount == 0) {
+    for (std::size_t b = 0; b < mesh.batches.size(); ++b) {
+        const world::TileMesh::Batch& batch = mesh.batches[b];
+        if (batch.shading == world::TileMesh::Shading::Water || rangeStart[b] == rangeStart[b + 1]) {
             continue;
         }
         if (batch.backdrop && batch.chunk != world::TileMesh::kMergedChunks
@@ -229,9 +235,17 @@ std::size_t ScatterPass::draw(const Mesh& mesh, const std::function<const Textur
         m_shader.set("uScaleA", glm::vec2(batch.layerScales[0], batch.layerScales[1]));
         m_shader.set("uScaleB", glm::vec2(batch.layerScales[2], batch.layerScales[3]));
         m_shader.set("uScaleC", glm::vec2(batch.layerScales[4], batch.layerScales[5]));
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT,
-            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t)));
-        triangles += batch.indexCount / 3;
+        counts.clear();
+        offsets.clear();
+        for (std::uint32_t r = rangeStart[b]; r < rangeStart[b + 1]; ++r) {
+            const IndexRange& range = ranges[r];
+            counts.push_back(static_cast<GLsizei>(range.count));
+            offsets.push_back(
+                reinterpret_cast<const void*>(static_cast<std::uintptr_t>(range.first) * sizeof(std::uint32_t)));
+            triangles += range.count / 3;
+        }
+        glMultiDrawElements(
+            GL_TRIANGLES, counts.data(), GL_UNSIGNED_INT, offsets.data(), static_cast<GLsizei>(counts.size()));
     }
     return triangles;
 }
