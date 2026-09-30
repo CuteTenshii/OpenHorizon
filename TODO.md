@@ -4,9 +4,29 @@ What is left before this plays like Forza Horizon, from player reports and from 
 
 ## In progress
 
-| Area | Problem | Work |
-|------|---------|------|
-| World | Shading looks wrong. | Track shaders through the Xenos translator. |
+| Area | Problem or request | Work |
+|------|--------------------|------|
+| Tests | Test runs take about 24 minutes; the in-house runner gives one result per test program. | Moving to Catch2 v3, one ctest entry per case, and splitting the scenarios by area around shared setup code. |
+| Distant scenery | Hillsides without their forests, a bare middle distance, festival barrier rows drawn with gaps. | The billboard far tier: the game draws every procedural copy (97% of them have one) as a camera-facing card from its group's draw distance out to its block's far distance (Models slot 40, 0x82447088; PROC_MODEL_BILLBOARD shaders at 0x82189510 and 0x82166B98). |
+| Race flow | Leaving a race removes its items at once; entering one keeps free-roam traffic. | The whole event flow from activation to free roam; the event screens and race cutscenes are in, the flow that joins them is not. |
+| Career | A race pays nothing. | Credits, career points, wristbands and results after a race, with the game's reward screens. |
+| Skills and popularity | No skill points or popularity. | Skills, chains, banking, popularity ranks and sponsorship challenges. |
+| First-time career | Race central should stay hidden until the career reveals it. | The game's first_time_career.xml intro. |
+| Fast travel and event unlocks | No fast travel; every event start is offered from the beginning. | Fast travel to outposts and the festival, and event starts gated by the career's unlock rules. |
+| Options | No options menus. | The game's HUD, audio and video options writing the profile, plus PC display options in settings.ini. |
+| Antialiasing | Jagged edges. | The game's own 4x MSAA, FXAA 3.11 and AMD FSR 1 upscaling as options. |
+| Driver labels | No names above other cars. | The game's name banner over race opponents and festival drivers. |
+| Memory | One game process used about 3 GB and kept growing. | Freed memory handed back to the system, car shaders shared between cars, unused decoded sounds dropped, and a memory budget in the perf test. |
+| Rollover | The car isn't reset after rolling over. | The game's automatic reset (2 s with at most two wheels down and up.y below 0.3, the curtain fade, the nearest road node). |
+| Ambience | No world sounds. | Track ambience by zone and speed, loading screen music, prompt and radio panel sounds. |
+| Tyre dust | The dust appears ahead of the car. | The bumper dust's direction is the car's backward row, not its forward one. |
+| Upgrade boards | Driving into a discount sign pushes it instead of breaking it. | Reading PhysicsDefinitions.bin: the sign weighs 0.2 kg and breaks on any touch. |
+| Car look | Matte paint, rims filling the wheel, ride height and shadow, teal glass. | The body placed on the stock ride heights and the light direction set; the paint's reflection damper (c40) is not traced; rims and glass match the data. |
+| Audio mixer | Unchecked values and rules. | An audit of every bus, snapshot, fade and combining rule against the game's mixer; two fade timing differences found. |
+
+## Planned
+
+- Renderer backends: our own rendering layer with a native backend per system (Vulkan on Linux, Direct3D 12 on Windows, Metal on macOS), then macOS support. First step: every OpenGL call behind one interface, with no visible change.
 
 ## Next
 
@@ -28,10 +48,10 @@ What is left before this plays like Forza Horizon, from player reports and from 
 - Stopped cars still creep slowly on steep slopes (2 m in 30 s at 20%): the tyre model has no static friction at walking speed.
 - Title screen: the boot movies before it (`T10_MS_Combined.wmv`, then `Dolby_Corona_Intro.wmv`, then `forza_intro.wmv`) are not played; the profile sign-in and the signed-in SPLASH_MENU are skipped; what the idle attract (front-end request 6) plays was not traced.
 - Loading screens: the initial load follows prepare_free_roam (the "freeroam" tips until streaming, cars, the radio and the initial traffic are in, then the 1 s fade from black). Fast travel and loading into a race from the menus (CLoadIntoCareerRace, festival tip groups) do not exist yet. Starting or restarting a race from free roam uses no tip screen in the game: prerace_prepare blacks out and waits for streaming and cars, and how its black-out is lifted was not traced, so that wait is not done here. Linked GL programs are cached in `~/.cache/fh1-native/shaders`.
-- Pause menu: its entries for multiplayer, photo mode and my profile lead nowhere yet. The help bar's packing of its buttons by their widths (0x8289e100) is not implemented, so help buttons keep their authored widths instead of fitting their text; this applies to every screen with a help bar.
+- Pause menu: its entries for multiplayer, photo mode and my profile lead nowhere yet.
 - Race AI: in autopilot races the AI regularly hits scenery at corners and loses tens of seconds, before and after the steering rewrite.
 - Collision: asking once per car whether the collision mesh is the ground broke races and was reverted; world contacts still cost about 0.15 ms per car per physics step.
-- Post-processing: the game's chain runs (square-root scene target, adaptive exposure, bloom with persistence, filmic day and night curves, zone-blended grading tables, desaturation matrix, top and bottom vignettes, the 16 post-processing zones and their fog). Not traced, so left out: the combine's viewport scale and offset (vignetteScaleOffsetPower.xyz, taken as the full picture), the sampler filters of the blur and add passes (taken as bilinear), the camera that switches the vignette off (0x82905050), the fade-to-colour and photo-mode terms of the colour matrix, the renderer flag that turns grading off (+0xC63), the freeze flags of the exposure adaptation, and the 10-bit quantisation of the targets. The adaptation moves 0.075 of the way per frame as the game's does, so at more than the console's frame rate it settles faster. Light rays (0x824A8870), motion blur (0x824909A0), depth of field and FXAA are not done.
+- Post-processing: the game's chain runs (square-root scene target, adaptive exposure, bloom with persistence, filmic day and night curves, zone-blended grading tables, desaturation matrix, top and bottom vignettes, the 16 post-processing zones and their fog). Not traced, so left out: the combine's viewport scale and offset (vignetteScaleOffsetPower.xyz, taken as the full picture), the sampler filters of the blur and add passes (taken as bilinear), the fade-to-colour and photo-mode terms of the colour matrix, the renderer flag that turns grading off (+0xC63), the freeze flags of the exposure adaptation, and the 10-bit quantisation of the targets. The adaptation moves 0.075 of the way per frame as the game's does, so at more than the console's frame rate it settles faster. Light rays (0x824A8870), motion blur (0x824909A0) and depth of field are not done; antialiasing is in progress.
 - Radio in races: the game's `StartRadioFlowForEvent` (a named track timed to the start) is implemented in the radio but not called; gameplay DJ lines, positional stations and forced playlists are not played.
 - Traffic: road classes and roads come from racing lines as a stand-in, because the `.nav` segments are not decoded for traffic yet.
 - Smashable masses: `physicsdefinitions.bin` is not read.
