@@ -39,20 +39,28 @@ Reproduce it in a test before fixing it. The test should fail on the current cod
 
 - **Unit tests** (`tst_world`, `tst_audio`, `tst_ui` and the rest, one per module) check formats and logic, with small hand-built data and, when the disc is available, the real files.
 - **Car checks** (`tst_car`) put real cars on a flat or tilted plane to test how they drive. If you change anything in `src/car`, also run `fh1cartest DISC all`, which compares acceleration, braking, grip and top speed with the figures the game recorded; its medians shouldn't get worse.
-- **Scenarios** (`tst_scenarios`) run the whole game at a fixed frame rate with scripted controls: a start point, a race or a time of day, then throttle, steering and button presses. They check the game's own state. Most player-reported bugs end up here.
+- **Scenarios** (`tst_scenarios`, one file per area in `tests/scenarios`) run the whole game at a fixed frame rate with scripted controls: a start point, a race or a time of day, then throttle, steering and button presses. They check the game's own state. Most player-reported bugs end up here.
 
 The tests run the game offscreen: no window opens and no sound plays.
 
 A crash report's log ends with a backtrace. On Linux each frame reads `fh1(+0x1a2b3)`; `addr2line -f -C -e build/src/fh1 0x1a2b3` turns it into a function and a line, given the same build. On Windows the log already names them, and the minidump `fh1.dmp` opens in Visual Studio.
 
 ```sh
-scripts/run-tests.sh                          # configure, build, run everything except the slow tests
-scripts/run-tests.sh build -R tst_scenarios   # one test program
-scripts/run-tests.sh build -L slow            # checks that go through every file of a kind on the disc
-scripts/capture.sh shots/ pause               # run the scenarios matching "pause" and keep their screenshots
+scripts/run-tests.sh                           # configure, build, run everything except the slow tests
+scripts/run-tests.sh build -R tst_scenarios    # one test program
+scripts/run-tests.sh build -R 'tst_ui\..*font' # the cases of a program whose names contain "font"
+scripts/run-tests.sh build -L slow             # checks that go through every file of a kind on the disc
+scripts/run-tests.sh build -L perf             # the frame-time test, best run on an otherwise idle machine
+scripts/capture.sh shots/ pause                # run the scenarios matching "pause" and keep their screenshots
 ```
 
-Tests that need the disc skip themselves unless `FH1_GAME_DIR` points to it. The scripts also find the path you gave the game.
+Tests that need the disc skip themselves unless `FH1_GAME_DIR` points to it. The scripts also find the path you gave the game. Each test case runs in a process of its own and ctest runs several at once, but only one scenario at a time: a running game takes about 3 GB. A test program also runs on its own, with a Catch2 filter: `build/tests/tst_ui "*font*"`, or `--list-tests` to see its cases.
+
+### Writing a test
+
+The tests use [Catch2](https://github.com/catchorg/Catch2) 3. A unit test is a `TEST_CASE("whatItChecks", "[module]")` in `tests/tst_<module>.cpp`, with `CHECK` for each fact and `REQUIRE` where the rest of the case cannot go on without it. A case that needs the disc starts with `fh::test::gameDir()`, which skips it when there is none, and one that draws takes its context from `fh::test::requireGlContext()`. A check that reads every file of a kind on the disc is tagged `[slow][.]` and comes with a fast one over a few files chosen for their variety. A new test program goes in `tests/CMakeLists.txt` with `fh1n_add_test_program`.
+
+A scenario is a `TEST_CASE_METHOD(GameScenario, "whatThePlayerSees", "[scenario][area]")` in the file of its area under `tests/scenarios`. It starts a `Session` on `GameOptions`, waits for the car, plays with `run`, `runUntil`, `press` and the rest of `tests/scenarios/Session.h`, and checks the game's state. Use what `Session.h` offers; when a scenario needs something several areas could use, add it there rather than to one file.
 
 ## Writing code
 
@@ -68,9 +76,7 @@ Tests that need the disc skip themselves unless `FH1_GAME_DIR` points to it. The
 
 Keep one change per commit, and use the message to explain why it's needed and what it rests on, including anything still unknown. A short scoped subject reads well in the log, for example `fix(car): hold a stopped car on the handbrake`.
 
-Every commit should build and pass the tests on its own. With Lefthook installed, the commit hook checks the formatting of the lines you're committing, and the push hook builds and runs the tests except the scenarios, the performance test and the slow tests. Run those with the scripts above when your change could affect them.
-
-GitHub builds and tests every push and pull request, but without the game's files, so the tests that need the disc only run on your machine. Say in the pull request which of them you ran.
+Every commit should build and pass the tests on its own. With Lefthook installed, the commit hook checks the formatting of the lines you're committing; building and testing is left to GitHub, which builds every push and pull request on Linux and Windows and runs the unit tests. It has no game files, though, so the tests that need the disc only run on your machine, and the scenarios, the performance test and the slow tests only with the scripts above: run them when your change could affect them, and say in the pull request which of them you ran.
 
 ## What to work on
 

@@ -56,9 +56,9 @@ The first configure downloads lzx and xds; `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build
-ctest --test-dir build
-FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build   # also the checks against real data
-scripts/run-tests.sh                                           # all of it offscreen, scenarios included
+ctest --test-dir build -j 8
+FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build -j 8   # also the checks against real data
+scripts/run-tests.sh                                                # all of it offscreen, scenarios included
 ```
 
 Contributing, testing and the git hooks: see [CONTRIBUTING.md](CONTRIBUTING.md).

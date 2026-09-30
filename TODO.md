@@ -6,7 +6,6 @@ What is left before this plays like Forza Horizon, from player reports and from 
 
 | Area | Problem or request | Work |
 |------|--------------------|------|
-| Tests | Test runs take about 24 minutes; the in-house runner gives one result per test program. | Moving to Catch2 v3, one ctest entry per case, and splitting the scenarios by area around shared setup code. |
 | Distant scenery | Hillsides without their forests, a bare middle distance, festival barrier rows drawn with gaps. | The billboard far tier: the game draws every procedural copy (97% of them have one) as a camera-facing card from its group's draw distance out to its block's far distance (Models slot 40, 0x82447088; PROC_MODEL_BILLBOARD shaders at 0x82189510 and 0x82166B98). |
 | Race flow | Leaving a race removes its items at once; entering one keeps free-roam traffic. | The whole event flow from activation to free roam; the event screens and race cutscenes are in, the flow that joins them is not. |
 | Career | A race pays nothing. | Credits, career points, wristbands and results after a race, with the game's reward screens. |

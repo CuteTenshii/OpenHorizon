@@ -18,10 +18,11 @@ Knowledge sources outside the repo:
 cmake -S . -B build -G Ninja            # RelWithDebInfo by default; fetches lzx and xds on first configure
 cmake --build build                      # everything
 cmake --build build --target fh1         # just the game
-ctest --test-dir build                   # unit tests
-FH1_GAME_DIR=/path/to/disc ctest --test-dir build        # also the checks against the real disc
-ctest --test-dir build -R tst_collision  # one test executable
+ctest --test-dir build -j 8              # unit tests, a process per test case
+FH1_GAME_DIR=/path/to/disc ctest --test-dir build -j 8   # also the checks against the real disc
+ctest --test-dir build -R tst_collision  # one test program (ctest names cases tst_collision.<case>)
 FH1_GAME_DIR=/path/to/disc ctest --test-dir build -L slow   # the slow sweeps over every sample and shader of the disc
+build/tests/tst_ui "*font*"              # a program's cases whose names match, run directly
 cmake --build build --target format      # clang-format every source (.clang-format)
 cmake --build build --target format-check
 cmake --build build --target tidy        # clang-tidy over the compilation database (.clang-tidy)
@@ -31,7 +32,7 @@ Windows builds use Visual Studio (MSVC) with dependencies from `vcpkg.json` (set
 
 `lzx` and `xds` come from their git repos via FetchContent, pinned by commit in the root `CMakeLists.txt`. To work against local checkouts use `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` / `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>`.
 
-Tests are plain executables built on `tests/TestHarness.h` (no framework), one per module, registered in `tests/CMakeLists.txt`. Disc-dependent cases skip themselves unless `FH1_GAME_DIR` is set. A sweep over every file of a kind on the disc is a `SLOW_TEST`: its executable runs it only with `--slow`, registered as `<name>_slow` under the ctest label `slow`, next to a fast check of a few files chosen for their variety. Lefthook (`lefthook.yml`, `lefthook install` once) checks the formatting of staged lines before a commit and runs the tests except the scenarios, the perf test and the slow tests before a push. See CONTRIBUTING.md.
+Tests use Catch2 v3: one program per module (`tests/tst_<module>.cpp`), added in `tests/CMakeLists.txt` with `fh1n_add_test_program`, which registers every `TEST_CASE` with ctest as `<program>.<case>` through `catch_discover_tests`. `tests/support` holds what the programs share: the `main()` (which sets `FH1_NO_CRASH_DIALOG` and SDL's offscreen and dummy drivers), `fh::test::gameDir()`, which `SKIP`s a case when `FH1_GAME_DIR` is not set, and `fh::test::requireGlContext()`, which skips without an OpenGL context. Setup a program needs before its cases (a cache or data folder under the temporary directory) goes in a Catch2 event listener in its file. A sweep over every file of a kind on the disc is tagged `[slow][.]`: ctest gives it the label `slow`, which the default runs leave out, next to a fast check of a few files chosen for their variety. The cases of one program run one at a time (they share temporary folders); different programs run in parallel. Lefthook (`lefthook.yml`, `lefthook install` once) checks the formatting of staged lines before a commit; CI builds and runs the unit tests on every push; the scenarios, the perf test and the slow tests run with `scripts/run-tests.sh`. See CONTRIBUTING.md.
 
 ### Running the game when testing
 
@@ -40,13 +41,14 @@ Never open windows on the desktop or play through the speakers. The game itself 
 ```sh
 scripts/run-tests.sh                        # configure, build, every test offscreen
 scripts/run-tests.sh build -R tst_scenarios # just the scenarios
+scripts/run-tests.sh build -L perf          # just the frame-time test
 scripts/run-tests.sh build -L slow          # just the slow sweeps, which the other runs leave out
 scripts/capture.sh OUT_DIR [FILTER]         # run scenarios and keep their screenshots
 ```
 
-The game's error boxes (after a crash, or a startup error such as a missing disc folder) stay closed when `FH1_NO_CRASH_DIALOG` is set, when `SDL_VIDEO_DRIVER` is `offscreen` or `dummy`, and when there is no display. The scripts and `runAllTests` in the test harness set `FH1_NO_CRASH_DIALOG`; set it too when running `fh1` or a test binary any other way.
+The game's error boxes (after a crash, or a startup error such as a missing disc folder) stay closed when `FH1_NO_CRASH_DIALOG` is set, when `SDL_VIDEO_DRIVER` is `offscreen` or `dummy`, and when there is no display. The scripts and the tests' `main()` (`tests/support`) set `FH1_NO_CRASH_DIALOG`; set it too when running `fh1` or a test binary any other way.
 
-A player-reported bug becomes a scenario in `tests/tst_scenarios.cpp` (or a car check in `tests/tst_car.cpp` when no world is needed) that fails before the fix. Scenarios set up through `GameOptions` (start point, race, time, autopilot) and read the game through its read-only accessors; `Session::capture` saves a screenshot when `FH1_CAPTURE_DIR` is set. The game folder is remembered in `~/.config/fh1-native/settings.ini`, which the scripts read when `FH1_GAME_DIR` is not set.
+A player-reported bug becomes a scenario (or a car check in `tests/tst_car.cpp` when no world is needed) that fails before the fix. Scenarios live in `tests/scenarios`, one file per area (`Menus`, `Map`, `Driving`, `World`, `Audio`, `Races`, `Activities`, `Profile`, `Perf`), all built into `tst_scenarios`. Each is a `TEST_CASE_METHOD(GameScenario, "name", "[scenario][area]")` on the shared support in `tests/scenarios/Session.h`: the `GameScenario` fixture (skips without the disc or an OpenGL context, `disc()` for reading game files), the process's one `window()`, and `Session`, which starts a game and plays it (`waitForCar`, `run`, `runUntil`, `press`, `pressTimes`, `focusPauseItem`, `capture`), with `saveProfile`, `readScene`, `RoadFollower` and the game-state readers beside it. New scenarios use these and add what is missing there rather than helpers of their own; a helper only one area needs stays in that area's file. Scenarios set up through `GameOptions` (start point, race, time, autopilot) and read the game through its read-only accessors; `Session::capture` saves a screenshot when `FH1_CAPTURE_DIR` is set. A game takes about 3 GB, so ctest runs the scenarios one at a time (they hold the lock `game`) beside the unit tests; each case logs to `fh1-scenarios-logs/<case>.log` under the temporary directory. The game folder is remembered in `~/.config/fh1-native/settings.ini`, which the scripts read when `FH1_GAME_DIR` is not set.
 
 ### Tools (in `build/src/...`)
 
