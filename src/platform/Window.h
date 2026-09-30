@@ -3,6 +3,7 @@
 #include "Input.h"
 #include "PadInput.h"
 
+#include <stdexcept>
 #include <string>
 
 struct SDL_Window;
@@ -22,12 +23,21 @@ struct WindowOptions {
     bool hidden = false;
 };
 
+/// The graphics driver cannot give the game what it needs: no OpenGL 4.5
+/// core context, or one without an entry point the game calls. Something
+/// the player fixes by updating the driver, unlike a missing window system.
+class GraphicsDriverError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 /// The game window with its OpenGL 4.5 core context, and the source of
 /// input. One per process.
 class Window {
 public:
     /// Creates the window and context and loads the GL entry points. Throws
-    /// std::runtime_error with the reason when any of that fails.
+    /// GraphicsDriverError when the context or an entry point is missing,
+    /// std::runtime_error with the reason for any other failure.
     explicit Window(const WindowOptions& options);
     ~Window();
     Window(const Window&) = delete;
@@ -52,6 +62,9 @@ public:
     /// change, so width() and height() report the new drawable size at once.
     void setSize(int width, int height);
     void setTitle(const std::string& title);
+
+    /// The SDL window, for a message box to open over it.
+    SDL_Window* sdlWindow() const { return m_window; }
 
     /// Sets the pad's rumble motors, each 0 to 1, for `milliseconds`.
     void rumble(float low, float high, int milliseconds);

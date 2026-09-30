@@ -66,7 +66,7 @@ On Windows, `build-windows\src\fh1.exe --game D:\path\to\extracted\disc`.
 
 The folder is the disc root (holding `default.xex` and `media`) or the `media` folder itself. It is remembered in the settings file (see below), so later starts need no options. The other options are the window size (`--width`, `--height`, `--fullscreen`) and `--log`. Choices without a menu yet are settings in the same file: `car = ALF_8C_08` (a media name), `manual = true` for a manual gearbox, `metric = false` for miles per hour, `debug = true` for a verbose console.
 
-Each run writes its full log, debug messages included, to `fh1.log`, replacing the previous one; `--log FILE` writes it elsewhere. Attach it to bug reports.
+Each run writes its full log, debug messages included, to `fh1.log`, replacing the previous one; `--log FILE` writes it elsewhere. Attach it to bug reports. If the game crashes, the log ends with what went wrong and a backtrace, and a message box says where the log is. On Windows the game also saves a minidump, `fh1.dmp`, next to the log: attach both.
 
 Where the game keeps its files:
 
@@ -75,6 +75,7 @@ Where the game keeps its files:
 | Settings (`settings.ini`) | `~/.config/fh1-native` (`$XDG_CONFIG_HOME`) | `%APPDATA%\fh1-native` |
 | Saved profile (`profile`) | `~/.local/share/fh1-native` (`$XDG_DATA_HOME`) | `%LOCALAPPDATA%\fh1-native` |
 | Log (`fh1.log`) | `~/.local/state/fh1-native` (`$XDG_STATE_HOME`) | `%LOCALAPPDATA%\fh1-native\logs` |
+| Crash dump (`fh1.dmp`) | none: the system keeps core dumps (`coredumpctl`) | `%LOCALAPPDATA%\fh1-native\logs` |
 | Shader cache (`shaders`) | `~/.cache/fh1-native` (`$XDG_CACHE_HOME`) | `%LOCALAPPDATA%\fh1-native\cache` |
 
 ### Controls

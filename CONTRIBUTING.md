@@ -43,6 +43,8 @@ Reproduce it in a test before fixing it. The test should fail on the current cod
 
 The tests run the game offscreen: no window opens and no sound plays.
 
+A crash report's log ends with a backtrace. On Linux each frame reads `fh1(+0x1a2b3)`; `addr2line -f -C -e build/src/fh1 0x1a2b3` turns it into a function and a line, given the same build. On Windows the log already names them, and the minidump `fh1.dmp` opens in Visual Studio.
+
 ```sh
 scripts/run-tests.sh                          # configure, build, run everything except the slow tests
 scripts/run-tests.sh build -R tst_scenarios   # one test program

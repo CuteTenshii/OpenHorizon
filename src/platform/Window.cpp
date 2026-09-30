@@ -150,11 +150,14 @@ Window::Window(const WindowOptions& options)
         const std::string reason = SDL_GetError();
         SDL_DestroyWindow(m_window);
         SDL_Quit();
-        throw std::runtime_error("OpenGL 4.5 core context: " + reason);
+        throw GraphicsDriverError("OpenGL 4.5 core context: " + reason);
     }
     SDL_GL_MakeCurrent(m_window, static_cast<SDL_GLContext>(m_context));
     if (const char* missing = gl::load(loadGlProc)) {
-        throw std::runtime_error(std::string("the OpenGL driver lacks ") + missing);
+        SDL_GL_DestroyContext(static_cast<SDL_GLContext>(m_context));
+        SDL_DestroyWindow(m_window);
+        SDL_Quit();
+        throw GraphicsDriverError(std::string("the OpenGL driver lacks ") + missing);
     }
     // Adaptive vsync first, since a missed frame should tear rather than
     // halve the frame rate; plain vsync where the driver lacks it.

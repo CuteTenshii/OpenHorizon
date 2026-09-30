@@ -43,6 +43,8 @@ target_compile_options(fh1data PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(fh1data PUBLIC fh1base SQLite3::SQLite3 glm::glm)
 
 add_library(fh1platform STATIC
+    platform/ErrorDialog.cpp
+    platform/ErrorDialog.h
     platform/Input.h
     platform/PadInput.cpp
     platform/PadInput.h
