@@ -112,6 +112,7 @@ endif()
 add_subdirectory(src)
 
 if(FH1N_BUILD_TESTS)
+    find_package(Catch2 3 REQUIRED CONFIG)
     enable_testing()
     add_subdirectory(tests)
 endif()
