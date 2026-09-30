@@ -205,7 +205,7 @@ Game::Game(Window& window, const GameOptions& options)
     }
     try {
         m_pause = std::make_unique<ui::PauseMenu>(m_vfs);
-        m_map = std::make_unique<ui::WorldMap>(m_vfs, m_options.track);
+        m_map = std::make_unique<ui::WorldMap>(m_vfs, m_options.track, "en", m_database.get());
     } catch (const std::exception& e) {
         logWarning("menus: {}; no pause menu or map", e.what());
         m_pause.reset();
@@ -2473,6 +2473,32 @@ ui::WorldMapState Game::worldMapState() const
         state.route = m_navigation->route();
         state.routeStart = m_navigation->routeProgress();
         state.routeLength = m_navigation->routeLength();
+    }
+    state.metric = m_options.metric;
+    if (m_profile) {
+        // The player bar reads these as stored (0x82597a08, 0x82996948,
+        // the career progression object's Main/XP).
+        const auto integer = [&](std::string_view path) -> std::int64_t {
+            const std::optional<profile::PropertyValue> value = m_profile->value(path);
+            if (!value) {
+                return 0;
+            }
+            if (const auto* unsignedValue = std::get_if<std::uint64_t>(&*value)) {
+                return static_cast<std::int64_t>(*unsignedValue);
+            }
+            if (const auto* signedValue = std::get_if<std::int64_t>(&*value)) {
+                return *signedValue;
+            }
+            return 0;
+        };
+        ui::PlayerBarValues bar;
+        bar.credits = integer("Main/Credits");
+        bar.wristbandLevel = integer("Main/WristbandLevel");
+        bar.xp = integer("Main/XP");
+        if (!m_vehicles.empty() && player().spec) {
+            bar.carId = player().spec->id;
+        }
+        state.playerBar = bar;
     }
     if (m_playerPlaced) {
         const glm::vec3 at = player().physics->position();

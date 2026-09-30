@@ -9,6 +9,8 @@
 
 #include "base/Error.h"
 #include "base/Log.h"
+#include "data/Database.h"
+#include "data/StringTable.h"
 #include "vfs/Vfs.h"
 
 #include <pugixml.hpp>
@@ -571,7 +573,7 @@ void WorldMapCamera::update(glm::vec2 move, float zoom, float dt)
 }
 
 struct WorldMap::Impl {
-    Impl(const Vfs& vfs, const std::string& track, const std::string& language);
+    Impl(const Vfs& vfs, const std::string& track, const std::string& language, const Database* database);
     ~Impl();
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
@@ -591,6 +593,7 @@ struct WorldMap::Impl {
 
     void bindScene();
     void showScene();
+    void showPlayerBar();
     void updateHelp();
     /// The place A sets and its node (the overlay's +576).
     void updateTarget();
@@ -621,10 +624,13 @@ struct WorldMap::Impl {
     FontLibrary fonts;
     Presentation scene;
     UiRenderer renderer;
+    Localisation names;
+    const Database* database = nullptr;
     NavFile nav;
     std::unique_ptr<NavLocator> locator;
     /// The ways the road symbolizers can pick, with their snap sizes.
     std::vector<std::pair<std::size_t, float>> snapWays;
+    std::vector<WristbandLevel> wristbands;
     FullProfile profile;
     WorldMapTuning tuning;
     std::unique_ptr<WorldMapCamera> camera;
@@ -641,6 +647,7 @@ struct WorldMap::Impl {
     int viewportModel = -1;
     int viewportMaterial = -1;
     HelpBar help;
+    PlayerBar playerBar;
 
     UiProgram program;
     GLint viewProjectionLocation = -1;
@@ -667,17 +674,30 @@ struct WorldMap::Impl {
     std::optional<std::uint32_t> waypointNode;
     /// Whether the help shows CLEAR ROUTE; none until it is first set.
     std::optional<bool> helpClear;
+    /// What the player bar was last set from.
+    std::optional<PlayerBarValues> shownPlayerBar;
+    bool shownMetric = true;
+    bool playerBarHidden = false;
 };
 
-WorldMap::Impl::Impl(const Vfs& vfs, const std::string& track, const std::string& language)
+WorldMap::Impl::Impl(const Vfs& vfs, const std::string& track, const std::string& language, const Database* db)
     : strings(vfs, language)
     , fonts(vfs, language)
     , scene(SceneFiles::load(vfs, kScene))
     , renderer(vfs, fonts)
+    , names(vfs, language)
+    , database(db)
 {
     const std::string navPath = std::format("media/tracks/{}/{}.nav", track, track);
     nav = NavFile::parse(vfs.readOrThrow(navPath), navPath);
     locator = std::make_unique<NavLocator>(nav);
+    if (database) {
+        try {
+            wristbands = loadWristbandLevels(*database, names);
+        } catch (const DataError& e) {
+            logWarning("map: no wristbands: {}", e.what());
+        }
+    }
     const Bytes profileData = vfs.readOrThrow(kProfilePath);
     profile = parseProfile(std::string_view(reinterpret_cast<const char*>(profileData.data()), profileData.size()));
     tuning = WorldMapTuning::load(vfs);
@@ -774,18 +794,52 @@ void WorldMap::Impl::bindScene()
     viewportModel = scene.contractParameter(rendererContract, "MODEL_VIEWPORT");
     viewportMaterial = scene.contractParameter(rendererContract, "MATERIAL_VIEWPORT");
     help.bind(scene, scene.contractParameter(rootContract, "COMPONENT_HELP_BUTTON_BAR"));
+    // The root contract does not name the player bar; the scene carries one
+    // element with the PLAYER_BAR contract.
+    for (std::size_t i = 0; i < scene.elementCount() && !playerBar.bound(); ++i) {
+        if (scene.contract(static_cast<int>(i), "PLAYER_BAR") >= 0) {
+            playerBar.bind(scene, renderer, static_cast<int>(i));
+        }
+    }
 }
 
 void WorldMap::Impl::showScene()
 {
     scene.reset();
-    // The player bar (level, car, credits) and the tip line show data this
-    // reimplementation does not keep; the scene's own events hide them.
-    scene.fireEvent(rootContract, "HIDE_PLAYER_BAR");
+    // The tip line shows the loading tips' text, which the map is not
+    // given; the scene's own event hides it.
     scene.fireEvent(rootContract, "HIDE_TIP");
     scene.fireEvent(overlayContract, "SHOW_CURSOR");
+    shownPlayerBar.reset();
+    playerBarHidden = false;
+    showPlayerBar();
     helpClear.reset();
     updateHelp();
+}
+
+void WorldMap::Impl::showPlayerBar()
+{
+    // The scene authors the bar visible; the map screen hides it only for
+    // its dialogues (0x827887a0, 0x82794770), which do not exist here.
+    // Without values there is nothing true to show, so it is hidden.
+    if (!state.playerBar) {
+        if (!playerBarHidden) {
+            scene.fireEvent(rootContract, "HIDE_PLAYER_BAR");
+            playerBarHidden = true;
+        }
+        shownPlayerBar.reset();
+        return;
+    }
+    if (playerBarHidden) {
+        scene.fireEvent(rootContract, "SHOW_PLAYER_BAR");
+        playerBarHidden = false;
+    }
+    if (shownPlayerBar == state.playerBar && shownMetric == state.metric) {
+        return;
+    }
+    playerBar.set(scene, PlayerBar::texts(*state.playerBar, wristbands, database, names, strings, state.metric));
+    shownPlayerBar = state.playerBar;
+    shownMetric = state.metric;
 }
 
 void WorldMap::Impl::updateHelp()
@@ -1280,8 +1334,8 @@ std::pair<glm::vec2, glm::vec2> WorldMap::Impl::viewportRect() const
     return {glm::vec2(a + b) * 0.5F, glm::abs(glm::vec2(b - a)) * 0.5F};
 }
 
-WorldMap::WorldMap(const Vfs& vfs, const std::string& track, const std::string& language)
-    : m_impl(std::make_unique<Impl>(vfs, track, language))
+WorldMap::WorldMap(const Vfs& vfs, const std::string& track, const std::string& language, const Database* database)
+    : m_impl(std::make_unique<Impl>(vfs, track, language, database))
 {
 }
 
@@ -1317,6 +1371,9 @@ void WorldMap::setState(const WorldMapState& state)
     impl.state = state;
     if (impl.hovered && *impl.hovered >= impl.activityMarkers.size() + state.markers.size()) {
         impl.hovered.reset();
+    }
+    if (impl.open) {
+        impl.showPlayerBar();
     }
 }
 
@@ -1365,6 +1422,7 @@ void WorldMap::draw(int width, int height)
         return;
     }
     impl.placeOverlay(width, height);
+    impl.playerBar.layout(impl.scene, impl.renderer);
     std::vector<DrawItem> items = impl.scene.evaluate();
     // The map's target covers the viewport model's rectangle in pixels
     // (the scene's 1280 x 720 units fitted to the window).
@@ -1393,6 +1451,7 @@ void WorldMap::draw(int width, int height)
         item.model.layers.front().imageName = "@worldmap";
     }
     impl.help.apply(items);
+    impl.playerBar.apply(items);
     applyTextScale(items);
     impl.renderer.begin(width, height);
     impl.renderer.draw(items);
@@ -1423,6 +1482,11 @@ std::optional<std::uint32_t> WorldMap::targetNode() const
 const Presentation& WorldMap::scene() const
 {
     return m_impl->scene;
+}
+
+const PlayerBar& WorldMap::playerBar() const
+{
+    return m_impl->playerBar;
 }
 
 const WorldMapCamera& WorldMap::camera() const

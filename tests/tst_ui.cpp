@@ -8,11 +8,15 @@
 
 #include "base/Bytes.h"
 #include "base/Error.h"
+#include "car/CarSpec.h"
+#include "data/Database.h"
+#include "data/StringTable.h"
 #include "ui/AnarkFormats.h"
 #include "ui/MapCoverage.h"
 #include "ui/MenuCommon.h"
 #include "ui/Minimap.h"
 #include "ui/Navigation.h"
+#include "ui/PlayerBar.h"
 #include "ui/Presentation.h"
 #include "ui/VectorFont.h"
 #include "ui/WorldMap.h"
@@ -1899,6 +1903,20 @@ TEST(disc_route_reaches_the_waypoint)
     CHECK(navigation.routeNodes().empty());
 }
 
+// The number formatter's digits (0x82d6d008): a separator before every
+// group of three but the first, a minus sign, and a clamp at nine digits.
+TEST(grouped_integers_follow_the_games_digit_writer)
+{
+    CHECK_EQ(formatGroupedInteger(0, ","), std::string("0"));
+    CHECK_EQ(formatGroupedInteger(500, ","), std::string("500"));
+    CHECK_EQ(formatGroupedInteger(1000, ","), std::string("1,000"));
+    CHECK_EQ(formatGroupedInteger(123456, ","), std::string("123,456"));
+    CHECK_EQ(formatGroupedInteger(1234567, "."), std::string("1.234.567"));
+    CHECK_EQ(formatGroupedInteger(-4500, ","), std::string("-4,500"));
+    CHECK_EQ(formatGroupedInteger(5'000'000'000, ","), std::string("999,999,999"));
+    CHECK_EQ(formatGroupedInteger(-5'000'000'000, ","), std::string("-999,999,999"));
+}
+
 // The road symbolizers' pick (0x82da30e0) tries only the segments beside
 // the interior point nearest the cursor, so a nearer segment elsewhere on
 // the line is not found.
@@ -1938,6 +1956,64 @@ TEST(map_line_pick_tries_the_segments_beside_the_nearest_point)
         CHECK_NEAR(near->point.y, 15.0, 1e-4);
         CHECK_NEAR(near->distance, 1.0, 1e-4);
     }
+}
+
+// "The map doesn't have the profile elements." The single-player bar's
+// texts from the profile's values: a new profile's 500 credits, the first
+// band with 220 points to the next, and the car's make and name.
+TEST(disc_player_bar_texts_from_the_profile)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const fh::Database db(vfs.readOrThrow("media/db/gamedb.slt"));
+    fh::Localisation names(vfs, "en");
+    UiStrings strings(vfs, "en");
+    const std::vector<WristbandLevel> levels = loadWristbandLevels(db, names);
+    CHECK(levels.size() >= 2);
+    if (levels.size() < 2) {
+        return;
+    }
+    CHECK_EQ(levels[0].thumbnail, std::string("Yellow"));
+    CHECK_EQ(levels[1].xp, std::int64_t{220});
+
+    PlayerBarValues values;
+    values.credits = 500;
+    values.carId = fh::carIdByMediaName(db, "ALF_8C_08");
+    PlayerBarTexts texts = PlayerBar::texts(values, levels, &db, names, strings, true);
+    CHECK_EQ(texts.credits, std::string("500 Cr"));
+    CHECK_EQ(texts.wristband, std::string("220 PTS"));
+    CHECK_EQ(texts.nextLevel, strings.get("InGame", "IDS_WristbandNextLevel"));
+    CHECK_EQ(texts.wristbandTexture, std::string("media/ui/textures/horizon/wristbands/yellow.xds"));
+    CHECK(vfs.exists(texts.wristbandTexture));
+    CHECK_EQ(texts.car, std::string("Alfa Romeo 8C Competizione"));
+
+    // Thousands are grouped, the points count down with Main/XP, and the
+    // band's image follows Main/WristbandLevel.
+    values.credits = 1'234'567;
+    values.wristbandLevel = 1;
+    values.xp = 500;
+    texts = PlayerBar::texts(values, levels, &db, names, strings, false);
+    CHECK_EQ(texts.credits, std::string("1,234,567 Cr"));
+    CHECK_EQ(texts.wristband, std::format("{} PTS", levels[2].xp - 500));
+    CHECK_EQ(texts.wristbandTexture, std::string("media/ui/textures/horizon/wristbands/green.xds"));
+
+    // With the points for the next band already earned, the bar asks to
+    // collect it.
+    values.xp = levels[2].xp;
+    texts = PlayerBar::texts(values, levels, &db, names, strings, false);
+    CHECK(texts.wristband.empty());
+    CHECK_EQ(texts.nextLevel, std::string("COLLECT ") + levels[2].name + " WRISTBAND");
+
+    // At the last band the game's text depends on the Horizon Final, which
+    // is not traced: nothing is shown.
+    values.wristbandLevel = static_cast<std::int64_t>(levels.size()) - 1;
+    texts = PlayerBar::texts(values, levels, &db, names, strings, false);
+    CHECK(texts.wristband.empty());
+    CHECK(texts.nextLevel.empty());
 }
 
 // "When a direction is selected, the number of km is supposed to be

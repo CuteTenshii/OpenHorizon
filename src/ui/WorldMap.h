@@ -2,6 +2,7 @@
 
 #include "MenuCommon.h"
 #include "Minimap.h"
+#include "PlayerBar.h"
 
 #include <glm/glm.hpp>
 
@@ -12,6 +13,7 @@
 #include <vector>
 
 namespace fh {
+class Database;
 class Vfs;
 } // namespace fh
 
@@ -194,6 +196,11 @@ struct WorldMapState {
     /// draws every road undriven. It must be of the track's network and
     /// outlive the state's use.
     const MapCoverage* coverage = nullptr;
+    /// What the player bar shows; none hides the bar.
+    std::optional<PlayerBarValues> playerBar;
+    /// The player's unit setting, which picks the number format's locale
+    /// (thousandsSeparatorId).
+    bool metric = true;
 };
 
 enum class WorldMapAction {
@@ -225,7 +232,8 @@ enum class WorldMapAction {
 /// overlay's update does at 0x828b6efc, and shows whole once the map
 /// closes, 0x828af13c), the cursor at worldMapCursorScale, and the icon
 /// symbolizers of every marker, with the profile's "default" and "intro"
-/// animations (the player's radar ping, the icons' grow).
+/// animations (the player's radar ping, the icons' grow). The scene's
+/// PLAYER_BAR shows WorldMapState::playerBar (PlayerBar).
 ///
 /// The place A sets (the overlay's update, 0x828b6998, verified): each
 /// frame the map's picker (0x82da6ab8) finds the entity nearest the cursor
@@ -256,15 +264,16 @@ enum class WorldMapAction {
 /// colour, finished wreath, NEW badge and warning note; the smoke of
 /// newly revealed events and the unlock sequences; hover animations; the
 /// off-screen arrows of clamped icons; icon snapping; online players and
-/// barn find regions; the statistics panel, the detail pins and the player
-/// bar.
+/// barn find regions; the statistics panel and the detail pins.
 ///
 /// Construct with a current OpenGL 4.5 context.
 class WorldMap {
 public:
     /// Throws fh::DataError when the scene, profile, network or tunables
-    /// cannot be read.
-    WorldMap(const Vfs& vfs, const std::string& track, const std::string& language = "en");
+    /// cannot be read. Without `database` the player bar has no wristbands
+    /// and no car.
+    WorldMap(const Vfs& vfs, const std::string& track, const std::string& language = "en",
+        const Database* database = nullptr);
     ~WorldMap();
     WorldMap(const WorldMap&) = delete;
     WorldMap& operator=(const WorldMap&) = delete;
@@ -292,6 +301,7 @@ public:
     const WorldMapMarker* hovered() const;
     /// The scene as it shows now, for reading its texts.
     const Presentation& scene() const;
+    const PlayerBar& playerBar() const;
     /// The cursor's crosshair as last drawn: its width and height in the
     /// scene's units (1280 x 720).
     glm::vec2 cursorExtent() const;

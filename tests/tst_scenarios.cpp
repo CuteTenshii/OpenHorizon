@@ -1351,6 +1351,57 @@ TEST(setRouteOnARoadAwayFromMarkers)
     CHECK(navigation->routeNodes().empty());
 }
 
+// A text the scene draws now, with some opacity.
+bool drawsText(const fh::ui::Presentation& scene, std::string_view text)
+{
+    const std::vector<fh::ui::DrawItem> items = scene.evaluate();
+    return std::any_of(items.begin(), items.end(), [&](const fh::ui::DrawItem& item) {
+        return item.isText && item.text.text == text && item.text.color.a > 0.0F;
+    });
+}
+
+// "The map doesn't have the profile elements such as wristband, credits."
+// h_map's PLAYER_BAR shows the profile's Main/Credits, the points from
+// Main/XP to the band after Main/WristbandLevel, and the car.
+TEST(mapShowsTheProfilesPlayerBar)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::GameOptions options;
+    options.profileDir = freshProfileDir("playerbar");
+    std::filesystem::create_directories(options.profileDir);
+    CHECK(fh::writeFileToDisk(options.profileDir / "ForzaProfile.xml", R"(<ForzaProfile version="1"><Profile>
+      <Property name="Main" type="PropertyBag">
+        <Property name="Credits" type="UInt32" value="1234567"/>
+        <Property name="XP" type="Int32" value="500"/>
+        <Property name="WristbandLevel" type="Int32" value="1"/>
+      </Property>
+    </Profile></ForzaProfile>)"));
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(0.5F, {});
+    session.press(fh::Button::Back);
+    session.run(1.0F, {});
+    const fh::ui::WorldMap* map = session.game().worldMap();
+    CHECK(map != nullptr && session.game().mapShown());
+    if (map == nullptr) {
+        return;
+    }
+    const fh::ui::Presentation& scene = map->scene();
+    const fh::ui::PlayerBar& bar = map->playerBar();
+    const auto textOf = [&](int element) { return element >= 0 ? scene.text(element) : std::string(); };
+    CHECK(bar.bound());
+    CHECK_EQ(textOf(bar.creditsText()), std::string("1,234,567 Cr"));
+    // The band after the green one (Id 1) needs 750 XP.
+    CHECK_EQ(textOf(bar.wristbandText()), std::string("250 PTS"));
+    CHECK_EQ(textOf(bar.nextLevelText()), std::string("Nxt Lvl"));
+    CHECK_EQ(textOf(bar.carText()), std::string("Alfa Romeo 8C Competizione"));
+    CHECK(drawsText(scene, "1,234,567 Cr"));
+    CHECK(drawsText(scene, "250 PTS"));
+    session.capture("map_player_bar");
+}
+
 // "When a direction is selected, the number of km is supposed to be
 // shown." The HUD's sat-nav readout shows the planner's distance left
 // (0x8266cf20 reads its +624) in kilometres with one decimal, and it goes

@@ -42,7 +42,7 @@ What is left before this plays like Forza Horizon, from player reports and from 
 
 ## Not started
 
-- Career and progression: wristbands, popularity, credits, the festival's event flow, showcase events. Their profile values (Main/Credits, XP, Level, WristbandLevel, the Num* counters, the assists and options, the controller bags) are read, kept and written back unchanged, not driven.
+- Career and progression: wristbands, popularity, credits, the festival's event flow, showcase events. Their profile values (Main/Credits, XP, Level, WristbandLevel, the Num* counters, the assists and options, the controller bags) are read, kept and written back unchanged, not driven; the map's player bar shows Main/Credits, Main/XP and Main/WristbandLevel as stored.
 - Upgrades, tuning and paint; the car dealer and autoshow.
 - Barn finds (hints, discovery, restoration), PR stunts, speed stunts and photo shoots (the outposts' missions), street race hubs, race encounters, the festival buildings' menus (workshop, paint shop, autoshow, car club, race central, DLC centre).
 - Photo mode, rewind (Y), the horn, replays.

@@ -17,6 +17,8 @@ add_library(fh1ui STATIC
     Navigation.h
     PauseMenu.cpp
     PauseMenu.h
+    PlayerBar.cpp
+    PlayerBar.h
     Presentation.cpp
     Presentation.h
     SuperStacker.cpp
