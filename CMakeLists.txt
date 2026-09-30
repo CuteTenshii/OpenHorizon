@@ -22,6 +22,18 @@ endif()
 
 option(FH1N_BUILD_TESTS "Build the unit tests" ON)
 
+# Every test program and tool links the whole engine with debug info, so the
+# linker is a large share of a rebuild; mold does it several times faster
+# than GNU ld. Builds without it fall back to the compiler's default linker.
+if(NOT MSVC)
+    find_program(FH1N_MOLD mold)
+    if(FH1N_MOLD)
+        add_link_options(-fuse-ld=mold)
+    else()
+        message(STATUS "mold not found: linking with the compiler's default linker")
+    endif()
+endif()
+
 # Xbox 360 archive (LZX zip) and texture (xds) decoding. To build against a
 # local checkout instead, configure with -DFETCHCONTENT_SOURCE_DIR_LZX=<path>
 # or -DFETCHCONTENT_SOURCE_DIR_XDS=<path>.

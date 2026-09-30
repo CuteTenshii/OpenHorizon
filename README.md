@@ -50,6 +50,7 @@ Requires:
 
 - CMake 3.21 or newer, Ninja and git.
 - A C++20 compiler with `std::format`: GCC 13 or Clang 17 and newer.
+- mold (optional): the build links with it when it is installed, and with the compiler's default linker otherwise.
 - The development packages of SDL3, OpenGL (with `GL/glcorearb.h`) and EGL, glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavformat, libavutil) and zlib.
 - shaderc, used only by the shader check tool and its test.
 - Catch2 3, for the tests; `-DFH1N_BUILD_TESTS=OFF` builds without them.
@@ -59,7 +60,7 @@ SDL3 is packaged from Ubuntu 25.04 on; on Ubuntu 26.04, as CI uses:
 ```sh
 sudo apt-get install cmake ninja-build g++ pkg-config git libsdl3-dev libgl-dev libegl-dev \
   libglm-dev libpugixml-dev libsqlite3-dev libfreetype-dev libfontconfig-dev \
-  libavcodec-dev libavformat-dev libavutil-dev zlib1g-dev libshaderc-dev libcatch2-dev
+  libavcodec-dev libavformat-dev libavutil-dev zlib1g-dev libshaderc-dev libcatch2-dev mold
 ```
 
 The first configure downloads lzx and xds; `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` and `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>` build against local checkouts instead.
