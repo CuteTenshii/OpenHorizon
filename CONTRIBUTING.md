@@ -19,11 +19,13 @@ You need:
 - optionally, [Lefthook](https://lefthook.dev) for the git hooks.
 
 ```sh
-cmake -S . -B build -G Ninja
+cmake -S . -B build -G Ninja -DFH1N_BUILD_TESTS=ON -DFH1N_BUILD_TOOLS=ON
 cmake --build build
 ./build/src/fh1 --game /path/to/extracted/disc   # the path is remembered afterwards
 lefthook install                                 # once, to turn on the hooks
 ```
+
+Without the two options, only the game builds. `scripts/run-tests.sh` turns the tests on itself.
 
 ## Finding out what the game does
 

@@ -36,7 +36,14 @@ Requires:
 3. From a Visual Studio "Developer PowerShell":
 
 ```powershell
-cmake --preset windows-release        # or windows-debug
+cmake --preset windows-release        # or windows-debug; the game only
+cmake --build --preset windows-release
+```
+
+Tests and tools are off by default. To build and run them:
+
+```powershell
+cmake --preset windows-release -DFH1N_BUILD_TESTS=ON -DFH1N_BUILD_TOOLS=ON
 cmake --build --preset windows-release
 ctest --preset windows-release
 $env:FH1_GAME_DIR = "D:\path\to\extracted\disc"; ctest --preset windows-release   # also the checks against real data
@@ -52,8 +59,8 @@ Requires:
 - A C++20 compiler with `std::format`: GCC 13 or Clang 17 and newer.
 - mold (optional): the build links with it when it is installed, and with the compiler's default linker otherwise.
 - The development packages of SDL3, OpenGL (with `GL/glcorearb.h`) and EGL, glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavformat, libavutil) and zlib.
-- shaderc, used only by the shader check tool and its test.
-- Catch2 3, for the tests; `-DFH1N_BUILD_TESTS=OFF` builds without them.
+- shaderc, only for the tests and the tools.
+- Catch2 3, only for the tests.
 
 SDL3 is packaged from Ubuntu 25.04 on; on Ubuntu 26.04, as CI uses:
 
@@ -66,7 +73,14 @@ sudo apt-get install cmake ninja-build g++ pkg-config git libsdl3-dev libgl-dev 
 The first configure downloads lzx and xds; `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` and `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>` build against local checkouts instead.
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo   # the game only
+cmake --build build
+```
+
+Tests and tools are off by default:
+
+```sh
+cmake -S . -B build -G Ninja -DFH1N_BUILD_TESTS=ON -DFH1N_BUILD_TOOLS=ON
 cmake --build build
 ctest --test-dir build -j 8
 FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build -j 8   # also the checks against real data
@@ -122,7 +136,7 @@ The pad follows the game's default controller layout.
 
 ## Tools
 
-The tools are built next to the game, in `build/src` and its module folders.
+Built with `-DFH1N_BUILD_TOOLS=ON`, next to the game in `build/src` and its module folders.
 
 | Tool | Does |
 |------|------|

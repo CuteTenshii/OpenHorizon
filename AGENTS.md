@@ -15,8 +15,9 @@ Knowledge sources outside the repo:
 ## Commands
 
 ```sh
-cmake -S . -B build -G Ninja            # RelWithDebInfo by default; fetches lzx and xds on first configure
-cmake --build build                      # everything
+cmake -S . -B build -G Ninja            # the game only; RelWithDebInfo by default; fetches lzx and xds on first configure
+cmake -S . -B build -DFH1N_BUILD_TESTS=ON -DFH1N_BUILD_TOOLS=ON   # tests and tools, off by default
+cmake --build build                      # everything configured
 cmake --build build --target fh1         # just the game
 ctest --test-dir build -j 8              # unit tests, a process per test case
 FH1_GAME_DIR=/path/to/disc ctest --test-dir build -j 8   # also the checks against the real disc
@@ -29,6 +30,8 @@ cmake --build build --target tidy        # clang-tidy over the compilation datab
 ```
 
 Windows builds use Visual Studio (MSVC) with dependencies from `vcpkg.json` (set `VCPKG_ROOT`): `cmake --preset windows-release`. MSVC can't run on this Linux machine: CI's Windows job builds and tests it on every push, so push and read that job's result to check Windows-specific changes.
+
+`scripts/run-tests.sh` and `scripts/capture.sh` turn the tests on; CI builds the tools too.
 
 `lzx` and `xds` come from their git repos via FetchContent, pinned by commit in the root `CMakeLists.txt`. To work against local checkouts use `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` / `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>`.
 
@@ -50,7 +53,7 @@ The game's error boxes (after a crash, or a startup error such as a missing disc
 
 A player-reported bug becomes a scenario (or a car check in `tests/tst_car.cpp` when no world is needed) that fails before the fix. Scenarios live in `tests/scenarios`, one file per area (`Menus`, `Map`, `Driving`, `World`, `Audio`, `Races`, `Activities`, `Profile`, `Perf`), all built into `tst_scenarios`. Each is a `TEST_CASE_METHOD(GameScenario, "name", "[scenario][area]")` on the shared support in `tests/scenarios/Session.h`: the `GameScenario` fixture (skips without the disc or an OpenGL context, `disc()` for reading game files), the process's one `window()`, and `Session`, which starts a game and plays it (`waitForCar`, `run`, `runUntil`, `press`, `pressTimes`, `focusPauseItem`, `capture`), with `saveProfile`, `readScene`, `RoadFollower` and the game-state readers beside it. New scenarios use these and add what is missing there rather than helpers of their own; a helper only one area needs stays in that area's file. Scenarios set up through `GameOptions` (start point, race, time, autopilot) and read the game through its read-only accessors; `Session::capture` saves a screenshot when `FH1_CAPTURE_DIR` is set. A game takes about 3 GB, so ctest runs the scenarios one at a time (they hold the lock `game`) beside the unit tests; each case logs to `fh1-scenarios-logs/<case>.log` under the temporary directory. The game folder is remembered in `~/.config/fh1-native/settings.ini`, which the scripts read when `FH1_GAME_DIR` is not set.
 
-### Tools (in `build/src/...`)
+### Tools (in `build/src/...`, built with `-DFH1N_BUILD_TOOLS=ON`)
 
 - `fh1vfs DISC list|cat|extract` - the game's file system as the engine sees it; use it to inspect any game file.
 - `fh1carspec DISC CAR|all` - a car's physics spec as read from gamedb.

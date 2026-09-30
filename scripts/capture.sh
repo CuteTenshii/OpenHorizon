@@ -28,6 +28,7 @@ export FH1_NO_CRASH_DIALOG=1
 mkdir -p "$out"
 export FH1_CAPTURE_DIR="$(cd "$out" && pwd)"
 
+cmake -S "$root" -B "$build" -G Ninja -DFH1N_BUILD_TESTS=ON
 cmake --build "$build" --target tst_scenarios
 if [[ -n "$filter" ]]; then
     "$build/tests/tst_scenarios" "*${filter}*"

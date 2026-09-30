@@ -25,9 +25,11 @@ if(WIN32)
     target_link_libraries(fh1base PRIVATE shell32 ole32 dbghelp)
 endif()
 
-add_executable(fh1vfs ../tools/fh1vfs.cpp)
-target_compile_options(fh1vfs PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1vfs PRIVATE fh1base)
+if(FH1N_BUILD_TOOLS)
+    add_executable(fh1vfs ../tools/fh1vfs.cpp)
+    target_compile_options(fh1vfs PRIVATE ${FH1N_WARNINGS})
+    target_link_libraries(fh1vfs PRIVATE fh1base)
+endif()
 
 add_library(fh1data STATIC
     data/Database.cpp
@@ -63,13 +65,15 @@ target_link_libraries(fh1platform PUBLIC fh1base SDL3::SDL3 OpenGL::GL)
 find_path(FH1N_GLCOREARB_INCLUDE_DIR GL/glcorearb.h REQUIRED)
 target_include_directories(fh1platform PUBLIC ${FH1N_GLCOREARB_INCLUDE_DIR})
 
-add_executable(fh1carspec ../tools/fh1carspec.cpp)
-target_compile_options(fh1carspec PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1carspec PRIVATE fh1data)
+if(FH1N_BUILD_TOOLS)
+    add_executable(fh1carspec ../tools/fh1carspec.cpp)
+    target_compile_options(fh1carspec PRIVATE ${FH1N_WARNINGS})
+    target_link_libraries(fh1carspec PRIVATE fh1data)
 
-add_executable(fh1cartest ../tools/fh1cartest.cpp)
-target_compile_options(fh1cartest PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1cartest PRIVATE fh1data)
+    add_executable(fh1cartest ../tools/fh1cartest.cpp)
+    target_compile_options(fh1cartest PRIVATE ${FH1N_WARNINGS})
+    target_link_libraries(fh1cartest PRIVATE fh1data)
+endif()
 add_subdirectory(world)
 
 find_package(Freetype REQUIRED)

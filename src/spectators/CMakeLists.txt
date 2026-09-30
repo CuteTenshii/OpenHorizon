@@ -17,6 +17,8 @@ add_library(fh1spectators STATIC
 target_compile_options(fh1spectators PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(fh1spectators PUBLIC fh1base fh1world glm::glm)
 
-add_executable(fh1crowd ../../tools/fh1crowd.cpp)
-target_compile_options(fh1crowd PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1crowd PRIVATE fh1spectators)
+if(FH1N_BUILD_TOOLS)
+    add_executable(fh1crowd ../../tools/fh1crowd.cpp)
+    target_compile_options(fh1crowd PRIVATE ${FH1N_WARNINGS})
+    target_link_libraries(fh1crowd PRIVATE fh1spectators)
+endif()

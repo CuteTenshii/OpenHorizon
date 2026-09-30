@@ -20,7 +20,10 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "" FORCE)
 endif()
 
-option(FH1N_BUILD_TESTS "Build the unit tests" ON)
+# The game alone by default: tests and tools add about forty programs and
+# need Catch2 and shaderc.
+option(FH1N_BUILD_TESTS "Build the unit tests and the scenarios" OFF)
+option(FH1N_BUILD_TOOLS "Build the command-line inspection tools" OFF)
 
 # Every test program and tool links the whole engine with debug info, so the
 # linker is a large share of a rebuild; mold does it several times faster

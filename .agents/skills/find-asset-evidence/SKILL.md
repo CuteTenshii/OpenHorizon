@@ -7,7 +7,7 @@ description: Find which game file, scene element, XML entry, gamedb row or strin
 
 The project rule: every asset use and value comes from the game's data or its code. When neither gives it, the feature leaves it out and says so. A plausible stand-in is a bug, even if it looks fine in a screenshot.
 
-The disc is `$FH1_GAME_DIR` (if unset, the `game` key in `~/.config/fh1-native/settings.ini`). Machine paths for the executable image and notes are in `AGENTS.local.md`. The tools are built into `build/src/` and `build/src/<module>/`; build them first (`cmake --build build`).
+The disc is `$FH1_GAME_DIR` (if unset, the `game` key in `~/.config/fh1-native/settings.ini`). Machine paths for the executable image and notes are in `AGENTS.local.md`. The tools are built into `build/src/` and `build/src/<module>/`; build them first (`cmake -S . -B build -DFH1N_BUILD_TOOLS=ON`, then `cmake --build build`).
 
 ## 1. Say what you are looking for
 

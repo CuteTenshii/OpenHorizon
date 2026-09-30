@@ -41,6 +41,7 @@ if [[ "$label_given" == false ]]; then
     set -- "$@" -LE slow
 fi
 
-cmake -S "$root" -B "$build" -G Ninja
+# A folder configured for the game alone has no tests.
+cmake -S "$root" -B "$build" -G Ninja -DFH1N_BUILD_TESTS=ON
 cmake --build "$build"
 ctest --test-dir "$build" --output-on-failure --parallel "$(getconf _NPROCESSORS_ONLN)" "$@"
