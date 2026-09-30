@@ -82,6 +82,16 @@ struct RoadDiscoveryState {
     std::vector<bool> visited;
 };
 
+/// A state of a type this engine has no system for, kept as read so that
+/// saving writes it back: its name, the game's type name and version, and
+/// its fields as properties in the order read.
+struct OtherState {
+    std::string name;
+    std::string type;
+    int version = 0;
+    std::vector<Property> fields;
+};
+
 /// The game state this engine reads and writes. Activity states are keyed by
 /// the activity's name: the activity asks for its state with its name
 /// string (+16, passed to 0x82965530 at 0x82972e7c); that the name is the
@@ -93,8 +103,8 @@ struct GameState {
     std::map<std::string, SpeedCameraState, std::less<>> speedCameras;
     std::map<std::string, FlyerState, std::less<>> flyers;
     std::map<std::string, GasStationState, std::less<>> gasStations;
-    /// States of other types, kept as the XML elements they were read as.
-    std::vector<std::string> otherStates;
+    /// States of other types, in the order read.
+    std::vector<OtherState> otherStates;
 };
 
 /// One player's profile: the schema's properties with their current values,

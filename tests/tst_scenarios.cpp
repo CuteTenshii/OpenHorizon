@@ -925,7 +925,7 @@ TEST(progressIsKeptAcrossRestarts)
             driven = navigation->coverage().visitedNodes();
         }
         CHECK(std::count(driven.begin(), driven.end(), true) > 0);
-        CHECK(std::filesystem::exists(options.profileDir / "ForzaProfile.xml"));
+        CHECK(std::filesystem::exists(options.profileDir / "ForzaProfile.bin"));
         session.run(0.5F, {});
     }
     Session session(options);
@@ -1381,14 +1381,15 @@ TEST(mapShowsTheProfilesPlayerBar)
     }
     fh::GameOptions options;
     options.profileDir = freshProfileDir("playerbar");
-    std::filesystem::create_directories(options.profileDir);
-    CHECK(fh::writeFileToDisk(options.profileDir / "ForzaProfile.xml", R"(<ForzaProfile version="1"><Profile>
-      <Property name="Main" type="PropertyBag">
-        <Property name="Credits" type="UInt32" value="1234567"/>
-        <Property name="XP" type="Int32" value="500"/>
-        <Property name="WristbandLevel" type="Int32" value="1"/>
-      </Property>
-    </Profile></ForzaProfile>)"));
+    {
+        fh::Vfs vfs;
+        vfs.mountDisc(gameDir());
+        fh::profile::Profile profile(fh::profile::ProfileSchema::load(vfs));
+        CHECK(profile.set("Main/Credits", std::uint64_t{1234567}));
+        CHECK(profile.set("Main/XP", std::int64_t{500}));
+        CHECK(profile.set("Main/WristbandLevel", std::int64_t{1}));
+        CHECK(fh::profile::ProfileStore(options.profileDir).save(profile));
+    }
     Session session(options);
     CHECK(session.waitForCar());
     session.run(0.5F, {});
