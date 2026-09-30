@@ -18,6 +18,7 @@
 
 #include <knownfolders.h>
 #include <objbase.h>
+#include <shellapi.h>
 #include <shlobj.h>
 #else
 #include <cerrno>
@@ -184,6 +185,52 @@ std::uint32_t processId()
 #else
     return static_cast<std::uint32_t>(::getpid());
 #endif
+}
+
+std::filesystem::path currentExecutablePath()
+{
+#ifdef _WIN32
+    std::wstring buffer(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (length == 0) {
+            return {};
+        }
+        // A full buffer means the name was cut short: grow and ask again.
+        if (length < buffer.size()) {
+            buffer.resize(length);
+            return std::filesystem::path(buffer);
+        }
+        buffer.resize(buffer.size() * 2);
+    }
+#else
+    std::error_code error;
+    std::filesystem::path path = std::filesystem::read_symlink("/proc/self/exe", error);
+    return error ? std::filesystem::path() : path;
+#endif
+}
+
+std::vector<std::string> commandLineArguments(int argc, char** argv)
+{
+#ifdef _WIN32
+    int count = 0;
+    wchar_t** wide = CommandLineToArgvW(GetCommandLineW(), &count);
+    if (wide) {
+        std::vector<std::string> arguments;
+        arguments.reserve(static_cast<std::size_t>(count));
+        for (int i = 0; i < count; ++i) {
+            arguments.push_back(narrow(wide[i]));
+        }
+        LocalFree(wide);
+        return arguments;
+    }
+#endif
+    std::vector<std::string> arguments;
+    arguments.reserve(static_cast<std::size_t>(std::max(argc, 0)));
+    for (int i = 0; i < argc; ++i) {
+        arguments.emplace_back(argv[i]);
+    }
+    return arguments;
 }
 
 void raiseOpenFileLimit()

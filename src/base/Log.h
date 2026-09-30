@@ -23,6 +23,17 @@ bool openLogFile(const std::filesystem::path& path);
 /// Linux, `%LOCALAPPDATA%\fh1-native\logs` on Windows (see UserFolder).
 std::filesystem::path defaultLogPath();
 
+/// The open log file's descriptor (a C runtime descriptor on Windows), or
+/// -1 when none is open. For the crash handler, which writes its report
+/// through the descriptor because a signal handler may take no lock.
+int logFileDescriptor() noexcept;
+
+/// Writes out whatever the log file still holds in memory, unless another
+/// thread is writing to it at that moment. For the crash handler outside a
+/// signal handler: Windows' C runtime fully buffers the file even when
+/// asked for line buffering, so its last lines would otherwise be lost.
+void tryFlushLogFile() noexcept;
+
 /// True if a message at `level` goes anywhere.
 bool logEnabled(LogLevel level);
 

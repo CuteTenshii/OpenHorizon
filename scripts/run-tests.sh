@@ -21,9 +21,11 @@ if [[ -z "${FH1_GAME_DIR:-}" ]]; then
     fi
 fi
 
-# Never open windows on the desktop or play through the speakers.
+# Never open windows on the desktop or play through the speakers, and
+# never wait on an error box after a crash.
 export SDL_VIDEO_DRIVER=offscreen
 export SDL_AUDIO_DRIVER=dummy
+export FH1_NO_CRASH_DIALOG=1
 
 label_given=false
 for arg in "$@"; do

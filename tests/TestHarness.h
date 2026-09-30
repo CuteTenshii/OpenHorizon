@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <format>
 #include <functional>
@@ -66,6 +67,14 @@ template <typename T> std::string show(const T& value)
 /// ones when it is empty; kSlowFilter runs the slow tests alone.
 inline int runAllTests(std::string_view filter = {})
 {
+    // Keeps every error box of the game closed (see kNoCrashDialogVariable
+    // in base/Crash.h), in this process and the ones it starts: a crash
+    // under test must end the run, not wait on a click.
+#ifdef _WIN32
+    _putenv_s("FH1_NO_CRASH_DIALOG", "1");
+#else
+    setenv("FH1_NO_CRASH_DIALOG", "1", 1);
+#endif
     const bool slowOnly = filter == kSlowFilter;
     int failedTests = 0;
     int ran = 0;

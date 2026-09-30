@@ -23,6 +23,7 @@ fi
 export FH1_GAME_DIR
 export SDL_VIDEO_DRIVER=offscreen
 export SDL_AUDIO_DRIVER=dummy
+export FH1_NO_CRASH_DIALOG=1
 mkdir -p "$out"
 export FH1_CAPTURE_DIR="$(cd "$out" && pwd)"
 

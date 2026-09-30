@@ -4,6 +4,13 @@ target_link_libraries(tst_base PRIVATE fh1base)
 # UTF-8 paths, user folders and the file system on host paths; needs no disc.
 add_test(NAME tst_base COMMAND tst_base)
 
+add_executable(tst_crash TestHarness.h tst_crash.cpp)
+target_compile_options(tst_crash PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_crash PRIVATE fh1base)
+# Starts itself as a child that crashes on purpose and checks the child's
+# log and exit status, then the texts of the error boxes; needs no disc.
+add_test(NAME tst_crash COMMAND tst_crash)
+
 add_executable(tst_world TestHarness.h tst_world.cpp)
 target_compile_options(tst_world PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_world PRIVATE fh1world)

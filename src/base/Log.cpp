@@ -16,6 +16,7 @@ namespace {
 std::atomic<LogLevel> g_level{LogLevel::Info};
 // Read on every log call without the mutex, so the check stays cheap.
 std::atomic<bool> g_fileOpen{false};
+std::atomic<int> g_fileDescriptor{-1};
 std::mutex g_mutex;
 std::FILE* g_file = nullptr;
 const auto g_start = std::chrono::steady_clock::now();
@@ -40,6 +41,7 @@ struct FileCloser {
     {
         const std::lock_guard lock(g_mutex);
         if (g_file) {
+            g_fileDescriptor = -1;
             std::fclose(g_file);
             g_file = nullptr;
             g_fileOpen = false;
@@ -58,6 +60,22 @@ void setLogLevel(LogLevel level)
 LogLevel logLevel()
 {
     return g_level;
+}
+
+int logFileDescriptor() noexcept
+{
+    return g_fileDescriptor;
+}
+
+void tryFlushLogFile() noexcept
+{
+    if (!g_mutex.try_lock()) {
+        return;
+    }
+    if (g_file) {
+        std::fflush(g_file);
+    }
+    g_mutex.unlock();
 }
 
 bool logEnabled(LogLevel level)
@@ -99,6 +117,11 @@ bool openLogFile(const std::filesystem::path& path)
         }
         g_file = file;
         g_fileOpen = true;
+#ifdef _WIN32
+        g_fileDescriptor = _fileno(file);
+#else
+        g_fileDescriptor = fileno(file);
+#endif
     }
     logInfo("log: writing to {}", pathToUtf8(path));
     return true;

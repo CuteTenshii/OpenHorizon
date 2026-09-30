@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace fh {
 
@@ -24,6 +25,17 @@ void setEnvironmentVariable(const char* name, std::string_view value, bool overw
 void unsetEnvironmentVariable(const char* name);
 
 std::uint32_t processId();
+
+/// The running program's own file (/proc/self/exe on Linux,
+/// GetModuleFileNameW on Windows), or an empty path if the system will not
+/// say.
+std::filesystem::path currentExecutablePath();
+
+/// The command line as UTF-8, program name first. On Windows it is read
+/// again from the wide command line, since `argv` there is in the process
+/// code page and loses the characters that page cannot spell; elsewhere
+/// it is `argv` as given.
+std::vector<std::string> commandLineArguments(int argc, char** argv);
 
 /// Raises the number of files the process may hold open at once to what
 /// the game's file system needs: a disc mounts 524 archives, and each stays
