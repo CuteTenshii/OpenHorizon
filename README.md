@@ -8,35 +8,21 @@ The repository contains no game data.
 
 | Area | State |
 |------|-------|
-| Files | The disc's 524 archives mount as the game mounts them (`media/zipmanifest.xml`), with case-insensitive `game:\` paths; LZX archives through [lzx](https://git.tenshii.moe/Tenshii/lzx). |
-| World | Colorado streams in 500 m tiles with level of detail by distance, drawn with the game's own textures (through [xds](https://git.tenshii.moe/Tenshii/xds)): terrain with its splat-blended layers, roads, towns, props and about 128,600 procedural trees, bushes and rocks. |
-| Lighting | Sun, sky and haze follow the track's time-of-day curves (`TimeOfDayA.xml`), on a clock that starts at 16:00 and runs 48 times real time, as free roam does. The filmic tone curve uses the game's parameters. |
-| Cars | All 176 drivable cars load their physics from `gamedb.slt`: torque curves, gearboxes, clutches, differentials, tyre compounds and their friction curves, springs, dampers, anti-roll bars and aerodynamics. |
-| Driving | A 360 Hz vehicle simulation. Against the performance figures the game itself recorded for every car, the median error is 2.2% for cornering grip, 3.2% for the quarter mile, 4.4% for braking and 5.5% for top speed (see `fh1cartest`). ABS, traction control, stability control and the automatic gearbox are available. |
-| Collision | The ground comes from the finest render geometry near the car, trees have trunks, and cars collide with the world and each other. |
-| Races | The 118 races of Colorado from the game database, with their real names, routes, grids, opponents and AI skill. AI drivers follow the game's racing lines. Countdown, positions, laps, a driving line coloured by braking need, and results. |
+| Files | The disc's archives mount as the game mounts them (`media/zipmanifest.xml`), with case-insensitive `game:\` paths; LZX archives through [lzx](https://git.tenshii.moe/Tenshii/lzx), textures through [xds](https://git.tenshii.moe/Tenshii/xds). |
+| World | Colorado streams around the car, and each model and prop is drawn by the game's own rule: the camera's zone lists it and its distance lies in its level-of-detail band. The track's surfaces, props and procedural trees, bushes and rocks are drawn with the game's own shaders, translated from the Xbox 360's GPU code. Animated objects (wind turbines, fairground rides, balloons, farm machines) play, and the festival and race crowds stand and cheer. |
+| Lighting | Sun, moon, stars, sky and clouds follow the track's time-of-day curves. Sun shadows use the game's cached levels and near cascades. The game's post-processing runs: adaptive exposure, bloom, filmic tone curve, grading tables, vignettes and the post-processing zones. |
+| Cars | All 176 drivable cars load their physics from `gamedb.slt` and their models from the disc, drawn with the game's car shaders and reflecting a live environment cube map. |
+| Driving | A 360 Hz vehicle simulation, steered through the game's own stick shaping. Against the performance figures the game recorded for every car, the median errors are 5.0% for cornering grip, 5.4% for the quarter mile, 6.1% for braking and 8.2% for top speed (see `fh1cartest`). |
+| Collision | The game's collision meshes, with a surface type per triangle, plus walls, invisible barriers and the race's barriers. Cars hit the world and each other as the game's contact response does, and breakable props come apart. |
+| Sound | Engines, tyres, impacts and scrapes, smashed props, the speed trap shutter, menu sounds and the radio stations, mixed through the game's snapshots (pause, loading, race, crash). |
+| Menus and HUD | Drawn from the game's own UI scenes: the title screen, loading screens with tips, the HUD with its minimap and rev dial, the pause menu, and the full map with roads coloured by type, discovered roads, routes, the sat-nav and the player bar. |
+| Free roam | Traffic and festival drivers, speed traps, Horizon outposts to discover, discount signs to smash, and event starts with their activation prompts. Progress is saved to a profile. |
+| Races | Colorado's races from the game database, with their real names, routes, grids, opponents and AI skill: countdown, positions, laps, the finish, and a driving line coloured by braking need. |
+| Stability | A crash writes a backtrace to the log and shows where the log is; startup problems (no game folder, no OpenGL 4.5) explain what to fix. |
 
-## Not done yet
-
-- Car models: cars are drawn as outlines until the `.carbin` format is decoded.
-- Sound: engine and world audio (FMOD banks with XMA samples).
-- The game's collision meshes (`.fiz`), which carry a surface type per triangle; until then every surface grips like tarmac.
-- Menus and HUD from the game's own UI files (`.bgf`, `.bsg`, `.fbf`); a plain HUD stands in.
-- Traffic, the career and its progression, festival and showcase events, barn finds, speed traps, upgrades and tuning, photo mode, saving, and online play.
+What is missing, in progress or planned is in [TODO.md](TODO.md).
 
 ## Build
-
-### Linux
-
-Requires CMake 3.21 or newer, a C++20 compiler (GCC 13 or Clang 17), and the development packages of SDL3, OpenGL (with `GL/glcorearb.h`), glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavformat, libavutil), zlib and shaderc (used only by the shader check tool and its test). The first configure downloads lzx and xds; `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` and `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>` build against local checkouts instead.
-
-```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build
-ctest --test-dir build
-FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build   # also the checks against real data
-scripts/run-tests.sh                                           # all of it offscreen, scenarios included
-```
 
 ### Windows
 
@@ -50,9 +36,30 @@ Requires Visual Studio 2022 or later (the "Desktop development with C++" workloa
 cmake --preset windows-release        # or windows-debug
 cmake --build --preset windows-release
 ctest --preset windows-release
+$env:FH1_GAME_DIR = "D:\path\to\extracted\disc"; ctest --preset windows-release   # also the checks against real data
 ```
 
-Visual Studio can also open the folder directly and offers the same presets. The executables land in `build-windows\src` with the DLLs they need copied next to them.
+The first configure also downloads lzx and xds with git, so git must be on the path (the Visual Studio installer offers Git for Windows as a component). Visual Studio can also open the folder directly and offers the same presets. The executables land in `build-windows\src` with the DLLs they need copied next to them.
+
+### Linux
+
+Requires CMake 3.21 or newer, Ninja, git, a C++20 compiler with `std::format` (GCC 13 or Clang 17 and newer), and the development packages of SDL3, OpenGL (with `GL/glcorearb.h`) and EGL, glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavformat, libavutil), zlib and shaderc (used only by the shader check tool and its test). SDL3 is packaged from Ubuntu 25.04 on; on Ubuntu 26.04, as CI uses:
+
+```sh
+sudo apt-get install cmake ninja-build g++ pkg-config git libsdl3-dev libgl-dev libegl-dev \
+  libglm-dev libpugixml-dev libsqlite3-dev libfreetype-dev libfontconfig-dev \
+  libavcodec-dev libavformat-dev libavutil-dev zlib1g-dev libshaderc-dev
+```
+
+The first configure downloads lzx and xds; `-DFETCHCONTENT_SOURCE_DIR_LZX=<path>` and `-DFETCHCONTENT_SOURCE_DIR_XDS=<path>` build against local checkouts instead.
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build
+ctest --test-dir build
+FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build   # also the checks against real data
+scripts/run-tests.sh                                           # all of it offscreen, scenarios included
+```
 
 Contributing, testing and the git hooks: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -103,26 +110,46 @@ The pad follows the game's default controller layout.
 
 ## Tools
 
+The tools are built next to the game, in `build/src` and its module folders.
+
 | Tool | Does |
 |------|------|
-| `fh1vfs DISC list FOLDER`, `cat PATH`, `extract PATH FILE` | The game's file system as the engine sees it. |
-| `fh1carspec DISC CAR` or `all` | The physics specification read for a car. |
-| `fh1cartest DISC CAR` or `all` | Runs cars through the game's performance tests and compares with its recorded results. |
-| `fh1world DISC TRACK` | Loads a track's world index, tile meshes and textures, and reports counts and timings. |
+| `fh1vfs` | The game's file system as the engine sees it: list, print or extract any file. |
+| `fh1carspec` | The physics specification read for a car, or for all of them. |
+| `fh1cartest` | Runs cars through the game's performance tests and compares with its recorded results. |
+| `fh1carmodel` | Loads a car's models and reports parts, materials, textures and wheels; exports OBJ. |
+| `fh1world` | Loads a track's world as the streamer does; `--sizes` measures the whole map. |
+| `fh1fiz` | The track's collision meshes: statistics, surfaces at a point, OBJ export. |
+| `fh1shader` | Lists, disassembles and translates the game's compiled shaders. |
+| `fh1particles` | The game's particle effects and the tyre effects per surface, with offscreen renders. |
+| `fh1crowd` | A track's crowd: what was read, who stands where, checks against the ground. |
+| `fh1audio` | Sound banks and FMOD events; renders a car's engine and tyre sounds. |
+| `fh1radio` | The radio's stations, tracks and DJ lines; renders a station offline. |
+| `fh1ui` | UI fonts, scene trees and textures; renders the HUD for sample states. |
+| `fh1menu` | A scene's contracts and handlers; renders the menus, map and loading screen. |
 
 ## Layout
 
 | Folder | Contents |
 |--------|----------|
-| `src/base` | Logging, big-endian reading, the job pool, settings. |
+| `src/base` | Platform layer (`Host`), logging, big-endian reading, the job pool, settings, the crash handler. |
 | `src/vfs` | The game's file system over the disc and its archives. |
 | `src/data` | The game database and string tables. |
 | `src/world` | Track world formats: render models, zones, placements, procedural sets, textures, tile meshes. |
+| `src/collision`, `src/physics` | The game's collision meshes and surfaces, and the world queries the cars use. |
 | `src/car` | Car specifications from the database, and the vehicle simulation. |
-| `src/physics` | Collision with the world. |
-| `src/render` | OpenGL 4.5 renderer: world, sky, tonemapping, overlays. |
-| `src/game` | Free roam, races, AI drivers, time of day. |
+| `src/carmodel` | Car render models and materials. |
+| `src/xenos` | Translation of the game's Xbox 360 shaders to GLSL. |
+| `src/render` | OpenGL 4.5 renderer: world, cars, sky, clouds, shadows, crowds, animated objects, post-processing. |
+| `src/animated` | Animated world objects and their Granny animations. |
+| `src/spectators` | Crowd placement and animation. |
+| `src/particles` | Particle effects. |
+| `src/audio`, `src/radio` | Sound banks, the mixer, engine and collision sounds; the radio stations. |
+| `src/ui` | The game's UI scenes: HUD, menus, map, loading and title screens. |
+| `src/profile` | The saved profile and its schema. |
+| `src/game` | Free roam, races, AI drivers, traffic, activities, time of day. |
 | `src/platform` | Window, OpenGL context and input (SDL3). |
+| `src/app` | The `fh1` executable. |
 | `tools`, `tests` | Command-line tools and tests. |
 
 ## Coordinates
