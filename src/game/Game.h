@@ -99,6 +99,12 @@ struct GameOptions {
     /// The folder of the player's profile; profile::ProfileStore's default
     /// (under XDG_DATA_HOME) when empty.
     std::filesystem::path profileDir;
+    /// A traffic car (media name) standing at `parkedAt`, facing
+    /// `parkedHeading`, with nobody driving it, placed with the player; the
+    /// scenario tests drive into it.
+    std::string parkedCar;
+    glm::vec2 parkedAt{0.0F};
+    float parkedHeading = 0.0F;
 };
 
 /// Free roam and races: the track's world streamed around the player's car,
@@ -154,6 +160,8 @@ public:
     bool inControl() const;
     LoadingStatus loadingStatus() const;
     const CarPhysics& playerCar() const { return *m_vehicles.front()->physics; }
+    /// The car GameOptions::parkedCar placed, while it is in the world.
+    const CarPhysics* parkedCar() const;
     const render::Camera& camera() const { return m_camera; }
     bool menuShown() const { return menuOpen(); }
     bool pauseShown() const { return m_pause && m_pause->isOpen(); }
@@ -257,6 +265,12 @@ private:
         std::unique_ptr<CarSpec> spec;
         std::unique_ptr<CarPhysics> physics;
         std::vector<BodySphere> spheres;
+        /// Its shape against other cars (carContactSpheres, or its bounding
+        /// box where carContactIsBox), and how far that reaches from the
+        /// car's origin.
+        std::vector<CarSpec::CollisionSphere> bodySpheres;
+        bool bodyBox = false;
+        float bodyReach = 0.0F;
         std::unique_ptr<AiDriver> ai;
         /// The engine, exhaust and tyres as heard; missing without audio.
         std::unique_ptr<audio::EngineSound> engine;
@@ -517,6 +531,7 @@ private:
     /// after a station change or new track has run out.
     std::optional<radio::RadioNowPlaying> m_radioPanel;
     std::vector<std::unique_ptr<Vehicle>> m_vehicles;
+    const CarPhysics* m_parkedCar = nullptr;
     std::optional<Smashables> m_smashables;
     /// The discount signs and which were smashed; missing if the game
     /// mode lists none.
@@ -528,6 +543,10 @@ private:
     bool m_hiddenChanged = false;
     float m_debrisAccumulator = 0.0F;
     std::vector<physics::SphereContact> m_contacts;
+    std::vector<WorldContact> m_worldContacts;
+    /// Per surface type, a car's FrictionCoefficient and
+    /// LowSpeedFrictionCoefficient against it; filled on first use.
+    std::vector<std::pair<float, float>> m_carSurfaceFriction;
     bool m_playerPlaced = false;
     glm::vec3 m_spawnPosition{0.0F};
     float m_spawnHeading = 0.0F;

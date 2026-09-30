@@ -133,7 +133,7 @@ add_test(NAME tst_envcube COMMAND tst_envcube)
 
 add_executable(tst_car TestHarness.h tst_car.cpp)
 target_compile_options(tst_car PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_car PRIVATE fh1data)
+target_link_libraries(tst_car PRIVATE fh1data fh1collision)
 # The real cars on a flat or tilted plane; skips without FH1_GAME_DIR.
 add_test(NAME tst_car COMMAND tst_car)
 

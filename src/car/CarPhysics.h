@@ -6,6 +6,8 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <array>
+#include <span>
+#include <vector>
 
 namespace fh {
 
@@ -63,6 +65,30 @@ struct DrivingAssists {
     /// stick maps straight onto SteerMaxAngleFiltered, which the AI drivers
     /// and the performance harness rely on.
     bool speedSensitiveSteering = true;
+};
+
+/// A point where the car's body overlaps the static world.
+struct WorldContact {
+    glm::vec3 point{0.0F};
+    /// Out of the surface.
+    glm::vec3 normal{0.0F, 1.0F, 0.0F};
+    /// Penetration, metres.
+    float depth = 0.0F;
+    /// The surface pair's FrictionCoefficient and LowSpeedFrictionCoefficient
+    /// (surfaceTypes.xml, car against the surface's category). The defaults
+    /// are the friction the game uses for a pair it does not find
+    /// (0x82E0B9DC).
+    float friction = 0.5F;
+    float lowSpeedFriction = 0.5F;
+};
+
+/// A point where two cars' bodies overlap: `point` on the second car's
+/// surface, `normal` out of the second car towards the first, and `depth`
+/// how far the first reaches into the second along it.
+struct CarContact {
+    glm::vec3 point{0.0F};
+    glm::vec3 normal{0.0F, 1.0F, 0.0F};
+    float depth = 0.0F;
 };
 
 /// Which assists acted on the last physics step, for the HUD's assist
@@ -161,14 +187,12 @@ public:
     /// Adds an impulse at a world point, for collisions. `angularScale`
     /// scales the turning part, as the game's collision torque scales do.
     void applyImpulse(const glm::vec3& impulse, const glm::vec3& worldPoint, float angularScale = 1.0F);
-    /// Resolves the body touching a static surface at `point` with surface
-    /// normal `normal` (pointing out of the surface) and penetration
-    /// `depth`: an impulse that stops the approach, with Coulomb friction
-    /// up to `friction` times the normal impulse, and a partial push out of
-    /// the surface. Returns the normal impulse applied (N·s), for damage and
-    /// sound.
-    float resolveContact(const glm::vec3& point, const glm::vec3& normal, float depth, float restitution,
-        float friction);
+    /// Resolves the body's overlaps with the static world after a step as
+    /// the game does: impulses that stop the approach and resist sliding,
+    /// turning the car only by the settings' car-world torque scale at its
+    /// speed, and a move out of the overlap. Returns the largest normal
+    /// impulse applied (N·s), for damage and sound.
+    float resolveWorldContacts(std::span<const WorldContact> contacts, const CollisionSettings& settings);
     /// Moves the car without changing its motion, to resolve penetration.
     void translate(const glm::vec3& offset) { m_cgPosition += offset; }
     /// Sets the car upright and still where it is.
@@ -288,5 +312,21 @@ private:
     AssistActivity m_assistActivity;
     float m_accumulator = 0.0F;
 };
+
+/// Appends where car `a` overlaps car `b`, as contacts on `b`: each car's
+/// shape is its spheres (in car space), or with `boxA` / `boxB` its
+/// bounding box (see carContactIsBox()). Two boxes meet through the first
+/// car's spheres.
+void findCarContacts(const CarPhysics& a, std::span<const CarSpec::CollisionSphere> spheresA, bool boxA,
+    const CarPhysics& b, std::span<const CarSpec::CollisionSphere> spheresB, bool boxB, std::vector<CarContact>& out);
+
+/// Resolves two cars' overlaps after a step as the game's response to a
+/// pair of bodies does (0x82E04A60): impulses along the normals only, which
+/// turn each car by only `turnA` or `turnB` of their share, and remove
+/// (1 + `restitution`) of the approach speed, so a negative restitution
+/// leaves some of it; and moves that take both cars out of the overlap,
+/// the lighter one further. Returns the largest impulse applied (N·s).
+float resolveCarContacts(
+    CarPhysics& a, CarPhysics& b, std::span<const CarContact> contacts, float turnA, float turnB, float restitution);
 
 } // namespace fh

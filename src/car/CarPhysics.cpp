@@ -209,41 +209,193 @@ float CarPhysics::impulseResponse(const glm::vec3& worldPoint, const glm::vec3& 
     return 1.0F / m_mass + glm::dot(direction, angular) * angularScale;
 }
 
-float CarPhysics::resolveContact(
-    const glm::vec3& point, const glm::vec3& normal, float depth, float restitution, float friction)
+float CarPhysics::resolveWorldContacts(std::span<const WorldContact> contacts, const CollisionSettings& settings)
 {
-    const glm::vec3 r = point - m_cgPosition;
+    // After the game's response to a car's contacts with the static world
+    // (0x82DD2750, called for the car through 0x82DD5C20 from 0x82DF8D50).
+    // Verified there: one pass over the contacts in order, each seeing the
+    // velocities the ones before it left; a normal impulse that only stops
+    // the approach (its bounce term multiplies by a zero register, so the
+    // surface pair's Elasticity does not enter); Coulomb friction against
+    // the sliding velocity from before that contact's normal impulse, up to
+    // the pair's friction times the normal impulse; both impulses turning
+    // the car by only a share, the torque scale, which also enters their
+    // effective masses; and the overlap removed by moving the car, not by
+    // velocity, along each normal as far as the moves before it have not
+    // already covered. Inferred: the vector argument it compares with each
+    // contact's depth less its approach speed is the step's length; for the
+    // overlapping contacts given here that test always passes.
+    // Missing: a flag in the contact's packed normal that gives a contact
+    // the full turning share (what sets it has not been traced), and the
+    // per-surface CarWorldCollFricMods, which only differ from 1 for a car
+    // tipped past 30 degrees and whose use has not been traced.
+    const float torqueScale = settings.carWorldTorqueScaleAt(speed());
+    const float frictionBlend = settings.frictionBlendAt(speed());
     const glm::mat3 inverseInertia = worldInverseInertia();
-    const auto effectiveMass = [&](const glm::vec3& direction) {
+    const auto response = [&](const glm::vec3& r, const glm::vec3& direction) {
         const glm::vec3 angular = glm::cross(inverseInertia * glm::cross(r, direction), r);
-        return 1.0F / (1.0F / m_mass + glm::dot(direction, angular));
+        return 1.0F / m_mass + torqueScale * glm::dot(direction, angular);
     };
-    const glm::vec3 velocity = worldPointVelocity(point);
-    const float approach = glm::dot(velocity, normal);
-    float normalImpulse = 0.0F;
-    if (approach < 0.0F) {
-        // Slow contacts do not bounce, so a car resting against a wall stays
-        // there instead of jittering.
-        const float bounce = approach < -2.0F ? restitution : 0.0F;
-        normalImpulse = -(1.0F + bounce) * approach * effectiveMass(normal);
-        applyImpulse(normal * normalImpulse, point);
+    // The game's threshold below which a contact is not sliding: 13 << 26,
+    // FLT_EPSILON, built with vspltisw and vslw at 0x82DD28F8.
+    constexpr float kSlidingEpsilon = 1.1920929e-7F;
+    float largest = 0.0F;
+    glm::vec3 pushOut(0.0F);
+    for (const WorldContact& contact : contacts) {
+        const glm::vec3 r = contact.point - m_cgPosition;
+        const glm::vec3 velocity = worldPointVelocity(contact.point);
+        const float approach = glm::dot(velocity, contact.normal);
+        const float normalImpulse = std::max(0.0F, -approach / response(r, contact.normal));
+        applyImpulse(contact.normal * normalImpulse, contact.point, torqueScale);
 
-        const glm::vec3 after = worldPointVelocity(point);
-        glm::vec3 tangent = after - normal * glm::dot(after, normal);
-        const float slide = glm::length(tangent);
-        if (slide > 1e-4F) {
-            tangent /= slide;
-            const float frictionImpulse = std::min(slide * effectiveMass(tangent), friction * normalImpulse);
-            applyImpulse(-tangent * frictionImpulse, point);
+        const glm::vec3 sliding = velocity - contact.normal * approach;
+        const float slide = glm::length(sliding);
+        if (slide >= kSlidingEpsilon) {
+            const glm::vec3 tangent = -sliding / slide;
+            const float friction
+                = contact.lowSpeedFriction + frictionBlend * (contact.friction - contact.lowSpeedFriction);
+            const float frictionImpulse = std::min(slide / response(r, tangent), friction * normalImpulse);
+            applyImpulse(tangent * frictionImpulse, contact.point, torqueScale);
+        }
+
+        const float uncovered = contact.depth - glm::dot(pushOut, contact.normal);
+        if (uncovered >= 0.0F) {
+            pushOut += contact.normal * uncovered;
+        }
+        largest = std::max(largest, normalImpulse);
+    }
+    m_cgPosition += pushOut;
+    return largest;
+}
+
+namespace {
+
+/// Appends where `spheres` of `car` overlap the bounding box of `boxCar`,
+/// as contacts on the box: the normal out of the box towards the sphere.
+void spheresAgainstBox(const CarPhysics& car, std::span<const CarSpec::CollisionSphere> spheres,
+    const CarPhysics& boxCar, std::vector<CarContact>& out)
+{
+    const glm::mat4 boxToWorld = boxCar.transform();
+    const glm::mat4 toBox = glm::inverse(boxToWorld) * car.transform();
+    const CarSpec& spec = boxCar.spec();
+    const glm::vec3 lo(spec.boundsMin[0], spec.boundsMin[1], spec.boundsMin[2]);
+    const glm::vec3 hi(spec.boundsMax[0], spec.boundsMax[1], spec.boundsMax[2]);
+    for (const CarSpec::CollisionSphere& sphere : spheres) {
+        const glm::vec3 centre(toBox * glm::vec4(sphere.centre[0], sphere.centre[1], sphere.centre[2], 1.0F));
+        glm::vec3 surface = glm::clamp(centre, lo, hi);
+        glm::vec3 normal = centre - surface;
+        float depth = 0.0F;
+        const float outside = glm::length(normal);
+        if (outside > 1e-5F) {
+            if (outside >= sphere.radius) {
+                continue;
+            }
+            normal /= outside;
+            depth = sphere.radius - outside;
+        } else {
+            // The centre is inside: out through the nearest face.
+            const glm::vec3 below = centre - lo;
+            const glm::vec3 above = hi - centre;
+            int axis = 0;
+            float nearest = std::min(below.x, above.x);
+            for (int i = 1; i < 3; ++i) {
+                const float distance = std::min(below[i], above[i]);
+                if (distance < nearest) {
+                    nearest = distance;
+                    axis = i;
+                }
+            }
+            normal = glm::vec3(0.0F);
+            normal[axis] = below[axis] < above[axis] ? -1.0F : 1.0F;
+            surface[axis] = below[axis] < above[axis] ? lo[axis] : hi[axis];
+            depth = sphere.radius + nearest;
+        }
+        out.push_back({glm::vec3(boxToWorld * glm::vec4(surface, 1.0F)),
+            glm::normalize(glm::vec3(boxToWorld * glm::vec4(normal, 0.0F))), depth});
+    }
+}
+
+} // namespace
+
+void findCarContacts(const CarPhysics& a, std::span<const CarSpec::CollisionSphere> spheresA, bool boxA,
+    const CarPhysics& b, std::span<const CarSpec::CollisionSphere> spheresB, bool boxB, std::vector<CarContact>& out)
+{
+    if (boxB) {
+        spheresAgainstBox(a, spheresA, b, out);
+        return;
+    }
+    if (boxA) {
+        // Found on the first car's box, then turned round to be on the
+        // second's spheres: the point moves to the sphere's deepest point.
+        const std::size_t first = out.size();
+        spheresAgainstBox(b, spheresB, a, out);
+        for (std::size_t i = first; i < out.size(); ++i) {
+            CarContact& contact = out[i];
+            contact.normal = -contact.normal;
+            contact.point += contact.normal * contact.depth;
+        }
+        return;
+    }
+    const glm::mat4 ta = a.transform();
+    const glm::mat4 tb = b.transform();
+    for (const CarSpec::CollisionSphere& sa : spheresA) {
+        const glm::vec3 ca(ta * glm::vec4(sa.centre[0], sa.centre[1], sa.centre[2], 1.0F));
+        for (const CarSpec::CollisionSphere& sb : spheresB) {
+            const glm::vec3 cb(tb * glm::vec4(sb.centre[0], sb.centre[1], sb.centre[2], 1.0F));
+            const glm::vec3 offset = ca - cb;
+            const float distance = glm::length(offset);
+            const float reach = sa.radius + sb.radius;
+            if (distance >= reach || distance < 1e-4F) {
+                continue;
+            }
+            const glm::vec3 normal = offset / distance;
+            out.push_back({cb + normal * sb.radius, normal, reach - distance});
         }
     }
-    // Remove most of the overlap directly; the rest goes next step, which
-    // avoids the car popping out of deep contacts.
-    constexpr float kSlop = 0.005F;
-    if (depth > kSlop) {
-        m_cgPosition += normal * ((depth - kSlop) * 0.6F);
+}
+
+float resolveCarContacts(
+    CarPhysics& a, CarPhysics& b, std::span<const CarContact> contacts, float turnA, float turnB, float restitution)
+{
+    // After 0x82E04A60, which the physics world runs for each pair of
+    // bodies in contact (0x82E054F0). Verified there: one pass over the
+    // contacts in order; the first body's contact point lies `depth` back
+    // along the normal from the second's; an impulse only while the depth
+    // less the approach over the step is not negative, of -(1 + e) times
+    // the approach over both bodies' effective masses, whose rotational
+    // parts are scaled by each car's torque scale (two virtuals on the car
+    // dynamics, 0x82E04AC0 on); no friction; and the overlap removed by
+    // moving both bodies along each normal as far as the moves before it
+    // have not covered, each by the other's share of their summed mass
+    // (+0x160 is the mass, +0x164 its inverse, set together at 0x82E0B3D4).
+    // Missing: a per-direction test on each body (virtual +0x4C) that
+    // treats it as immovable; what makes it true has not been traced.
+    constexpr float kStep = 1.0F / CarPhysics::kStepRate;
+    const float shareA = b.mass() / (a.mass() + b.mass());
+    glm::vec3 moveA(0.0F);
+    glm::vec3 moveB(0.0F);
+    float largest = 0.0F;
+    for (const CarContact& contact : contacts) {
+        const glm::vec3 pointA = contact.point - contact.normal * contact.depth;
+        const float approach
+            = glm::dot(a.worldPointVelocity(pointA) - b.worldPointVelocity(contact.point), contact.normal);
+        if (contact.depth - approach * kStep >= 0.0F) {
+            const float response = a.impulseResponse(pointA, contact.normal, turnA)
+                + b.impulseResponse(contact.point, contact.normal, turnB);
+            const float impulse = std::max(0.0F, -(1.0F + restitution) * approach / response);
+            a.applyImpulse(contact.normal * impulse, pointA, turnA);
+            b.applyImpulse(-contact.normal * impulse, contact.point, turnB);
+            largest = std::max(largest, impulse);
+        }
+        const float uncovered = glm::dot((contact.point + moveB) - (pointA + moveA), contact.normal);
+        if (uncovered >= 0.0F) {
+            moveA += contact.normal * (uncovered * shareA);
+            moveB -= contact.normal * (uncovered * (1.0F - shareA));
+        }
     }
-    return normalImpulse;
+    a.translate(moveA);
+    b.translate(moveB);
+    return largest;
 }
 
 void CarPhysics::update(float dt, const CarControls& controls, const GroundQuery& ground)

@@ -8,15 +8,20 @@
 
 #include "car/CarPhysics.h"
 #include "car/CarSpec.h"
+#include "collision/SurfaceTable.h"
 #include "data/Database.h"
 #include "vfs/Vfs.h"
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <numbers>
 #include <optional>
+#include <vector>
 
 namespace {
 
@@ -273,6 +278,200 @@ TEST(nearlyFullSteerAtSpeedGetsTheFindPeakLock)
     const float full = steadySteerAngle(spec, 60.0F, 1.0F);
     CHECK(steadySteerAngle(spec, 60.0F, 0.9945F) > 0.99F * full);
     CHECK(steadySteerAngle(spec, 60.0F, 0.939F) < 0.8F * full);
+}
+
+/// How far a car turned after driving into a wall.
+struct WallHit {
+    bool hit = false;
+    float totalYaw = 0.0F;
+    float finalYawRate = 0.0F;
+};
+
+/// Drives `spec` at `kmh` into a concrete wall (the plane x = 0, facing
+/// -x) that it meets at `angle` radians from head-on, lets go of the
+/// controls on contact and measures its turning over `seconds`. The body's
+/// contacts are found as the game's are, from worldContactSpheres(), and
+/// resolved by CarPhysics::resolveWorldContacts() after each step.
+WallHit driveIntoWall(const fh::CarSpec& spec, float kmh, float angle, float seconds)
+{
+    Disc& disc = Disc::get(gameDir());
+    const fh::CollisionSettings settings = fh::loadCollisionSettings(disc.vfs);
+    const fh::collision::SurfaceTable surfaces = fh::collision::SurfaceTable::load(disc.vfs);
+    const fh::collision::CategoryPair* concrete = surfaces.pair("Car", "HardWorld");
+    CHECK(concrete != nullptr);
+    const std::vector<fh::CarSpec::CollisionSphere> spheres = fh::worldContactSpheres(spec);
+
+    fh::FlatGround ground;
+    fh::CarPhysics car(spec);
+    // Far enough back to reach the speed first.
+    car.reset({-400.0F, 0.0F, 0.0F}, std::numbers::pi_v<float> * 0.5F - angle, ground);
+    accelerateTo(car, ground, kmh);
+    WallHit result;
+    std::vector<fh::WorldContact> contacts;
+    float yaw = std::atan2(car.forward().x, car.forward().z);
+    const int steps = static_cast<int>(seconds * static_cast<float>(kStepsPerSecond));
+    fh::CarControls controls;
+    controls.throttle = 1.0F;
+    for (int i = 0; i < kStepsPerSecond * 60 && (!result.hit || i < steps); ++i) {
+        if (!result.hit) {
+            // Keeps the speed on the way in, as a player holding the
+            // throttle does, then lets go at the wall.
+            controls.throttle = car.speed() * 3.6F < kmh ? 1.0F : 0.0F;
+        }
+        car.step(controls, ground);
+        contacts.clear();
+        const glm::mat4 transform = car.transform();
+        for (const fh::CarSpec::CollisionSphere& sphere : spheres) {
+            const glm::vec3 centre
+                = glm::vec3(transform * glm::vec4(sphere.centre[0], sphere.centre[1], sphere.centre[2], 1.0F));
+            if (centre.x + sphere.radius > 0.0F) {
+                fh::WorldContact& contact = contacts.emplace_back();
+                contact.point = {0.0F, centre.y, centre.z};
+                contact.normal = {-1.0F, 0.0F, 0.0F};
+                contact.depth = centre.x + sphere.radius;
+                contact.friction = concrete ? concrete->friction : 0.5F;
+                contact.lowSpeedFriction = concrete ? concrete->lowSpeedFriction.value_or(contact.friction) : 0.5F;
+            }
+        }
+        if (!contacts.empty() && !result.hit) {
+            result.hit = true;
+            controls = {};
+            i = 0;
+        }
+        car.resolveWorldContacts(contacts, settings);
+        if (result.hit) {
+            const float next = std::atan2(car.forward().x, car.forward().z);
+            result.totalYaw += std::remainder(next - yaw, 2.0F * std::numbers::pi_v<float>);
+            yaw = next;
+        } else {
+            yaw = std::atan2(car.forward().x, car.forward().z);
+        }
+    }
+    result.finalYawRate = yawRate(car);
+    return result;
+}
+
+TEST(wallImpactDoesNotSpinTheCar)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    // A player drove into a wall and the car spun round about eight times.
+    // Head-on and at 40 degrees, at town and open-road speeds, a car
+    // glances off or stops against the wall; it does not turn round, and it
+    // has stopped turning a few seconds later.
+    const fh::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
+    constexpr float kDegree = std::numbers::pi_v<float> / 180.0F;
+    for (const float angle : {0.0F, 40.0F * kDegree}) {
+        for (const float kmh : {60.0F, 120.0F}) {
+            const WallHit hit = driveIntoWall(spec, kmh, angle, 5.0F);
+            std::fprintf(stderr, "%.0f degrees at %.0f km/h: turned %.2f rad, yaw rate %.2f rad/s at the end\n",
+                angle / kDegree, kmh, hit.totalYaw, hit.finalYawRate);
+            CHECK(hit.hit);
+            CHECK(std::abs(hit.totalYaw) < std::numbers::pi_v<float>);
+            CHECK(std::abs(hit.finalYawRate) < 0.5F);
+        }
+    }
+}
+
+/// How deep `car`'s contact spheres reach into `other`'s bounding box (its
+/// maxdata.xml BoundingBox), metres: the overlap a player sees, whatever
+/// shapes stand in for the bodies.
+float boxPenetration(const fh::CarPhysics& car, const fh::CarPhysics& other)
+{
+    const glm::mat4 toOther = glm::inverse(other.transform()) * car.transform();
+    const glm::vec3 lo(other.spec().boundsMin[0], other.spec().boundsMin[1], other.spec().boundsMin[2]);
+    const glm::vec3 hi(other.spec().boundsMax[0], other.spec().boundsMax[1], other.spec().boundsMax[2]);
+    float deepest = 0.0F;
+    for (const fh::CarSpec::CollisionSphere& sphere : fh::carContactSpheres(car.spec())) {
+        const glm::vec3 centre(toOther * glm::vec4(sphere.centre[0], sphere.centre[1], sphere.centre[2], 1.0F));
+        const glm::vec3 nearest = glm::clamp(centre, lo, hi);
+        const float outside = glm::length(centre - nearest);
+        const glm::vec3 toFaces = glm::min(centre - lo, hi - centre);
+        const float inside = std::min({toFaces.x, toFaces.y, toFaces.z});
+        deepest = std::max(deepest, outside > 0.0F ? sphere.radius - outside : sphere.radius + inside);
+    }
+    return deepest;
+}
+
+TEST(carDoesNotSinkIntoOrLaunchATruck)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    // Players drove into a traffic box truck (KEN_T440_12) and ended up
+    // inside it, or sent it flying upside down. The default car drives at a
+    // truck standing still, into its tail, its nose and its side, at 30 and
+    // 60 km/h, with the contacts, torque scales and restitution the game
+    // uses between the player and traffic.
+    Disc& disc = Disc::get(dir);
+    const fh::CollisionSettings settings = fh::loadCollisionSettings(disc.vfs);
+    const fh::CarSpec carSpec = disc.car("ALF_8C_08");
+    const fh::CarSpec truckSpec = disc.car("KEN_T440_12");
+    const std::vector<fh::CarSpec::CollisionSphere> carSpheres = fh::carContactSpheres(carSpec);
+    const std::vector<fh::CarSpec::CollisionSphere> truckSpheres = fh::carContactSpheres(truckSpec);
+    const float halfPi = std::numbers::pi_v<float> * 0.5F;
+    struct Approach {
+        const char* name;
+        float truckHeading;
+    };
+    // The car drives east (+x) at the truck standing at the origin.
+    const std::array<Approach, 3> approaches{{
+        {"tail", halfPi},
+        {"nose", -halfPi},
+        {"side", 0.0F},
+    }};
+    for (const Approach& approach : approaches) {
+        for (const float kmh : {30.0F, 60.0F}) {
+            fh::FlatGround ground;
+            fh::CarPhysics car(carSpec);
+            fh::CarPhysics truck(truckSpec);
+            car.reset({-300.0F, 0.0F, 0.0F}, halfPi, ground);
+            truck.reset({0.0F, 0.0F, 0.0F}, approach.truckHeading, ground);
+            accelerateTo(car, ground, kmh);
+            fh::CarControls throttle;
+            std::vector<fh::CarContact> contacts;
+            float speedAtImpact = 0.0F;
+            float truckSpeed = 0.0F;
+            float truckLowestUp = 1.0F;
+            float deepest = 0.0F;
+            for (int i = 0; i < kStepsPerSecond * 60; ++i) {
+                throttle.throttle = speedAtImpact == 0.0F && car.speed() * 3.6F < kmh ? 1.0F : 0.0F;
+                car.step(speedAtImpact == 0.0F ? throttle : fh::CarControls{}, ground);
+                truck.step({}, ground);
+                contacts.clear();
+                fh::findCarContacts(car, carSpheres, fh::carContactIsBox(carSpec), truck, truckSpheres,
+                    fh::carContactIsBox(truckSpec), contacts);
+                if (!contacts.empty() && speedAtImpact == 0.0F) {
+                    speedAtImpact = car.speed();
+                    i = kStepsPerSecond * 57;
+                }
+                fh::resolveCarContacts(car, truck, contacts, settings.playerTorqueScale, settings.trafficTorqueScale,
+                    settings.carCarRestitution);
+                truckSpeed = std::max(truckSpeed, truck.speed());
+                truckLowestUp = std::min(truckLowestUp, truck.up().y);
+                deepest = std::max(deepest, boxPenetration(car, truck));
+            }
+            // Momentum: the truck cannot come away faster than the whole
+            // car's momentum, shared by both, would push it even with a
+            // fully elastic hit.
+            const float pushLimit = 2.0F * car.mass() * speedAtImpact / (car.mass() + truck.mass());
+            std::fprintf(stderr,
+                "%s at %.0f km/h: hit at %.1f m/s, truck up to %.2f m/s (limit %.2f), lowest up %.2f, %.2f m into "
+                "the truck at most, %.2f m after 3 s\n",
+                approach.name, kmh, speedAtImpact, truckSpeed, pushLimit, truckLowestUp, deepest,
+                boxPenetration(car, truck));
+            CHECK(speedAtImpact > 0.0F);
+            CHECK(truckLowestUp > 0.7F);
+            CHECK(truckSpeed <= pushLimit + 0.1F);
+            // The spheres standing in for the bodies leave shallow dips
+            // between neighbours; a bumper may reach that far, no further.
+            CHECK(deepest < 0.1F);
+            CHECK(boxPenetration(car, truck) < 0.1F);
+        }
+    }
 }
 
 } // namespace

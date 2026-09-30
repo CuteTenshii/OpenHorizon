@@ -367,27 +367,18 @@ std::unique_ptr<Game::Vehicle> Game::makeVehicle(
         vehicle->name = spec.mediaName;
     }
 
-    // Spheres along the body stand in for the car's collision shape: a low
-    // row at bumper height and a row near the roof, so both walls and
-    // rollovers are caught.
-    const glm::vec3 lo(spec.boundsMin[0], spec.boundsMin[1], spec.boundsMin[2]);
-    const glm::vec3 hi(spec.boundsMax[0], spec.boundsMax[1], spec.boundsMax[2]);
-    const float halfWidth = (hi.x - lo.x) * 0.5F;
-    const float lowRadius = std::min(halfWidth, 0.45F);
-    const float lowY = std::max(lo.y, 0.0F) + std::max(spec.front.rideHeight, 0.1F) + lowRadius;
-    const float roofRadius = std::min(halfWidth * 0.8F, 0.4F);
-    const float roofY = hi.y - roofRadius;
-    constexpr int kSteps = 4;
-    for (int i = 0; i < kSteps; ++i) {
-        const float t = static_cast<float>(i) / static_cast<float>(kSteps - 1);
-        const float z = (lo.z + lowRadius) + t * ((hi.z - lowRadius) - (lo.z + lowRadius));
-        const float x = std::max(0.0F, halfWidth - lowRadius);
-        vehicle->spheres.push_back({{-x, lowY, z}, lowRadius});
-        vehicle->spheres.push_back({{x, lowY, z}, lowRadius});
+    for (const CarSpec::CollisionSphere& sphere : worldContactSpheres(spec)) {
+        vehicle->spheres.push_back({glm::vec3(sphere.centre[0], sphere.centre[1], sphere.centre[2]), sphere.radius});
     }
-    for (float z : {lo.z * 0.35F, hi.z * 0.1F}) {
-        vehicle->spheres.push_back({{0.0F, roofY, z}, roofRadius});
+    vehicle->bodySpheres = carContactSpheres(spec);
+    vehicle->bodyBox = carContactIsBox(spec);
+    for (const CarSpec::CollisionSphere& sphere : vehicle->bodySpheres) {
+        const glm::vec3 centre(sphere.centre[0], sphere.centre[1], sphere.centre[2]);
+        vehicle->bodyReach = std::max(vehicle->bodyReach, glm::length(centre) + sphere.radius);
     }
+    const glm::vec3 far = glm::max(glm::abs(glm::vec3(spec.boundsMin[0], spec.boundsMin[1], spec.boundsMin[2])),
+        glm::abs(glm::vec3(spec.boundsMax[0], spec.boundsMax[1], spec.boundsMax[2])));
+    vehicle->bodyReach = std::max(vehicle->bodyReach, glm::length(far));
     return vehicle;
 }
 
@@ -583,12 +574,35 @@ void Game::placeVehicle(Vehicle& vehicle, const glm::vec3& position, float headi
     vehicle.controls = CarControls{};
 }
 
+const CarPhysics* Game::parkedCar() const
+{
+    // Traffic that falls behind and a race start drop vehicles, so the one
+    // placed is looked for rather than kept.
+    const auto it = std::find_if(m_vehicles.begin(), m_vehicles.end(),
+        [&](const auto& vehicle) { return vehicle->physics.get() == m_parkedCar; });
+    return m_parkedCar && it != m_vehicles.end() ? m_parkedCar : nullptr;
+}
+
 void Game::spawnPlayer()
 {
     placeVehicle(player(), m_spawnPosition, m_spawnHeading);
     m_playerPlaced = true;
     m_chaseVelocity = glm::vec3(0.0F);
     logInfo("car placed at height {:.1f}", player().physics->position().y);
+    if (!m_options.parkedCar.empty()) {
+        try {
+            std::unique_ptr<Vehicle> parked = makeVehicle(carIdByMediaName(*m_database, m_options.parkedCar), 1);
+            parked->role = Vehicle::Role::Traffic;
+            const glm::vec2 at = m_options.parkedAt;
+            placeVehicle(*parked, glm::vec3(at.x, m_spawnPosition.y, at.y), m_options.parkedHeading);
+            // Nobody drives it; its handbrake holds it where it stands.
+            parked->controls.handbrake = 1.0F;
+            m_parkedCar = parked->physics.get();
+            m_vehicles.push_back(std::move(parked));
+        } catch (const std::exception& e) {
+            logWarning("parked car {}: {}", m_options.parkedCar, e.what());
+        }
+    }
     if (!m_options.race.empty()) {
         const auto it = std::find_if(m_events.begin(), m_events.end(),
             [&](const RaceEvent& e) { return iequals(e.horizonId, m_options.race); });
@@ -911,7 +925,21 @@ int Game::stepPhysics(float dt)
 
 void Game::collideWithWorld(Vehicle& vehicle)
 {
+    static const CollisionSettings settings = loadCollisionSettings(m_vfs);
+    const collision::SurfaceTable* surfaces = m_collision->surfaces();
+    if (m_carSurfaceFriction.empty() && surfaces) {
+        // The game looks the pair up by the car's surface and the one hit
+        // (0x82E04258, 0x82E0B890); a pair the file does not list falls back
+        // to Default/Default, whose friction is the 0.5 the game uses when
+        // it finds no pair (0x82E0B9DC).
+        for (std::size_t id = 0; id < surfaces->surfaces().size(); ++id) {
+            const collision::CategoryPair* pair = surfaces->pair("Car", surfaces->categoryOf(id));
+            const float friction = pair ? pair->friction : 0.5F;
+            m_carSurfaceFriction.emplace_back(friction, pair ? pair->lowSpeedFriction.value_or(friction) : friction);
+        }
+    }
     const glm::mat4 transform = vehicle.physics->transform();
+    m_worldContacts.clear();
     for (const BodySphere& sphere : vehicle.spheres) {
         const glm::vec3 centre = glm::vec3(transform * glm::vec4(sphere.centre, 1.0F));
         m_contacts.clear();
@@ -921,14 +949,24 @@ void Game::collideWithWorld(Vehicle& vehicle)
         const std::size_t count = std::min<std::size_t>(m_contacts.size(), 3);
         for (std::size_t i = 0; i < count; ++i) {
             const physics::SphereContact& contact = m_contacts[i];
-            const float impulse
-                = vehicle.physics->resolveContact(contact.point, contact.normal, contact.depth, 0.2F, 0.4F);
-            if (impulse > vehicle.physics->mass() * 3.0F) {
-                logDebug("impact {:.0f} N·s at {:.1f} {:.1f} {:.1f}, surface {}, normal {:.2f} {:.2f} {:.2f}", impulse,
-                    contact.point.x, contact.point.y, contact.point.z, contact.surface, contact.normal.x,
-                    contact.normal.y, contact.normal.z);
+            WorldContact& out = m_worldContacts.emplace_back();
+            out.point = contact.point;
+            out.normal = contact.normal;
+            out.depth = contact.depth;
+            // Render geometry and trunks have no surface type; they get the
+            // game's friction for a pair it does not know.
+            const auto surface = static_cast<std::size_t>(contact.surface);
+            if (contact.surface >= 0 && surface < m_carSurfaceFriction.size()) {
+                out.friction = m_carSurfaceFriction[surface].first;
+                out.lowSpeedFriction = m_carSurfaceFriction[surface].second;
             }
         }
+    }
+    const float impulse = vehicle.physics->resolveWorldContacts(m_worldContacts, settings);
+    if (impulse > vehicle.physics->mass() * 3.0F) {
+        const glm::vec3 at = vehicle.physics->position();
+        logDebug("impact {:.0f} N·s at {:.1f} {:.1f} {:.1f}, {:.1f} m/s", impulse, at.x, at.y, at.z,
+            vehicle.physics->speed());
     }
 }
 
@@ -1178,17 +1216,16 @@ void Game::collideVehicles()
 {
     // Collision tuning from media/physics/physicssettings.ini, read once.
     static const CollisionSettings settings = loadCollisionSettings(m_vfs);
-    // No body friction between cars: surfaceTypes.xml has no Car/Car pair
-    // and the code applying the Default one to car bodies was not found.
-    // Applied per sphere pair it glued cars that pressed against each
-    // other, stopping race packs at the first corner.
-    // The game's restitution values for cars are zero or negative (-0.2 car
-    // to car); what it does with a negative value is not traced, so any
-    // value at or below zero is taken as no rebound.
-    const float bounce = std::max(0.0F, settings.carCarRestitution);
+    // The game's pair response (see resolveCarContacts) applies no friction
+    // between bodies, and takes CarCarRestitution as it is: the disc's file
+    // misspells that key, so the default of -0.2 stays, and each contact
+    // removes 0.8 of the approach speed.
+    const float restitution = settings.carCarRestitution;
     // How much of a hit turns each car, by the settings' names (Player,
     // Traffic, RaceCar, RaceCarInRace, RaceCarVsTrafficInRace
-    // TorqueScale); the code applying them has not been traced.
+    // TorqueScale). The game asks each car's dynamics for its scale
+    // (virtuals at 0x82E04ACC and 0x82E04AD8); which setting each role gets
+    // there has not been traced.
     const auto torqueScale = [&](const Vehicle& self, const Vehicle& other) {
         switch (self.role) {
         case Vehicle::Role::Player:
@@ -1205,67 +1242,25 @@ void Game::collideVehicles()
         return other.role == Vehicle::Role::Traffic ? settings.raceCarTorqueScaleVsTrafficInRace
                                                     : settings.raceCarTorqueScaleInRace;
     };
-    // The body spheres of the car's maxdata.xml (flags 2), or the generated
-    // ones when the file has none.
-    const auto bodySpheres = [](const Vehicle& vehicle) {
-        std::vector<BodySphere> spheres;
-        for (const CarSpec::CollisionSphere& s : vehicle.spec->collisionSpheres) {
-            if (s.flags == 2) {
-                spheres.push_back({glm::vec3(s.centre[0], s.centre[1], s.centre[2]), s.radius});
-            }
-        }
-        return spheres.empty() ? vehicle.spheres : spheres;
-    };
-    // Share of each overlap removed per step.
-    constexpr float kPushOut = 0.3F;
-
+    // The game's own shapes for car bodies (the shape types 1 and 2 of its
+    // contact table at 0x8339AB60) have not been traced; Vehicle::bodySpheres
+    // and bodyBox stand in for them.
+    std::vector<CarContact> contacts;
     for (std::size_t a = 0; a < m_vehicles.size(); ++a) {
         for (std::size_t b = a + 1; b < m_vehicles.size(); ++b) {
             Vehicle& vehicleA = *m_vehicles[a];
             Vehicle& vehicleB = *m_vehicles[b];
             CarPhysics& carA = *vehicleA.physics;
             CarPhysics& carB = *vehicleB.physics;
-            if (glm::length(carA.position() - carB.position()) > 8.0F) {
+            if (glm::length(carA.position() - carB.position()) > vehicleA.bodyReach + vehicleB.bodyReach) {
                 continue;
             }
-            const float turnA = torqueScale(vehicleA, vehicleB);
-            const float turnB = torqueScale(vehicleB, vehicleA);
-            const float inverseMassA = 1.0F / carA.mass();
-            const float inverseMassB = 1.0F / carB.mass();
-            const glm::mat4 ta = carA.transform();
-            const glm::mat4 tb = carB.transform();
-            const std::vector<BodySphere> spheresA = bodySpheres(vehicleA);
-            const std::vector<BodySphere> spheresB = bodySpheres(vehicleB);
-            for (const BodySphere& sa : spheresA) {
-                const glm::vec3 ca = glm::vec3(ta * glm::vec4(sa.centre, 1.0F));
-                for (const BodySphere& sb : spheresB) {
-                    const glm::vec3 cb = glm::vec3(tb * glm::vec4(sb.centre, 1.0F));
-                    const glm::vec3 offset = ca - cb;
-                    const float distance = glm::length(offset);
-                    const float reach = sa.radius + sb.radius;
-                    if (distance >= reach || distance < 1e-4F) {
-                        continue;
-                    }
-                    const glm::vec3 normal = offset / distance;
-                    const glm::vec3 point = cb + normal * sb.radius;
-                    const float approachSpeed
-                        = glm::dot(carA.worldPointVelocity(point) - carB.worldPointVelocity(point), normal);
-                    if (approachSpeed < 0.0F) {
-                        // Both masses and inertias enter through the
-                        // response, so a heavy car barely yields to a light
-                        // one.
-                        const float response
-                            = carA.impulseResponse(point, normal, turnA) + carB.impulseResponse(point, normal, turnB);
-                        const float impulse = -(1.0F + bounce) * approachSpeed / response;
-                        carA.applyImpulse(normal * impulse, point, turnA);
-                        carB.applyImpulse(-normal * impulse, point, turnB);
-                    }
-                    // The lighter car gives way more.
-                    const float depth = (reach - distance) * kPushOut;
-                    const float shareA = inverseMassA / (inverseMassA + inverseMassB);
-                    carA.translate(normal * (depth * shareA));
-                    carB.translate(-normal * (depth * (1.0F - shareA)));
-                }
+            contacts.clear();
+            findCarContacts(
+                carA, vehicleA.bodySpheres, vehicleA.bodyBox, carB, vehicleB.bodySpheres, vehicleB.bodyBox, contacts);
+            if (!contacts.empty()) {
+                resolveCarContacts(carA, carB, contacts, torqueScale(vehicleA, vehicleB),
+                    torqueScale(vehicleB, vehicleA), restitution);
             }
         }
     }
