@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <format>
-#include <limits>
 #include <optional>
 
 namespace fh::ui {
@@ -117,12 +116,7 @@ struct PauseMenu::Impl {
     /// The SUPER_STACKER contracts of the option list: each entry's text,
     /// message indicator and brush-stroke bars (Crisp Tape, Smudge Tape,
     /// Dirt Tile, Clipon), so the bars follow the text the menu sets.
-    /// The help buttons have stackers of their own, but the help bar packs
-    /// its buttons by their widths (0x8289e100 steps each button by two
-    /// values the button's attach, 0x8289a7b8, reads from its left marker
-    /// and its text, a third field not identified, and 34), which is not
-    /// implemented; so the help buttons keep their authored widths rather
-    /// than shrinking and leaving gaps between them.
+    /// The help buttons' stackers belong to the HelpBar.
     SuperStackers entryStackers;
 
     int rootContract = -1;
@@ -188,7 +182,7 @@ void PauseMenu::Impl::bindPause()
         button.text = pause.contractParameter(button.contract, "TEXT_BUTTON");
         buttons.push_back(button);
     }
-    pauseHelp.bind(pause, pause.contractParameter(rootContract, "COMPONENT_HELP_BUTTON_BAR"));
+    pauseHelp.bind(pause, renderer, pause.contractParameter(rootContract, "COMPONENT_HELP_BUTTON_BAR"));
 }
 
 void PauseMenu::Impl::bindPopup()
@@ -198,7 +192,7 @@ void PauseMenu::Impl::bindPopup()
     const int boxContract = popup.contract(box, "MESSAGE_BOX");
     popupTitle = popup.contractParameter(boxContract, "TEXT_TITLE");
     popupMessage = popup.contractParameter(boxContract, "TEXT_MESSAGE");
-    popupHelp.bind(popup, popup.contractParameter(root, "COMPONENT_HELP_BUTTON_BAR"));
+    popupHelp.bind(popup, renderer, popup.contractParameter(root, "COMPONENT_HELP_BUTTON_BAR"));
     // The message element has wordwrap set; its box spans the popup's
     // panel.
     popupWrapWidth = textBoxWidth(popup, popupMessage);
@@ -438,6 +432,10 @@ void PauseMenu::draw(int width, int height)
         return;
     }
     impl.entryStackers.layout(impl.pause, impl.renderer);
+    impl.pauseHelp.layout(impl.pause, impl.renderer);
+    if (impl.confirmation) {
+        impl.popupHelp.layout(impl.popup, impl.renderer);
+    }
     impl.renderer.begin(width, height);
     std::vector<DrawItem> items = impl.pause.evaluate();
     impl.drawn = true;
@@ -468,66 +466,14 @@ bool PauseMenu::confirming() const
     return m_impl->confirmation.has_value();
 }
 
-namespace {
-
-/// The furthest right a model shows its textures, in the layer space of
-/// `model.world`: the rightmost point of its mesh where every clamped
-/// layer's texture u lies within [0, 1]. Outside that range a clamped layer
-/// samples the transparent border, so nothing of the model shows there.
-float visibleRight(const DrawModel& model)
+std::vector<HelpButtonExtent> PauseMenu::helpExtents() const
 {
-    struct Point {
-        float x = 0.0F;
-        std::vector<float> u;
-    };
-    std::vector<Point> points;
-    points.reserve(model.mesh->vertices.size());
-    for (const MeshVertex& vertex : model.mesh->vertices) {
-        Point point;
-        point.x = (model.world * glm::vec4(vertex.position, 1.0F)).x;
-        for (const DrawModel::Layer& layer : model.layers) {
-            if (layer.wrapU == TextureWrap::Clamp) {
-                point.u.push_back(glm::dot(layer.uvRow0, glm::vec3(vertex.uv, 1.0F)));
-            }
-        }
-        points.push_back(std::move(point));
+    Impl& impl = *m_impl;
+    if (!impl.drawn) {
+        return {};
     }
-    float right = -std::numeric_limits<float>::infinity();
-    const auto inside
-        = [](const Point& p) { return std::ranges::all_of(p.u, [](float u) { return u >= 0.0F && u <= 1.0F; }); };
-    const std::vector<std::uint16_t>& indices = model.mesh->indices;
-    for (std::size_t t = 0; t + 2 < indices.size(); t += 3) {
-        for (int corner = 0; corner < 3; ++corner) {
-            const Point& a = points[indices[t + static_cast<std::size_t>(corner)]];
-            const Point& b = points[indices[t + static_cast<std::size_t>((corner + 1) % 3)]];
-            if (inside(a)) {
-                right = std::max(right, a.x);
-            }
-            // Where the edge crosses a layer's u = 0 or u = 1.
-            for (std::size_t layer = 0; layer < a.u.size(); ++layer) {
-                for (const float bound : {0.0F, 1.0F}) {
-                    const float da = a.u[layer] - bound;
-                    const float db = b.u[layer] - bound;
-                    if (da * db >= 0.0F) {
-                        continue;
-                    }
-                    const float f = da / (da - db);
-                    Point crossing;
-                    crossing.x = a.x + (b.x - a.x) * f;
-                    for (std::size_t other = 0; other < a.u.size(); ++other) {
-                        crossing.u.push_back(other == layer ? bound : a.u[other] + (b.u[other] - a.u[other]) * f);
-                    }
-                    if (inside(crossing)) {
-                        right = std::max(right, crossing.x);
-                    }
-                }
-            }
-        }
-    }
-    return right;
+    return impl.pauseHelp.extents(impl.pause, impl.renderer, impl.pause.evaluate());
 }
-
-} // namespace
 
 std::vector<PauseEntryExtent> PauseMenu::entryExtents() const
 {

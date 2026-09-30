@@ -191,6 +191,9 @@ public:
     /// The extents of the entries shown, in order, as the last draw() laid
     /// them out; empty before the first draw.
     std::vector<PauseEntryExtent> entryExtents() const;
+    /// The help buttons in use as the last draw() laid them out; empty
+    /// before the first draw.
+    std::vector<HelpButtonExtent> helpExtents() const;
 
 private:
     struct Impl;

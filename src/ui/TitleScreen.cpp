@@ -80,7 +80,7 @@ TitleScreen::Impl::Impl(const Vfs& vfs, TitleAudio titleAudio, const std::string
         throw DataError("{}: no root contract with TEXT_PRESS_START", kScene);
     }
     pressStart = scene.contractParameter(rootContract, "TEXT_PRESS_START");
-    help.bind(scene, scene.contractParameter(rootContract, "COMPONENT_HELP_BUTTON_BAR"));
+    help.bind(scene, renderer, scene.contractParameter(rootContract, "COMPONENT_HELP_BUTTON_BAR"));
 
     const int video = scene.contractParameter(rootContract, "COMPONENT_VIDEO");
     const int videoContract = scene.contract(video, "CUSTREND_MOVIERENDERER");
@@ -318,6 +318,7 @@ void TitleScreen::draw(int width, int height)
     if (!impl.shown) {
         return;
     }
+    impl.help.layout(impl.scene, impl.renderer);
     std::vector<DrawItem> items = impl.scene.evaluate();
     if (impl.movie && impl.movie->texture() != 0) {
         impl.renderer.setTextureOverride(impl.movieKey, impl.movie->texture());

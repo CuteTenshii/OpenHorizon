@@ -1674,6 +1674,74 @@ TEST(skyDrawsItsClouds)
     session.capture("clouds_sky");
 }
 
+/// Checks a help bar as the game lays it out: each button's SUPER_STACKER
+/// fits its pill to the logo and text, so every pill ends the same way past
+/// its text, and the bar (0x8289e100) starts each button 34 units after
+/// the text before it.
+void checkHelpBarFits(const std::vector<fh::ui::HelpButtonExtent>& extents, std::size_t shown)
+{
+    CHECK_EQ(extents.size(), shown);
+    for (std::size_t i = 0; i < extents.size(); ++i) {
+        const fh::ui::HelpButtonExtent& button = extents[i];
+        const float margin = button.pillRight - button.textRight;
+        const float firstMargin = extents.front().pillRight - extents.front().textRight;
+        if (std::abs(margin - firstMargin) >= 0.5F || !std::isfinite(margin)) {
+            std::fprintf(stderr, "  button %zu: pill ends %.1f past its text, the first's %.1f\n", i,
+                static_cast<double>(margin), static_cast<double>(firstMargin));
+        }
+        CHECK(std::isfinite(margin));
+        CHECK(button.textRight <= button.pillRight);
+        CHECK(std::abs(margin - firstMargin) < 0.5F);
+        if (i + 1 < extents.size()) {
+            const float gap = extents[i + 1].left - button.textRight;
+            if (std::abs(gap - 34.0F) >= 0.5F) {
+                std::fprintf(
+                    stderr, "  button %zu starts %.1f after the text before it\n", i + 1, static_cast<double>(gap));
+            }
+            CHECK(std::abs(gap - 34.0F) < 0.5F);
+        }
+    }
+}
+
+// "The dark brush-stroke backgrounds behind the help bar's texts look wrong
+// (square ends, a noisy rectangle)": the pills kept the width authored for
+// "BUTTON TEXT" whatever the text, and the buttons their authored slots,
+// because nothing ran the stackers of the help buttons nor the bar's own
+// layout. Checked on the map and the pause menu at the desktop sizes.
+TEST(helpBarsFitTheirTexts)
+{
+    if (!gameDir()) {
+        return;
+    }
+    Session session({});
+    CHECK(session.waitForCar());
+    session.run(0.5F, {});
+    session.press(fh::Button::Back);
+    for (const auto& [width, height] : {std::pair{1920, 1080}, std::pair{2560, 1440}}) {
+        window().setSize(width, height);
+        session.run(1.0F, {});
+        const fh::ui::WorldMap* map = session.game().worldMap();
+        CHECK(map != nullptr && session.game().mapShown());
+        if (map != nullptr) {
+            checkHelpBarFits(map->helpExtents(), 4);
+        }
+        session.capture(std::format("help_map_{}x{}", width, height));
+    }
+    session.press(fh::Button::B);
+    session.run(1.0F, {});
+    session.press(fh::Button::Start);
+    for (const auto& [width, height] : {std::pair{1920, 1080}, std::pair{2560, 1440}}) {
+        window().setSize(width, height);
+        session.run(1.0F, {});
+        CHECK(session.game().pauseShown());
+        if (const fh::ui::PauseMenu* menu = session.game().pauseMenu()) {
+            checkHelpBarFits(menu->helpExtents(), 2);
+        }
+        session.capture(std::format("help_pause_{}x{}", width, height));
+    }
+    window().setSize(640, 360);
+}
+
 } // namespace
 
 int main(int argc, char** argv)

@@ -34,6 +34,7 @@
 #include <fstream>
 #include <functional>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -52,6 +53,7 @@ int usage()
         "       fh1menu DISC loading OUT.png [--group NAME] [--seed N] [--size WxH] [--time S]\n"
         "       fh1menu DISC map OUT.png [--track NAME] [--at X,Z] [--heading DEG] [--move DX,DY --move-time S]\n"
         "                                [--zoom Z --zoom-time S] [--steps KEYS] [--size WxH] [--time S]\n"
+        "                                [--player-bar CREDITS,XP,BAND,CAR]\n"
         "       fh1menu DISC title OUT.png [--steps KEYS] [--size WxH] [--time S] [--wav OUT.wav]\n"
         "  DISC       the extracted disc (its root or its media folder)\n"
         "  SCENE      a scene under media/ui/scenes/ui4 without extension, such as 925_pause_menu\n"
@@ -65,7 +67,8 @@ int usage()
         "             freeroam), after --time seconds (default 3)\n"
         "  map        draws the full-screen map opened with the player at X,Z facing DEG (0 north, 90 east) and\n"
         "             the track's race starts, after holding the left stick at DX,DY for --move-time seconds,\n"
-        "             the right stick at Z (positive zooms in) for --zoom-time seconds, and the KEYS\n"
+        "             the right stick at Z (positive zooms in) for --zoom-time seconds, and the KEYS; with\n"
+        "             --player-bar it shows the profile's credits, XP, wristband Id and Data_Car.Id\n"
         "  title      draws the title screen after --time seconds (default 3), the KEYS pressed at the\n"
         "             start (s is Start, a is A), and with --wav mixes its music offline into OUT.wav;\n"
         "             past 53 s the screen goes to its attract, which the tool leaves at once\n");
@@ -439,6 +442,7 @@ struct MapOptions {
     float time = 1.0F;
     int width = 1280;
     int height = 720;
+    std::optional<PlayerBarValues> playerBar;
 };
 
 const char* mapActionName(WorldMapAction action)
@@ -465,6 +469,7 @@ int renderMap(const fh::Vfs& vfs, const std::string& out, const MapOptions& opti
     state.playerPosition = options.at;
     state.playerHeading = glm::radians(options.headingDegrees);
     state.markers = raceStartMarkers(vfs, options.track);
+    state.playerBar = options.playerBar;
     std::printf("%zu race starts\n", state.markers.size());
     map.open(state);
     constexpr float kStep = 1.0F / 60.0F;
@@ -710,6 +715,19 @@ int main(int argc, char** argv)
                     if (!parseSize(value(), options.width, options.height)) {
                         return usage();
                     }
+                } else if (arg == "--player-bar") {
+                    std::vector<std::int64_t> fields;
+                    std::stringstream text(value());
+                    for (std::string field; std::getline(text, field, ',');) {
+                        fields.push_back(std::stoll(field));
+                    }
+                    if (fields.size() != 4) {
+                        return usage();
+                    }
+                    options.playerBar = PlayerBarValues{.credits = fields[0],
+                        .wristbandLevel = fields[2],
+                        .xp = fields[1],
+                        .carId = static_cast<int>(fields[3])};
                 } else {
                     return usage();
                 }

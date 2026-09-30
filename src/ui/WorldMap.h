@@ -302,6 +302,8 @@ public:
     /// The scene as it shows now, for reading its texts.
     const Presentation& scene() const;
     const PlayerBar& playerBar() const;
+    /// The help buttons in use as the scene last laid them out.
+    std::vector<HelpButtonExtent> helpExtents() const;
     /// The cursor's crosshair as last drawn: its width and height in the
     /// scene's units (1280 x 720).
     glm::vec2 cursorExtent() const;

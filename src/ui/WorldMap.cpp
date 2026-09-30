@@ -793,7 +793,7 @@ void WorldMap::Impl::bindScene()
     }
     viewportModel = scene.contractParameter(rendererContract, "MODEL_VIEWPORT");
     viewportMaterial = scene.contractParameter(rendererContract, "MATERIAL_VIEWPORT");
-    help.bind(scene, scene.contractParameter(rootContract, "COMPONENT_HELP_BUTTON_BAR"));
+    help.bind(scene, renderer, scene.contractParameter(rootContract, "COMPONENT_HELP_BUTTON_BAR"));
     // The root contract does not name the player bar; the scene carries one
     // element with the PLAYER_BAR contract.
     for (std::size_t i = 0; i < scene.elementCount() && !playerBar.bound(); ++i) {
@@ -1423,6 +1423,7 @@ void WorldMap::draw(int width, int height)
     }
     impl.placeOverlay(width, height);
     impl.playerBar.layout(impl.scene, impl.renderer);
+    impl.help.layout(impl.scene, impl.renderer);
     std::vector<DrawItem> items = impl.scene.evaluate();
     // The map's target covers the viewport model's rectangle in pixels
     // (the scene's 1280 x 720 units fitted to the window).
@@ -1487,6 +1488,15 @@ const Presentation& WorldMap::scene() const
 const PlayerBar& WorldMap::playerBar() const
 {
     return m_impl->playerBar;
+}
+
+std::vector<HelpButtonExtent> WorldMap::helpExtents() const
+{
+    Impl& impl = *m_impl;
+    if (!impl.open) {
+        return {};
+    }
+    return impl.help.extents(impl.scene, impl.renderer, impl.scene.evaluate());
 }
 
 const WorldMapCamera& WorldMap::camera() const

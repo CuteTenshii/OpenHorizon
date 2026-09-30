@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Presentation.h"
+#include "SuperStacker.h"
 
 #include "data/StringTable.h"
 
@@ -112,12 +113,45 @@ enum class HelpIcon : int {
 /// The game path of a help icon's texture, from the icon table.
 std::string helpIconTexture(HelpIcon icon);
 
+/// The furthest right a model shows its textures, in the layer space of
+/// `model.world`: the rightmost point of its mesh where every clamped
+/// layer's texture u lies within [0, 1]. Outside that range a clamped layer
+/// samples the transparent border, so nothing of the model shows there.
+/// SUPER_STACKER slides the brush strokes' textures along their meshes
+/// rather than resizing them, so a stroke's mesh reaches far past it.
+float visibleRight(const DrawModel& model);
+
+/// Where a help button in use lies as last evaluated, in layer units: the
+/// button's origin, the right end of its text and the right end of its
+/// pill (the brush stroke under the logo and text, where its texture ends).
+struct HelpButtonExtent {
+    float left = 0.0F;
+    float textRight = 0.0F;
+    float pillRight = 0.0F;
+};
+
 /// A scene's HELP_BUTTON_BAR: a row of HELP_BUTTON slots, each with a
 /// logo material and a text. The game appends entries in order (0x828ddca8
 /// pushes each onto the bar's list) and the bar shows them in its slots
 /// left to right, firing SHOWN on the slots in use and HIDDEN on the rest.
 /// The logo is the material's texture, which the bar replaces with the
 /// icon's (MATERIAL_BUTTON_LOGO).
+///
+/// Each slot carries a SUPER_STACKER under its left marker that fits the
+/// pill to the logo and text, and the bar packs the slots in use by their
+/// texts. Verified from the executable: the button's attach (0x8289a7b8)
+/// reads position.x of GROUP_LEFT_MARKER and of TEXT_BUTTON_TEXT into its
+/// +244 and +248; its update (0x828a78d8) sets the text and has the text
+/// object measure it into +252; the bar's layout (0x8289e100) sets each
+/// button's position.x to a running sum that starts at 0 and grows by
+/// +248 - +244 + +252 + 34 (the float at 0x83333b94, beside the icon
+/// table), and hides the buttons not in use. Inferred: that +252 is the
+/// text's width as the stackers measure it; the authored slots agree
+/// (h_map's are 160 apart for "BUTTON TEXT", 112 wide, 11 after its
+/// marker: 11 + 112 + 34 = 157). Missing: the bar's own alignment (the
+/// layout then moves the group of buttons by the total width for an
+/// alignment its +212 holds, whose source was not traced); the group stays
+/// where the scene places it, which is the left-aligned case.
 class HelpBar {
 public:
     struct Entry {
@@ -126,24 +160,39 @@ public:
     };
 
     /// Binds the bar whose contract sits on `bar` (the scene's
-    /// COMPONENT_HELP_BUTTON_BAR). Does nothing when `bar` is -1.
-    void bind(const Presentation& scene, int bar);
+    /// COMPONENT_HELP_BUTTON_BAR), with the stackers of its slots. Call on
+    /// the scene as loaded. Does nothing when `bar` is -1.
+    void bind(const Presentation& scene, UiRenderer& renderer, int bar);
     void set(Presentation& scene, const std::vector<Entry>& entries);
+    /// Fits every slot's pill to its logo and text and packs the slots in
+    /// use from the left, for the texts the scene shows now.
+    void layout(Presentation& scene, UiRenderer& renderer) const;
     /// Shows or hides the whole bar with its ENABLED and DISABLED events.
     void enable(Presentation& scene, bool enabled) const;
     /// Points the logos of the slots in use at their icons' textures.
     void apply(std::vector<DrawItem>& items) const;
     std::size_t slotCount() const { return m_slots.size(); }
+    /// The slots in use as `items` (the scene's evaluate()) draws them.
+    std::vector<HelpButtonExtent> extents(
+        const Presentation& scene, UiRenderer& renderer, const std::vector<DrawItem>& items) const;
 
 private:
     struct Slot {
         int contract = -1;
+        /// The HELP_BUTTON component, which the bar moves.
+        int element = -1;
         int text = -1;
         int material = -1;
+        /// The model SUPER_STACKER stretches under the logo and text.
+        int pill = -1;
+        /// The text's x less the left marker's, as the scene loads.
+        float textOffset = 0.0F;
     };
     int m_contract = -1;
     std::vector<Slot> m_slots;
     std::vector<std::string> m_icons;
+    std::size_t m_used = 0;
+    SuperStackers m_stackers;
 };
 
 /// How much larger the game draws a text element than its size taken as
