@@ -69,6 +69,7 @@ Libraries, bottom up (targets in `src/CMakeLists.txt` and per-folder `CMakeLists
 - `fh1collision` (`src/collision`): the game's `.fiz` collision meshes (surface type per triangle, per-route barrier triangles) indexed by the track's `.col`, and `surfaceTypes.xml`.
 - `fh1audio` (`src/audio`): FSB4 banks (XMA and MPEG through FFmpeg), FMOD `.fev` projects, a software mixer on SDL3, and `EngineSound`, driven by the per-car engine tunings.
 - `fh1platform` (`src/platform`, `src/render/Gl.*`): SDL3 window, OpenGL 4.5 core context, a hand-written GL entry-point loader (`Gl.h` lists every function used; add new ones there), input mapped onto Xbox pad controls.
+- `fh1animated` (`src/animated`): the animated world objects: kind-4 procedural sets (geometry and an embedded RAD Granny file of skeletons and animations, `Granny.h`), kind-5 sets that place them, and `AnimatedObjects`, which culls, plays and poses them on the presentation clock; `render/AnimatedObjectRenderer` draws them with ports of the executable's PROC_ANIM_OBJ shaders.
 - `fh1engine` (`src/render`, `src/physics`, `src/game`): the game proper, run by `app/main.cpp`.
 
 How a frame fits together (`game/Game.cpp`):

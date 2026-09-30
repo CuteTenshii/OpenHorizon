@@ -113,6 +113,16 @@ target_link_libraries(tst_shading PRIVATE fh1engine)
 # disc.
 add_test(NAME tst_shading COMMAND tst_shading)
 
+add_executable(tst_animated TestHarness.h tst_animated.cpp)
+target_compile_options(tst_animated PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_animated PRIVATE fh1animated)
+# The disc tests inside (Colorado's animated objects and a few files of the
+# media/animatedobjects pack) run only when FH1_GAME_DIR names an extracted
+# disc; reading every file of the pack is the slow test tst_animated_slow.
+add_test(NAME tst_animated COMMAND tst_animated)
+add_test(NAME tst_animated_slow COMMAND tst_animated --slow)
+set_tests_properties(tst_animated_slow PROPERTIES LABELS slow)
+
 add_executable(tst_envcube TestHarness.h tst_envcube.cpp)
 target_compile_options(tst_envcube PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_envcube PRIVATE fh1engine)
