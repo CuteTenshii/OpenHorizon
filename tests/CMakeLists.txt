@@ -151,25 +151,26 @@ fh1n_add_test_program(tst_postprocess SOURCES tst_postprocess.cpp LIBRARIES fh1e
 # extracted disc.
 fh1n_add_test_program(tst_cutscenes SOURCES tst_cutscenes.cpp LIBRARIES fh1engine)
 
-# The whole game offscreen with scripted controls; the scenarios skip
-# without FH1_GAME_DIR or an OpenGL context. A game takes about 3 GB, so
-# they take the lock "game" and run one at a time, beside the unit tests.
-add_executable(tst_scenarios RoadFollower.h tst_scenarios.cpp)
+# The whole game offscreen with scripted controls, one file per area around
+# the shared GameScenario fixture and Session (scenarios/Session.h); they
+# skip without FH1_GAME_DIR or an OpenGL context. A game takes about 3 GB,
+# so the scenarios take the lock "game" and run one at a time, beside the
+# unit tests. The frame-time case, tagged [perf], carries the label perf
+# (its timings depend on the machine and its load) and runs alone.
+set(FH1N_SCENARIO_SOURCES
+    scenarios/Session.h scenarios/Session.cpp scenarios/RoadFollower.h
+    scenarios/Activities.cpp scenarios/Audio.cpp scenarios/Driving.cpp scenarios/Map.cpp scenarios/Menus.cpp
+    scenarios/Perf.cpp scenarios/Profile.cpp scenarios/Races.cpp scenarios/World.cpp)
+add_executable(tst_scenarios ${FH1N_SCENARIO_SOURCES})
 target_compile_options(tst_scenarios PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_scenarios PRIVATE fh1testmain fh1engine)
 catch_discover_tests(tst_scenarios
     TEST_PREFIX "tst_scenarios."
+    TEST_SPEC "~[perf]"
     DISCOVERY_MODE PRE_TEST
     PROPERTIES RESOURCE_LOCK game TIMEOUT 600)
-
-# Free roam driven along the roads, timed per part of the frame, against a
-# drawing budget. Needs the disc and a GPU, and its timings depend on the
-# machine and its load: labelled perf, left out of the default runs, and
-# run alone.
-add_executable(tst_perf RoadFollower.h tst_perf.cpp)
-target_compile_options(tst_perf PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_perf PRIVATE fh1testmain fh1engine)
-catch_discover_tests(tst_perf
-    TEST_PREFIX "tst_perf."
+catch_discover_tests(tst_scenarios
+    TEST_PREFIX "tst_scenarios."
+    TEST_SPEC "[perf]"
     DISCOVERY_MODE PRE_TEST
     PROPERTIES RUN_SERIAL TRUE LABELS perf TIMEOUT 600)

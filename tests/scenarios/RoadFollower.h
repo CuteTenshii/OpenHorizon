@@ -1,7 +1,9 @@
 #pragma once
 
-// Drives the player's car along the road network, for tests that need a
-// drive over real roads: the frame-time test and the streaming scenario.
+// Drives the player's car along the road network, for scenarios that need
+// a drive over real roads: the frame-time test and the streaming scenario.
+
+#include "scenarios/Session.h"
 
 #include "car/CarPhysics.h"
 #include "platform/Input.h"
@@ -29,9 +31,24 @@ public:
     {
     }
 
-    /// Controls for this frame, and whether the car needs putting back on
-    /// the road (it has been stuck for a while).
+    /// Controls for this frame, with the previous frame's keys and buttons
+    /// as held before, so a press is seen once; they put the car back on
+    /// the road when it has been stuck for a while.
     fh::InputState controls(const fh::CarPhysics& car)
+    {
+        fh::InputState input = steer(car);
+        input.previousKeys = m_previous.keys;
+        input.previousButtons = m_previous.buttons;
+        m_previous = input;
+        return input;
+    }
+
+private:
+    static constexpr float kPi = 3.14159265F;
+    static constexpr float kLookahead = 18.0F;
+    static constexpr float kCruise = 22.0F;
+
+    fh::InputState steer(const fh::CarPhysics& car)
     {
         fh::InputState input;
         const glm::vec3 position = car.position();
@@ -61,13 +78,6 @@ public:
         input.axes[static_cast<std::size_t>(fh::Axis::LeftTrigger)] = speed > target + 4.0F ? 0.5F : 0.0F;
         return input;
     }
-
-private:
-    /// The fixed step the tests run the game at.
-    static constexpr float kStep = 1.0F / 60.0F;
-    static constexpr float kPi = 3.14159265F;
-    static constexpr float kLookahead = 18.0F;
-    static constexpr float kCruise = 22.0F;
 
     static float headingOf(glm::vec2 direction) { return std::atan2(direction.x, direction.y); }
 
@@ -142,6 +152,7 @@ private:
     std::size_t m_index = 0;
     int m_step = 1;
     float m_stuck = 0.0F;
+    fh::InputState m_previous;
 };
 
 } // namespace fh::test

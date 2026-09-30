@@ -4,7 +4,8 @@
 // recolours the minimap's road network, and it streams the world and the
 // traffic in. The test needs the disc and a GPU, and its timings depend on
 // the machine and on what else runs on it, so it carries the ctest label
-// "perf" and stays out of the pre-push run.
+// "perf" and stays out of the pre-push run and of the scenarios run
+// without a filter.
 //
 // It doubles as the profiling tool: with FH1_PERF_SIZE=WxH and
 // FH1_PERF_SECONDS it drives at another size or for longer, and with
@@ -13,21 +14,16 @@
 // commands (the per-part GPU timestamps alone also count the GPU's idle
 // time while the CPU is still sending them).
 
-#include "RoadFollower.h"
-#include "support/TestSupport.h"
+#include "scenarios/RoadFollower.h"
+#include "scenarios/Session.h"
 
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/reporters/catch_reporter_event_listener.hpp>
-#include <catch2/reporters/catch_reporter_registrars.hpp>
 
-#include "base/Host.h"
-#include "base/Log.h"
 #include "car/CarPhysics.h"
 #include "game/Game.h"
 #include "platform/Input.h"
 #include "platform/Window.h"
 #include "render/FrameStats.h"
-#include "ui/Minimap.h"
 #include "ui/Navigation.h"
 
 #include <glm/glm.hpp>
@@ -45,24 +41,11 @@
 #include <string>
 #include <vector>
 
+namespace fh::test {
 namespace {
 
 using Part = fh::render::FrameStats::Part;
 using PartTimes = fh::render::FrameStats::PartTimes;
-
-/// The scenarios' fixed step: every run drives the same way.
-constexpr float kStep = 1.0F / 60.0F;
-
-fh::Window& window()
-{
-    static fh::Window instance([] {
-        fh::WindowOptions options;
-        options.hidden = true;
-        options.vsync = false;
-        return options;
-    }());
-    return instance;
-}
 
 /// Width and height from FH1_PERF_SIZE ("1920x1080"), or `fallback`.
 std::array<int, 2> perfSize(std::array<int, 2> fallback)
@@ -142,33 +125,20 @@ void report(const Drive& drive, int width, int height)
 
 /// Loads free roam at `width` x `height`, lets it settle and drives the
 /// roads for `seconds` of game time, timing every frame after the settling.
-std::optional<Drive> drive(const char* dir, int width, int height, float seconds)
+std::optional<Drive> drive(int width, int height, float seconds)
 {
     window().setSize(width, height);
-    fh::GameOptions options;
-    options.gameDir = dir;
-    options.profileDir = std::filesystem::temp_directory_path() / "fh1-perf-profile";
-    std::filesystem::remove_all(options.profileDir);
-    fh::Game game(window(), options);
+    Session session({});
+    fh::Game& game = session.game();
     game.frameStats().setSerialised(perfSerialised());
-    for (float t = 0.0F; t < 120.0F && !game.inControl(); t += kStep) {
-        if (!game.frame({}, kStep)) {
-            return std::nullopt;
-        }
-    }
-    if (!game.inControl() || game.navigation() == nullptr) {
+    if (!session.waitForCar() || game.navigation() == nullptr) {
         std::fprintf(stderr, "free roam did not start\n");
         return std::nullopt;
     }
-    fh::test::RoadFollower follower(*game.navigation());
-    fh::InputState previous;
+    RoadFollower follower(*game.navigation());
     const auto step = [&](bool timed, Drive& result) {
-        fh::InputState input = follower.controls(game.playerCar());
-        input.previousKeys = previous.keys;
-        input.previousButtons = previous.buttons;
-        previous = input;
         const glm::vec3 before = game.playerCar().position();
-        if (!game.frame(input, kStep)) {
+        if (!game.frame(follower.controls(game.playerCar()), kStep)) {
             return false;
         }
         if (timed) {
@@ -214,16 +184,11 @@ std::optional<Drive> drive(const char* dir, int width, int height, float seconds
 // frames slower, and a machine shared with builds makes the tail noisy.
 constexpr double kDrawingBudgetMs = 16.0;
 
-TEST_CASE("freeRoamDrawingStaysInBudget", "[perf]")
+TEST_CASE_METHOD(GameScenario, "freeRoamDrawingStaysInBudget", "[scenario][perf][.]")
 {
-    const char* dir = fh::test::gameDir();
-    try {
-        window();
-    } catch (const std::exception& e) {
-        SKIP("no OpenGL context (" << e.what() << ")");
-    }
     const std::array<int, 2> size = perfSize({1600, 900});
-    const std::optional<Drive> result = drive(dir, size[0], size[1], perfSeconds(30.0F));
+    const std::optional<Drive> result = drive(size[0], size[1], perfSeconds(30.0F));
+    window().setSize(640, 360);
     CHECK(result.has_value());
     if (!result) {
         return;
@@ -236,22 +201,5 @@ TEST_CASE("freeRoamDrawingStaysInBudget", "[perf]")
     }
 }
 
-/// Keeps the drive off the player's own folders; the shader cache is the
-/// scenarios'.
-class PerfFolders : public Catch::EventListenerBase {
-public:
-    using Catch::EventListenerBase::EventListenerBase;
-
-    void testRunStarting(const Catch::TestRunInfo& /*info*/) override
-    {
-        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache),
-            fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-scenarios-cache"));
-        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Data),
-            fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-perf-data"));
-        fh::openLogFile(std::filesystem::temp_directory_path() / "fh1-perf.log");
-    }
-};
-
 } // namespace
-
-CATCH_REGISTER_LISTENER(PerfFolders)
+} // namespace fh::test
