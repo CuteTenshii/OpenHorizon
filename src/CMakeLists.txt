@@ -87,6 +87,8 @@ add_library(fh1engine STATIC
     game/Game.h
     game/GameObjects.cpp
     game/GameObjects.h
+    game/GameplaySounds.cpp
+    game/GameplaySounds.h
     game/Outposts.cpp
     game/Outposts.h
     game/PostProcessing.cpp

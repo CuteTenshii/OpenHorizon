@@ -243,6 +243,7 @@ Game::Game(Window& window, const GameOptions& options)
             // (Audio.loading at the start of prepare_free_roam in
             // game_free_roam_flow.xml).
             m_snapshots->apply(audio::MixSnapshotId::Loading);
+            m_crashMix.emplace(audio::CrashMix::load(m_vfs));
             updateMix(0.0F);
         } catch (const std::exception& e) {
             logWarning("audio: mixer snapshots: {}", e.what());
@@ -452,6 +453,16 @@ void Game::loadWorld()
         m_collision->setExcludedChunks(m_smashables->chunkMask());
     } catch (const std::exception& e) {
         logWarning("smashables: {}", e.what());
+    }
+    if (m_audio && m_collision->surfaces()) {
+        try {
+            m_gameplaySounds = std::make_unique<GameplaySounds>(m_vfs, *m_database, m_audio->mixer(), *m_audioLibrary,
+                *m_collision->surfaces(),
+                GameplaySounds::Buses{
+                    categoryBus(audio::MixCategory::Collision), categoryBus(audio::MixCategory::GameUI)});
+        } catch (const std::exception& e) {
+            logWarning("gameplay sounds: {}", e.what());
+        }
     }
     try {
         m_flyers = Flyers::load(m_vfs, m_options.track);
@@ -908,6 +919,9 @@ int Game::stepPhysics(float dt)
         controls.push_back(vehicle->controls);
     }
     while (m_physicsAccumulator >= kStep) {
+        if (m_gameplaySounds) {
+            m_gameplaySounds->advance(kStep);
+        }
         for (std::size_t i = 0; i < m_vehicles.size(); ++i) {
             m_vehicles[i]->physics->step(controls[i], *m_collision);
             collideWithWorld(*m_vehicles[i]);
@@ -940,6 +954,7 @@ void Game::collideWithWorld(Vehicle& vehicle)
     }
     const glm::mat4 transform = vehicle.physics->transform();
     m_worldContacts.clear();
+    m_worldContactSurfaces.clear();
     for (const BodySphere& sphere : vehicle.spheres) {
         const glm::vec3 centre = glm::vec3(transform * glm::vec4(sphere.centre, 1.0F));
         m_contacts.clear();
@@ -950,6 +965,7 @@ void Game::collideWithWorld(Vehicle& vehicle)
         for (std::size_t i = 0; i < count; ++i) {
             const physics::SphereContact& contact = m_contacts[i];
             WorldContact& out = m_worldContacts.emplace_back();
+            m_worldContactSurfaces.push_back(contact.surface);
             out.point = contact.point;
             out.normal = contact.normal;
             out.depth = contact.depth;
@@ -962,6 +978,7 @@ void Game::collideWithWorld(Vehicle& vehicle)
             }
         }
     }
+    reportWorldContacts(vehicle);
     const float impulse = vehicle.physics->resolveWorldContacts(m_worldContacts, settings);
     if (impulse > vehicle.physics->mass() * 3.0F) {
         const glm::vec3 at = vehicle.physics->position();
@@ -984,6 +1001,9 @@ void Game::collideSmashables(Vehicle& vehicle)
     for (std::size_t index : m_smashables->collideCar(*vehicle.physics, spheres)) {
         const Smashables::Body& body = m_smashables->bodies()[index];
         logDebug("smashed {} ({:.0f} kg) at {:.1f} m/s", body.type, body.mass, vehicle.physics->speed());
+        if (m_gameplaySounds) {
+            m_gameplaySounds->smashed(body.type, body.position, vehicle.physics->speed());
+        }
         // Only the player's car collects: the reward is a discount on the
         // player's upgrades and the notification is the player's.
         if (vehicle.role == Vehicle::Role::Player && m_flyers && m_flyers->collect(body.gameplayId)) {
@@ -1049,6 +1069,9 @@ void Game::updateMix(float dt)
 {
     if (!m_snapshots || !m_audio) {
         return;
+    }
+    if (m_crashMix && m_playerPlaced && m_crashMix->update(player().physics->speed())) {
+        m_snapshots->apply(audio::MixSnapshotId::Crash);
     }
     m_snapshots->update(dt);
     for (std::size_t c = 0; c < audio::kMixCategoryCount; ++c) {
@@ -1210,6 +1233,96 @@ void Game::updateAudio(float dt)
         vehicle->engine->setTransform(car.position(), glm::mat3_cast(car.orientation()));
         vehicle->engine->update(car.engineRpm(), car.throttleApplied(), dt);
     }
+    if (m_gameplaySounds) {
+        m_gameplaySounds->update();
+    }
+}
+
+std::uint32_t Game::soundBodyId(const Vehicle& vehicle) const
+{
+    // Body 0 is the static world; a car is its slot plus one, which stays
+    // put while two bodies touch.
+    const auto it = std::find_if(
+        m_vehicles.begin(), m_vehicles.end(), [&](const auto& other) { return other.get() == &vehicle; });
+    return static_cast<std::uint32_t>(it - m_vehicles.begin()) + 1;
+}
+
+void Game::reportWorldContacts(const Vehicle& vehicle)
+{
+    if (!m_gameplaySounds || m_worldContacts.empty()) {
+        return;
+    }
+    const CarPhysics& car = *vehicle.physics;
+    // One report per surface the body touches, from the contact meeting it
+    // fastest: the game reports contacts by pair of bodies and surfaces
+    // (see audio::CollisionSounds), but which of a body's contact points
+    // its physics hands over was not traced. Render geometry and trunks
+    // have no surface type, so collisiondata.xml has nothing for them.
+    std::vector<std::pair<int, std::size_t>> fastest;
+    std::vector<float> approach;
+    for (std::size_t i = 0; i < m_worldContacts.size(); ++i) {
+        const int surface = m_worldContactSurfaces[i];
+        if (surface < 0) {
+            continue;
+        }
+        const WorldContact& contact = m_worldContacts[i];
+        const float speed = -glm::dot(car.worldPointVelocity(contact.point), contact.normal);
+        const auto it
+            = std::find_if(fastest.begin(), fastest.end(), [&](const auto& entry) { return entry.first == surface; });
+        if (it == fastest.end()) {
+            fastest.emplace_back(surface, i);
+            approach.push_back(speed);
+        } else if (const auto slot = static_cast<std::size_t>(it - fastest.begin()); speed > approach[slot]) {
+            it->second = i;
+            approach[slot] = speed;
+        }
+    }
+    const std::size_t carSurface = m_gameplaySounds->carSurface(vehicle.spec->mediaName);
+    for (const auto& [surface, index] : fastest) {
+        const WorldContact& contact = m_worldContacts[index];
+        audio::CollisionReport report;
+        report.bodyA = soundBodyId(vehicle);
+        report.bodyB = 0;
+        report.surfaceA = carSurface;
+        report.surfaceB = static_cast<std::size_t>(surface);
+        report.position = contact.point;
+        // Inferred: the velocity at which the body meets the static world
+        // at the point, as the parameter's name says.
+        report.relativeVelocity = car.worldPointVelocity(contact.point);
+        report.carSpeed = car.speed();
+        report.aiOnly = vehicle.role != Vehicle::Role::Player;
+        m_gameplaySounds->report(report);
+    }
+}
+
+void Game::reportCarContacts(const Vehicle& vehicleA, const Vehicle& vehicleB, std::span<const CarContact> contacts)
+{
+    if (!m_gameplaySounds || contacts.empty()) {
+        return;
+    }
+    const CarPhysics& carA = *vehicleA.physics;
+    const CarPhysics& carB = *vehicleB.physics;
+    // The contact where the two meet fastest (the normal points out of the
+    // second car towards the first); as for the world, which point the
+    // game's physics reports was not traced.
+    const auto closing = [&](const CarContact& contact) {
+        return -glm::dot(
+            carA.worldPointVelocity(contact.point) - carB.worldPointVelocity(contact.point), contact.normal);
+    };
+    const CarContact& contact = *std::max_element(contacts.begin(), contacts.end(),
+        [&](const CarContact& a, const CarContact& b) { return closing(a) < closing(b); });
+    audio::CollisionReport report;
+    report.bodyA = soundBodyId(vehicleA);
+    report.bodyB = soundBodyId(vehicleB);
+    report.surfaceA = m_gameplaySounds->carSurface(vehicleA.spec->mediaName);
+    report.surfaceB = m_gameplaySounds->carSurface(vehicleB.spec->mediaName);
+    report.position = contact.point;
+    report.relativeVelocity = carA.worldPointVelocity(contact.point) - carB.worldPointVelocity(contact.point);
+    // Inferred: the first car's speed; no car-against-car event follows
+    // CarSpeedMph.
+    report.carSpeed = carA.speed();
+    report.aiOnly = vehicleA.role != Vehicle::Role::Player && vehicleB.role != Vehicle::Role::Player;
+    m_gameplaySounds->report(report);
 }
 
 void Game::collideVehicles()
@@ -1259,6 +1372,7 @@ void Game::collideVehicles()
             findCarContacts(
                 carA, vehicleA.bodySpheres, vehicleA.bodyBox, carB, vehicleB.bodySpheres, vehicleB.bodyBox, contacts);
             if (!contacts.empty()) {
+                reportCarContacts(vehicleA, vehicleB, contacts);
                 resolveCarContacts(carA, carB, contacts, torqueScale(vehicleA, vehicleB),
                     torqueScale(vehicleB, vehicleA), restitution);
             }
@@ -1842,6 +1956,12 @@ void Game::updateActivities(const glm::vec3& from)
     if (m_speedTraps) {
         if (const auto pass = m_speedTraps->update(from, car.position(), car.velocity())) {
             logInfo("speed trap {}: {:.1f} mph", m_speedTraps->traps()[pass->trap].name, pass->speed * 2.2369F);
+            // 0x8296CF94: the shutter sound, then the SpeedCam snapshot (id
+            // 25) through the call CPauseGame applies Paused with.
+            if (m_gameplaySounds) {
+                m_gameplaySounds->speedTrapFlash();
+            }
+            applyMix(audio::MixSnapshotId::SpeedCam);
             // 0x8296f728: only a pass faster than the best saves.
             if (pass->speed > pass->previousBest) {
                 requestProfileSave("Activity Speed Camera: New PB");

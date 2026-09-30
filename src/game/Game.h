@@ -3,6 +3,7 @@
 #include "animated/AnimatedObjects.h"
 #include "audio/AudioDevice.h"
 #include "audio/AudioLibrary.h"
+#include "audio/CrashMix.h"
 #include "audio/EngineSound.h"
 #include "audio/MixSnapshots.h"
 #include "base/JobPool.h"
@@ -19,6 +20,7 @@
 #include "game/DrivingLine.h"
 #include "game/Flyers.h"
 #include "game/GameObjects.h"
+#include "game/GameplaySounds.h"
 #include "game/Outposts.h"
 #include "game/PostProcessing.h"
 #include "game/Race.h"
@@ -226,6 +228,10 @@ public:
     std::vector<std::string> uiSoundsPlayed() const;
     bool uiSoundPlaying(std::string_view name) const;
     /// What the HUD would be given this frame.
+    /// The contact, breakage and speed trap sounds; null without sound or
+    /// track collision.
+    const GameplaySounds* gameplaySounds() const { return m_gameplaySounds.get(); }
+    /// What the HUD would be given this frame.
     ui::HudState currentHudState() const { return hudState(0.0F); }
     /// What the full map would show this frame.
     ui::WorldMapState currentMapState() const { return worldMapState(); }
@@ -311,6 +317,12 @@ private:
     void collideWithWorld(Vehicle& vehicle);
     void collideVehicles();
     void collideSmashables(Vehicle& vehicle);
+    /// The id a car's contacts are reported to the gameplay sounds with.
+    std::uint32_t soundBodyId(const Vehicle& vehicle) const;
+    /// Hands the vehicle's world contacts of this step to the gameplay
+    /// sounds, before they are resolved.
+    void reportWorldContacts(const Vehicle& vehicle);
+    void reportCarContacts(const Vehicle& vehicleA, const Vehicle& vehicleB, std::span<const CarContact> contacts);
     void updateDebris(float dt);
     /// Runs the tyre effect rules for every car and advances the particles.
     void updateParticles(float dt);
@@ -525,6 +537,10 @@ private:
     std::array<audio::BusId, audio::kMixCategoryCount> m_categoryBuses{};
     /// The UI sounds, on the GameUI bus; missing without sound.
     std::unique_ptr<ui::UiSounds> m_uiSounds;
+    std::unique_ptr<GameplaySounds> m_gameplaySounds;
+    /// Applies the Crash snapshot when the player's car loses speed
+    /// suddenly; missing without snapshots.
+    std::optional<audio::CrashMix> m_crashMix;
     /// The festival radio; missing without sound or when its files are.
     std::unique_ptr<radio::Radio> m_radio;
     /// What the HUD's radio panel shows next, when the radio's own delay
@@ -544,6 +560,8 @@ private:
     float m_debrisAccumulator = 0.0F;
     std::vector<physics::SphereContact> m_contacts;
     std::vector<WorldContact> m_worldContacts;
+    /// The surface type of each of m_worldContacts, -1 for none.
+    std::vector<int> m_worldContactSurfaces;
     /// Per surface type, a car's FrictionCoefficient and
     /// LowSpeedFrictionCoefficient against it; filled on first use.
     std::vector<std::pair<float, float>> m_carSurfaceFriction;
