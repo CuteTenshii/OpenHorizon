@@ -3143,6 +3143,11 @@ bool Game::frame(const InputState& controls, float dt)
             m_frameStats->mark(Part::DrawCars);
             m_frame->sky(frame);
             m_frameStats->mark(Part::DrawSky);
+            // The game draws the track's blending pass after the sky, so
+            // what blends where no geometry lies behind blends over the sky
+            // (see WorldRenderer::drawTranslucent()).
+            m_worldRenderer->drawTranslucent();
+            m_frameStats->mark(Part::DrawWorld);
             drawVehicleGlass(frame);
             m_frameStats->mark(Part::DrawGlass);
             drawDrivingLine(frame.projection * frame.view);
