@@ -189,6 +189,13 @@ Game::Game(Window& window, const GameOptions& options)
     } catch (const std::exception& e) {
         logWarning("sky objects: {}; no sun, moon or stars", e.what());
     }
+    try {
+        const render::CloudDefinitions clouds = render::CloudDefinitions::load(m_vfs);
+        m_clouds = std::make_unique<render::Clouds>(m_vfs, clouds.sets.front());
+        m_frame->setClouds(m_clouds.get(), &m_cloudParameters, &m_cloudMotion);
+    } catch (const std::exception& e) {
+        logWarning("clouds: {}; no clouds", e.what());
+    }
     m_frameStats = std::make_unique<render::FrameStats>();
     m_overlay = std::make_unique<render::Overlay>("sans-serif:bold", 26);
     drawLoading();
@@ -2962,6 +2969,12 @@ bool Game::frame(const InputState& controls, float dt)
             m_activityProps->update(m_camera.position, *m_worldRenderer);
         }
         m_worldRenderer->update(m_camera.position);
+        if (m_clouds) {
+            // The clouds drift on the frame's real time (inferred; see
+            // render::CloudMotion).
+            m_cloudParameters = m_timeOfDay->clouds();
+            m_cloudMotion.advance(m_cloudParameters, dt);
+        }
         m_frameStats->mark(Part::Streaming);
 
         // The whole frame draws into a 16:9 picture that present() fits in

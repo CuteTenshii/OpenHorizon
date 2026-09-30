@@ -222,6 +222,14 @@ render::SceneLighting TimeOfDay::lighting() const
     return l;
 }
 
+render::CloudParameters TimeOfDay::clouds() const
+{
+    const float t = minutes();
+    return render::sampleCloudParameters([&](std::string_view name) -> std::optional<glm::vec3> {
+        return m_curves.has(name) ? std::optional(m_curves.sample(name, t)) : std::nullopt;
+    });
+}
+
 float TimeOfDay::lights() const
 {
     return std::clamp(m_curves.sampleScalar("SwitchOnLights", minutes()), 0.0F, 1.0F);

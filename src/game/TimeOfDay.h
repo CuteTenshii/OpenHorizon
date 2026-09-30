@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/CloudDefs.h"
+
 #include <glm/glm.hpp>
 
 #include <optional>
@@ -93,6 +95,9 @@ public:
     glm::vec3 sunDirection() const;
     /// Sun, ambient, sky and fog for the renderers at the current time.
     render::SceneLighting lighting() const;
+    /// The cloud layers' parameters at the current time (see
+    /// render::sampleCloudParameters()).
+    render::CloudParameters clouds() const;
     /// 0 by day, 1 when the street lights are on.
     float lights() const;
     float stars() const;

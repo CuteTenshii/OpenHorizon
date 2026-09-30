@@ -91,6 +91,13 @@ target_link_libraries(tst_input PRIVATE fh1platform)
 # The thumbstick shaping on raw pad values; no disc and no window needed.
 add_test(NAME tst_input COMMAND tst_input)
 
+add_executable(tst_clouds TestHarness.h tst_clouds.cpp)
+target_compile_options(tst_clouds PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_clouds PRIVATE fh1engine)
+# clouddefs.xml, cloud curves, motion and domes on synthetic data; the disc's files,
+# Colorado's curves and an offscreen draw when FH1_GAME_DIR names an extracted disc.
+add_test(NAME tst_clouds COMMAND tst_clouds)
+
 add_executable(tst_shadows TestHarness.h tst_shadows.cpp)
 target_compile_options(tst_shadows PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_shadows PRIVATE fh1engine)

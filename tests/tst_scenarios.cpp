@@ -1656,6 +1656,24 @@ TEST(postProcessingAtTimesAndInAZone)
     }
 }
 
+// The sky had no clouds: CRealtimeSky draws its far and close cloud layers
+// over the dome.
+TEST(skyDrawsItsClouds)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::GameOptions options;
+    options.spawnAt = glm::vec2(4330.0F, -250.0F);
+    options.spawnHeading = 0.0F;
+    options.startTime = 13.0F * 3600.0F;
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(3.0F, {});
+    CHECK(session.game().clouds() != nullptr);
+    session.capture("clouds_sky");
+}
+
 } // namespace
 
 int main(int argc, char** argv)

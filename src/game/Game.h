@@ -181,6 +181,8 @@ public:
     const render::ShadowPass* shadowPass() const { return m_shadowPass.get(); }
     const render::FrameRenderer* frameRenderer() const { return m_frame.get(); }
     const render::ShadowCascades& shadowCascades() const { return m_shadowCascades; }
+    /// The cloud layers, null when they could not be loaded.
+    const render::Clouds* clouds() const { return m_clouds.get(); }
     /// Whether the last frame drew the HUD.
     bool hudDrawn() const { return m_hudDrawn; }
     /// Vertices the last frame drew with the system-font overlay outside
@@ -375,6 +377,10 @@ private:
     std::unique_ptr<render::FrameRenderer> m_frame;
     /// The sun, moon and stars m_frame draws over the sky.
     std::unique_ptr<render::SkyObjects> m_skyObjects;
+    /// The cloud layers m_frame draws over the sky, and their state.
+    std::unique_ptr<render::Clouds> m_clouds;
+    render::CloudParameters m_cloudParameters;
+    render::CloudMotion m_cloudMotion;
     /// The sun shadows: where their maps lie, and their passes.
     render::ShadowCascades m_shadowCascades;
     std::unique_ptr<render::ShadowPass> m_shadowPass;

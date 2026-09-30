@@ -109,6 +109,10 @@ add_library(fh1engine STATIC
     physics/WorldCollision.h
     render/CarRenderer.cpp
     render/CarRenderer.h
+    render/CloudDefs.cpp
+    render/CloudDefs.h
+    render/Clouds.cpp
+    render/Clouds.h
     render/CubeMap.cpp
     render/CubeMap.h
     render/DrivingLineRenderer.cpp

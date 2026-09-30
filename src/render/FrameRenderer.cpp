@@ -126,6 +126,11 @@ void FrameRenderer::sky(const FrameParams& frame)
     if (m_skyObjects != nullptr) {
         m_skyObjects->draw(frame);
     }
+    // CRealtimeSky's draw (0x82E37A18) draws the far, then the close clouds
+    // after the sun, moon and stars.
+    if (m_clouds != nullptr && m_cloudParameters != nullptr && m_cloudMotion != nullptr) {
+        m_clouds->draw(frame, *m_cloudParameters, *m_cloudMotion);
+    }
 }
 
 void FrameRenderer::dome(const FrameParams& frame)

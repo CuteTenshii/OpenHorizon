@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CloudDefs.h"
+#include "Clouds.h"
 #include "Gl.h"
 #include "PostProcess.h"
 #include "Shader.h"
@@ -51,6 +53,14 @@ public:
     void sky(const FrameParams& frame);
     /// What sky() draws over the dome; nullptr for none. Not owned.
     void setSkyObjects(SkyObjects* objects) { m_skyObjects = objects; }
+    /// The cloud layers sky() draws after the sky objects, with their
+    /// parameters and motion for the frame; nullptr for none. Not owned.
+    void setClouds(Clouds* clouds, const CloudParameters* parameters, const CloudMotion* motion)
+    {
+        m_clouds = clouds;
+        m_cloudParameters = parameters;
+        m_cloudMotion = motion;
+    }
     /// Runs the post-processing on the scene target into the output
     /// framebuffer and leaves it bound for overlays.
     void finish(const PostFrame& post);
@@ -76,6 +86,9 @@ private:
     Shader m_skyShader;
     PostProcess m_post;
     SkyObjects* m_skyObjects = nullptr;
+    Clouds* m_clouds = nullptr;
+    const CloudParameters* m_cloudParameters = nullptr;
+    const CloudMotion* m_cloudMotion = nullptr;
 };
 
 } // namespace fh::render
