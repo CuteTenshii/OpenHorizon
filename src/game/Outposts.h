@@ -23,7 +23,13 @@ struct Outpost {
     std::string object;
     glm::vec3 position{0.0F};
     /// The activation zone: its radius (metres), speed limit (metres per
-    /// second) and prompt texts (Activities string ids).
+    /// second) and prompt texts (Activities string ids). Verified: the
+    /// prompt's title and name are the zone's promptTitle and prompt as
+    /// read (the zone's update 0x82980e70 hands them with the call to action
+    /// and icon to the status 0x825c4a60, which the prompt control shows at
+    /// 0x828a25f0), and nothing replaces an outpost's (the zone's prompt
+    /// setter 0x82981200 is called only for career events and speed traps).
+    /// GasStation_05's name, IDS_GasStationName_05, reads MEDIA CENTER.
     float radius = 0.0F;
     std::optional<float> maxSpeed;
     std::string promptTitle;
@@ -63,6 +69,14 @@ struct Outpost {
 /// tutorialRadius and its cutscene.
 class Outposts {
 public:
+    /// The activation prompt's icon, as the suffix of its SET_EVENTICON_*
+    /// event. Verified: discovery (0x82972dcc) sets the zone's prompt icon
+    /// (+128, through 0x82c94f08) to 33, and the prompt control maps icon 33
+    /// to SET_EVENTICON_PRHUB (0x8289acf8 with its byte table at
+    /// 0x820775b8). The zone shows the prompt only once enabled, which
+    /// discovery does, so the prompt always carries this icon.
+    static constexpr std::string_view kPromptIcon = "PRHUB";
+
     /// The catalogue's ActivityGasStation activities whose zone object
     /// GameObjs.xml has.
     static Outposts build(const ActivityCatalogue& catalogue, const GameObjects& objects);

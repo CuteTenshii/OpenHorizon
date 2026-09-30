@@ -13,6 +13,7 @@
 #include "game/SpeedTraps.h"
 #include "particles/ParticleEmitters.h"
 #include "particles/ParticleManager.h"
+#include "ui/MenuCommon.h"
 #include "vfs/Vfs.h"
 
 #include <glm/glm.hpp>
@@ -20,6 +21,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <format>
 #include <optional>
 #include <string>
 #include <vector>
@@ -204,6 +206,62 @@ TEST(colorado_activities)
     }
     const std::vector<std::string> names = fh::ActivityProps::zoneNames("FR04", objects);
     CHECK_EQ(names.size(), std::size_t{19});
+}
+
+// Each Horizon outpost GasStation_NN is the zone GASSTATION_0NN, and its
+// prompt and map entry name it with IDS_GasStationName_NN of the Activities
+// table, under the title IDS_Description_GasStation. A player took the
+// "HORIZON OUTPOST / MEDIA CENTER" prompt for a festival building's: MEDIA
+// CENTER is outpost 5's own name, its zone lies over 3 km from the festival
+// buildings' zones, and none of those zones uses an outpost's text.
+TEST(colorado_outposts_are_named_by_their_own_strings)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const fh::ActivityCatalogue catalogue = fh::ActivityCatalogue::load(vfs, "colorado");
+    const fh::GameObjects objects = fh::GameObjects::load(vfs, "colorado");
+    const fh::Outposts outposts = fh::Outposts::build(catalogue, objects);
+    fh::ui::UiStrings strings(vfs, "en");
+    CHECK_EQ(outposts.all().size(), std::size_t{10});
+    std::vector<std::string> shownNames;
+    for (std::size_t i = 0; i < outposts.all().size(); ++i) {
+        const fh::Outpost& outpost = outposts.all()[i];
+        const std::size_t number = i + 1;
+        CHECK_EQ(outpost.name, std::format("GasStation_{:02}", number));
+        CHECK_EQ(outpost.object, std::format("GASSTATION_{:03}", number));
+        CHECK_EQ(outpost.prompt, std::format("IDS_GasStationName_{:02}", number));
+        CHECK_EQ(outpost.mapDescription, outpost.prompt);
+        CHECK(strings.has("Activities", outpost.prompt));
+        shownNames.push_back(strings.get("Activities", outpost.prompt));
+    }
+    CHECK_EQ(strings.get("Activities", "IDS_Description_GasStation"), std::string("HORIZON OUTPOST"));
+    std::vector<std::string> distinct = shownNames;
+    std::sort(distinct.begin(), distinct.end());
+    CHECK(std::adjacent_find(distinct.begin(), distinct.end()) == distinct.end());
+
+    const fh::Outpost& mediaCenter = outposts.all()[4];
+    CHECK_EQ(shownNames[4], std::string("MEDIA CENTER"));
+    std::size_t buildings = 0;
+    for (const char* type : {"ActivityAutoshow", "ActivityRaceCentral", "ActivityCarClub", "ActivityDlcCenter",
+             "ActivityPaintshop", "ActivityWorkshop"}) {
+        for (const fh::Activity* activity : catalogue.ofType(type)) {
+            for (const fh::ActivityZone& zone : activity->zones) {
+                ++buildings;
+                CHECK(!zone.prompt.starts_with("IDS_GasStationName_"));
+                CHECK(zone.promptTitle != "IDS_Description_GasStation");
+                const fh::GameObject* building = objects.find(zone.object);
+                CHECK(building != nullptr);
+                if (building != nullptr) {
+                    CHECK(glm::length(building->position - mediaCenter.position) > 3000.0F);
+                }
+            }
+        }
+    }
+    CHECK_EQ(buildings, std::size_t{6});
 }
 
 } // namespace

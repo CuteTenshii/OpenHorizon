@@ -20,10 +20,14 @@ float textElementWidth(const Presentation& scene, UiRenderer& renderer, int elem
 ///
 /// Verified from the executable: what the attach (0x828cf6a8) captures and
 /// its defaults, and the layout (widths 0x828ca920, placement 0x828cfab8,
-/// both called from the contract's slot 5, 0x828d1e08). Inferred: that the
-/// layout runs whenever a stacked text changes; what makes the game run it
-/// was not traced, and running it every frame from the captured values
-/// gives the same result.
+/// both called from the contract's slot 5, 0x828d1e08), and that only text
+/// elements have a width: the attach keeps an element in the width slot
+/// only when it casts from CUI4Element to CUI4TextElement (0x828cf7bc, the
+/// RTTI at 0x83324d40 and 0x83324d9c), so a stacked component, such as the
+/// activation prompt's Title, moves by the texts before it but pushes
+/// nothing along. Inferred: that the layout runs whenever a stacked text
+/// changes; what makes the game run it was not traced, and running it every
+/// frame from the captured values gives the same result.
 class SuperStackers {
 public:
     /// Captures every SUPER_STACKER in `scene` (only those below `root`

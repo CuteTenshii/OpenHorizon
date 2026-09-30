@@ -44,7 +44,8 @@ int usage()
         "       fh1ui DISC glyphs OUT.png [--font FACE] [--size PX]\n"
         "       fh1ui DISC texture PATH OUT.png\n"
         "       fh1ui DISC string ID [LANGUAGE]\n"
-        "       fh1ui DISC render OUT.png [--race] [--sprint] [--countdown S] [--prompt] [--assists]\n"
+        "       fh1ui DISC render OUT.png [--race] [--sprint] [--countdown S] [--prompt] [--prompt-title TEXT]\n"
+        "                                 [--assists]\n"
         "                                 [--size WxH] [--time S] [--rpm R] [--rpm-rate R]\n"
         "                                 [--speed S] [--metric] [--at X,Z] [--heading DEG]\n"
         "                                 [--track NAME] [--radio STATION[,TITLE[,ARTIST]]] [--radio-tuning]\n"
@@ -392,6 +393,8 @@ int renderGlyphs(const fh::Vfs& vfs, const std::string& out, const std::string& 
 struct RenderOptions {
     bool race = false;
     bool prompt = false;
+    /// The prompt's title line (HUD_ACTIVATION_PROMPT's TEXT_TITLE), shown with --prompt.
+    std::string promptTitle;
     bool sprint = false;
     bool assists = false;
     /// Seconds into the start countdown at the last frame; negative for none.
@@ -435,6 +438,7 @@ HudState sampleState(const RenderOptions& options)
         state.prompt = "COLORADO SPRINT";
         state.promptDetail = "SIGN ME UP!";
         state.promptIcon = "DEFAULT";
+        state.promptTitle = options.promptTitle;
     }
     if (options.race || options.sprint || options.countdown >= 0.0F) {
         state.inRace = true;
@@ -665,6 +669,9 @@ int main(int argc, char** argv)
                     options.headingDegrees = std::stof(value());
                 } else if (arg == "--prompt") {
                     options.prompt = true;
+                } else if (arg == "--prompt-title") {
+                    options.prompt = true;
+                    options.promptTitle = value();
                 } else if (arg == "--countdown") {
                     options.countdown = std::stof(value());
                 } else if (arg == "--time") {

@@ -128,7 +128,8 @@ struct HudState {
     /// when set (0x828a0568 fires SHOW_TITLE or HIDE_TITLE by whether it is
     /// empty). The icon names one of the scene's SET_EVENTICON_* events by
     /// its suffix ("DEFAULT", "FESTIVALEVENT1", "RACECENTRAL", "BARNFIND"
-    /// and so on); empty leaves the icon as it is.
+    /// and so on); empty is a prompt without an icon, which the game shows
+    /// as DEFAULT (0x8289acf8 maps icons 0 and -1 to it).
     std::string prompt;
     std::string promptDetail;
     std::string promptTitle;
@@ -194,6 +195,10 @@ public:
     /// TEXT_TARGET_DISTANCE), for the scenario tests; empty when the HUD
     /// has none.
     std::string satNavDistanceText() const;
+    /// The slide the activation prompt's event icon (Event_Name/Icon) shows
+    /// as last drawn ("DEFAULT", "PRHUB", ...), for the scenario tests;
+    /// empty when the HUD has no such icon.
+    std::string promptIconSlide() const;
 
 private:
     struct Impl;

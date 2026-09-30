@@ -1742,6 +1742,70 @@ TEST(helpBarsFitTheirTexts)
     window().setSize(640, 360);
 }
 
+// A player's screenshot near "the media centre": HORIZON OUTPOST over MEDIA
+// CENTER with a race icon. The media centre is outpost GasStation_05 (the
+// GASSTATION_005 zone, named IDS_GasStationName_05 in gas_stations.xml),
+// so its title and name are the game's; the icon was not. An outpost's
+// discovery sets its zone's prompt icon to 33 (0x82972dcc), which the
+// prompt shows as SET_EVENTICON_PRHUB (0x8289acf8).
+TEST(mediaCenterOutpostPromptShowsThePrHubIcon)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::GameOptions options;
+    options.spawnObject = "GASSTATION_005";
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(2.0F, {});
+    fh::Game& game = session.game();
+    const fh::ui::Hud* hud = game.hud();
+    CHECK(hud != nullptr);
+    if (hud == nullptr) {
+        return;
+    }
+    session.capture("outpost_media_center_prompt");
+    const fh::ui::HudState state = game.currentHudState();
+    CHECK_EQ(state.promptTitle, std::string("HORIZON OUTPOST"));
+    CHECK_EQ(state.prompt, std::string("MEDIA CENTER"));
+    CHECK_EQ(state.promptDetail, std::string("ENTER NOW"));
+    CHECK_EQ(state.promptIcon, std::string("PRHUB"));
+    CHECK_EQ(hud->promptIconSlide(), std::string("PRHUB"));
+}
+
+// The prompt control sets the icon from every status it shows (0x828a25f0
+// passes the status's icon to 0x8289acf8), and a status without one shows
+// SET_EVENTICON_DEFAULT. A prompt without an icon after an outpost's must
+// not keep the outpost's.
+TEST(promptWithoutAnIconShowsTheDefaultIcon)
+{
+    const char* dir = gameDir();
+    if (dir == nullptr) {
+        return;
+    }
+    // The session provides the OpenGL context the HUD draws with.
+    Session session({});
+    CHECK(session.waitForCar());
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    fh::ui::Hud hud(vfs, "colorado");
+    fh::ui::HudState state;
+    state.dt = kStep;
+    state.prompt = "MEDIA CENTER";
+    state.promptTitle = "HORIZON OUTPOST";
+    state.promptDetail = "ENTER NOW";
+    state.promptIcon = "PRHUB";
+    hud.draw(state, 1280, 720);
+    CHECK_EQ(hud.promptIconSlide(), std::string("PRHUB"));
+    state.prompt.clear();
+    hud.draw(state, 1280, 720);
+    state.prompt = "COLORADO SPRINT";
+    state.promptTitle.clear();
+    state.promptIcon.clear();
+    hud.draw(state, 1280, 720);
+    CHECK_EQ(hud.promptIconSlide(), std::string("DEFAULT"));
+}
+
 } // namespace
 
 int main(int argc, char** argv)

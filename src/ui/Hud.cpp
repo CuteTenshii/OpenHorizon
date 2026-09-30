@@ -223,6 +223,9 @@ struct Hud::Impl {
     int promptAction = -1;
     int promptTitle = -1;
     int promptLocked = -1;
+    /// The Icon component beside the event name, whose slides the
+    /// SET_EVENTICON_* events pick.
+    int promptIcon = -1;
     bool promptShown = false;
     std::optional<std::string> promptTitleShown;
     std::string promptIconShown;
@@ -380,6 +383,7 @@ void Hud::Impl::bind()
     promptTitle = parameter(promptContract, "TEXT_TITLE");
     const int lockedText = parameter(promptContract, "TEXT_LOCKED");
     promptLocked = lockedText >= 0 ? scene.parent(lockedText) : -1;
+    promptIcon = promptName >= 0 ? scene.findBelow(scene.parent(promptName), "Icon") : -1;
 
     satNavContract = scene.contract(parameter(hudContract, "COMPONENT_SAT_NAV"), "HUD_SAT_NAV");
     satNavDistance = parameter(satNavContract, "TEXT_TARGET_DISTANCE");
@@ -765,9 +769,13 @@ void Hud::Impl::updatePrompt(const HudState& state)
             fire(promptContract, state.promptTitle.empty() ? "HIDE_TITLE" : "SHOW_TITLE");
             promptTitleShown = state.promptTitle;
         }
-        if (!state.promptIcon.empty() && state.promptIcon != promptIconShown) {
-            fire(promptContract, "SET_EVENTICON_" + state.promptIcon);
-            promptIconShown = state.promptIcon;
+        // The control sets the icon from every status it shows (0x828a25f0
+        // passes the status's icon to 0x8289acf8), and a status without one
+        // (icon 0 or -1) shows SET_EVENTICON_DEFAULT.
+        const std::string icon = state.promptIcon.empty() ? std::string("DEFAULT") : state.promptIcon;
+        if (icon != promptIconShown) {
+            fire(promptContract, "SET_EVENTICON_" + icon);
+            promptIconShown = icon;
         }
     }
     if (wanted != promptShown) {
@@ -947,6 +955,11 @@ Hud::~Hud() = default;
 std::string Hud::satNavDistanceText() const
 {
     return m_impl->satNavDistance >= 0 ? m_impl->scene.text(m_impl->satNavDistance) : std::string();
+}
+
+std::string Hud::promptIconSlide() const
+{
+    return m_impl->promptIcon >= 0 ? m_impl->scene.currentSlide(m_impl->promptIcon) : std::string();
 }
 
 void Hud::draw(const HudState& state, int width, int height)

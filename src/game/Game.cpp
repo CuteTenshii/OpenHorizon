@@ -2437,6 +2437,7 @@ ui::HudState Game::hudState(float dt) const
         state.promptTitle = m_activityTexts.outpostTitles[*m_nearbyOutpost];
         state.prompt = m_activityTexts.outpostNames[*m_nearbyOutpost];
         state.promptDetail = m_activityTexts.enterNow;
+        state.promptIcon = std::string(Outposts::kPromptIcon);
     }
     for (const ui::MapMarker& marker : activityMapMarkers()) {
         state.mapMarkers.push_back({marker.key, marker.value, marker.position, marker.heading});
