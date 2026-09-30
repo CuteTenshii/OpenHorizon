@@ -156,8 +156,9 @@ struct MixSnapshot {
 /// defaults above (an inactive category); what the game's XML reader leaves
 /// in the fields of a missing element was not traced. The DynamicsData
 /// element (the music high-pass rates, the crash and top speed thresholds)
-/// is read by the same loader but is not kept here: the snapshots that
-/// depend on it (Crash, TopSpeed, LowSpeed) have no triggers in this game.
+/// is read by the same loader but is not kept here: CrashMix reads the
+/// crash thresholds that apply Crash; TopSpeed and LowSpeed, which follow a
+/// top speed whose source was not traced, have no triggers in this game.
 class MixSnapshots {
 public:
     /// Throws DataError naming `source` if the text is not XML with a

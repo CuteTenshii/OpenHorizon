@@ -3,6 +3,10 @@ add_library(fh1audio STATIC
     AudioDevice.h
     AudioLibrary.cpp
     AudioLibrary.h
+    CollisionSounds.cpp
+    CollisionSounds.h
+    CrashMix.cpp
+    CrashMix.h
     Decode.cpp
     Decode.h
     Dsp.cpp

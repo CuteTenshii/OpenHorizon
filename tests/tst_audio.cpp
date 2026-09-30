@@ -8,6 +8,8 @@
 
 #include "audio/AudioDevice.h"
 #include "audio/AudioLibrary.h"
+#include "audio/CollisionSounds.h"
+#include "audio/CrashMix.h"
 #include "audio/Decode.h"
 #include "audio/Dsp.h"
 #include "audio/EngineSound.h"
@@ -23,6 +25,7 @@
 #include "vfs/Vfs.h"
 
 #include <SDL3/SDL.h>
+#include <pugixml.hpp>
 
 #include <algorithm>
 #include <array>
@@ -1917,6 +1920,234 @@ TEST(discMixSnapshots)
     CHECK_NEAR(freeRoam.settings[static_cast<std::size_t>(MixCategory::FocusCar)].volume, 0.35, 1e-6);
     CHECK_NEAR(freeRoam.settings[static_cast<std::size_t>(MixCategory::FocusCar)].fadeTime, 0.5, 1e-6);
     CHECK(snapshots.snapshot(MixSnapshotId::Crash).group == MixGroup::Impact);
+}
+
+constexpr std::string_view kCollisionXml = R"(<CollisionData MSBetweenDiffCollisions="75">
+<CollisionEvent Surface1="Asphalt" Surface2="CarAluminum">
+  <Impact3D Group="Collisions/Collisions/Asphalt/CarAluminum" Event="IMPACT_3D"/>
+  <ImpactLFE Group="Collisions/Collisions/LFE" Event="IMPACT_LFE"/>
+  <Scrape3D Group="Collisions/Collisions/Asphalt/CarAluminum" Event="SCRAPE_3D"/>
+  <Whoosh3D Group="AMB_Default/TrackAmbient/Track3D" Event="Default_Reflections"/>
+</CollisionEvent>
+<CollisionEvent Surface1="CarAluminum" Surface2="Dirt">
+  <Impact3D Group="Collisions/Collisions/CarAluminum/Dirt" Event="IMPACT_3D"/>
+</CollisionEvent>
+<CollisionEvent Surface1="Dirt" Surface2="CarAluminum">
+  <Impact3D Group="Collisions/Collisions/CarCarbonFiber/Dirt" Event="IMPACT_3D"/>
+</CollisionEvent>
+<CollisionEvent Surface1="Asphault2" Surface2="CarAluminum">
+  <Impact3D Group="Collisions/Collisions/Asphalt/CarAluminum" Event="IMPACT_3D"/>
+</CollisionEvent>
+<BreakEvent Smashable="co_fest_speedcamera_001">
+  <Impact3D Group="Collisions/Smashables/Break/Speedcamera" Event="IMPACT_3D"/>
+  <Whoosh3D Group="AMB_Default/TrackAmbient/Track3D" Event="Default_Reflections_Smashable"/>
+</BreakEvent>
+</CollisionData>)";
+
+// collisiondata.xml as the game's loader reads it: pairs by surface id in
+// both orders, later entries replacing earlier ones, surfaces not in the
+// list skipped, Whoosh3D left out, break events by smashable name.
+TEST(collisionSoundTableParses)
+{
+    using Slot = CollisionSoundTable::Slot;
+    const std::vector<std::string> surfaces{"Asphalt", "Dirt", "CarAluminum"};
+    const CollisionSoundTable table = CollisionSoundTable::parse(kCollisionXml, surfaces, "test");
+    CHECK_EQ(table.msBetweenDiffCollisions(), std::uint32_t{75});
+    CHECK_EQ(table.surfaceCount(), std::size_t{3});
+    const CollisionEventRef* impact = table.event(0, 2, Slot::Impact3D);
+    CHECK(impact != nullptr);
+    if (impact) {
+        CHECK_EQ(impact->project, std::string("Collisions"));
+        CHECK_EQ(impact->event, std::string("Collisions/Asphalt/CarAluminum/IMPACT_3D"));
+    }
+    const CollisionEventRef* reversed = table.event(2, 0, Slot::Impact3D);
+    CHECK(reversed && impact && reversed->event == impact->event);
+    const CollisionEventRef* lfe = table.event(2, 0, Slot::ImpactLFE);
+    CHECK(lfe && lfe->event == "Collisions/LFE/IMPACT_LFE");
+    const CollisionEventRef* scrape = table.event(0, 2, Slot::Scrape3D);
+    CHECK(scrape && scrape->event == "Collisions/Asphalt/CarAluminum/SCRAPE_3D");
+    // The second Dirt entry replaces the first for both orders.
+    const CollisionEventRef* dirt = table.event(2, 1, Slot::Impact3D);
+    CHECK(dirt && dirt->event == "Collisions/CarCarbonFiber/Dirt/IMPACT_3D");
+    CHECK(table.event(1, 2, Slot::ImpactLFE) == nullptr);
+    CHECK(table.event(0, 1, Slot::Impact3D) == nullptr);
+    CHECK(table.event(0, 3, Slot::Impact3D) == nullptr);
+    CHECK_EQ(table.pairCount(Slot::Impact3D), std::size_t{4});
+    CHECK_EQ(table.pairCount(Slot::Scrape3D), std::size_t{2});
+    const CollisionEventRef* broken = table.breakEvent("CO_Fest_SpeedCamera_001");
+    CHECK(broken && broken->event == "Smashables/Break/Speedcamera/IMPACT_3D");
+    CHECK(table.breakEvent("co_bench_001") == nullptr);
+    CHECK_EQ(table.breakEventCount(), std::size_t{1});
+
+    const CollisionSoundTable bare = CollisionSoundTable::parse("<CollisionData/>", surfaces, "test");
+    CHECK_EQ(bare.msBetweenDiffCollisions(), CollisionSoundTable::kDefaultMsBetweenDiffCollisions);
+    CHECK_THROWS(CollisionSoundTable::parse("<Other/>", surfaces, "test"));
+}
+
+// A contact lasts while the same two bodies keep touching through the same
+// surfaces, in either order, and ends once it has not been reported for
+// more than MSBetweenDiffCollisions.
+TEST(collisionSoundsTrackContacts)
+{
+    const std::vector<std::string> surfaces{"Asphalt", "Dirt", "CarAluminum"};
+    Mixer mixer(48000);
+    fh::Vfs vfs;
+    AudioLibrary library(vfs);
+    CollisionSounds sounds(mixer, library, CollisionSoundTable::parse(kCollisionXml, surfaces, "test"), kMasterBus);
+    CollisionReport report;
+    report.bodyA = 1;
+    report.bodyB = 0;
+    report.surfaceA = 2;
+    report.surfaceB = 0;
+    report.relativeVelocity = glm::vec3(0.0F, 0.0F, 20.0F);
+    sounds.report(report, 1000);
+    CHECK_EQ(sounds.contactCount(), std::size_t{1});
+    CollisionReport swapped = report;
+    std::swap(swapped.bodyA, swapped.bodyB);
+    std::swap(swapped.surfaceA, swapped.surfaceB);
+    sounds.report(swapped, 1040);
+    CHECK_EQ(sounds.contactCount(), std::size_t{1});
+    CollisionReport other = report;
+    other.surfaceB = 1;
+    sounds.report(other, 1040);
+    CHECK_EQ(sounds.contactCount(), std::size_t{2});
+    sounds.update(1115);
+    CHECK_EQ(sounds.contactCount(), std::size_t{2});
+    sounds.update(1116);
+    CHECK_EQ(sounds.contactCount(), std::size_t{0});
+    // Without the project on this empty file system nothing plays.
+    CHECK(sounds.started().empty());
+}
+
+// The Crash snapshot follows the focus car's speed from one update to the
+// next: above the threshold, a fall of more than the drop.
+TEST(crashMixFollowsTheSpeedDrop)
+{
+    const CrashMix crash = CrashMix::parse(R"(<MixSnapshots><DynamicsData>
+      <CrashData threshold="50" drop="10"/></DynamicsData></MixSnapshots>)",
+        "test");
+    CHECK_NEAR(crash.threshold, 50.0, 1e-6);
+    CHECK_NEAR(crash.drop, 10.0, 1e-6);
+    constexpr float kMph = 1.0F / 2.2369F;
+    CrashMix mix = crash;
+    CHECK(!mix.update(60.0F * kMph));
+    CHECK(!mix.update(55.0F * kMph));
+    CHECK(mix.update(40.0F * kMph));
+    CHECK(!mix.update(20.0F * kMph));
+    CHECK(!mix.update(45.0F * kMph));
+    // From 45 mph a stop is below the threshold.
+    CHECK(!mix.update(0.0F));
+    const CrashMix none = CrashMix::parse("<MixSnapshots/>", "test");
+    CHECK_NEAR(none.threshold, 0.0, 1e-6);
+    CHECK_THROWS(CrashMix::parse("<Other/>", "test"));
+}
+
+std::vector<std::string> discSurfaceNames(const fh::Vfs& vfs)
+{
+    std::vector<std::string> names;
+    const std::optional<std::string> text = vfs.readText("media/physics/surfacetypes.xml");
+    pugi::xml_document document;
+    if (text && document.load_buffer(text->data(), text->size())) {
+        for (const pugi::xml_node node : document.child("Root").child("SurfaceTypesList").children("SurfaceType")) {
+            names.emplace_back(node.attribute("value").as_string());
+        }
+    }
+    return names;
+}
+
+// The disc's collisiondata.xml against surfaceTypes.xml and Collisions.fev,
+// and a car scraping along asphalt played through it.
+TEST(discCollisionSounds)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    using Slot = CollisionSoundTable::Slot;
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    const std::vector<std::string> surfaces = discSurfaceNames(vfs);
+    CHECK_EQ(surfaces.size(), std::size_t{68});
+    const auto id = [&](std::string_view name) {
+        return static_cast<std::size_t>(std::find(surfaces.begin(), surfaces.end(), name) - surfaces.begin());
+    };
+    // A car's PhysicsMaterialID indexes this list: 7 and 8 are its two
+    // body materials.
+    CHECK_EQ(id("CarAluminum"), std::size_t{7});
+    CHECK_EQ(id("CarCarbonFiber"), std::size_t{8});
+    const CollisionSoundTable table = CollisionSoundTable::load(vfs, surfaces);
+    CHECK_EQ(table.msBetweenDiffCollisions(), std::uint32_t{75});
+    AudioLibrary library(vfs);
+    const auto project = library.project("Game:\\Media\\Audio\\Collisions\\Collisions.fev");
+    // Every event a car-against-world or car-against-car pair names is in
+    // the project; the ones missing name props this game has no surfaces
+    // for (the MetalSign and RubberCone groups).
+    std::set<std::string> missing;
+    std::size_t carPairs = 0;
+    for (const std::size_t car : {id("CarAluminum"), id("CarCarbonFiber")}) {
+        for (std::size_t other = 0; other < surfaces.size(); ++other) {
+            for (const Slot slot : {Slot::Impact3D, Slot::ImpactLFE, Slot::Scrape3D}) {
+                const CollisionEventRef* ref = table.event(car, other, slot);
+                if (!ref) {
+                    continue;
+                }
+                ++carPairs;
+                CHECK_EQ(ref->project, std::string("Collisions"));
+                if (!project->findEvent(ref->event)) {
+                    missing.insert(ref->event);
+                }
+            }
+        }
+    }
+    CHECK(carPairs > 150);
+    for (const std::string& event : missing) {
+        CHECK(event.find("MetalSign") != std::string::npos || event.find("RubberCone") != std::string::npos);
+    }
+    const CollisionEventRef* asphalt = table.event(id("CarAluminum"), id("Asphalt"), Slot::Impact3D);
+    CHECK(asphalt && asphalt->event == "Collisions/Asphalt/CarAluminum/IMPACT_3D");
+    const CollisionEventRef* cars = table.event(id("CarAluminum"), id("CarCarbonFiber"), Slot::Impact3D);
+    CHECK(cars && project->findEvent(cars->event) != nullptr);
+    const CollisionEventRef* camera = table.breakEvent("co_fest_speedcamera_001");
+    CHECK(camera && project->findEvent(camera->event) != nullptr);
+
+    AudioDevice device{AudioDevice::Offline{}};
+    CollisionSounds sounds(device.mixer(), library, table, kMasterBus);
+    device.mixer().setListener(glm::vec3(0.0F, 0.0F, -3.0F), glm::vec3(1.0F, 0.0F, 0.0F));
+    CollisionReport report;
+    report.bodyA = 1;
+    report.surfaceA = id("CarAluminum");
+    report.surfaceB = id("Asphalt");
+    report.relativeVelocity = glm::vec3(0.0F, 0.0F, 60.0F / 2.2369F);
+    report.carSpeed = 60.0F / 2.2369F;
+    std::uint32_t now = 0;
+    double energy = 0.0;
+    for (int frame = 0; frame < 30; ++frame, now += 16) {
+        sounds.report(report, now);
+        sounds.update(now);
+        for (const float s : device.render(768)) {
+            energy += static_cast<double>(s) * s;
+        }
+    }
+    CHECK_EQ(sounds.started().size(), std::size_t{3});
+    if (sounds.started().size() == 3) {
+        CHECK(sounds.started()[0].slot == Slot::Impact3D);
+        CHECK_NEAR(sounds.started()[0].relativeVelocityMph, 60.0, 1e-3);
+        CHECK(sounds.started()[1].slot == Slot::ImpactLFE);
+        CHECK(sounds.started()[2].slot == Slot::Scrape3D);
+        CHECK_NEAR(sounds.started()[2].carSpeedMph, 60.0, 1e-3);
+    }
+    CHECK_EQ(sounds.scrapesPlaying(), std::size_t{1});
+    CHECK(energy > 0.0);
+    sounds.update(now + 100);
+    CHECK_EQ(sounds.contactCount(), std::size_t{0});
+    CHECK_EQ(sounds.scrapesPlaying(), std::size_t{0});
+    sounds.playBreak("CO_Fest_SpeedCamera_001", glm::vec3(0.0F), 20.0F);
+    CHECK_EQ(sounds.started().size(), std::size_t{4});
+    CHECK_NEAR(sounds.started().back().relativeVelocityMph, 20.0 * 2.2369, 1e-3);
+
+    const CrashMix crash = CrashMix::load(vfs);
+    CHECK_NEAR(crash.threshold, 50.0, 1e-6);
+    CHECK_NEAR(crash.drop, 10.0, 1e-6);
 }
 
 } // namespace
