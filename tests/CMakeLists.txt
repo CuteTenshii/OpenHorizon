@@ -85,6 +85,12 @@ target_link_libraries(tst_render PRIVATE fh1platform)
 # goes to a folder of their own under the temporary directory.
 add_test(NAME tst_render COMMAND tst_render)
 
+add_executable(tst_input TestHarness.h tst_input.cpp)
+target_compile_options(tst_input PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_input PRIVATE fh1platform)
+# The thumbstick shaping on raw pad values; no disc and no window needed.
+add_test(NAME tst_input COMMAND tst_input)
+
 add_executable(tst_shadows TestHarness.h tst_shadows.cpp)
 target_compile_options(tst_shadows PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_shadows PRIVATE fh1engine)

@@ -40,6 +40,8 @@ target_link_libraries(fh1data PUBLIC fh1base SQLite3::SQLite3 glm::glm)
 
 add_library(fh1platform STATIC
     platform/Input.h
+    platform/PadInput.cpp
+    platform/PadInput.h
     platform/Window.cpp
     platform/Window.h
     render/Gl.cpp

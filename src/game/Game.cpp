@@ -1858,6 +1858,18 @@ void Game::loadProfile()
         m_options.profileDir.empty() ? profile::ProfileStore::defaultDirectory() : m_options.profileDir);
     profile::ProfileStore::LoadResult loaded = m_profileStore->load(*schema);
     m_profile.emplace(std::move(loaded.profile));
+    // The game hands the pad the profile's controller options (0x82569E20);
+    // of those, the steering dead zones shape the left stick.
+    const auto profileFloat = [this](std::string_view path) -> std::optional<float> {
+        const std::optional<profile::PropertyValue> value = m_profile->value(path);
+        const float* number = value ? std::get_if<float>(&*value) : nullptr;
+        return number ? std::optional<float>(*number) : std::nullopt;
+    };
+    const std::optional<float> steerInside = profileFloat("ControllerAdvancedOptions/SteeringAxisDeadzoneInside");
+    const std::optional<float> steerOutside = profileFloat("ControllerAdvancedOptions/SteeringAxisDeadzoneOutside");
+    if (steerInside && steerOutside) {
+        m_window.setLeftStickDeadZone(controllerSteeringDeadZone(*steerInside, *steerOutside));
+    }
     const profile::GameState& state = m_profile->state;
     if (m_navigation && state.roads) {
         m_navigation->coverage().restoreVisited(state.roads->visited);

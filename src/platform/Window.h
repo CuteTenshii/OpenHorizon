@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Input.h"
+#include "PadInput.h"
 
 #include <string>
 
@@ -55,6 +56,10 @@ public:
     /// Sets the pad's rumble motors, each 0 to 1, for `milliseconds`.
     void rumble(float low, float high, int milliseconds);
 
+    /// The left stick's dead zone, in raw pad units; the game sets it from
+    /// the profile's controller options (controllerSteeringDeadZone()).
+    void setLeftStickDeadZone(const StickDeadZone& deadZone) { m_leftStickDeadZone = deadZone; }
+
 private:
     void openFirstGamepad();
     void refreshGamepad();
@@ -63,6 +68,7 @@ private:
     void* m_context = nullptr;
     SDL_Gamepad* m_gamepad = nullptr;
     InputState m_input;
+    StickDeadZone m_leftStickDeadZone = kPadDefaultStickDeadZone;
     int m_width = 0;
     int m_height = 0;
     bool m_mouseCaptured = false;

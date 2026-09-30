@@ -34,7 +34,8 @@ void APIENTRY onGlMessage(GLenum /*source*/, GLenum type, GLuint id, GLenum seve
     }
 }
 
-/// Rescales a stick axis so the dead zone maps to 0 and full travel to 1.
+/// Rescales a right stick axis so the dead zone maps to 0 and full travel
+/// to 1. The left stick is shaped as the game shapes it (shapeThumbstick).
 float shapeStick(Sint16 raw)
 {
     const float value = std::clamp(static_cast<float>(raw) / 32767.0F, -1.0F, 1.0F);
@@ -269,9 +270,11 @@ void Window::refreshGamepad()
         m_input.buttons[static_cast<std::size_t>(binding.button)] = SDL_GetGamepadButton(m_gamepad, binding.pad);
     }
     auto setAxis = [this](Axis axis, float value) { m_input.axes[static_cast<std::size_t>(axis)] = value; };
-    setAxis(Axis::LeftX, shapeStick(SDL_GetGamepadAxis(m_gamepad, SDL_GAMEPAD_AXIS_LEFTX)));
-    // Up is positive, as on the 360 pad the game read.
-    setAxis(Axis::LeftY, -shapeStick(SDL_GetGamepadAxis(m_gamepad, SDL_GAMEPAD_AXIS_LEFTY)));
+    const StickPosition left = shapeThumbstick(SDL_GetGamepadAxis(m_gamepad, SDL_GAMEPAD_AXIS_LEFTX),
+        SDL_GetGamepadAxis(m_gamepad, SDL_GAMEPAD_AXIS_LEFTY), m_leftStickDeadZone);
+    setAxis(Axis::LeftX, left.x);
+    // Up is positive, as on the 360 pad the game read; SDL's y points down.
+    setAxis(Axis::LeftY, -left.y);
     setAxis(Axis::RightX, shapeStick(SDL_GetGamepadAxis(m_gamepad, SDL_GAMEPAD_AXIS_RIGHTX)));
     setAxis(Axis::RightY, -shapeStick(SDL_GetGamepadAxis(m_gamepad, SDL_GAMEPAD_AXIS_RIGHTY)));
     setAxis(Axis::LeftTrigger, shapeTrigger(SDL_GetGamepadAxis(m_gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER)));
