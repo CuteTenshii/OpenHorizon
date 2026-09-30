@@ -222,6 +222,9 @@ render::SceneLighting TimeOfDay::lighting() const
     l.starFade = m_curves.sampleScalar("StarFade", t);
     // Sampled with the others (0x8265AF60), unclamped.
     l.switchOnLights = m_curves.sampleScalar("SwitchOnLights", t);
+    // The sampler stores it unclamped (0x8265A8FC); Colorado's runs from -1
+    // at night to 1 by day.
+    l.shadowIntensity = m_curves.sampleScalar("ShadowIntensity", t);
 
     const TimeOfDayCurves::FogTemplate fog = m_curves.fogTemplate().value_or(TimeOfDayCurves::FogTemplate{});
     l.fogColour = m_curves.sample("FogColour", t) * fog.colour;

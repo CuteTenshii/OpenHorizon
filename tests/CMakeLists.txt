@@ -85,6 +85,13 @@ target_link_libraries(tst_render PRIVATE fh1platform)
 # goes to a folder of their own under the temporary directory.
 add_test(NAME tst_render COMMAND tst_render)
 
+add_executable(tst_shadows TestHarness.h tst_shadows.cpp)
+target_compile_options(tst_shadows PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_shadows PRIVATE fh1engine)
+# The shadow cascades' fitting on synthetic cameras; the ShadowIntensity curve
+# and an offscreen shadow mask when FH1_GAME_DIR names an extracted disc.
+add_test(NAME tst_shadows COMMAND tst_shadows)
+
 add_executable(tst_shading TestHarness.h tst_shading.cpp)
 target_compile_options(tst_shading PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_shading PRIVATE fh1engine)

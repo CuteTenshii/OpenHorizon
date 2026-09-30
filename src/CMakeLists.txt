@@ -119,6 +119,10 @@ add_library(fh1engine STATIC
     render/Overlay.h
     render/ScatterPass.cpp
     render/ScatterPass.h
+    render/ShadowCascades.cpp
+    render/ShadowCascades.h
+    render/ShadowPass.cpp
+    render/ShadowPass.h
     render/Shader.cpp
     render/Shader.h
     render/SkyObjects.cpp

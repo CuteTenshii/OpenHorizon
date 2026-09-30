@@ -182,6 +182,7 @@ Game::Game(Window& window, const GameOptions& options)
     });
     m_fadeIn = loadFadeIn(m_vfs);
     m_frame = std::make_unique<render::FrameRenderer>();
+    m_shadowPass = std::make_unique<render::ShadowPass>();
     try {
         m_skyObjects = std::make_unique<render::SkyObjects>(m_vfs);
         m_frame->setSkyObjects(m_skyObjects.get());
@@ -2196,6 +2197,66 @@ render::FrameParams Game::frameParams() const
     return frame;
 }
 
+void Game::drawShadows(const render::FrameParams& frame)
+{
+    const int width = m_present.width();
+    const int height = m_present.height();
+    if (m_shadowPass->resizes(width, height)) {
+        m_worldRenderer->setShadowMask(0);
+        render::CarRenderer::setShadowMask(0);
+    }
+    // Where the light comes from when the track does not override it was
+    // not traced (see world::TrackSettings), so such a track gets none.
+    const std::optional<glm::vec3> direction
+        = m_world && m_world->settings ? m_world->settings->shadowLightDirection : std::nullopt;
+    const float intensity = frame.lighting.shadowIntensity;
+    if (!direction || !render::ShadowPass::active(intensity)) {
+        m_shadowPass->clearMask(width, height);
+    } else {
+        render::ShadowCamera camera;
+        camera.position = m_camera.position;
+        camera.forward = glm::normalize(m_camera.target - m_camera.position);
+        camera.right = glm::normalize(glm::cross(m_camera.up, camera.forward));
+        camera.up = glm::cross(camera.forward, camera.right);
+        camera.nearPlane = m_camera.nearPlane;
+        camera.tanHalfHeight = std::tan(m_camera.fov * 0.5F);
+        camera.tanHalfWidth
+            = camera.tanHalfHeight * static_cast<float>(std::max(width, 1)) / static_cast<float>(std::max(height, 1));
+        m_shadowCascades.update(camera, *direction);
+        for (std::size_t i = 0; i < render::ShadowCascades::kLevels; ++i) {
+            const render::ShadowCascades::Level& level = m_shadowCascades.levels()[i];
+            if (level.dirty) {
+                m_shadowPass->beginLevel(i);
+                m_worldRenderer->drawShadowCasters(level.frustum.viewProjection, camera.position);
+                m_shadowCascades.markDrawn(i);
+            }
+        }
+        for (std::size_t i = 0; i < render::ShadowCascades::kCascades; ++i) {
+            m_shadowPass->beginCascade(i);
+            for (const auto& vehicle : m_vehicles) {
+                if (vehicle->model && m_playerPlaced) {
+                    vehicle->model->drawDepth(
+                        m_shadowCascades.cascades()[i].frustum.viewProjection, carPose(*vehicle), false);
+                }
+            }
+        }
+        m_shadowPass->endShadowMaps();
+        const glm::mat4 viewProjection = frame.projection * frame.view;
+        const glm::mat4 flipped = render::ShadowPass::flippedViewProjection(viewProjection);
+        m_shadowPass->beginDepth(width, height);
+        // The world only: the cars cover their own pixels of the mask with
+        // their SMask technique in the game, which is not drawn here (where
+        // the game draws it was not traced), and their lighting takes the
+        // sun from their own terms rather than the mask.
+        m_worldRenderer->drawDepthOnly(
+            flipped, camera.position, m_shadowCascades.levels().back().frustum.viewProjection);
+        m_shadowPass->endDepth();
+        m_shadowPass->buildMask(m_shadowCascades, camera, viewProjection, intensity);
+    }
+    m_worldRenderer->setShadowMask(m_shadowPass->mask());
+    render::CarRenderer::setShadowMask(m_shadowPass->mask());
+}
+
 render::CarPose Game::carPose(const Vehicle& vehicle) const
 {
     const CarPhysics& car = *vehicle.physics;
@@ -2917,6 +2978,8 @@ bool Game::frame(const InputState& controls, float dt)
             m_map->draw(m_present.width(), m_present.height());
         } else {
             const render::FrameParams frame = frameParams();
+            drawShadows(frame);
+            m_frameStats->mark(Part::DrawShadows);
             m_frame->begin(m_present.width(), m_present.height());
             m_worldRenderer->draw(frame);
             m_frameStats->mark(Part::DrawWorld);

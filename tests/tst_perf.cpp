@@ -227,7 +227,7 @@ struct Drive {
     PartTimes wait{};
     /// The slowest frame's CPU time of each part.
     PartTimes worst{};
-    /// CPU drawing time of each frame, world to menus.
+    /// CPU drawing time of each frame, shadows to menus.
     std::vector<double> drawing;
     float metres = 0.0F;
 };
@@ -235,7 +235,7 @@ struct Drive {
 double drawingSeconds(const PartTimes& parts)
 {
     double total = 0.0;
-    for (std::size_t part = static_cast<std::size_t>(Part::DrawWorld); part < static_cast<std::size_t>(Part::Present);
+    for (std::size_t part = static_cast<std::size_t>(Part::DrawShadows); part < static_cast<std::size_t>(Part::Present);
         ++part) {
         total += parts[part];
     }

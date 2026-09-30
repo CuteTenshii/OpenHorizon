@@ -33,6 +33,9 @@
     X(PFNGLCOLORMASKPROC, glColorMask)                                                                                 \
     X(PFNGLCULLFACEPROC, glCullFace)                                                                                   \
     X(PFNGLFRONTFACEPROC, glFrontFace)                                                                                 \
+    X(PFNGLSTENCILFUNCPROC, glStencilFunc)                                                                             \
+    X(PFNGLSTENCILOPPROC, glStencilOp)                                                                                 \
+    X(PFNGLSTENCILMASKPROC, glStencilMask)                                                                             \
     X(PFNGLPOLYGONOFFSETPROC, glPolygonOffset)                                                                         \
     X(PFNGLPOLYGONMODEPROC, glPolygonMode)                                                                             \
     X(PFNGLVIEWPORTPROC, glViewport)                                                                                   \
@@ -107,6 +110,7 @@
     X(PFNGLPROGRAMUNIFORMMATRIX3FVPROC, glProgramUniformMatrix3fv)                                                     \
     X(PFNGLCREATETEXTURESPROC, glCreateTextures)                                                                       \
     X(PFNGLDELETETEXTURESPROC, glDeleteTextures)                                                                       \
+    X(PFNGLGETTEXTUREIMAGEPROC, glGetTextureImage)                                                                     \
     X(PFNGLTEXTURESTORAGE2DPROC, glTextureStorage2D)                                                                   \
     X(PFNGLTEXTURESTORAGE3DPROC, glTextureStorage3D)                                                                   \
     X(PFNGLTEXTURESUBIMAGE2DPROC, glTextureSubImage2D)                                                                 \

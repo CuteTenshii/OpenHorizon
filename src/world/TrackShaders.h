@@ -45,6 +45,9 @@ public:
         bool depthWrite = true;
         /// Xbox 360 D3DCULL: 0 none, 2 (every other effect) the back faces.
         std::uint32_t cull = 2;
+        /// Whether the pass sets the cull mode; when not, the device keeps
+        /// whatever the caller set.
+        bool cullGiven = false;
         bool blend = false;
         /// Xbox 360 D3DBLEND: 0 zero, 1 one, 6 source alpha, 7 inverse
         /// source alpha.
@@ -69,6 +72,10 @@ public:
         /// renderDeclaration()).
         xenos::VertexDeclaration renderDeclaration;
         RenderState state;
+        /// The first pass states of the DepthOnly and ShadowDepthOnly
+        /// techniques, which 170 of Colorado's 173 effects have.
+        std::optional<RenderState> depthOnlyState;
+        std::optional<RenderState> shadowDepthOnlyState;
     };
 
     /// Reads every `.fxobj` of `archive` on all hardware threads. Effects that

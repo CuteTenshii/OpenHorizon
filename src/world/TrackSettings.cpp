@@ -52,6 +52,12 @@ TrackSettings TrackSettings::parse(std::string_view xml)
     s.trackLightMap = {attribute(root, "TrackLightMapParams", "DarkPoint"),
         attribute(root, "TrackLightMapParams", "LightPoint"), 0.0F, 0.0F};
     s.dynamicCubemap = attribute(root, "Performance", "DynamicCubemap") != 0.0F;
+    const pugi::xml_node shadowOverride = root.child("OverrideShadowLightDirection");
+    const pugi::xml_node shadowDirection = root.child("ShadowLightDirection");
+    if (shadowOverride && shadowOverride.attribute("value").as_int() != 0 && shadowDirection) {
+        s.shadowLightDirection = glm::vec3(shadowDirection.attribute("x").as_float(),
+            shadowDirection.attribute("y").as_float(), shadowDirection.attribute("z").as_float());
+    }
     return s;
 }
 

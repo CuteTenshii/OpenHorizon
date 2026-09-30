@@ -59,6 +59,26 @@ public:
     /// Draws the opaque batches, or with `translucent` the glass, which
     /// must come after every opaque surface of the scene.
     void draw(const FrameParams& frame, const CarPose& pose, bool translucent);
+    /// Draws the car's depth with its batches' shadow map techniques (see
+    /// casterTechnique()) through `viewProjection` into a shadow map, or
+    /// with `screen` into a screen depth, where the glass is left out as the
+    /// scene draws it after everything opaque. The cockpit is left out: the
+    /// body and glass hide it from any light. The caller binds the target;
+    /// culling is off, the car effect's shadow map passes not naming a cull
+    /// mode.
+    void drawDepth(const glm::mat4& viewProjection, const CarPose& pose, bool screen);
+    /// The screen-space sun shadow mask every car samples as ShadowMaskSamp
+    /// (ShadowPass); 0 for none (white).
+    static void setShadowMask(GLuint texture);
+    /// The shadow map technique of a batch, as the car's render item
+    /// builder (0x82E637A0) picks it: none for the motion blur meshes and
+    /// the materials that cast no shadow (carmodel::castsNoShadow()),
+    /// shadowMap_badge for badges, tireShadowMap for tyre materials
+    /// (0x82E54180), rimShadowMap for rim materials, brakeShadowMap for the
+    /// rotors and calipers, shadowMap otherwise. Not applied: the
+    /// shadowMap_FocusCar variant, chosen by flag bits whose source was not
+    /// traced.
+    static std::string casterTechnique(const carmodel::CarMesh::Batch& batch, carmodel::CarMesh::NodeKind node);
 
 private:
     /// The constants fillConstants() sets on every draw.
@@ -131,6 +151,12 @@ private:
     /// Whether any of the car can be in the view: its bounding spheres
     /// against the sides of the view frustum and the plane of the eye.
     bool inView(const FrameParams& frame, const CarPose& pose) const;
+    /// Whether the car lies inside the clip box of `viewProjection`: its
+    /// sides, and with `orthographic` its near and far planes too.
+    bool inBox(const glm::mat4& viewProjection, const CarPose& pose, bool orthographic) const;
+    /// The shaderless-colour passes of `technique` for drawDepth(); empty
+    /// when the effect lacks it.
+    std::vector<Pass> casterPasses(const carmodel::CarModel& model, const std::string& technique);
 
     /// Whether batch `batch` of a corner node shows at the wheel's speed.
     bool wheelBatchVisible(const carmodel::CarMesh::Batch& batch, const CarPose& pose) const;
@@ -144,6 +170,8 @@ private:
     carmodel::ShaderSettings m_tyreSettings;
     /// Passes of each batch's technique, by batch.
     std::vector<std::vector<Pass>> m_passes;
+    /// Passes of each batch's shadow map technique, by batch.
+    std::vector<std::vector<Pass>> m_casterPasses;
     std::vector<Texture> m_textures;
     /// A sphere round the model at rest (car space), and the radius round
     /// each hub that holds everything turning or steering with the wheel.

@@ -46,6 +46,8 @@ constexpr std::size_t kSystemAlphaToMaskOffset = 512;
 constexpr std::size_t kFixedBytes = 768;
 /// Xbox 360 D3DCULL_NONE.
 constexpr std::uint32_t kCullNone = 0;
+/// Xbox 360 D3DCULL_CCW.
+constexpr std::uint32_t kCullCounterClockwise = 6;
 /// Direct3D's alpha comparison "greater or equal", in the translator's
 /// alphaTest numbering.
 constexpr float kAlphaGreaterEqual = 7.0F;
@@ -239,6 +241,8 @@ WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
     , m_alive(std::make_shared<std::atomic<bool>>(true))
     , m_programs(world.shaders, bindlessSupported())
     , m_bindless(m_programs.bindless())
+    , m_depthPrograms(world.shaders, m_bindless, TrackPrograms::kDepthOnly)
+    , m_shadowPrograms(world.shaders, m_bindless, TrackPrograms::kShadowDepthOnly)
     , m_white(Texture::solid(255, 255, 255, 255))
     , m_black(Texture::solid(0, 0, 0, 255))
     , m_blackCube(blackCubeMap())
@@ -259,6 +263,19 @@ WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
     // Translate every track effect up front, ahead of the tiles; the GL
     // thread links them in slices (precompile()) or on first use.
     m_programs.prepareAll(m_jobs, kTranslatePriority);
+    m_depthPrograms.prepareAll(m_jobs, kTranslatePriority);
+    m_shadowPrograms.prepareAll(m_jobs, kTranslatePriority);
+    glCreateBuffers(1, &m_depthFixed);
+    glNamedBufferStorage(m_depthFixed, kFixedBytes, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    {
+        // The depth passes read no pixel position and test no alpha.
+        const auto controlBytes = xenos::ControlConstants{}.pack();
+        const auto systemBytes = xenos::SystemConstants{}.pack();
+        glNamedBufferSubData(
+            m_depthFixed, kControlOffset, static_cast<GLsizeiptr>(controlBytes.size()), controlBytes.data());
+        glNamedBufferSubData(
+            m_depthFixed, kSystemOffset, static_cast<GLsizeiptr>(systemBytes.size()), systemBytes.data());
+    }
     glCreateBuffers(1, &m_fixedBlocks);
     glNamedBufferStorage(m_fixedBlocks, kFixedBytes, nullptr, GL_DYNAMIC_STORAGE_BIT);
     if (m_bindless) {
@@ -267,9 +284,10 @@ WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
         m_handles[texturehandle::kWhite] = glGetTextureHandleARB(m_white.id());
         m_handles[texturehandle::kBlackCube] = glGetTextureHandleARB(m_blackCube);
         m_handles[texturehandle::kBlack3D] = glGetTextureHandleARB(m_black3D);
-        for (const GLuint64 handle : m_handles) {
-            glMakeTextureHandleResidentARB(handle);
+        for (std::uint32_t entry = 0; entry < texturehandle::kShadowMask; ++entry) {
+            glMakeTextureHandleResidentARB(m_handles[entry]);
         }
+        m_handles[texturehandle::kShadowMask] = m_handles[texturehandle::kWhite];
         m_dirtyEnd = m_handles.size();
     }
     logInfo("world: {} tiles of {:.0f} m, {} track effects, {}", m_tiles.size(), kTileSize, world.shaders.size(),
@@ -298,8 +316,11 @@ WorldRenderer::~WorldRenderer()
                 glMakeTextureHandleNonResidentARB(slot.handle);
             }
         }
-        for (std::uint32_t entry = 0; entry < texturehandle::kFirstTrackTexture; ++entry) {
+        for (std::uint32_t entry = 0; entry < texturehandle::kShadowMask; ++entry) {
             glMakeTextureHandleNonResidentARB(m_handles[entry]);
+        }
+        if (m_shadowMaskHandle != 0) {
+            glMakeTextureHandleNonResidentARB(m_shadowMaskHandle);
         }
     }
     glDeleteBuffers(1, &m_handleBuffer);
@@ -307,6 +328,8 @@ WorldRenderer::~WorldRenderer()
     glDeleteTextures(1, &m_blackCube);
     glDeleteBuffers(static_cast<GLsizei>(m_frameBuffers.size()), m_frameBuffers.data());
     glDeleteBuffers(1, &m_fixedBlocks);
+    glDeleteBuffers(1, &m_depthFixed);
+    glDeleteBuffers(1, &m_depthFrames);
 }
 
 void WorldRenderer::destroy(GpuMesh& mesh)
@@ -833,7 +856,7 @@ void WorldRenderer::bindSamplers(const TrackPrograms::Program& program, const wo
             continue;
         }
         if (sampler.shadowMask) {
-            bindTexture(sampler.unit, m_white.id());
+            bindTexture(sampler.unit, m_shadowMask != 0 ? m_shadowMask : m_white.id());
         } else {
             bindTexture(sampler.unit, m_black.id());
         }
@@ -1076,6 +1099,210 @@ void WorldRenderer::applyState(const world::TrackShaders::RenderState& state)
     const std::size_t system = state.alphaToMask ? kSystemAlphaToMaskOffset : kSystemOffset;
     glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kSystemConstants, m_fixedBlocks, static_cast<GLintptr>(system),
         static_cast<GLsizeiptr>(xenos::SystemConstants::kBytes));
+}
+
+bool WorldRenderer::precompile(std::chrono::microseconds budget)
+{
+    // A third of the slice each, so the loading screen keeps its pace.
+    const std::chrono::microseconds share = budget / 3;
+    const bool scene = m_programs.compileSome(share);
+    const bool depth = m_depthPrograms.compileSome(share);
+    const bool shadow = m_shadowPrograms.compileSome(share);
+    return scene || depth || shadow;
+}
+
+void WorldRenderer::setShadowMask(GLuint texture)
+{
+    if (texture == m_shadowMask) {
+        return;
+    }
+    if (m_bindless && m_shadowMaskHandle != 0) {
+        glMakeTextureHandleNonResidentARB(m_shadowMaskHandle);
+        m_shadowMaskHandle = 0;
+    }
+    m_shadowMask = texture;
+    if (m_bindless) {
+        if (texture != 0) {
+            m_shadowMaskHandle = glGetTextureHandleARB(texture);
+            glMakeTextureHandleResidentARB(m_shadowMaskHandle);
+        }
+        setHandle(texturehandle::kShadowMask,
+            m_shadowMaskHandle != 0 ? m_shadowMaskHandle : m_handles[texturehandle::kWhite]);
+    }
+}
+
+void WorldRenderer::drawDepthOnly(const glm::mat4& viewProjection, const glm::vec3& camera, const glm::mat4& reach)
+{
+    drawDepthPass(m_depthPrograms, viewProjection, camera, false, &reach);
+}
+
+void WorldRenderer::drawShadowCasters(const glm::mat4& lightViewProjection, const glm::vec3& camera)
+{
+    drawDepthPass(m_shadowPrograms, lightViewProjection, camera, true, nullptr);
+}
+
+void WorldRenderer::drawDepthPass(TrackPrograms& programs, const glm::mat4& viewProjection, const glm::vec3& camera,
+    bool farPlane, const glm::mat4* reach)
+{
+    const auto insideOf = [](const glm::mat4& box, bool orthographic, const glm::vec3& lo, const glm::vec3& hi) {
+        const int planes = orthographic ? 6 : 5;
+        for (int plane = 0; plane < planes; ++plane) {
+            int beyond = 0;
+            for (int corner = 0; corner < 8; ++corner) {
+                const glm::vec4 p = box
+                    * glm::vec4(
+                        (corner & 1) ? hi.x : lo.x, (corner & 2) ? hi.y : lo.y, (corner & 4) ? hi.z : lo.z, 1.0F);
+                const float value = plane == 0 ? p.x + p.w
+                    : plane == 1               ? p.w - p.x
+                    : plane == 2               ? p.y + p.w
+                    : plane == 3               ? p.w - p.y
+                    : plane == 4               ? (orthographic ? p.z : p.w)
+                                               : p.w - p.z;
+                beyond += value < 0.0F ? 1 : 0;
+            }
+            if (beyond == 8) {
+                return false;
+            }
+        }
+        return true;
+    };
+    const auto inside = [&](const glm::vec3& lo, const glm::vec3& hi) {
+        return insideOf(viewProjection, farPlane, lo, hi) && (reach == nullptr || insideOf(*reach, true, lo, hi));
+    };
+    const auto frameFor = [&](const glm::mat4& model) {
+        TrackFrameConstants f = TrackFrameConstants::make(
+            viewProjection, glm::translate(glm::mat4(1.0F), camera), camera, SceneLighting{}, 0.0F, model);
+        f.setHackMatrix(viewProjection, camera);
+        return f;
+    };
+    std::vector<TrackFrameConstants> blocks;
+    blocks.push_back(frameFor(glm::mat4(1.0F)));
+    std::vector<DrawItem> items;
+    const auto gather = [&](const GpuMesh& mesh, std::uint32_t slot) {
+        for (std::uint32_t b = 0; b < mesh.batches.size(); ++b) {
+            const world::ShadedMesh::Batch& batch = mesh.batches[b];
+            if (batch.indexCount == 0 || !texturesLoaded(batch)) {
+                continue;
+            }
+            if (batch.backdrop && batch.chunk != world::ShadedMesh::kMergedChunks
+                && !m_world.index.chunks()[batch.chunk].visibleFrom(m_cameraZone)) {
+                continue;
+            }
+            const TrackPrograms::Program* program = programs.program(batch.shader);
+            // Blended surfaces (decals, glass) leave the depth alone, as the
+            // scene's own pass does.
+            const TrackPrograms::Program* scene = mesh.programs[b];
+            if (program != nullptr && (scene == nullptr || !scene->state.blend)) {
+                items.push_back({program, &mesh, b, slot});
+            }
+        }
+    };
+    const auto& tiles = m_grid.tiles();
+    for (std::size_t i = 0; i < tiles.size(); ++i) {
+        const TileState& state = m_tiles[i];
+        if (state.mesh && inside(tiles[i].boundsMin, tiles[i].boundsMax)) {
+            touchTextures(*state.mesh);
+            gather(*state.mesh, 0);
+        }
+    }
+    for (const auto& [handle, dynamic] : m_dynamics) {
+        if (!dynamic.mesh) {
+            continue;
+        }
+        const auto slot = static_cast<std::uint32_t>(blocks.size());
+        blocks.push_back(frameFor(dynamic.transform));
+        gather(*dynamic.mesh, slot);
+    }
+    if (items.empty()) {
+        return;
+    }
+
+    // One buffer for every depth pass of a frame, each pass's blocks after
+    // the last's.
+    if (m_depthFrameOf != m_frame) {
+        m_depthFrameOf = m_frame;
+        m_depthFrameUsed = 0;
+    }
+    if (m_depthFrameUsed + blocks.size() > m_depthFrameSlots) {
+        glDeleteBuffers(1, &m_depthFrames);
+        m_depthFrameSlots = std::max<std::size_t>(blocks.size() * 8, m_depthFrameSlots * 2);
+        glCreateBuffers(1, &m_depthFrames);
+        glNamedBufferStorage(m_depthFrames, static_cast<GLsizeiptr>(m_depthFrameSlots * kFrameBlockBytes), nullptr,
+            GL_DYNAMIC_STORAGE_BIT);
+        m_depthFrameUsed = 0;
+    }
+    const std::size_t base = m_depthFrameUsed;
+    glNamedBufferSubData(m_depthFrames, static_cast<GLintptr>(base * kFrameBlockBytes),
+        static_cast<GLsizeiptr>(blocks.size() * kFrameBlockBytes), blocks.data());
+    m_depthFrameUsed += blocks.size();
+
+    glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kControlConstants, m_depthFixed, kControlOffset,
+        static_cast<GLsizeiptr>(xenos::ControlConstants::kBytes));
+    glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kSystemConstants, m_depthFixed, kSystemOffset,
+        static_cast<GLsizeiptr>(xenos::SystemConstants::kBytes));
+    if (m_bindless) {
+        flushHandles();
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, trackbinding::kTextureHandles, m_handleBuffer);
+    }
+    m_boundTextures.fill(0);
+    std::sort(items.begin(), items.end(), [](const DrawItem& a, const DrawItem& b) {
+        return std::tie(a.program, a.frameSlot, a.mesh, a.batch) < std::tie(b.program, b.frameSlot, b.mesh, b.batch);
+    });
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+    const TrackPrograms::Program* program = nullptr;
+    const GpuMesh* mesh = nullptr;
+    std::uint32_t frameSlot = 0xFFFFFFFF;
+    for (const DrawItem& item : items) {
+        const world::ShadedMesh::Batch& batch = item.mesh->batches[item.batch];
+        if (item.program != program) {
+            program = item.program;
+            program->shader.use();
+            // Xbox 360 D3DCULL: 2 culls the faces turned away (counter-
+            // clockwise in the pass's clip space), 6 those turned towards it.
+            const world::TrackShaders::RenderState& state = program->state;
+            if (!state.cullGiven || state.cull == kCullNone) {
+                glDisable(GL_CULL_FACE);
+            } else {
+                glEnable(GL_CULL_FACE);
+                glCullFace(state.cull == kCullCounterClockwise ? GL_FRONT : GL_BACK);
+            }
+            glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kVertexConstants, program->defaults, 0,
+                static_cast<GLsizeiptr>(kProgramBlockBytes));
+            glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kPixelConstants, program->defaults,
+                static_cast<GLintptr>(kProgramBlockBytes), static_cast<GLsizeiptr>(kProgramBlockBytes));
+        }
+        if (item.mesh != mesh) {
+            mesh = item.mesh;
+            glBindVertexArray(mesh->vao);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mesh->vertices);
+            if (m_bindless) {
+                glBindBufferBase(GL_SHADER_STORAGE_BUFFER, trackbinding::kMaterial, mesh->materials);
+            }
+        }
+        if (item.frameSlot != frameSlot) {
+            frameSlot = item.frameSlot;
+            glBindBufferRange(GL_UNIFORM_BUFFER, trackbinding::kFrame, m_depthFrames,
+                static_cast<GLintptr>((base + frameSlot) * kFrameBlockBytes),
+                static_cast<GLsizeiptr>(kFrameBlockBytes));
+        }
+        const auto* indices
+            = reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t));
+        if (m_bindless) {
+            glDrawElementsInstancedBaseInstance(
+                GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT, indices, 1, item.batch);
+        } else {
+            glBindBufferRange(GL_UNIFORM_BUFFER, trackbinding::kMaterial, mesh->materials,
+                static_cast<GLintptr>(item.batch * kMaterialBlockBytes), static_cast<GLsizeiptr>(kMaterialBlockBytes));
+            bindSamplers(*program, batch);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT, indices);
+        }
+    }
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glBindVertexArray(0);
+    glUseProgram(0);
+    m_boundTextures.fill(0);
 }
 
 } // namespace fh::render

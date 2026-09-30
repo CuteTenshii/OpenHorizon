@@ -26,6 +26,8 @@ public:
         Simulation,
         Physics,
         Streaming,
+        /// The sun shadows: their maps, the screen depth and the mask.
+        DrawShadows,
         DrawWorld,
         DrawCars,
         /// The sky and the sun, moon and stars drawn with it.

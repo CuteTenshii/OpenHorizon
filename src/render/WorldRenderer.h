@@ -105,6 +105,10 @@ struct SceneLighting {
     /// which the scene takes when lit models and lightmaps switch on (see
     /// TrackFrameConstants::emissiveSwitchOn).
     float switchOnLights = 0.0F;
+    /// How dark the sun shadows are (the ShadowIntensity curve): a fully
+    /// shadowed pixel keeps 1 - this of the sun, and at 0.01 or less the
+    /// shadows are not drawn (see ShadowPass).
+    float shadowIntensity = 0.0F;
 
     glm::vec3 fogColour{};
     glm::vec3 fogScatterColour{};
@@ -164,12 +168,12 @@ void setSceneLighting(Shader& shader, const SceneLighting& lighting);
 /// batches a view holds, so the bound path remains only for drivers without
 /// them.
 ///
-/// What the effects sample that the game supplies itself is bound as
-/// follows, the features behind it not being implemented: the screen-space
-/// shadow mask (ShadowMaskSamp, which the game fills from its cascaded
-/// shadow maps) white, so every surface counts as sunlit; other samplers a
-/// material leaves to the engine (lightmaps it did not bake) black; cube
-/// maps other than the track's own (below) black.
+/// The screen-space sun shadow mask (ShadowMaskSamp) is ShadowPass's
+/// (setShadowMask()), white without one. What else the effects sample that
+/// the game supplies itself is bound as follows, the features behind it
+/// not being implemented: other samplers a material leaves to the engine
+/// (lightmaps it did not bake) black; cube maps other than the track's own
+/// (below) black.
 ///
 /// Cube samplers take the cube map their material names: the reflective
 /// materials' Cube_MapSampler names one of the track's own cube textures
@@ -238,10 +242,29 @@ public:
 
     /// Track effects not linked yet. Their translation starts on the job
     /// pool when the renderer is made; precompile() links them.
-    std::size_t programsPending() const { return m_programs.pendingCount(); }
+    std::size_t programsPending() const
+    {
+        return m_programs.pendingCount() + m_depthPrograms.pendingCount() + m_shadowPrograms.pendingCount();
+    }
     /// Links translated track effects for up to `budget` on the GL thread,
     /// for a loading screen to call every frame. Returns whether any remain.
-    bool precompile(std::chrono::microseconds budget) { return m_programs.compileSome(budget); }
+    bool precompile(std::chrono::microseconds budget);
+
+    /// Draws the loaded tiles and moving objects with their effects'
+    /// DepthOnly technique, for the screen depth of ShadowPass (the caller
+    /// binds its target). `viewProjection` maps world positions to clip
+    /// space around `camera`; only tiles also inside the orthographic box of
+    /// `reach` are drawn, the shadows ending there (the last level's box).
+    void drawDepthOnly(const glm::mat4& viewProjection, const glm::vec3& camera, const glm::mat4& reach);
+    /// Draws the tiles and moving objects inside a light's box with their
+    /// effects' ShadowDepthOnly technique, into the map the caller bound
+    /// (see ShadowPass::beginLevel(), which sets the bias). Culling follows
+    /// each pass's own cull mode; where the pass sets none it is off (the
+    /// state the game's shadow pass inherits there was not traced).
+    void drawShadowCasters(const glm::mat4& lightViewProjection, const glm::vec3& camera);
+    /// The screen-space sun shadow mask ShadowMaskSamp reads (ShadowPass);
+    /// 0 for none (white). Pass 0 before the texture is deleted.
+    void setShadowMask(GLuint texture);
 
     /// Tiles farther than this are not drawn, in metres.
     void setDrawDistance(float metres) { m_drawDistance = metres; }
@@ -361,6 +384,11 @@ private:
     void evictTextures();
     void collect(const GpuMesh& mesh, std::uint32_t frameSlot);
     void drawItems(const std::vector<DrawItem>& items);
+    /// drawDepthOnly() and drawShadowCasters(): every drawable batch of
+    /// `programs` whose tile or object lies inside `viewProjection`'s clip
+    /// box (with `farPlane` its far plane too).
+    void drawDepthPass(TrackPrograms& programs, const glm::mat4& viewProjection, const glm::vec3& camera, bool farPlane,
+        const glm::mat4* reach);
     /// Sets the pass's render states and the matching system block.
     void applyState(const world::TrackShaders::RenderState& state);
     /// glBindTextureUnit, skipped when the unit already holds `texture`.
@@ -396,6 +424,18 @@ private:
     TrackPrograms m_programs;
     /// Whether the programs take their textures from the handle table.
     bool m_bindless = false;
+    /// The effects' DepthOnly and ShadowDepthOnly techniques.
+    TrackPrograms m_depthPrograms;
+    TrackPrograms m_shadowPrograms;
+    /// Frame blocks of the depth passes, packed one after another over a
+    /// frame, with the translator's fixed blocks for them.
+    GLuint m_depthFrames = 0;
+    std::size_t m_depthFrameSlots = 0;
+    std::size_t m_depthFrameUsed = 0;
+    std::uint64_t m_depthFrameOf = 0;
+    GLuint m_depthFixed = 0;
+    GLuint m_shadowMask = 0;
+    GLuint64 m_shadowMaskHandle = 0;
     /// The engine-supplied textures (see the class comment).
     Texture m_white;
     Texture m_black;

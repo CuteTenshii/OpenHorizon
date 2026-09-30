@@ -7,6 +7,7 @@
 #include "world/TrackSettings.h"
 
 #include <glm/gtc/matrix_access.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
 #include <charconv>
@@ -53,6 +54,7 @@ constexpr std::array kFrameNames{
     FrameName{"V2LightmapColor1", 247},
     FrameName{"V2LightmapColor2", 248},
     FrameName{"TimeGain", 249},
+    FrameName{"HackMatrix", 208},
     FrameName{"ViewInvMatrix", 243},
     FrameName{"viewInv", 243},
     FrameName{"sunDir", 250},
@@ -187,7 +189,8 @@ std::string bindlessSamplers(
         } else if (stage != xenos::ShaderStage::Pixel || s.unit >= TrackMaterial{}.textures.size()) {
             handle = std::format("xe_handles[{}u]", texturehandle::kBlack);
         } else {
-            const std::uint32_t engine = s.name == "ShadowMaskSamp" ? texturehandle::kWhite : texturehandle::kBlack;
+            const std::uint32_t engine
+                = s.name == "ShadowMaskSamp" ? texturehandle::kShadowMask : texturehandle::kBlack;
             handle = std::format("xe_handle({}u, {}u)", s.unit, engine);
         }
         glsl.replace(lineStart, lineEnd - lineStart, std::format("#define {} {}({})", s.glslName, type, handle));
@@ -372,9 +375,18 @@ TrackFrameConstants TrackFrameConstants::make(const glm::mat4& viewProjection, c
     return f;
 }
 
-TrackPrograms::TrackPrograms(const world::TrackShaders& shaders, bool bindless)
+void TrackFrameConstants::setHackMatrix(const glm::mat4& viewProjection, const glm::vec3& camera)
+{
+    const glm::mat4 m = viewProjection * glm::translate(glm::mat4(1.0F), camera);
+    for (int i = 0; i < 4; ++i) {
+        c[208 + static_cast<std::size_t>(i)] = row(m, i);
+    }
+}
+
+TrackPrograms::TrackPrograms(const world::TrackShaders& shaders, bool bindless, std::string_view technique)
     : m_shaders(shaders)
     , m_bindless(bindless)
+    , m_technique(technique)
     , m_sources(shaders.size())
     , m_programs(shaders.size())
     , m_failed(shaders.size(), false)
@@ -406,16 +418,28 @@ std::shared_ptr<const TrackPrograms::Source> TrackPrograms::source(std::uint32_t
     auto built = std::make_shared<Source>();
     const world::TrackShaders::Entry& entry = m_shaders.at(effect);
     try {
-        const xenos::Technique& technique = entry.effect.techniques[entry.technique];
-        const xenos::ShaderProgramSource program
-            = xenos::buildProgram(entry.effect, technique.passes.front(), &entry.renderDeclaration);
+        const xenos::Technique* technique = m_technique == kDefault ? &entry.effect.techniques[entry.technique]
+                                                                    : entry.effect.findTechnique(m_technique);
+        if (technique == nullptr || technique->passes.empty()) {
+            throw DataError("no {} technique", m_technique);
+        }
+        const xenos::Pass& pass = technique->passes.front();
+        const xenos::ShaderProgramSource program = xenos::buildProgram(entry.effect, pass, &entry.renderDeclaration);
         built->vertex = redirect(program.vertexGlsl, redirectsOf(program, xenos::ShaderStage::Vertex), m_bindless,
             xenos::ShaderStage::Vertex);
-        built->fragment = squareOutput(redirect(program.fragmentGlsl, redirectsOf(program, xenos::ShaderStage::Pixel),
-            m_bindless, xenos::ShaderStage::Pixel));
+        if (pass.pixelShader < 0) {
+            // Depth only: the translator's empty pixel shader.
+            built->fragment = program.fragmentGlsl;
+        } else {
+            built->fragment = squareOutput(redirect(program.fragmentGlsl,
+                redirectsOf(program, xenos::ShaderStage::Pixel), m_bindless, xenos::ShaderStage::Pixel));
+        }
         if (m_bindless) {
             built->vertex = bindlessSamplers(std::move(built->vertex), program.samplers, xenos::ShaderStage::Vertex);
-            built->fragment = bindlessSamplers(std::move(built->fragment), program.samplers, xenos::ShaderStage::Pixel);
+            if (pass.pixelShader >= 0) {
+                built->fragment
+                    = bindlessSamplers(std::move(built->fragment), program.samplers, xenos::ShaderStage::Pixel);
+            }
         }
         loadDefaults(program, xenos::ShaderStage::Vertex, built->vertexDefaults);
         loadDefaults(program, xenos::ShaderStage::Pixel, built->pixelDefaults);
@@ -556,7 +580,10 @@ const TrackPrograms::Program* TrackPrograms::adopt(std::uint32_t effect, Program
         program->name = name;
         program->shader = Shader(build);
         program->samplers = src->samplers;
-        program->state = m_shaders.at(effect).state;
+        const world::TrackShaders::Entry& entry = m_shaders.at(effect);
+        const std::optional<world::TrackShaders::RenderState>& other
+            = m_technique == kDepthOnly ? entry.depthOnlyState : entry.shadowDepthOnlyState;
+        program->state = m_technique == kDefault ? entry.state : other.value_or(world::TrackShaders::RenderState{});
         glCreateBuffers(1, &program->defaults);
         std::vector<std::uint8_t> bytes(2 * kBlockBytes);
         std::memcpy(bytes.data(), src->vertexDefaults.data(), kBlockBytes);

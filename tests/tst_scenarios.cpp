@@ -20,6 +20,7 @@
 #include "platform/Input.h"
 #include "platform/Window.h"
 #include "render/FrameStats.h"
+#include "render/Gl.h"
 #include "render/TrackPrograms.h"
 #include "render/WorldRenderer.h"
 #include "ui/Navigation.h"
@@ -1484,6 +1485,119 @@ TEST(satNavShowsTheDistanceLeft)
     }
     CHECK_EQ(hud->satNavDistanceText(), shown());
     session.capture("satnav_distance_driven");
+}
+
+/// The share of the sun shadow mask's pixels that are shadowed (below
+/// white), and the GPU milliseconds of the shadow passes over one second
+/// of `session` standing still.
+struct ShadowReading {
+    double shadowed = 0.0;
+    double gpuMs = 0.0;
+    /// Median scene luminance (linear HDR) of shadowed and of sunlit pixels
+    /// in the lower half of the picture, below the sky.
+    double shadowedLuminance = 0.0;
+    double litLuminance = 0.0;
+};
+
+ShadowReading readShadows(Session& session)
+{
+    ShadowReading reading;
+    int frames = 0;
+    for (float t = 0.0F; t < 1.0F; t += kStep) {
+        session.run(kStep, {});
+        reading.gpuMs += session.game()
+                             .frameStats()
+                             .gpuFrameSeconds()[static_cast<std::size_t>(fh::render::FrameStats::Part::DrawShadows)];
+        ++frames;
+    }
+    reading.gpuMs *= 1000.0 / frames;
+    const fh::render::ShadowPass* pass = session.game().shadowPass();
+    if (pass == nullptr || pass->width() <= 0) {
+        return reading;
+    }
+    std::vector<std::uint8_t> red(static_cast<std::size_t>(pass->width()) * static_cast<std::size_t>(pass->height()));
+    glGetTextureImage(pass->mask(), 0, GL_RED, GL_UNSIGNED_BYTE, static_cast<GLsizei>(red.size()), red.data());
+    const auto shadowed = std::count_if(red.begin(), red.end(), [](std::uint8_t v) { return v < 250; });
+    reading.shadowed = static_cast<double>(shadowed) / static_cast<double>(red.size());
+    const int w = pass->width();
+    const int h = pass->height();
+    std::vector<float> hdr(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4);
+    glGetTextureImage(session.game().frameRenderer()->sceneColour(), 0, GL_RGBA, GL_FLOAT,
+        static_cast<GLsizei>(hdr.size() * sizeof(float)), hdr.data());
+    std::vector<double> dark;
+    std::vector<double> lit;
+    for (int y = h / 2; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            // The mask's rows run from the top, the scene's from the bottom.
+            const std::size_t i
+                = (static_cast<std::size_t>(h - 1 - y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x)) * 4;
+            const double luminance = 0.2126 * hdr[i] + 0.7152 * hdr[i + 1] + 0.0722 * hdr[i + 2];
+            const std::uint8_t m
+                = red[static_cast<std::size_t>(y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x)];
+            if (m == 0) {
+                dark.push_back(luminance);
+            } else if (m == 255) {
+                lit.push_back(luminance);
+            }
+        }
+    }
+    const auto median = [](std::vector<double> values) {
+        if (values.empty()) {
+            return 0.0;
+        }
+        std::nth_element(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2), values.end());
+        return values[values.size() / 2];
+    };
+    reading.shadowedLuminance = median(dark);
+    reading.litLuminance = median(lit);
+    return reading;
+}
+
+// "The world still feels horrible": nothing cast a shadow. By day the sun
+// shadows darken the ground under the car and the trees and props around
+// it (ShadowIntensity is 1 on Colorado from 07:50 to 19:09), and by night
+// the mask stays white.
+TEST(sunShadowsFallByDayOnly)
+{
+    if (!gameDir()) {
+        return;
+    }
+    struct Shot {
+        const char* name;
+        float hours;
+        bool shadows;
+    };
+    for (const Shot shot :
+        {Shot{"shadows_noon", 12.0F, true}, Shot{"shadows_low_sun", 18.5F, true}, Shot{"shadows_night", 2.0F, false}}) {
+        fh::GameOptions options;
+        options.spawnAt = glm::vec2(4330.0F, -250.0F);
+        options.spawnHeading = 0.0F;
+        options.startTime = shot.hours * 3600.0F;
+        Session session(options);
+        CHECK(session.waitForCar());
+        session.run(3.0F, {});
+        const ShadowReading reading = readShadows(session);
+        std::fprintf(stderr, "%s: %.1f%% shadowed, shadow passes GPU %.3f ms\n", shot.name, reading.shadowed * 100.0,
+            reading.gpuMs);
+        if (shot.shadows) {
+            CHECK(reading.shadowed > 0.02);
+            // "The shadowed road is close to black": the mask takes away the
+            // sun only; the track effects keep the hemisphere ambient
+            // (skyColor, groundColor) times (0.05 + 0.95 AO) (the terrain's
+            // h_blnd3_spec_norm2_ao, slots 43-58). At noon on Colorado that is
+            // at least 0.1 in luminance (HLTopColour 0.21, AO at least 0.5)
+            // against a sun of at most 0.6 (SunColor times SunColorMult), so a
+            // shadowed pixel keeps at least 0.14 of a sunlit one.
+            if (shot.hours == 12.0F) {
+                std::fprintf(stderr, "%s: shadowed %.4f, sunlit %.4f\n", shot.name, reading.shadowedLuminance,
+                    reading.litLuminance);
+                CHECK(reading.shadowedLuminance >= 0.14 * reading.litLuminance);
+            }
+        } else {
+            CHECK(reading.shadowed == 0.0);
+        }
+        session.capture(shot.name);
+    }
 }
 
 } // namespace

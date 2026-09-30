@@ -3,6 +3,7 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
+#include <optional>
 #include <string_view>
 
 namespace fh {
@@ -48,6 +49,16 @@ struct TrackSettings {
     /// the presentation renders the environment cube around the car each
     /// frame (0x82424244) instead of using staticCarCubemap.xpr.
     bool dynamicCubemap = false;
+    /// ShadowLightDirection (loader offset 400, parsed at 0x82E15ACC) when
+    /// OverrideShadowLightDirection (368, 0x82E15A68) is set: the scene
+    /// then hands it, as written, to the object the shadow manager takes its
+    /// light direction from (0x82420940 sets it through vtable slot 0x13C,
+    /// 0x8247EBAC reads it back through slot 0x140 into the manager's +0x230
+    /// at 0x82412E50), so the sun shadows keep one direction all day.
+    /// Nothing when the track does not override it; where the direction
+    /// comes from then was not traced. Optional in the file. The scene reads
+    /// both at those same offsets of the presentation (0x82420940).
+    std::optional<glm::vec3> shadowLightDirection;
 
     /// Parses the XML text of a TrackSettings.xml. Throws DataError when it
     /// is not a TrackSettings document or lacks one of the elements above.

@@ -39,6 +39,8 @@
 #include "render/FrameStats.h"
 #include "render/Overlay.h"
 #include "render/PresentTarget.h"
+#include "render/ShadowCascades.h"
+#include "render/ShadowPass.h"
 #include "render/SkyObjects.h"
 #include "render/WorldRenderer.h"
 #include "ui/Hud.h"
@@ -166,6 +168,10 @@ public:
     float animationTime() const { return m_time; }
     /// The world renderer, or nullptr before the world is loaded.
     const render::WorldRenderer* worldRenderer() const { return m_worldRenderer.get(); }
+    /// The sun shadows' passes and the maps' placement (see drawShadows()).
+    const render::ShadowPass* shadowPass() const { return m_shadowPass.get(); }
+    const render::FrameRenderer* frameRenderer() const { return m_frame.get(); }
+    const render::ShadowCascades& shadowCascades() const { return m_shadowCascades; }
     /// Whether the last frame drew the HUD.
     bool hudDrawn() const { return m_hudDrawn; }
     /// Vertices the last frame drew with the system-font overlay outside
@@ -304,6 +310,10 @@ private:
     void saveProfileOnExit();
     void updateCamera(float dt);
     render::FrameParams frameParams() const;
+    /// Renders the sun shadow maps, the screen depth and the shadow mask
+    /// for this frame (see render::ShadowPass), and hands the mask to the
+    /// world and the cars.
+    void drawShadows(const render::FrameParams& frame);
     void drawVehicles(const render::FrameParams& frame);
     void drawVehicleGlass(const render::FrameParams& frame);
     render::CarPose carPose(const Vehicle& vehicle) const;
@@ -354,6 +364,9 @@ private:
     std::unique_ptr<render::FrameRenderer> m_frame;
     /// The sun, moon and stars m_frame draws over the sky.
     std::unique_ptr<render::SkyObjects> m_skyObjects;
+    /// The sun shadows: where their maps lie, and their passes.
+    render::ShadowCascades m_shadowCascades;
+    std::unique_ptr<render::ShadowPass> m_shadowPass;
     std::unique_ptr<render::FrameStats> m_frameStats;
     render::PresentTarget m_present;
     /// The input of the frame being run.

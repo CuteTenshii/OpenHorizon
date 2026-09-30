@@ -8,6 +8,7 @@
 
 #include <bit>
 #include <cstring>
+#include <utility>
 
 namespace fh::world {
 
@@ -137,6 +138,7 @@ TrackShaders::RenderState TrackShaders::readRenderState(ByteView fxobj, std::str
                 break;
             case kCullMode:
                 state.cull = value;
+                state.cullGiven = true;
                 break;
             case kAlphaBlendEnable:
                 state.blend = value != 0;
@@ -180,6 +182,12 @@ TrackShaders TrackShaders::load(const lzx::ZipArchive& archive)
             const Bytes data = readEntry(archive, zipEntry);
             entry.effect = xenos::parseEffect(data, zipEntry.name);
             entry.state = readRenderState(data, kDefaultTechnique);
+            for (const auto& [technique, target] : {std::pair{"DepthOnly", &entry.depthOnlyState},
+                     std::pair{"ShadowDepthOnly", &entry.shadowDepthOnlyState}}) {
+                if (entry.effect.findTechnique(technique) != nullptr) {
+                    *target = readRenderState(data, technique);
+                }
+            }
             const xenos::Technique* technique = entry.effect.findTechnique(kDefaultTechnique);
             if (technique == nullptr || technique->passes.empty() || technique->passes.front().vertexShader < 0) {
                 return;

@@ -159,6 +159,11 @@ constexpr float kAlphaToMaskThreshold = 0.5F;
 constexpr std::size_t kTextureUnits = 32;
 /// Stands for a unit whose binding is not known yet: no texture name.
 constexpr GLuint kUnknownTexture = ~GLuint{0};
+/// Stands in a pass's textures for the shadow mask, bound at draw time.
+constexpr GLuint kShadowMaskTexture = ~GLuint{0} - 1;
+
+/// The mask CarRenderer::setShadowMask() gave, shared by every car.
+GLuint g_shadowMask = 0;
 bool sameBlend(const std::optional<carmodel::CarPass::Blend>& a, const std::optional<carmodel::CarPass::Blend>& b)
 {
     if (a.has_value() != b.has_value()) {
@@ -309,6 +314,7 @@ CarRenderer::CarRenderer(const carmodel::CarModel& model)
             known = byTechnique.emplace(batch.technique, std::move(passes)).first;
         }
         m_passes.push_back(known->second);
+        m_casterPasses.push_back(casterPasses(model, casterTechnique(batch, m_nodes[batch.node].kind)));
         const carmodel::MaterialDrawState state = carmodel::materialDrawState(batch.material);
         for (Pass& pass : m_passes.back()) {
             pass.textures = texturesFor(*pass.program, batch);
@@ -514,9 +520,8 @@ std::vector<std::pair<GLuint, GLuint>> CarRenderer::texturesFor(
     for (const xenos::SamplerBinding& sampler : program.source().samplers) {
         // Samplers without a file are render targets the game draws each
         // frame (reflections, mirrors) and read as black here. The shadow
-        // mask is the exception: it holds 1 where nothing shadows the car,
-        // and with no shadow pass that is everywhere.
-        const Texture* texture = sampler.name == "ShadowMaskSamp" ? &m_white : &m_black;
+        // mask is bound at draw time.
+        const Texture* texture = &m_black;
         for (const auto& [name, index] : batch.textures) {
             if (name == sampler.name && index < m_textures.size()) {
                 texture = &m_textures[index];
@@ -525,7 +530,8 @@ std::vector<std::pair<GLuint, GLuint>> CarRenderer::texturesFor(
         // The environment cube maps are rendered at run time and not
         // produced here; an empty unit reads as black.
         const bool cube = sampler.dimension == xenos::TextureDimension::Cube;
-        units.emplace_back(sampler.unit, cube ? 0 : texture->id());
+        const bool mask = sampler.name == "ShadowMaskSamp";
+        units.emplace_back(sampler.unit, cube ? 0 : mask ? kShadowMaskTexture : texture->id());
     }
     return units;
 }
@@ -606,7 +612,12 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
             program = draw.pass->program->id();
             glUseProgram(program);
         }
-        for (const auto& [unit, texture] : draw.pass->textures) {
+        for (auto [unit, texture] : draw.pass->textures) {
+            // The mask holds 1 where nothing shadows the car, as white does
+            // while there is no shadow pass.
+            if (texture == kShadowMaskTexture) {
+                texture = g_shadowMask != 0 ? g_shadowMask : m_white.id();
+            }
             if (unit >= bound.size() || bound[unit] != texture) {
                 glBindTextureUnit(unit, texture);
                 if (unit < bound.size()) {
@@ -625,6 +636,155 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
     if (translucent) {
         glDepthMask(GL_TRUE);
     }
+}
+
+void CarRenderer::setShadowMask(GLuint texture)
+{
+    g_shadowMask = texture;
+}
+
+std::string CarRenderer::casterTechnique(const CarMesh::Batch& batch, CarMesh::NodeKind node)
+{
+    if (batch.motionBlur || carmodel::castsNoShadow(batch.material)) {
+        return {};
+    }
+    if (batch.material == "badge") {
+        return "shadowMap_badge";
+    }
+    if (carmodel::isTyreMaterial(batch.material)) {
+        return "tireShadowMap";
+    }
+    if (carmodel::isRimMaterial(batch.material)) {
+        return "rimShadowMap";
+    }
+    if (node == CarMesh::NodeKind::Rotor || node == CarMesh::NodeKind::Caliper) {
+        return "brakeShadowMap";
+    }
+    return "shadowMap";
+}
+
+std::vector<CarRenderer::Pass> CarRenderer::casterPasses(const carmodel::CarModel& model, const std::string& technique)
+{
+    std::vector<Pass> passes;
+    if (technique.empty() || !model.effect) {
+        return passes;
+    }
+    for (const auto& source : model.effect->passes(technique)) {
+        Pass pass;
+        pass.program = m_cache->get(source, technique);
+        if (!pass.program) {
+            return {};
+        }
+        auto defaults = std::make_shared<XenosConstants>();
+        pass.program->loadDefaults(*defaults);
+        pass.defaults = std::move(defaults);
+        auto slots = std::make_shared<ConstantSlots>();
+        for (std::size_t i = 0; i < slots->size(); ++i) {
+            (*slots)[i] = pass.program->floatSlot(kConstantNames[i]);
+        }
+        pass.slots = std::move(slots);
+        passes.push_back(std::move(pass));
+    }
+    return passes;
+}
+
+bool CarRenderer::inBox(const glm::mat4& viewProjection, const CarPose& pose, bool orthographic) const
+{
+    const auto row = [&](int i) {
+        return glm::vec4(viewProjection[0][i], viewProjection[1][i], viewProjection[2][i], viewProjection[3][i]);
+    };
+    std::array<glm::vec4, 6> planes{row(3) + row(0), row(3) - row(0), row(3) + row(1), row(3) - row(1), row(3), row(3)};
+    std::size_t count = 5;
+    if (orthographic) {
+        planes[4] = row(2);
+        planes[5] = row(3) - row(2);
+        count = 6;
+    }
+    const glm::vec3 centre(pose.body * glm::vec4(m_boundsCentre, 1.0F));
+    // The wheels lie within the body's sphere widened by their reach.
+    const float radius = m_boundsRadius + m_wheelRadius;
+    for (std::size_t i = 0; i < count; ++i) {
+        const float length = glm::length(glm::vec3(planes[i]));
+        if (length > 0.0F && glm::dot(glm::vec3(planes[i]), centre) + planes[i].w < -radius * length) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void CarRenderer::drawDepth(const glm::mat4& viewProjection, const CarPose& pose, bool screen)
+{
+    if (!inBox(viewProjection, pose, !screen)) {
+        return;
+    }
+    m_draws.clear();
+    m_stream.clear();
+    // fillConstants() multiplies projection, view and world with the Z
+    // mirror between view and world twice, which cancels; an identity view
+    // leaves the projection to carry the whole view-projection.
+    FrameParams frame;
+    frame.view = glm::mat4(1.0F);
+    frame.projection = viewProjection;
+    // The shadow map vertex shaders read only the matrices and the part's
+    // packing, so batches of one part of one node under one program share
+    // their constants.
+    std::map<std::tuple<const XenosConstants*, std::uint32_t, std::uint32_t>, std::size_t> shared;
+    for (std::uint32_t n = 0; n < m_nodes.size(); ++n) {
+        const CarMesh::Node& node = m_nodes[n];
+        // The cockpit lies inside the body and its glass, which cast in
+        // front of it from any light, so it adds nothing to a shadow map.
+        if (node.kind == CarMesh::NodeKind::Cockpit) {
+            continue;
+        }
+        const glm::mat4 world = nodeTransform(node, pose) * node.placement;
+        for (std::uint32_t b = node.firstBatch; b < node.firstBatch + node.batchCount; ++b) {
+            const CarMesh::Batch& batch = m_batches[b];
+            if (batch.indexCount == 0 || (screen && batch.translucent) || !wheelBatchVisible(batch, pose)) {
+                continue;
+            }
+            for (const Pass& pass : m_casterPasses[b]) {
+                const auto key = std::tuple(pass.defaults.get(), n, batch.range);
+                auto known = shared.find(key);
+                if (known == shared.end()) {
+                    const std::size_t constants = m_stream.append(
+                        *pass.defaults, [&](XenosConstants& c) { fillConstants(c, pass, frame, pose, batch, world); });
+                    known = shared.emplace(key, constants).first;
+                }
+                m_draws.push_back({b, &pass, known->second, false});
+            }
+        }
+    }
+    if (m_draws.empty()) {
+        return;
+    }
+    m_stream.upload();
+    glBindVertexArray(m_vao);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kVertexStream, m_vertices);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kMorphStream, m_zeros);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, kDamageStream, m_zeros);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    // Draws sharing constants bind them once.
+    std::sort(m_draws.begin(), m_draws.end(), [](const Draw& a, const Draw& b) {
+        return std::tie(a.pass->program, a.constants, a.batch) < std::tie(b.pass->program, b.constants, b.batch);
+    });
+    GLuint program = 0;
+    std::size_t bound = ~std::size_t{0};
+    for (const Draw& draw : m_draws) {
+        const CarMesh::Batch& batch = m_batches[draw.batch];
+        if (program != draw.pass->program->id()) {
+            program = draw.pass->program->id();
+            glUseProgram(program);
+        }
+        if (bound != draw.constants) {
+            m_stream.bind(draw.constants);
+            bound = draw.constants;
+        }
+        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT,
+            reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t)));
+    }
+    glEnable(GL_CULL_FACE);
+    glBindVertexArray(0);
 }
 
 } // namespace fh::render

@@ -19,6 +19,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace fh::world {
@@ -66,7 +67,9 @@ inline constexpr std::uint32_t kBlack = 0;
 inline constexpr std::uint32_t kWhite = 1;
 inline constexpr std::uint32_t kBlackCube = 2;
 inline constexpr std::uint32_t kBlack3D = 3;
-inline constexpr std::uint32_t kFirstTrackTexture = 4;
+/// ShadowMaskSamp: the screen's sun shadow mask, white without one.
+inline constexpr std::uint32_t kShadowMask = 4;
+inline constexpr std::uint32_t kFirstTrackTexture = 5;
 } // namespace texturehandle
 
 /// The float constants the game sets once per scene for every track effect,
@@ -150,6 +153,14 @@ struct TrackFrameConstants {
     /// block at CTrackPresentation + 192, 0x8246A01C) whose meaning was not
     /// found, and into y and z values no effect reads.
     static glm::vec4 timeGain(float presentationSeconds);
+
+    /// HackMatrix (c208-c211), the depth techniques' view-projection: the
+    /// DepthOnly and ShadowDepthOnly vertex shaders subtract the camera
+    /// position (the w of ViewInvMatrix, c243-c245) from the world position
+    /// and multiply by it. Verified in Colorado's effects' microcode; that
+    /// the game fills it with the pass's view-projection around the camera
+    /// is inferred from that use.
+    void setHackMatrix(const glm::mat4& viewProjection, const glm::vec3& camera);
 };
 
 /// The track effects' Default passes translated to GLSL and linked, one per
@@ -196,7 +207,15 @@ public:
         world::TrackShaders::RenderState state;
     };
 
-    TrackPrograms(const world::TrackShaders& shaders, bool bindless);
+    /// The name of each effect's technique the programs run.
+    static constexpr std::string_view kDefault = "Default";
+    /// Drawn by the game into the screen depth and into the shadow maps
+    /// (see ShadowPass); they take HackMatrix (c208) as the view-projection
+    /// of camera-relative positions.
+    static constexpr std::string_view kDepthOnly = "DepthOnly";
+    static constexpr std::string_view kShadowDepthOnly = "ShadowDepthOnly";
+
+    TrackPrograms(const world::TrackShaders& shaders, bool bindless, std::string_view technique = kDefault);
     ~TrackPrograms();
     TrackPrograms(const TrackPrograms&) = delete;
     TrackPrograms& operator=(const TrackPrograms&) = delete;
@@ -246,6 +265,7 @@ private:
 
     const world::TrackShaders& m_shaders;
     bool m_bindless = false;
+    std::string m_technique;
     std::mutex m_mutex;
     std::vector<std::shared_ptr<const Source>> m_sources;
     std::vector<std::unique_ptr<Program>> m_programs;

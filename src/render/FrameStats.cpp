@@ -10,13 +10,13 @@ namespace fh::render {
 
 namespace {
 
-constexpr std::array kPartNames{"simulation", "physics", "streaming", "world", "cars", "sky", "glass", "driving line",
-    "particles", "tonemap", "HUD", "menus", "present"};
+constexpr std::array kPartNames{"simulation", "physics", "streaming", "shadows", "world", "cars", "sky", "glass",
+    "driving line", "particles", "tonemap", "HUD", "menus", "present"};
 static_assert(kPartNames.size() == FrameStats::kParts);
 
 bool drawing(std::size_t part)
 {
-    return part >= static_cast<std::size_t>(FrameStats::Part::DrawWorld);
+    return part >= static_cast<std::size_t>(FrameStats::Part::DrawShadows);
 }
 
 } // namespace
