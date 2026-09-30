@@ -95,6 +95,10 @@ public:
     int stateAt(const Tile& tile, float distance) const;
     /// Chunks drawn when the tile is `distance` metres away.
     std::vector<std::uint32_t> chunksAt(const Tile& tile, float distance) const;
+    /// Chunks whose band ends beyond `distance`: every chunk a camera at
+    /// least `distance` metres from each of the tile's chunks may draw. The
+    /// set changes only where stateAt() does.
+    std::vector<std::uint32_t> chunksBeyond(const Tile& tile, float distance) const;
     const WorldIndex& index() const { return m_index; }
 
 private:
@@ -168,6 +172,9 @@ struct TileMesh {
         /// How often Blend_A, Blend_B and Blend_C repeat per unit of the first
         /// texture coordinates (u, v each).
         std::array<float, 6> layerScales{1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F};
+        /// The batch's indices chunk by chunk, in order, covering exactly
+        /// [firstIndex, firstIndex + indexCount).
+        std::vector<ChunkRun> runs;
 
         /// Every texture the batch draws with.
         std::vector<std::uint32_t> textures() const;

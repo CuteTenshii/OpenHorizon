@@ -71,6 +71,9 @@ struct ShadedMesh {
         bool backdrop = false;
         /// For backdrop batches, the chunk the geometry comes from.
         std::uint32_t chunk = kMergedChunks;
+        /// The batch's indices chunk by chunk, in order, covering exactly
+        /// [firstIndex, firstIndex + indexCount); firstIndex is ShadedMesh's.
+        std::vector<ChunkRun> runs;
 
         /// The real textures the batch reads, each once.
         std::vector<std::uint32_t> textureIds() const;

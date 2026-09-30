@@ -35,6 +35,33 @@ namespace fh::world {
 /// undoes the parser's negation first. Negating Z mirrors the geometry, so
 /// triangles read from a file wind the other way round in world space.
 
+/// The triangles of one chunk inside a merged batch: `indexCount` indices
+/// from `firstIndex` of the mesh's index list. A builder appends a chunk's
+/// triangles to each batch in one go, so the renderer can pick chunks one
+/// by one out of merged geometry.
+struct ChunkRun {
+    /// Index into WorldIndex::chunks().
+    std::uint32_t chunk = 0;
+    std::uint32_t firstIndex = 0;
+    std::uint32_t indexCount = 0;
+
+    bool operator==(const ChunkRun&) const = default;
+};
+
+/// Records that `count` indices from `first` belong to `chunk`, extending
+/// the last run when it is the same chunk's.
+inline void appendChunkRun(std::vector<ChunkRun>& runs, std::uint32_t chunk, std::uint32_t first, std::uint32_t count)
+{
+    if (count == 0) {
+        return;
+    }
+    if (!runs.empty() && runs.back().chunk == chunk && runs.back().firstIndex + runs.back().indexCount == first) {
+        runs.back().indexCount += count;
+        return;
+    }
+    runs.push_back({chunk, first, count});
+}
+
 /// One render model drawn in the world: a world-space model of a track's
 /// bin.zip, or one placement of a prop modelled in its own local space. It
 /// carries the range of camera distances at which it is drawn.
@@ -58,11 +85,16 @@ struct WorldChunk {
     /// few metres of the detailed ground where both exist (up to 14 m above
     /// it at the festival), and alone beyond the drivable area.
     bool backdrop = false;
-    /// For backdrop chunks of an index built with visibility data: the zones
-    /// (see ZoneGrid) whose files list the chunk, in increasing order. The
-    /// game draws the chunk only while the camera is in one of them, which
-    /// keeps the backdrop away from where the detailed ground lies below it.
-    /// Empty when drawn from everywhere.
+    /// For chunks of zone files' draw records, in an index built with
+    /// visibility data: the zones (see ZoneGrid) whose files list the draw,
+    /// in increasing order. The game draws the chunk only while the camera
+    /// is in one of them (verified: the per-draw instances are built from
+    /// the draw list of the camera's zone alone, 0x8241FFA8, and nothing
+    /// else is drawn, 0x824701B8), which for the backdrop keeps it away from
+    /// where the detailed ground lies below it. Empty when drawn from
+    /// everywhere: procedural copies, which the zone files do not list, and
+    /// prop levels that are in no zone file and borrow a sibling level's
+    /// placement.
     std::vector<std::uint16_t> zones;
     /// A prop drawn where `placement` puts it; world-space models are drawn
     /// as stored.
@@ -96,15 +128,20 @@ struct Footprint {
 /// gondolas, mining towers): each of their placements (see TrackPlacements)
 /// becomes a chunk of its own, and those never placed are only counted.
 /// Boundary shells, shadow-casting stand-ins and the crude scene copy used
-/// for reflections are left out. With the track's zone grid, backdrop chunks
-/// carry the zones they are drawn from, and backdrop levels no zone lists
-/// (which the game never draws) are left out.
+/// for reflections are left out. With the track's zone grid, chunks of zone
+/// files' draws carry the zones they are drawn from, and backdrop levels no
+/// zone lists (which the game never draws) are left out.
 ///
 /// All coordinates are world coordinates, described at the top of this file.
 class WorldIndex {
 public:
-    /// Distance (metres) from which each level replaces the finer one. A
+    /// Distance (metres) from which each level replaces the finer one, for
+    /// chunks whose placement gives no ranges (the world-space models). A
     /// group's finest level starts at 0 and its coarsest level has no end.
+    /// Not the game's: a viewer choice kept from forza-map-manager. The game
+    /// takes each draw's own ranges from its zone record (0x82E192C0), but
+    /// which level a world-space draw is comes from flags whose source was
+    /// not traced (see TODO.md).
     static constexpr float kLodStart[] = {0.0F, 400.0F, 1500.0F, 4000.0F};
 
     /// Reads every render model header of `archive` on all hardware threads,
@@ -146,7 +183,7 @@ private:
     struct LocalModel;
     void placeProps(const std::unordered_map<std::uint32_t, LocalModel>& models, const TrackPlacements& placements,
         const std::function<std::uint32_t(const std::string&)>& groupOf);
-    void limitBackdropToZones(const lzx::ZipArchive& archive, const TrackPlacements& placements);
+    void assignZones(const lzx::ZipArchive& archive, const TrackPlacements& placements);
 
     std::vector<WorldChunk> m_chunks;
     std::vector<std::string> m_groupKeys;

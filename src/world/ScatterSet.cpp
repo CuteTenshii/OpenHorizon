@@ -45,10 +45,9 @@ constexpr std::uint32_t kMaxGroups = 1024;
 constexpr std::uint32_t kMaxExtra = 4096;
 constexpr std::uint32_t kMaxPathLength = 1024;
 constexpr std::uint32_t kMaxBlocks = 16;
-/// Used when a group has no block of switch distances: its levels switch at
-/// these fractions of its draw distance. A viewer choice, not game data.
-constexpr float kFallbackFirstSwitch = 0.25F;
-constexpr float kFallbackSecondSwitch = 0.5F;
+/// The byte of an instance that picks its block of distances: block
+/// `byte >> 1` of the group (see ScatterSet).
+constexpr std::size_t kInstanceBlockSelector = 95;
 
 /// Bounds-checked reads at absolute offsets.
 class Reader {
@@ -81,16 +80,16 @@ std::size_t alignUp(std::size_t offset, std::size_t alignment)
     return (offset + alignment - 1) / alignment * alignment;
 }
 
-/// The distances at which the levels of a `levels`-level mesh end: each
-/// level ends where the next begins and the last where drawing stops.
-std::array<float, 3> levelRanges(int levels, float firstSwitch, float secondSwitch, float drawDistance)
+/// The distances at which the levels of a `levels`-level mesh end (see
+/// ScatterSet): each level ends where the next begins, and the last where
+/// the block or the group stops drawing, whichever comes first.
+std::array<float, 3> levelRanges(int levels, const std::array<float, 3>& ends, float drawDistance)
 {
     std::array<float, 3> ranges{-1.0F, -1.0F, -1.0F};
-    const std::array<float, 2> switches{firstSwitch, secondSwitch};
     for (int level = 0; level + 1 < levels; ++level) {
-        ranges[static_cast<std::size_t>(level)] = switches[static_cast<std::size_t>(level)];
+        ranges[static_cast<std::size_t>(level)] = ends[static_cast<std::size_t>(level)];
     }
-    ranges[static_cast<std::size_t>(std::max(levels, 1) - 1)] = drawDistance;
+    ranges[static_cast<std::size_t>(std::max(levels, 1) - 1)] = std::min(ends[2], drawDistance);
     return ranges;
 }
 
@@ -214,26 +213,20 @@ ScatterSet readScatterSet(ByteView data)
         if (meshLevels == 0 || group.count == 0 || !(group.drawDistance > 0.0F)) {
             continue;
         }
-        // Blocks that switch no level hold zeros; the first that does gives
-        // the switch distances.
-        float firstSwitch = group.drawDistance * kFallbackFirstSwitch;
-        float secondSwitch = group.drawDistance * kFallbackSecondSwitch;
-        for (std::uint32_t b = 0; b < group.blocks; ++b) {
-            const float first = r.f32(blocks + b * kBlockBytes);
-            const float second = r.f32(blocks + b * kBlockBytes + 4);
-            if (first > 0.0F && second >= first && second <= group.drawDistance) {
-                firstSwitch = first;
-                secondSwitch = second;
-                break;
-            }
-        }
-        const std::array<float, 3> ranges = levelRanges(meshLevels, firstSwitch, secondSwitch, group.drawDistance);
         set.instances.reserve(set.instances.size() + group.count);
         for (std::uint32_t i = 0; i < group.count; ++i) {
             const std::size_t record = instances + static_cast<std::size_t>(i) * kInstanceBytes;
             if (r.f32(record + kInstancePosition + 12) != 1.0F) {
                 throw DataError("instance {} of the set is not valid", i);
             }
+            r.need(record + kInstanceBlockSelector, 1);
+            const std::uint32_t block = data[record + kInstanceBlockSelector] >> 1U;
+            if (block >= group.blocks) {
+                throw DataError("instance {} of the set picks block {} of {}", i, block, group.blocks);
+            }
+            const std::size_t distances = blocks + static_cast<std::size_t>(block) * kBlockBytes;
+            const std::array<float, 3> ranges = levelRanges(
+                meshLevels, {r.f32(distances), r.f32(distances + 4), r.f32(distances + 8)}, group.drawDistance);
             ScatterSet::Instance instance;
             instance.mesh = group.mesh;
             instance.placement.position = r.vec3(record + kInstancePosition);

@@ -265,6 +265,7 @@ ShadedMesh buildShadedMesh(const lzx::ZipArchive& archive, const WorldIndex& ind
                     data.batch.chunk = key.chunk;
                 }
                 remap.assign(part.positions.size(), ShadedMesh::kNoTexture);
+                const auto runStart = static_cast<std::uint32_t>(data.indices.size());
                 for (std::size_t t = 0; t + 2 < material.triangles.size(); t += 3) {
                     const std::array<std::uint32_t, 3> corners = mirrored
                         ? std::array<std::uint32_t, 3>{material.triangles[t], material.triangles[t + 2],
@@ -279,6 +280,8 @@ ShadedMesh buildShadedMesh(const lzx::ZipArchive& archive, const WorldIndex& ind
                         data.indices.push_back(remap[v]);
                     }
                 }
+                appendChunkRun(
+                    data.batch.runs, c, runStart, static_cast<std::uint32_t>(data.indices.size()) - runStart);
             }
         }
     }
@@ -294,6 +297,9 @@ ShadedMesh buildShadedMesh(const lzx::ZipArchive& archive, const WorldIndex& ind
         out.vertices.insert(out.vertices.end(), data.vertices.begin(), data.vertices.end());
         batch.firstIndex = static_cast<std::uint32_t>(out.indices.size());
         batch.indexCount = static_cast<std::uint32_t>(data.indices.size());
+        for (ChunkRun& run : batch.runs) {
+            run.firstIndex += batch.firstIndex;
+        }
         out.indices.insert(out.indices.end(), data.indices.begin(), data.indices.end());
         out.batches.push_back(std::move(batch));
     }

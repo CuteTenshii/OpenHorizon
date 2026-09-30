@@ -264,6 +264,18 @@ std::vector<std::uint32_t> WorldTileGrid::chunksAt(const Tile& tile, float dista
     return result;
 }
 
+std::vector<std::uint32_t> WorldTileGrid::chunksBeyond(const Tile& tile, float distance) const
+{
+    std::vector<std::uint32_t> result;
+    const auto& chunks = m_index.chunks();
+    for (const std::uint32_t c : tile.chunks) {
+        if (chunks[c].bandEnd > distance) {
+            result.push_back(c);
+        }
+    }
+    return result;
+}
+
 bool isNotSurface(const RenderMesh& mesh, const RenderMesh::Material& material)
 {
     if (startsWithNoCase(material.name, "Placeholder") || iequals(material.name, "CrowdTERR")) {
@@ -385,7 +397,10 @@ TileMesh buildTileMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
                     }
                 }
                 auto& [batch, target] = batchIndices[batchKey(source.surface)];
+                std::vector<ChunkRun> runs = std::move(batch.runs);
                 batch = source.surface;
+                batch.runs = std::move(runs);
+                const auto runStart = static_cast<std::uint32_t>(target.size());
                 for (std::size_t t = 0; t + 2 < material.triangles.size(); t += 3) {
                     // Mirrored placements get their winding turned back.
                     const std::array<std::uint32_t, 3> corners = mirrored
@@ -425,6 +440,7 @@ TileMesh buildTileMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
                         target.push_back(remap[v]);
                     }
                 }
+                appendChunkRun(batch.runs, c, runStart, static_cast<std::uint32_t>(target.size()) - runStart);
             }
         }
         out.models.push_back(std::move(model));
@@ -436,6 +452,9 @@ TileMesh buildTileMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
         }
         batch.firstIndex = static_cast<std::uint32_t>(out.indices.size());
         batch.indexCount = static_cast<std::uint32_t>(indices.size());
+        for (ChunkRun& run : batch.runs) {
+            run.firstIndex += batch.firstIndex;
+        }
         out.batches.push_back(batch);
         out.indices.insert(out.indices.end(), indices.begin(), indices.end());
     }

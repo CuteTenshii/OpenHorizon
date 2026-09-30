@@ -204,7 +204,7 @@ std::optional<WorldIndex> WorldIndex::build(const lzx::ZipArchive& archive, cons
     }
     if (placements != nullptr && zones != nullptr) {
         index.m_zoneGrid = *zones;
-        index.limitBackdropToZones(archive, *placements);
+        index.assignZones(archive, *placements);
     }
     if (placements != nullptr) {
         index.placeProps(localModels, *placements, groupOf);
@@ -280,6 +280,9 @@ void WorldIndex::placeProps(const std::unordered_map<std::uint32_t, LocalModel>&
             continue;
         }
         addChunk(*model, *placement, clampedLod(model->header.firstPartName), false);
+        if (m_zoneGrid) {
+            m_chunks.back().zones = placements.zonesListing(d);
+        }
         placedObjects.insert(placements.drawObject(d));
     }
     // Copies placed by procedural sets. A mesh's levels are its template
@@ -310,7 +313,7 @@ WorldIndex WorldIndex::fromChunks(std::vector<WorldChunk> chunks)
     return index;
 }
 
-void WorldIndex::limitBackdropToZones(const lzx::ZipArchive& archive, const TrackPlacements& placements)
+void WorldIndex::assignZones(const lzx::ZipArchive& archive, const TrackPlacements& placements)
 {
     std::unordered_map<std::uint32_t, std::vector<std::size_t>> drawsOfObject;
     for (std::size_t d = 0; d < placements.drawCount(); ++d) {
@@ -321,9 +324,6 @@ void WorldIndex::limitBackdropToZones(const lzx::ZipArchive& archive, const Trac
     std::vector<bool> unlisted(m_chunks.size(), false);
     for (std::size_t i = 0; i < m_chunks.size(); ++i) {
         WorldChunk& chunk = m_chunks[i];
-        if (!chunk.backdrop) {
-            continue;
-        }
         const std::optional<std::uint32_t> object = TrackTextures::objectNumber(archive.entries()[chunk.entry].name);
         if (!object) {
             continue;
@@ -336,7 +336,7 @@ void WorldIndex::limitBackdropToZones(const lzx::ZipArchive& archive, const Trac
         }
         std::sort(chunk.zones.begin(), chunk.zones.end());
         chunk.zones.erase(std::unique(chunk.zones.begin(), chunk.zones.end()), chunk.zones.end());
-        unlisted[i] = chunk.zones.empty();
+        unlisted[i] = chunk.backdrop && chunk.zones.empty();
     }
     std::size_t kept = 0;
     for (std::size_t i = 0; i < m_chunks.size(); ++i) {

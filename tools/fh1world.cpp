@@ -1,6 +1,9 @@
 // Loads a track's world the way the engine's streamer does and reports what
 // it found: model and prop counts, the tile meshes around one point and a
-// sample of their textures.
+// sample of their textures. With --sizes it measures what the whole map
+// costs instead: every tile's geometry at each level of detail and every
+// texture the tiles use, decoded one tile and one texture at a time so the
+// map is never held in memory at once.
 
 #include "base/Log.h"
 #include "vfs/Vfs.h"
@@ -11,14 +14,19 @@
 #include <lzx/zip.h>
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <future>
 #include <map>
+#include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -29,11 +37,14 @@ constexpr std::size_t kSampleTextures = 32;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1world DISC TRACK [--at X,Z]\n"
-        "  DISC   the extracted disc (its root or its media folder)\n"
-        "  TRACK  a folder of media/tracks, such as colorado\n"
-        "  --at   world X and Z to build the 3x3 tiles around; the map centre\n"
-        "         by default\n");
+        "usage: fh1world DISC TRACK [--at X,Z | --sizes [THREADS]]\n"
+        "  DISC     the extracted disc (its root or its media folder)\n"
+        "  TRACK    a folder of media/tracks, such as colorado\n"
+        "  --at     world X and Z to build the 3x3 tiles around; the map centre\n"
+        "           by default\n"
+        "  --sizes  builds every tile at every level of detail and decodes every\n"
+        "           texture the tiles use, on THREADS threads (4 by default), and\n"
+        "           reports their sizes and the time taken\n");
     return 2;
 }
 
@@ -94,19 +105,174 @@ const char* shadingName(fh::world::TileMesh::Shading shading)
     return "?";
 }
 
+/// Runs `work(i)` for every i below `count` on `threads` threads.
+template <typename Work> void parallelEach(std::size_t count, unsigned threads, const Work& work)
+{
+    std::atomic<std::size_t> next{0};
+    std::vector<std::thread> pool;
+    for (unsigned t = 0; t < std::max(threads, 1U); ++t) {
+        pool.emplace_back([&] {
+            for (std::size_t i = next++; i < count; i = next++) {
+                work(i);
+            }
+        });
+    }
+    for (std::thread& thread : pool) {
+        thread.join();
+    }
+}
+
+/// Geometry of one level of detail over the whole map, as the renderer
+/// uploads it: the track-effect vertices and indices, and the procedural
+/// copies' interleaved vertices and indices.
+struct LevelCost {
+    std::size_t chunks = 0;
+    std::size_t triangles = 0;
+    std::size_t bytes = 0;
+    double buildSeconds = 0.0;
+};
+
+/// Builds every tile of free roam (route 0), one level of detail at a time,
+/// then decodes every texture those tiles use, and prints the totals.
+int reportSizes(const fh::world::TrackWorld& world, unsigned threads)
+{
+    const fh::world::WorldIndex& index = world.index;
+    const fh::world::WorldTileGrid grid(index, kTileSize, fh::world::EventPropFilter::route(0));
+    const fh::world::TrackTextures* textures = world.textures ? &*world.textures : nullptr;
+    // Levels -1 (no levels) to 3, placed geometry then procedural copies.
+    constexpr std::size_t kLevels = 5;
+    std::array<LevelCost, kLevels * 2> costs{};
+    std::vector<std::size_t> tileBytes(grid.tiles().size(), 0);
+    std::set<std::uint32_t> textureIds;
+    std::mutex mutex;
+    const auto start = std::chrono::steady_clock::now();
+    parallelEach(grid.tiles().size(), threads, [&](std::size_t t) {
+        const fh::world::WorldTileGrid::Tile& tile = grid.tiles()[t];
+        std::array<std::vector<std::uint32_t>, kLevels * 2> byLevel;
+        for (const std::uint32_t c : tile.chunks) {
+            const fh::world::WorldChunk& chunk = index.chunks()[c];
+            byLevel[(chunk.scattered ? kLevels : 0) + static_cast<std::size_t>(chunk.lod + 1)].push_back(c);
+        }
+        for (std::size_t level = 0; level < byLevel.size(); ++level) {
+            if (byLevel[level].empty()) {
+                continue;
+            }
+            const auto buildStart = std::chrono::steady_clock::now();
+            std::size_t bytes = 0;
+            std::size_t triangles = 0;
+            std::vector<std::uint32_t> ids;
+            if (level < kLevels) {
+                const fh::world::ShadedMesh mesh
+                    = fh::world::buildShadedMesh(*world.archive, index, byLevel[level], world.shaders, textures);
+                bytes = mesh.vertices.size() + mesh.indices.size() * sizeof(std::uint32_t);
+                triangles = mesh.triangleCount();
+                ids = mesh.textureIds();
+            } else {
+                const fh::world::TileMesh mesh
+                    = fh::world::buildTileMesh(*world.archive, index, byLevel[level], textures);
+                bytes = (mesh.vertices.size() + mesh.indices.size()) * sizeof(std::uint32_t);
+                triangles = mesh.triangleCount();
+                ids = mesh.textures();
+            }
+            const double seconds = secondsSince(buildStart);
+            const std::lock_guard lock(mutex);
+            LevelCost& cost = costs[level];
+            cost.chunks += byLevel[level].size();
+            cost.triangles += triangles;
+            cost.bytes += bytes;
+            cost.buildSeconds += seconds;
+            tileBytes[t] += bytes;
+            for (const std::uint32_t id : ids) {
+                if (id != fh::world::TileMesh::kNoTexture) {
+                    textureIds.insert(id);
+                }
+            }
+        }
+    });
+    const double geometrySeconds = secondsSince(start);
+    std::printf("geometry of %zu tiles, every level of detail, built on %u threads in %.1f s:\n", grid.tiles().size(),
+        threads, geometrySeconds);
+    std::printf("  %-22s %9s %12s %10s %10s\n", "level", "chunks", "triangles", "MiB", "build s");
+    LevelCost total;
+    constexpr double kMiB = 1024.0 * 1024.0;
+    for (std::size_t level = 0; level < costs.size(); ++level) {
+        const LevelCost& cost = costs[level];
+        if (cost.chunks == 0) {
+            continue;
+        }
+        const int lod = static_cast<int>(level % kLevels) - 1;
+        const std::string name = std::string(level < kLevels ? "placed" : "procedural")
+            + (lod < 0 ? std::string(" (no levels)") : " LOD" + std::to_string(lod));
+        std::printf("  %-22s %9zu %12zu %10.1f %10.1f\n", name.c_str(), cost.chunks, cost.triangles,
+            static_cast<double>(cost.bytes) / kMiB, cost.buildSeconds);
+        total.chunks += cost.chunks;
+        total.triangles += cost.triangles;
+        total.bytes += cost.bytes;
+        total.buildSeconds += cost.buildSeconds;
+    }
+    std::printf("  %-22s %9zu %12zu %10.1f %10.1f\n", "all", total.chunks, total.triangles,
+        static_cast<double>(total.bytes) / kMiB, total.buildSeconds);
+    std::sort(tileBytes.begin(), tileBytes.end());
+    if (!tileBytes.empty()) {
+        std::printf("  per tile, all levels: median %.1f MiB, largest %.1f MiB\n",
+            static_cast<double>(tileBytes[tileBytes.size() / 2]) / kMiB, static_cast<double>(tileBytes.back()) / kMiB);
+    }
+    if (textures == nullptr) {
+        return 0;
+    }
+
+    const std::vector<std::uint32_t> ids(textureIds.begin(), textureIds.end());
+    std::size_t textureBytes = 0;
+    std::size_t topLevelBytes = 0;
+    int failed = 0;
+    std::map<std::string, std::pair<int, std::size_t>> byFormat;
+    const auto textureStart = std::chrono::steady_clock::now();
+    parallelEach(ids.size(), threads, [&](std::size_t i) {
+        try {
+            const fh::world::TextureMipChain chain = textures->loadTexture(*world.archive, ids[i]);
+            const std::lock_guard lock(mutex);
+            textureBytes += chain.byteSize();
+            topLevelBytes += chain.levels.empty() ? 0 : chain.levels.front().size();
+            auto& [count, bytes] = byFormat[formatName(chain.format)];
+            ++count;
+            bytes += chain.byteSize();
+        } catch (const fh::DataError&) {
+            const std::lock_guard lock(mutex);
+            ++failed;
+        }
+    });
+    std::printf("textures: %zu used (%d missing from the disc), %.1f MiB with their mip chains (%.1f MiB top "
+                "levels), decoded on %u threads in %.1f s\n",
+        ids.size(), failed, static_cast<double>(textureBytes) / kMiB, static_cast<double>(topLevelBytes) / kMiB,
+        threads, secondsSince(textureStart));
+    for (const auto& [format, entry] : byFormat) {
+        std::printf(
+            "  %-6s %6d textures, %10.1f MiB\n", format.c_str(), entry.first, static_cast<double>(entry.second) / kMiB);
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
 {
-    if (argc != 3 && argc != 5) {
+    if (argc < 3 || argc > 5) {
         return usage();
     }
     std::optional<std::pair<float, float>> at;
-    if (argc == 5) {
+    std::optional<unsigned> sizesThreads;
+    if (argc >= 4 && std::string_view(argv[3]) == "--sizes") {
+        sizesThreads = argc == 5 ? static_cast<unsigned>(std::strtoul(argv[4], nullptr, 10)) : 4U;
+        if (*sizesThreads == 0) {
+            return usage();
+        }
+    } else if (argc == 5) {
         at = parsePoint(argv[4]);
         if (std::string_view(argv[3]) != "--at" || !at) {
             return usage();
         }
+    } else if (argc != 3) {
+        return usage();
     }
     try {
         fh::Vfs vfs;
@@ -153,6 +319,9 @@ int main(int argc, char** argv)
                 world.textures->objectCount(), world.textures->shaderCount(), world.textures->bundledTextureCount());
         }
         std::printf("load time: %.2f s\n", loadSeconds);
+        if (sizesThreads) {
+            return reportSizes(world, *sizesThreads);
+        }
 
         const fh::world::Footprint footprint = index.footprint();
         const auto [x, z] = at ? *at : std::pair{footprint.centre().x, footprint.centre().y};

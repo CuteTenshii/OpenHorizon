@@ -446,16 +446,35 @@ struct TestScatterInstance {
     glm::vec3 position{0.0F};
     /// X, Y and Z axes, scaled, as the set stores them.
     std::array<glm::vec3, 3> axes{glm::vec3(1, 0, 0), glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)};
+    /// The group's block of distances it takes (byte 95 holds twice it).
+    std::uint8_t block = 0;
 };
 
 struct TestScatterGroup {
     std::uint32_t mesh = 0;
     std::vector<TestScatterInstance> instances;
     float drawDistance = 220.0F;
-    /// First and second switch distance of each block; {0, 0} for a block
-    /// that switches nothing.
-    std::vector<std::pair<float, float>> blocks;
+    /// The level ends E0, E1 and E2 of each block.
+    std::vector<std::array<float, 3>> blocks;
 };
+
+/// Whether each batch's chunk runs cover its indices exactly, in order.
+template <typename Batch> bool runsCoverBatches(const std::vector<Batch>& batches)
+{
+    for (const Batch& batch : batches) {
+        std::uint32_t next = batch.firstIndex;
+        for (const world::ChunkRun& run : batch.runs) {
+            if (run.firstIndex != next || run.indexCount == 0) {
+                return false;
+            }
+            next += run.indexCount;
+        }
+        if (next != batch.firstIndex + batch.indexCount) {
+            return false;
+        }
+    }
+    return true;
+}
 
 /// A procedural placement set in the layout ScatterSet documents.
 Bytes scatterFile(const std::string& name, const std::vector<TestScatterMesh>& meshes,
@@ -536,14 +555,16 @@ Bytes scatterFile(const std::string& name, const std::vector<TestScatterMesh>& m
                 w.f32(0.0F);
             }
             for (const float v : {instance.position.x, instance.position.y, instance.position.z, 1.0F, 0.5F, 0.5F, 0.5F,
-                     0.0F, 0.0F, 1.0F, 0.0F, 0.0F}) {
+                     0.0F, 0.0F, 1.0F, 0.0F}) {
                 w.f32(v);
             }
+            w.u8(0);
+            w.u8(0);
+            w.u8(0);
+            w.u8(static_cast<std::uint8_t>(instance.block * 2));
         }
-        for (const auto& [first, second] : group.blocks) {
-            const float distance = first > 0.0F ? group.drawDistance : 0.0F;
-            for (const float v :
-                {first, second, distance, 150.0F, 300.0F, 2500.0F, distance, first > 0.0F ? 15.0F : 0.0F}) {
+        for (const std::array<float, 3>& ends : group.blocks) {
+            for (const float v : {ends[0], ends[1], ends[2], 150.0F, 300.0F, 2500.0F, ends[2], 5.0F}) {
                 w.f32(v);
             }
         }
@@ -859,11 +880,13 @@ TEST(appliesPlacements)
 
 TEST(readsScatterSets)
 {
-    // A tree at two levels, a mesh named by a path of odd length, and a bush
-    // at one level whose group gives no switch distances.
+    // A tree at two levels, whose copies take different blocks, a mesh named
+    // by a path of odd length, and a bush at one level whose block ends
+    // beyond its group's draw distance.
     TestScatterInstance turned;
     turned.position = glm::vec3(-167.5F, 36.25F, 854.0F);
     turned.axes = {glm::vec3(0, 0, -0.5F), glm::vec3(0, 0.5F, 0), glm::vec3(0.5F, 0, 0)};
+    turned.block = 1;
     TestScatterInstance upright;
     upright.position = glm::vec3(10, 20, 30);
     TestScatterMesh tree;
@@ -874,15 +897,16 @@ TEST(readsScatterSets)
     bush.draws = {61915};
     TestScatterGroup trees;
     trees.instances = {turned, upright};
-    trees.blocks = {{0.0F, 0.0F}, {50.0F, 100.0F}};
+    trees.blocks = {{30.0F, 40.0F, 60.0F}, {50.0F, 100.0F, 220.0F}};
     TestScatterGroup paths;
     paths.mesh = 1;
     paths.instances = {upright};
-    paths.blocks = {{50.0F, 100.0F}};
+    paths.blocks = {{50.0F, 100.0F, 220.0F}};
     TestScatterGroup bushes;
     bushes.mesh = 2;
     bushes.instances = {upright};
     bushes.drawDistance = 100.0F;
+    bushes.blocks = {{50.0F, 70.0F, 150.0F}};
     const Bytes data = scatterFile("Models_Ungrouped_1706", {tree, pathNamed, bush}, {trees, paths, bushes});
 
     const world::ScatterSet set = world::readScatterSet(data);
@@ -899,10 +923,12 @@ TEST(readsScatterSets)
         CHECK(first.placement.position == turned.position);
         // The stored Z axis, negated, maps the model's stored Z.
         CHECK(first.placement.rows == (std::array<float, 9>{0, 0, -0.5F, 0, 0.5F, 0, -0.5F, 0, 0}));
-        // The block that switches levels gives the distances.
+        // Each copy's own block gives its distances: the first level ends
+        // at E0, the last at E2.
         CHECK(first.placement.ranges == (std::array<float, 3>{50.0F, 220.0F, -1.0F}));
         CHECK(set.instances[1].placement.position == upright.position);
-        // One level, drawn to the group's distance.
+        CHECK(set.instances[1].placement.ranges == (std::array<float, 3>{30.0F, 60.0F, -1.0F}));
+        // One level, drawn to the group's distance, which comes before E2.
         CHECK_EQ(set.instances[2].mesh, 2U);
         CHECK(set.instances[2].placement.ranges == (std::array<float, 3>{100.0F, -1.0F, -1.0F}));
     }
@@ -910,6 +936,10 @@ TEST(readsScatterSets)
     Bytes wrongSize = data;
     ++wrongSize[0x4B];
     CHECK_THROWS(world::readScatterSet(wrongSize));
+    TestScatterGroup pastBlocks = bushes;
+    pastBlocks.instances.front().block = 1;
+    CHECK_THROWS(world::readScatterSet(
+        scatterFile("Models_Ungrouped_1706", {tree, pathNamed, bush}, {trees, paths, pastBlocks})));
     Bytes empty(0x104, 0);
     std::copy_n("OEGP", 4, empty.begin());
     CHECK_THROWS(world::readScatterSet(empty));
@@ -927,7 +957,7 @@ TEST(readsEventGatedScatterSets)
     tree.draws = {61908, 61909};
     TestScatterGroup trees;
     trees.instances = {upright, upright};
-    trees.blocks = {{50.0F, 100.0F}};
+    trees.blocks = {{50.0F, 100.0F, 220.0F}};
     const std::string name = "models_proc_clrd_trees_redstone_area02[freeroam]_0";
     const Bytes plain = scatterFile("Models_Ungrouped_1706", {tree}, {trees});
     CHECK(world::scatterSetKind(plain) == std::optional<std::uint32_t>(world::kModelSetKind));
@@ -1272,6 +1302,18 @@ TEST(buildsAWorldFromAnArchive)
     }
     const world::Footprint footprint = index->footprint();
     CHECK(footprint.min.x <= 989.0F && footprint.max.x >= 1010.0F);
+    // With the zone grid, the props take the zones whose files list their
+    // draws, and the world-space models, which no draw record places here,
+    // are drawn from everywhere.
+    const world::ZoneGrid zoneGrid = world::ZoneGrid::read(hexFile(1, 1, 1, {0}));
+    const std::optional<world::WorldIndex> zoned
+        = world::WorldIndex::build(archive, {}, nullptr, &*placements, &zoneGrid);
+    CHECK(zoned.has_value());
+    if (zoned) {
+        for (const world::WorldChunk& chunk : zoned->chunks()) {
+            CHECK(chunk.zones == (chunk.placed ? std::vector<std::uint16_t>{0} : std::vector<std::uint16_t>{}));
+        }
+    }
 
     const world::WorldTileGrid grid(*index, 500.0F);
     const auto [cellX, cellZ] = grid.cellAt(1000, 1000);
@@ -1284,6 +1326,11 @@ TEST(buildsAWorldFromAnArchive)
     const std::vector<std::uint32_t> near = grid.chunksAt(grid.tiles()[*tile], 0.0F);
     CHECK_EQ(near.size(), std::size_t{3});
     CHECK_EQ(grid.chunksAt(grid.tiles()[*tile], 2000.0F).size(), std::size_t{1});
+    // Near the tile every chunk may be drawn; past 50 m the prop's band has
+    // ended, and past the first level's end so has that level's.
+    CHECK_EQ(grid.chunksBeyond(grid.tiles()[*tile], 0.0F).size(), grid.tiles()[*tile].chunks.size());
+    CHECK_EQ(grid.chunksBeyond(grid.tiles()[*tile], 60.0F).size(), std::size_t{2});
+    CHECK_EQ(grid.chunksBeyond(grid.tiles()[*tile], 2000.0F).size(), std::size_t{1});
 
     const world::TileMesh mesh = world::buildTileMesh(archive, *index, near, &textures);
     CHECK_EQ(mesh.failedChunks, 0);
@@ -1291,6 +1338,7 @@ TEST(buildsAWorldFromAnArchive)
     CHECK_EQ(mesh.vertexCount(), std::size_t{12});
     CHECK(mesh.textures() == (std::vector<std::uint32_t>{0x2B40}));
     CHECK_EQ(mesh.batches.size(), std::size_t{2});
+    CHECK(runsCoverBatches(mesh.batches));
     // Every triangle, the mirrored sign's included, winds clockwise seen
     // from the side its normals point to.
     for (std::size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
@@ -1437,6 +1485,8 @@ TEST(loadsColorado)
         CHECK_EQ(shaded.failedChunks, 0);
         CHECK_EQ(shaded.skippedMaterials, 0);
         CHECK_EQ(shaded.triangleCount(), mesh.triangleCount());
+        CHECK(runsCoverBatches(mesh.batches));
+        CHECK(runsCoverBatches(shaded.batches));
         for (const world::ShadedMesh::Batch& batch : shaded.batches) {
             CHECK_EQ(batch.vertexOffset % world::ShadedMesh::kVertexAlignment, std::size_t{0});
             CHECK_EQ(batch.stride, colorado.shaders.at(batch.shader).renderDeclaration.stride(0));
