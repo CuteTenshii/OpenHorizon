@@ -26,7 +26,10 @@ What is missing, in progress or planned is in [TODO.md](TODO.md).
 
 ### Windows
 
-Requires Visual Studio 2022 or later (the "Desktop development with C++" workload, which brings CMake and Ninja) and [vcpkg](https://github.com/microsoft/vcpkg). The dependencies, Catch2 for the tests among them, are listed in `vcpkg.json` and pinned by its `builtin-baseline`; vcpkg builds them on the first configure, which takes a while (FFmpeg and shaderc are the long ones).
+Requires:
+
+- Visual Studio 2022 or later, with the "Desktop development with C++" workload (which brings CMake and Ninja).
+- [vcpkg](https://github.com/microsoft/vcpkg). The dependencies, Catch2 for the tests among them, are listed in `vcpkg.json` and pinned by its `builtin-baseline`; vcpkg builds them on the first configure, which takes a while (FFmpeg and shaderc are the long ones).
 
 1. Clone vcpkg and bootstrap it: `git clone https://github.com/microsoft/vcpkg C:\vcpkg`, then `C:\vcpkg\bootstrap-vcpkg.bat`.
 2. Set `VCPKG_ROOT` to that folder (`setx VCPKG_ROOT C:\vcpkg`, then open a new terminal).
@@ -43,7 +46,15 @@ The first configure also downloads lzx and xds with git, so git must be on the p
 
 ### Linux
 
-Requires CMake 3.21 or newer, Ninja, git, a C++20 compiler with `std::format` (GCC 13 or Clang 17 and newer), and the development packages of SDL3, OpenGL (with `GL/glcorearb.h`) and EGL, glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavformat, libavutil), zlib, shaderc (used only by the shader check tool and its test) and Catch2 3 (for the tests; `-DFH1N_BUILD_TESTS=OFF` builds without them). SDL3 is packaged from Ubuntu 25.04 on; on Ubuntu 26.04, as CI uses:
+Requires:
+
+- CMake 3.21 or newer, Ninja and git.
+- A C++20 compiler with `std::format`: GCC 13 or Clang 17 and newer.
+- The development packages of SDL3, OpenGL (with `GL/glcorearb.h`) and EGL, glm, pugixml, SQLite 3, FreeType, fontconfig, FFmpeg (libavcodec, libavformat, libavutil) and zlib.
+- shaderc, used only by the shader check tool and its test.
+- Catch2 3, for the tests; `-DFH1N_BUILD_TESTS=OFF` builds without them.
+
+SDL3 is packaged from Ubuntu 25.04 on; on Ubuntu 26.04, as CI uses:
 
 ```sh
 sudo apt-get install cmake ninja-build g++ pkg-config git libsdl3-dev libgl-dev libegl-dev \
