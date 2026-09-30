@@ -1,6 +1,8 @@
 add_library(fh1ui STATIC
     AnarkFormats.cpp
     AnarkFormats.h
+    EventScreens.cpp
+    EventScreens.h
     Hud.cpp
     Hud.h
     LoadingScreen.cpp

@@ -12,6 +12,7 @@
 #include "platform/Window.h"
 #include "render/Gl.h"
 #include "ui/AnarkFormats.h"
+#include "ui/EventScreens.h"
 #include "ui/LoadingScreen.h"
 #include "ui/MenuCommon.h"
 #include "ui/PauseMenu.h"
@@ -33,6 +34,7 @@
 #include <format>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -55,6 +57,8 @@ int usage()
         "                                [--zoom Z --zoom-time S] [--steps KEYS] [--size WxH] [--time S]\n"
         "                                [--player-bar CREDITS,XP,BAND,CAR]\n"
         "       fh1menu DISC title OUT.png [--steps KEYS] [--size WxH] [--time S] [--wav OUT.wav]\n"
+        "       fh1menu DISC event SCREEN OUT.png --event ID [--place N] [--steps KEYS] [--size WxH]\n"
+        "                                [--time S]\n"
         "  DISC       the extracted disc (its root or its media folder)\n"
         "  SCENE      a scene under media/ui/scenes/ui4 without extension, such as 925_pause_menu\n"
         "  contracts  lists the scene's behaviour elements (contracts) with their parameters and the\n"
@@ -71,7 +75,11 @@ int usage()
         "             --player-bar it shows the profile's credits, XP, wristband Id and Data_Car.Id\n"
         "  title      draws the title screen after --time seconds (default 3), the KEYS pressed at the\n"
         "             start (s is Start, a is A), and with --wav mixes its music offline into OUT.wav;\n"
-        "             past 53 s the screen goes to its attract, which the tool leaves at once\n");
+        "             past 53 s the screen goes to its attract, which the tool leaves at once\n"
+        "  event      draws a screen of the event flow for the event ID (Events.HorizonEventID): SCREEN is\n"
+        "             summary (the description at the event's start), title (the intro's title card),\n"
+        "             prerace (the pre-race menu) or finished (the finish position, --place N), after\n"
+        "             the KEYS and --time seconds more (default 1)\n");
     return 2;
 }
 
@@ -376,6 +384,116 @@ int renderPause(const fh::Vfs& vfs, const std::string& out, const RenderOptions&
         frame(MenuInput{});
     }
     std::printf("focus %d%s\n", menu.focus(), menu.confirming() ? ", confirming" : "");
+    return writePng(out, target.read()) ? 0 : 1;
+}
+
+/// The event screens' view of an event, read from gamedb as the game's
+/// loader does (see fh::loadRaceEvents).
+EventScreenInfo eventScreenInfo(const fh::Vfs& vfs, const std::string& horizonId)
+{
+    const fh::Database database(vfs.readOrThrow("media/db/gamedb.slt"));
+    fh::Localisation strings(vfs, "en");
+    const std::optional<fh::Row> row = database.queryOne(
+        "SELECT e.Id, e.Name, e.ShortName, e.Description, e.RestrictionDescription, e.CareerEventStyle, e.Level, "
+        "e.CashPrize, e.PlayerCarId, e.EventTicket, r.NumLaps, t.Length, t.RibbonConfiguration FROM Events e "
+        "JOIN Races r ON r.EventId = e.Id JOIN Tracks t ON t.id = r.TrackId WHERE e.HorizonEventID = ?",
+        {horizonId});
+    if (!row) {
+        throw std::runtime_error(std::format("no event {}", horizonId));
+    }
+    EventScreenInfo info;
+    info.name = strings.resolve("Events", row->text("Name"));
+    info.shortName = strings.resolve("Events", row->text("ShortName"));
+    info.description = strings.resolve("Events", row->text("Description"));
+    info.restrictionDescription = strings.resolve("Events", row->text("RestrictionDescription"));
+    info.careerEventStyle = row->i("CareerEventStyle");
+    info.level = row->i("Level");
+    info.cashPrize = row->i("CashPrize");
+    info.playerCarId = row->i("PlayerCarId");
+    info.ticket = row->text("EventTicket");
+    info.laps = row->i("NumLaps");
+    info.lengthMetres = row->f("Length");
+    if (info.playerCarId != 0) {
+        if (const std::optional<fh::Row> car
+            = database.queryOne("SELECT ModelShort FROM Data_Car WHERE Id = ?", {std::to_string(info.playerCarId)})) {
+            info.providedCarName = strings.resolve("Data_Car", car->text("ModelShort"));
+        }
+    }
+    return info;
+}
+
+int renderEvent(const fh::Vfs& vfs, std::string_view screen, const std::string& out, const std::string& horizonId,
+    int place, const RenderOptions& options)
+{
+    fh::Window window(hiddenWindow());
+    OffscreenTarget target(options.width, options.height);
+    const EventScreenInfo info = eventScreenInfo(vfs, horizonId);
+    constexpr float kStep = 1.0F / 60.0F;
+    std::function<void(const MenuInput&)> frame;
+    std::unique_ptr<EventSummaryScreen> summary;
+    std::unique_ptr<EventTitleCard> title;
+    std::unique_ptr<PreRaceMenu> preRace;
+    std::unique_ptr<PostRaceFinishedScreen> finished;
+    if (screen == "summary") {
+        summary = std::make_unique<EventSummaryScreen>(vfs, "en");
+        summary->open(info);
+        frame = [&](const MenuInput& input) {
+            const EventSummaryScreen::Action action = summary->update(input, kStep);
+            if (action != EventSummaryScreen::Action::None) {
+                std::printf("action: %s\n", action == EventSummaryScreen::Action::Enter ? "enter" : "back");
+            }
+            target.clear();
+            summary->draw(options.width, options.height);
+        };
+    } else if (screen == "title") {
+        title = std::make_unique<EventTitleCard>(vfs, "en");
+        title->show(info);
+        std::printf("title \"%s\", subtitle \"%s\"\n", title->title().c_str(), title->subtitle().c_str());
+        frame = [&](const MenuInput&) {
+            if (title->update(kStep)) {
+                std::printf("done\n");
+            }
+            target.clear();
+            title->draw(options.width, options.height);
+        };
+    } else if (screen == "prerace") {
+        preRace = std::make_unique<PreRaceMenu>(vfs, "en");
+        preRace->open(info);
+        for (const PreRaceEntry& entry : preRace->entries()) {
+            std::printf("entry %d: %s\n", static_cast<int>(entry.item), entry.text.c_str());
+        }
+        frame = [&](const MenuInput& input) {
+            const PreRaceMenu::Action action = preRace->update(input, kStep);
+            if (action != PreRaceMenu::Action::None) {
+                std::printf("action: %d\n", static_cast<int>(action));
+            }
+            target.clear();
+            preRace->draw(options.width, options.height);
+        };
+    } else if (screen == "finished") {
+        finished = std::make_unique<PostRaceFinishedScreen>(vfs, "en");
+        finished->show(place, info.careerEventStyle);
+        std::printf("%s: %s\n", finished->title().c_str(), finished->position().c_str());
+        frame = [&](const MenuInput&) {
+            if (finished->update(kStep)) {
+                std::printf("done\n");
+            }
+            target.clear();
+            finished->draw(options.width, options.height);
+        };
+    } else {
+        return usage();
+    }
+    for (const char step : options.steps) {
+        frame(stepInput(step));
+        for (int i = 0; i < 20; ++i) {
+            frame(MenuInput{});
+        }
+    }
+    const int settle = std::max(1, static_cast<int>(options.time / kStep));
+    for (int i = 0; i < settle; ++i) {
+        frame(MenuInput{});
+    }
     return writePng(out, target.read()) ? 0 : 1;
 }
 
@@ -733,6 +851,39 @@ int main(int argc, char** argv)
                 }
             }
             return renderMap(vfs, std::string(args[0]), options);
+        }
+        if (command == "event" && args.size() >= 2) {
+            RenderOptions options;
+            std::string event;
+            int place = 1;
+            for (std::size_t i = 2; i < args.size(); ++i) {
+                const std::string_view arg = args[i];
+                const auto value = [&]() -> std::string {
+                    if (i + 1 >= args.size()) {
+                        throw std::runtime_error(std::format("{} needs a value", arg));
+                    }
+                    return std::string(args[++i]);
+                };
+                if (arg == "--event") {
+                    event = value();
+                } else if (arg == "--place") {
+                    place = std::stoi(value());
+                } else if (arg == "--steps") {
+                    options.steps = value();
+                } else if (arg == "--time") {
+                    options.time = std::stof(value());
+                } else if (arg == "--size") {
+                    if (!parseSize(value(), options.width, options.height)) {
+                        return usage();
+                    }
+                } else {
+                    return usage();
+                }
+            }
+            if (event.empty()) {
+                return usage();
+            }
+            return renderEvent(vfs, args[0], std::string(args[1]), event, place, options);
         }
         if (command == "title" && !args.empty()) {
             TitleOptions options;

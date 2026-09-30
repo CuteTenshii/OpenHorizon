@@ -15,6 +15,7 @@
 #include "base/Host.h"
 #include "platform/Window.h"
 #include "ui/AnarkFormats.h"
+#include "ui/EventScreens.h"
 #include "ui/LoadingScreen.h"
 #include "ui/MenuCommon.h"
 #include "ui/Minimap.h"
@@ -776,6 +777,190 @@ TEST(disc_ui_sounds_resolve_to_uiingame_events)
     sounds.play("PressStartSlideOn");
     CHECK_EQ(sounds.played().size(), std::size_t{5});
     CHECK_EQ(sounds.played().back(), std::string("PressStartSlideOn"));
+}
+
+/// FR04 as gamedb has it, with its texts resolved: a festival race with a
+/// ticket and a restriction.
+EventScreenInfo festivalRaceInfo()
+{
+    EventScreenInfo info;
+    info.name = "Ferrari Massimo";
+    info.shortName = "Ferrari Massimo";
+    info.careerEventStyle = 1;
+    info.level = 6;
+    info.description = "A description";
+    info.restrictionDescription = "Must be Ferrari";
+    info.laps = 3;
+    info.ticket = "239";
+    return info;
+}
+
+TEST(disc_event_titles_follow_the_name_rule)
+{
+    const char* dir = gameDir();
+    if (!dir) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    UiStrings strings(vfs, "en");
+    EventScreenInfo info = festivalRaceInfo();
+    CHECK_EQ(eventTitle(info), std::string("FERRARI MASSIMO"));
+    // Past UI/EventTitleMaxLongNameLength (30) the short name stands in.
+    info.name = "A name that runs well past thirty characters";
+    info.shortName = "Short name";
+    CHECK_EQ(eventTitle(info), std::string("SHORT NAME"));
+    info.name = "Caf\xC3\xA9 run";
+    CHECK_EQ(eventTitle(info), std::string("CAF\xC3\x89 RUN"));
+    const std::vector<std::pair<int, std::string>> kinds{{1, "FESTIVAL RACE"}, {2, "STREET RACE"}, {3, "SHOWCASE"},
+        {5, "STAR SHOWDOWN"}, {6, "FESTIVAL HEADLINE RACE"}, {0, ""}, {7, ""}};
+    for (const auto& [style, text] : kinds) {
+        info.careerEventStyle = style;
+        CHECK_EQ(eventKindLine(info, strings), text);
+    }
+    const std::vector<std::pair<int, std::string>> places{{1, "1ST"}, {2, "2ND"}, {3, "3RD"}, {4, "4TH"}, {11, "11TH"},
+        {12, "12TH"}, {13, "13TH"}, {21, "21ST"}, {22, "22ND"}, {101, "101ST"}};
+    for (const auto& [place, text] : places) {
+        CHECK_EQ(placeOrdinal(place, strings), text);
+    }
+}
+
+TEST(disc_event_summary_shows_the_ticket_and_enters)
+{
+    const char* dir = gameDir();
+    if (!dir || !glWindow()) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    EventSummaryScreen screen(vfs, "en");
+    screen.open(festivalRaceInfo());
+    CHECK(screen.isOpen());
+    CHECK_EQ(screen.text("TEXT_TITLE"), std::string("FESTIVAL RACE"));
+    CHECK_EQ(screen.text("TEXT_CAR_RESTRICTIONS"), std::string("Must be Ferrari"));
+    CHECK_EQ(screen.text("TEXT_RESTRICTION_TITLE"), std::string("ENTRY RESTRICTIONS:"));
+    // The ticket is the event's own image in its style's folder.
+    CHECK(!screen.ticket().empty());
+    CHECK(vfs.exists(screen.ticket()));
+    CHECK(screen.ticket().find("festivalraces") != std::string::npos);
+    screen.update(MenuInput{}, 1.0F / 60.0F);
+    screen.draw(1280, 720);
+    CHECK_EQ(screen.helpExtents().size(), std::size_t{2});
+    MenuInput back;
+    back.back = true;
+    CHECK(screen.update(back, 1.0F / 60.0F) == EventSummaryScreen::Action::Back);
+    CHECK(!screen.isOpen());
+    screen.open(festivalRaceInfo());
+    MenuInput accept;
+    accept.accept = true;
+    CHECK(screen.update(accept, 1.0F / 60.0F) == EventSummaryScreen::Action::Enter);
+}
+
+TEST(disc_event_title_card_is_done_after_four_seconds)
+{
+    const char* dir = gameDir();
+    if (!dir || !glWindow()) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    EventTitleCard card(vfs, "en");
+    card.show(festivalRaceInfo());
+    CHECK_EQ(card.title(), std::string("FERRARI MASSIMO"));
+    CHECK_EQ(card.subtitle(), std::string("FESTIVAL RACE"));
+    constexpr float kStep = 1.0F / 60.0F;
+    int doneFrame = -1;
+    for (int frame = 0; frame < 300 && doneFrame < 0; ++frame) {
+        if (card.update(kStep)) {
+            doneFrame = frame;
+        }
+        card.draw(1280, 720);
+    }
+    // 4.0 s at 60 Hz: done on the 240th frame.
+    CHECK(doneFrame >= 238 && doneFrame <= 240);
+}
+
+TEST(disc_pre_race_menu_starts_or_quits_after_its_box)
+{
+    const char* dir = gameDir();
+    if (!dir || !glWindow()) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    PreRaceMenu menu(vfs, "en");
+    menu.open(festivalRaceInfo());
+    std::vector<std::string> texts;
+    for (const PreRaceEntry& entry : menu.entries()) {
+        texts.push_back(entry.text);
+    }
+    CHECK(texts == std::vector<std::string>({"START RACE", "OPTIONS", "QUIT RACE"}));
+    CHECK_EQ(menu.title(), std::string("FERRARI MASSIMO"));
+    CHECK_EQ(menu.subtitle(), std::string("FESTIVAL RACE"));
+    constexpr float kStep = 1.0F / 60.0F;
+    menu.update(MenuInput{}, kStep);
+    menu.draw(1280, 720);
+    CHECK_EQ(menu.helpExtents().size(), std::size_t{1});
+    MenuInput down;
+    down.down = true;
+    MenuInput accept;
+    accept.accept = true;
+    MenuInput back;
+    back.back = true;
+    menu.update(down, kStep);
+    menu.update(down, kStep);
+    CHECK_EQ(menu.focus(), 2);
+    // The list does not wrap.
+    menu.update(down, kStep);
+    CHECK_EQ(menu.focus(), 2);
+    CHECK(menu.update(accept, kStep) == PreRaceMenu::Action::None);
+    CHECK(menu.confirming());
+    menu.draw(1280, 720);
+    // B takes the box down and leaves the menu up; A in the box quits.
+    CHECK(menu.update(back, kStep) == PreRaceMenu::Action::None);
+    CHECK(!menu.confirming() && menu.isOpen());
+    menu.update(accept, kStep);
+    CHECK(menu.update(accept, kStep) == PreRaceMenu::Action::Quit);
+    CHECK(!menu.isOpen());
+    menu.open(festivalRaceInfo());
+    CHECK(menu.update(accept, kStep) == PreRaceMenu::Action::Race);
+    CHECK(!menu.isOpen());
+}
+
+TEST(disc_finish_position_goes_after_its_tape)
+{
+    const char* dir = gameDir();
+    if (!dir || !glWindow()) {
+        return;
+    }
+    fh::Vfs vfs;
+    vfs.mountDisc(dir);
+    PostRaceFinishedScreen screen(vfs, "en");
+    screen.show(3, 1);
+    CHECK_EQ(screen.title(), std::string("FINISHED"));
+    CHECK_EQ(screen.position(), std::string("3RD PLACE"));
+    constexpr float kStep = 1.0F / 60.0F;
+    float doneAt = -1.0F;
+    bool swoosh = false;
+    for (int frame = 1; frame <= 600 && doneAt < 0.0F; ++frame) {
+        const bool done = screen.update(kStep);
+        for (const std::string& sound : screen.takeSounds()) {
+            swoosh = swoosh || sound == "Placement_SwooshOut";
+        }
+        screen.draw(1280, 720);
+        if (done) {
+            doneAt = static_cast<float>(frame) * kStep;
+        }
+    }
+    // The tape is in at 1 s of its slide, stays PositionWaitTime (1 s),
+    // then its out slide fires HIDE_POSITION_TAPE_COMPLETE a second later.
+    CHECK(doneAt > 2.5F && doneAt < 3.5F);
+    CHECK(swoosh);
+    CHECK(!screen.isShown());
+    screen.show(1, 6);
+    CHECK_EQ(screen.position(), std::string("WINNER"));
+    screen.show(2, 6);
+    CHECK_EQ(screen.position(), std::string("FAILED"));
 }
 
 } // namespace
