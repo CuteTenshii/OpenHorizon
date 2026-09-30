@@ -75,8 +75,8 @@ public:
     /// Where finish() writes the tonemapped picture: the window's
     /// framebuffer (0) unless the game draws into its own 16:9 picture.
     void setOutputFramebuffer(GLuint framebuffer) { m_output = framebuffer; }
-    /// The HDR scene colour (linear, before post-processing), for reading
-    /// back in tests.
+    /// The scene colour (the square root of linear colour, before
+    /// post-processing), for reading back in tests.
     GLuint sceneColour() const { return m_colour; }
 
 private:

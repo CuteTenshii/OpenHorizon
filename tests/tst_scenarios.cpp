@@ -1496,8 +1496,8 @@ TEST(satNavShowsTheDistanceLeft)
 struct ShadowReading {
     double shadowed = 0.0;
     double gpuMs = 0.0;
-    /// Median scene luminance (linear HDR) of shadowed and of sunlit pixels
-    /// in the lower half of the picture, below the sky.
+    /// Median scene luminance (linear colour) of shadowed and of sunlit
+    /// pixels in the lower half of the picture, below the sky.
     double shadowedLuminance = 0.0;
     double litLuminance = 0.0;
 };
@@ -1524,6 +1524,8 @@ ShadowReading readShadows(Session& session)
     reading.shadowed = static_cast<double>(shadowed) / static_cast<double>(red.size());
     const int w = pass->width();
     const int h = pass->height();
+    // The scene target holds the square root of linear colour (see
+    // FrameRenderer); each channel is squared back before the luminance.
     std::vector<float> hdr(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4);
     glGetTextureImage(session.game().frameRenderer()->sceneColour(), 0, GL_RGBA, GL_FLOAT,
         static_cast<GLsizei>(hdr.size() * sizeof(float)), hdr.data());
@@ -1534,7 +1536,8 @@ ShadowReading readShadows(Session& session)
             // The mask's rows run from the top, the scene's from the bottom.
             const std::size_t i
                 = (static_cast<std::size_t>(h - 1 - y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x)) * 4;
-            const double luminance = 0.2126 * hdr[i] + 0.7152 * hdr[i + 1] + 0.0722 * hdr[i + 2];
+            const auto linear = [&](std::size_t channel) { return static_cast<double>(hdr[channel]) * hdr[channel]; };
+            const double luminance = 0.2126 * linear(i) + 0.7152 * linear(i + 1) + 0.0722 * linear(i + 2);
             const std::uint8_t m
                 = red[static_cast<std::size_t>(y) * static_cast<std::size_t>(w) + static_cast<std::size_t>(x)];
             if (m == 0) {
