@@ -19,6 +19,7 @@
 #include "particles/ParticleManager.h"
 #include "platform/Input.h"
 #include "platform/Window.h"
+#include "render/EnvironmentCube.h"
 #include "render/FrameStats.h"
 #include "render/Gl.h"
 #include "render/TrackPrograms.h"
@@ -1804,6 +1805,80 @@ TEST(promptWithoutAnIconShowsTheDefaultIcon)
     state.promptIcon.clear();
     hud.draw(state, 1280, 720);
     CHECK_EQ(hud.promptIconSlide(), std::string("DEFAULT"));
+}
+
+// Chrome, glass and paint reflected nothing: the car effect's
+// reflectionScaler stayed at its default of 0 and envSampler was left
+// empty. The game renders the environment cube around the focus car, all six
+// faces a frame under the in-game render scenario, and sets
+// reflectionScaler to 1 for every car draw. Captured where
+// sunShadowsFallByDayOnly captures, at noon and in the low evening sun, so
+// the two sets of pictures compare.
+TEST(carsReflectTheEnvironmentCube)
+{
+    if (!gameDir()) {
+        return;
+    }
+    struct Shot {
+        const char* name;
+        float hours;
+    };
+    for (const Shot shot : {Shot{"cube_noon", 12.0F}, Shot{"cube_low_sun", 18.5F}}) {
+        fh::GameOptions options;
+        options.spawnAt = glm::vec2(4330.0F, -250.0F);
+        options.spawnHeading = 0.0F;
+        options.startTime = shot.hours * 3600.0F;
+        Session session(options);
+        CHECK(session.waitForCar());
+        session.run(3.0F, {});
+        const fh::Game& game = session.game();
+        const fh::render::EnvironmentCube* cube = game.environmentCube();
+        CHECK(cube != nullptr);
+        const fh::render::CarRenderer* car = game.playerCarModel();
+        CHECK(car != nullptr);
+        if (cube == nullptr || car == nullptr) {
+            continue;
+        }
+        CHECK_EQ(cube->facesDrawn(), 6);
+        CHECK(cube->schedule().complete());
+        CHECK(cube->mipBuilds() > 0);
+        CHECK(car->boundTexture("envSampler") == cube->texture());
+        const std::optional<glm::vec4> scaler = car->pixelConstant("reflectionScaler");
+        CHECK(scaler.has_value());
+        if (scaler) {
+            CHECK(*scaler == glm::vec4(1.0F));
+        }
+        // No face is black. Level 3 (32 texels) of each face, in the square
+        // root encoding.
+        constexpr int kLevel = 3;
+        constexpr int kSize = fh::render::envcube::kSize >> kLevel;
+        std::vector<float> texels(static_cast<std::size_t>(kSize * kSize * 6 * 4));
+        glGetTextureImage(cube->texture(), kLevel, GL_RGBA, GL_FLOAT,
+            static_cast<GLsizei>(texels.size() * sizeof(float)), texels.data());
+        for (int face = 0; face < 6; ++face) {
+            double sum = 0.0;
+            float brightest = 0.0F;
+            for (int i = 0; i < kSize * kSize; ++i) {
+                const std::size_t at = (static_cast<std::size_t>(face * kSize * kSize + i)) * 4;
+                const float luminance = 0.2126F * texels[at] + 0.7152F * texels[at + 1] + 0.0722F * texels[at + 2];
+                sum += luminance;
+                brightest = std::max(brightest, luminance);
+            }
+            const double mean = sum / (kSize * kSize);
+            std::fprintf(stderr, "%s: face %d mean %.3f brightest %.3f\n", shot.name, face, mean, brightest);
+            CHECK(mean > 0.05);
+            // Straight up (+Y) the noon sky is far brighter than the clear
+            // colour (at most 0.2, see TrackSettings::cubeClearColour()).
+            if (face == 2 && shot.hours == 12.0F) {
+                CHECK(brightest > 0.3F);
+            }
+        }
+        const fh::render::FrameStats& stats = game.frameStats();
+        const auto part = static_cast<std::size_t>(fh::render::FrameStats::Part::DrawEnvironmentCube);
+        std::fprintf(stderr, "%s: environment cube CPU %.3f ms, GPU %.3f ms\n", shot.name,
+            stats.frameSeconds()[part] * 1000.0, stats.gpuFrameSeconds()[part] * 1000.0);
+        session.capture(shot.name);
+    }
 }
 
 } // namespace

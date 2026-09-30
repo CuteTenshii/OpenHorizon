@@ -433,6 +433,7 @@ void Game::loadWorld()
     logInfo("world: {} chunks indexed in {:.1f} s", m_world->index.chunks().size(),
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     m_worldRenderer = std::make_unique<render::WorldRenderer>(*m_world, *m_jobs);
+    loadEnvironmentCubes();
     drawLoading();
     m_collision = std::make_unique<physics::WorldCollision>(*m_world, *m_jobs, m_vfs, m_options.track);
     drawLoading();
@@ -2265,6 +2266,62 @@ void Game::drawShadows(const render::FrameParams& frame)
     render::CarRenderer::setShadowMask(m_shadowPass->mask());
 }
 
+void Game::loadEnvironmentCubes()
+{
+    try {
+        m_envMapFrequencyScale
+            = RenderScenario::stacked(m_vfs, RenderScenario::kInGame).envMapFrequencyScale.value_or(0.0F);
+    } catch (const std::exception& e) {
+        logWarning("render scenario: {}; the environment cube is not updated", e.what());
+    }
+    // The presentation tries the track's numbered cube first
+    // (staticCarCubemap%d.xpr, numbered by a field of the presentation not
+    // traced; the disc has none), then the track's, then the shared one.
+    for (const std::string& path : {std::format("media/tracks/{}/staticCarCubemap.xpr", m_options.track),
+             std::string("media/tracks/staticCarCubemap.xpr")}) {
+        if (const std::optional<Bytes> file = m_vfs.read(path)) {
+            try {
+                // The car shaders square what they fetch, so the texels are
+                // taken as stored.
+                m_staticCarCube = render::CubeMap::fromCube(world::readXprCube(*file), false);
+            } catch (const std::exception& e) {
+                logWarning("{}: {}", path, e.what());
+            }
+            break;
+        }
+    }
+    if (m_world && m_world->settings && m_world->settings->dynamicCubemap) {
+        m_environmentCube = std::make_unique<render::EnvironmentCube>();
+    }
+    render::CarRenderer::setEnvironmentCubes(
+        m_environmentCube ? m_environmentCube->texture() : 0, m_staticCarCube ? m_staticCarCube->id() : 0);
+}
+
+void Game::drawEnvironmentCube(const render::FrameParams& frame)
+{
+    if (!m_environmentCube || !m_playerPlaced || !m_world || !m_world->settings) {
+        return;
+    }
+    const world::TrackSettings& settings = *m_world->settings;
+    const float reach = settings.cubemapFarDistance;
+    // Where the driver can pick layers in the vertex shader the world goes
+    // into every face in one pass, sending each batch once; the sky is drawn
+    // face by face either way.
+    const bool layered = m_worldRenderer->cubeFacesLayered();
+    const render::EnvironmentCube::DrawFaces world
+        = [&](const render::FrameParams& centred, std::span<const glm::mat4> transforms, std::span<const int> layers) {
+        m_worldRenderer->drawCubeFaces(centred, transforms, layers, reach);
+    };
+    m_environmentCube->update(render::envcube::centre(player().physics->transform()), m_envMapFrequencyScale,
+        settings.cubeClearColour(frame.lighting.sunDirection), frame, layered ? &world : nullptr,
+        [&](const render::FrameParams& face) {
+        if (!layered) {
+            m_worldRenderer->drawCubeFace(face, reach);
+        }
+        m_frame->cubeSky(face);
+    });
+}
+
 render::CarPose Game::carPose(const Vehicle& vehicle) const
 {
     const CarPhysics& car = *vehicle.physics;
@@ -2282,6 +2339,10 @@ render::CarPose Game::carPose(const Vehicle& vehicle) const
     pose.headLights = m_timeOfDay->lights();
     pose.paint = vehicle.paint;
     pose.metallic = vehicle.metallic;
+    // The camera's focus car takes the static cube while the dynamic one is
+    // not updated; every other car the dynamic one (see CarPose).
+    const bool cubeUpdated = m_environmentCube && render::envcube::facesPerFrame(m_envMapFrequencyScale) > 0;
+    pose.useStaticCubeMap = &vehicle == &player() && !cubeUpdated;
     return pose;
 }
 
@@ -3003,6 +3064,8 @@ bool Game::frame(const InputState& controls, float dt)
             const render::FrameParams frame = frameParams();
             drawShadows(frame);
             m_frameStats->mark(Part::DrawShadows);
+            drawEnvironmentCube(frame);
+            m_frameStats->mark(Part::DrawEnvironmentCube);
             m_frame->begin(m_present.width(), m_present.height());
             m_worldRenderer->draw(frame);
             m_frameStats->mark(Part::DrawWorld);

@@ -161,9 +161,25 @@ constexpr std::size_t kTextureUnits = 32;
 constexpr GLuint kUnknownTexture = ~GLuint{0};
 /// Stands in a pass's textures for the shadow mask, bound at draw time.
 constexpr GLuint kShadowMaskTexture = ~GLuint{0} - 1;
+/// Stand in a pass's textures for the environment cubes, bound at draw
+/// time.
+constexpr GLuint kDynamicCubeTexture = ~GLuint{0} - 2;
+constexpr GLuint kStaticCubeTexture = ~GLuint{0} - 3;
 
 /// The mask CarRenderer::setShadowMask() gave, shared by every car.
 GLuint g_shadowMask = 0;
+/// The cubes CarRenderer::setEnvironmentCubes() gave, shared by every car.
+GLuint g_dynamicCube = 0;
+GLuint g_staticCube = 0;
+
+/// reflectionScaler (pixel c52) as the car draw sets it for every pass: the
+/// vector at 0x82001120, (1, 1, 1, 1), loaded at 0x82E635C8 and stored at
+/// +6848 of the draw's constants (0x82E635E4), which is pixel register 52
+/// (+6016 + 16 r, the same layout as dynamicLightsAmount, c58, at +6944
+/// and dynamicLights2, c108, at +7744). The effect's default is 0, which
+/// takes every environment reflection away.
+constexpr glm::vec4 kReflectionScaler{1.0F, 1.0F, 1.0F, 1.0F};
+
 bool sameBlend(const std::optional<carmodel::CarPass::Blend>& a, const std::optional<carmodel::CarPass::Blend>& b)
 {
     if (a.has_value() != b.has_value()) {
@@ -303,7 +319,13 @@ CarRenderer::CarRenderer(const carmodel::CarModel& model)
                     }
                     auto defaults = std::make_shared<XenosConstants>();
                     pass.program->loadDefaults(*defaults);
+                    pass.program->set(*defaults, "reflectionScaler", kReflectionScaler);
                     pass.defaults = std::move(defaults);
+                    for (const xenos::ConstantBinding& c : pass.program->source().constants) {
+                        if (c.name == "useStaticCubeMap" && c.set == xenos::RegisterSet::Bool) {
+                            pass.useStaticCubeMap = c.index;
+                        }
+                    }
                     auto slots = std::make_shared<ConstantSlots>();
                     static_assert(kConstantNames.size() == std::tuple_size_v<ConstantSlots>);
                     for (std::size_t i = 0; i < slots->size(); ++i) {
@@ -446,10 +468,14 @@ void CarRenderer::fillConstants(XenosConstants& c, const Pass& pass, const Frame
     // running lamps and light-state bits have no source here and stay 0.
     set(Constant::LampAmounts, glm::vec4(pose.brakeLights, 0.0F, 0.0F, 0.0F));
     set(Constant::HeadLampAmounts, glm::vec4(pose.headLights, 0.0F, 0.0F, 0.0F));
+    if (pass.useStaticCubeMap) {
+        c.control.setBool(*pass.useStaticCubeMap, pose.useStaticCubeMap);
+    }
 
     if (pass.alphaToMask) {
         c.system.alphaTest = {kAlphaGreaterEqual, kAlphaToMaskThreshold, 0.0F, 0.0F};
     }
+
     c.system.streamBase[kVertexStream] = range.byteOffset / 4;
     c.system.streamBase[kMorphStream] = 0;
     c.system.streamBase[kDamageStream] = 0;
@@ -521,19 +547,28 @@ std::vector<std::pair<GLuint, GLuint>> CarRenderer::texturesFor(
     std::vector<std::pair<GLuint, GLuint>> units;
     for (const xenos::SamplerBinding& sampler : program.source().samplers) {
         // Samplers without a file are render targets the game draws each
-        // frame (reflections, mirrors) and read as black here. The shadow
-        // mask is bound at draw time.
+        // frame (mirrors) and read as black here. The shadow mask holds 1
+        // where nothing shadows the car, and with no shadow pass that is
+        // everywhere; the environment cubes are bound at draw time.
         const Texture* texture = &m_black;
         for (const auto& [name, index] : batch.textures) {
             if (name == sampler.name && index < m_textures.size()) {
                 texture = &m_textures[index];
             }
         }
-        // The environment cube maps are rendered at run time and not
-        // produced here; an empty unit reads as black.
-        const bool cube = sampler.dimension == xenos::TextureDimension::Cube;
-        const bool mask = sampler.name == "ShadowMaskSamp";
-        units.emplace_back(sampler.unit, cube ? 0 : mask ? kShadowMaskTexture : texture->id());
+        GLuint id = texture->id();
+        if (sampler.name == "envSampler") {
+            id = kDynamicCubeTexture;
+        } else if (sampler.name == "envStaticSampler") {
+            id = kStaticCubeTexture;
+        } else if (sampler.dimension == xenos::TextureDimension::Cube) {
+            // No other cube the car effect samples is produced; an empty
+            // unit reads as black.
+            id = 0;
+        } else if (sampler.name == "ShadowMaskSamp") {
+            id = kShadowMaskTexture;
+        }
+        units.emplace_back(sampler.unit, id);
     }
     return units;
 }
@@ -619,6 +654,10 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
             // while there is no shadow pass.
             if (texture == kShadowMaskTexture) {
                 texture = g_shadowMask != 0 ? g_shadowMask : m_white.id();
+            } else if (texture == kDynamicCubeTexture) {
+                texture = g_dynamicCube;
+            } else if (texture == kStaticCubeTexture) {
+                texture = g_staticCube;
             }
             if (unit >= bound.size() || bound[unit] != texture) {
                 glBindTextureUnit(unit, texture);
@@ -643,6 +682,54 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
 void CarRenderer::setShadowMask(GLuint texture)
 {
     g_shadowMask = texture;
+}
+
+void CarRenderer::setEnvironmentCubes(GLuint dynamicCube, GLuint staticCube)
+{
+    g_dynamicCube = dynamicCube;
+    g_staticCube = staticCube;
+}
+
+std::optional<glm::vec4> CarRenderer::pixelConstant(std::string_view name) const
+{
+    for (const std::vector<Pass>& passes : m_passes) {
+        for (const Pass& pass : passes) {
+            const xenos::ConstantBinding* c = pass.program->constant(name, xenos::ShaderStage::Pixel);
+            if (c != nullptr && c->set == xenos::RegisterSet::Float4 && c->index < pass.defaults->pixel.size()) {
+                return pass.defaults->pixel[c->index];
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+GLuint CarRenderer::boundTexture(std::string_view sampler) const
+{
+    for (const std::vector<Pass>& passes : m_passes) {
+        for (const Pass& pass : passes) {
+            for (const xenos::SamplerBinding& s : pass.program->source().samplers) {
+                if (s.name != sampler) {
+                    continue;
+                }
+                for (const auto& [unit, texture] : pass.textures) {
+                    if (unit != s.unit) {
+                        continue;
+                    }
+                    if (texture == kDynamicCubeTexture) {
+                        return g_dynamicCube;
+                    }
+                    if (texture == kStaticCubeTexture) {
+                        return g_staticCube;
+                    }
+                    if (texture == kShadowMaskTexture) {
+                        return g_shadowMask;
+                    }
+                    return texture;
+                }
+            }
+        }
+    }
+    return 0;
 }
 
 std::string CarRenderer::casterTechnique(const CarMesh::Batch& batch, CarMesh::NodeKind node)

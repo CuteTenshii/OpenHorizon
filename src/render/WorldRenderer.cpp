@@ -44,6 +44,8 @@ constexpr std::size_t kControlOffset = 0;
 constexpr std::size_t kSystemOffset = 256;
 constexpr std::size_t kSystemAlphaToMaskOffset = 512;
 constexpr std::size_t kFixedBytes = 768;
+/// XeCubeFaces under std140: six mat4, then six ivec4.
+constexpr std::size_t kCubeFaceBlockBytes = 6 * sizeof(glm::mat4) + 6 * sizeof(glm::ivec4);
 /// Xbox 360 D3DCULL_NONE.
 constexpr std::uint32_t kCullNone = 0;
 /// Xbox 360 D3DCULL_CCW.
@@ -243,6 +245,8 @@ WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
     , m_bindless(m_programs.bindless())
     , m_depthPrograms(world.shaders, m_bindless, TrackPrograms::kDepthOnly)
     , m_shadowPrograms(world.shaders, m_bindless, TrackPrograms::kShadowDepthOnly)
+    , m_cubePrograms(world.shaders, m_bindless, TrackPrograms::kRealtimeCubemap,
+          hasExtension("GL_ARB_shader_viewport_layer_array"))
     , m_white(Texture::solid(255, 255, 255, 255))
     , m_black(Texture::solid(0, 0, 0, 255))
     , m_blackCube(blackCubeMap())
@@ -265,6 +269,11 @@ WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
     m_programs.prepareAll(m_jobs, kTranslatePriority);
     m_depthPrograms.prepareAll(m_jobs, kTranslatePriority);
     m_shadowPrograms.prepareAll(m_jobs, kTranslatePriority);
+    m_cubePrograms.prepareAll(m_jobs, kTranslatePriority);
+    glCreateBuffers(1, &m_cubeFixed);
+    glNamedBufferStorage(m_cubeFixed, kFixedBytes, nullptr, GL_DYNAMIC_STORAGE_BIT);
+    glCreateBuffers(1, &m_cubeFaceBlock);
+    glNamedBufferStorage(m_cubeFaceBlock, kCubeFaceBlockBytes, nullptr, GL_DYNAMIC_STORAGE_BIT);
     glCreateBuffers(1, &m_depthFixed);
     glNamedBufferStorage(m_depthFixed, kFixedBytes, nullptr, GL_DYNAMIC_STORAGE_BIT);
     {
@@ -330,6 +339,9 @@ WorldRenderer::~WorldRenderer()
     glDeleteBuffers(1, &m_fixedBlocks);
     glDeleteBuffers(1, &m_depthFixed);
     glDeleteBuffers(1, &m_depthFrames);
+    glDeleteBuffers(1, &m_cubeFixed);
+    glDeleteBuffers(1, &m_cubeFrames);
+    glDeleteBuffers(1, &m_cubeFaceBlock);
 }
 
 void WorldRenderer::destroy(GpuMesh& mesh)
@@ -907,13 +919,14 @@ void WorldRenderer::drawItems(const std::vector<DrawItem>& items)
             = reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t));
         if (m_bindless) {
             // The base instance tells the programs which material to read.
-            glDrawElementsInstancedBaseInstance(
-                GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT, indices, 1, item.batch);
+            glDrawElementsInstancedBaseInstance(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT,
+                indices, m_drawInstances, item.batch);
         } else {
             glBindBufferRange(GL_UNIFORM_BUFFER, trackbinding::kMaterial, mesh->materials,
                 static_cast<GLintptr>(item.batch * kMaterialBlockBytes), static_cast<GLsizeiptr>(kMaterialBlockBytes));
             bindSamplers(*program, batch);
-            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT, indices);
+            glDrawElementsInstanced(
+                GL_TRIANGLES, static_cast<GLsizei>(batch.indexCount), GL_UNSIGNED_INT, indices, m_drawInstances);
         }
         ++m_stats.batches;
         m_stats.triangles += batch.indexCount / 3;
@@ -1103,12 +1116,13 @@ void WorldRenderer::applyState(const world::TrackShaders::RenderState& state)
 
 bool WorldRenderer::precompile(std::chrono::microseconds budget)
 {
-    // A third of the slice each, so the loading screen keeps its pace.
-    const std::chrono::microseconds share = budget / 3;
+    // A quarter of the slice each, so the loading screen keeps its pace.
+    const std::chrono::microseconds share = budget / 4;
     const bool scene = m_programs.compileSome(share);
     const bool depth = m_depthPrograms.compileSome(share);
     const bool shadow = m_shadowPrograms.compileSome(share);
-    return scene || depth || shadow;
+    const bool cube = m_cubePrograms.compileSome(share);
+    return scene || depth || shadow || cube;
 }
 
 void WorldRenderer::setShadowMask(GLuint texture)
@@ -1300,6 +1314,186 @@ void WorldRenderer::drawDepthPass(TrackPrograms& programs, const glm::mat4& view
     }
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
+    glBindVertexArray(0);
+    glUseProgram(0);
+    m_boundTextures.fill(0);
+}
+
+void WorldRenderer::drawCubeFace(const FrameParams& face, float reach)
+{
+    const glm::mat4 viewProjection = face.projection * face.view;
+    const glm::vec3& centre = face.cameraPosition;
+    drawCubePass(face, viewProjection, glm::inverse(face.view), [&](const glm::vec3& lo, const glm::vec3& hi) {
+        const glm::vec3 offset = glm::clamp(centre, lo, hi) - centre;
+        if (glm::dot(offset, offset) > reach * reach) {
+            return false;
+        }
+        // The sides of the face's frustum and the plane of its eye.
+        for (int plane = 0; plane < 5; ++plane) {
+            int beyond = 0;
+            for (int corner = 0; corner < 8; ++corner) {
+                const glm::vec4 p = viewProjection
+                    * glm::vec4(
+                        (corner & 1) ? hi.x : lo.x, (corner & 2) ? hi.y : lo.y, (corner & 4) ? hi.z : lo.z, 1.0F);
+                const float value = plane == 0 ? p.x + p.w
+                    : plane == 1               ? p.w - p.x
+                    : plane == 2               ? p.y + p.w
+                    : plane == 3               ? p.w - p.y
+                                               : p.w;
+                beyond += value < 0.0F ? 1 : 0;
+            }
+            if (beyond == 8) {
+                return false;
+            }
+        }
+        return true;
+    }, 1);
+}
+
+void WorldRenderer::drawCubeFaces(
+    const FrameParams& frame, std::span<const glm::mat4> transforms, std::span<const int> layers, float reach)
+{
+    const std::size_t count = std::min<std::size_t>({transforms.size(), layers.size(), 6});
+    if (count == 0 || !m_cubePrograms.layeredCube()) {
+        return;
+    }
+    std::array<std::uint8_t, kCubeFaceBlockBytes> block{};
+    for (std::size_t i = 0; i < count; ++i) {
+        std::memcpy(block.data() + i * sizeof(glm::mat4), &transforms[i], sizeof(glm::mat4));
+        const glm::ivec4 layer(layers[i], 0, 0, 0);
+        std::memcpy(block.data() + 6 * sizeof(glm::mat4) + i * sizeof(glm::ivec4), &layer, sizeof(glm::ivec4));
+    }
+    glNamedBufferSubData(m_cubeFaceBlock, 0, static_cast<GLsizeiptr>(block.size()), block.data());
+    glBindBufferBase(GL_UNIFORM_BUFFER, trackbinding::kCubeFaces, m_cubeFaceBlock);
+    // Positions go to clip space relative to the centre only; each face's
+    // transform turns and projects them.
+    const glm::vec3& centre = frame.cameraPosition;
+    drawCubePass(frame, glm::translate(glm::mat4(1.0F), -centre), glm::translate(glm::mat4(1.0F), centre),
+        [&](const glm::vec3& lo, const glm::vec3& hi) {
+        const glm::vec3 offset = glm::clamp(centre, lo, hi) - centre;
+        return glm::dot(offset, offset) <= reach * reach;
+    }, static_cast<GLsizei>(count));
+}
+
+void WorldRenderer::drawCubePass(const FrameParams& frame, const glm::mat4& viewProjection,
+    const glm::mat4& inverseView, const std::function<bool(const glm::vec3&, const glm::vec3&)>& wanted,
+    GLsizei instances)
+{
+    const glm::vec3& centre = frame.cameraPosition;
+    const world::TrackSettings* settings = m_world.settings ? &*m_world.settings : nullptr;
+    std::vector<TrackFrameConstants> blocks;
+    blocks.push_back(TrackFrameConstants::make(
+        viewProjection, inverseView, centre, frame.lighting, frame.time, glm::mat4(1.0F), settings));
+    std::vector<DrawItem> opaque;
+    std::vector<DrawItem> blended;
+    const auto gather = [&](const GpuMesh& mesh, std::uint32_t slot) {
+        for (std::uint32_t b = 0; b < mesh.batches.size(); ++b) {
+            const world::ShadedMesh::Batch& batch = mesh.batches[b];
+            if (batch.indexCount == 0 || !texturesLoaded(batch)) {
+                continue;
+            }
+            if (batch.backdrop && batch.chunk != world::ShadedMesh::kMergedChunks
+                && !m_world.index.chunks()[batch.chunk].visibleFrom(m_cameraZone)) {
+                continue;
+            }
+            const TrackPrograms::Program* program = m_cubePrograms.program(batch.shader);
+            if (program != nullptr) {
+                (program->state.blend ? blended : opaque).push_back({program, &mesh, b, slot});
+            }
+        }
+    };
+    const auto& tiles = m_grid.tiles();
+    for (std::size_t i = 0; i < tiles.size(); ++i) {
+        const TileState& state = m_tiles[i];
+        if (state.mesh && wanted(tiles[i].boundsMin, tiles[i].boundsMax)) {
+            touchTextures(*state.mesh);
+            gather(*state.mesh, 0);
+        }
+    }
+    for (const auto& [handle, dynamic] : m_dynamics) {
+        if (!dynamic.mesh) {
+            continue;
+        }
+        const auto slot = static_cast<std::uint32_t>(blocks.size());
+        blocks.push_back(TrackFrameConstants::make(
+            viewProjection, inverseView, centre, frame.lighting, frame.time, dynamic.transform, settings));
+        touchTextures(*dynamic.mesh);
+        gather(*dynamic.mesh, slot);
+    }
+    if (opaque.empty() && blended.empty()) {
+        return;
+    }
+
+    // One buffer for every cube pass of a frame, each pass's blocks after
+    // the last's.
+    if (m_cubeFrameOf != m_frame) {
+        m_cubeFrameOf = m_frame;
+        m_cubeFrameUsed = 0;
+    }
+    if (m_cubeFrameUsed + blocks.size() > m_cubeFrameSlots) {
+        glDeleteBuffers(1, &m_cubeFrames);
+        m_cubeFrameSlots = std::max<std::size_t>((m_cubeFrameUsed + blocks.size()) * 8, m_cubeFrameSlots * 2);
+        glCreateBuffers(1, &m_cubeFrames);
+        glNamedBufferStorage(m_cubeFrames, static_cast<GLsizeiptr>(m_cubeFrameSlots * kFrameBlockBytes), nullptr,
+            GL_DYNAMIC_STORAGE_BIT);
+        m_cubeFrameUsed = 0;
+    }
+    const auto base = static_cast<std::uint32_t>(m_cubeFrameUsed);
+    glNamedBufferSubData(m_cubeFrames, static_cast<GLintptr>(base * kFrameBlockBytes),
+        static_cast<GLsizeiptr>(blocks.size() * kFrameBlockBytes), blocks.data());
+    m_cubeFrameUsed += blocks.size();
+    for (std::vector<DrawItem>* items : {&opaque, &blended}) {
+        for (DrawItem& item : *items) {
+            item.frameSlot += base;
+        }
+    }
+
+    // The fixed blocks as draw() writes them, for the faces' height.
+    GLint viewport[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    if (viewport[3] != m_cubeFixedHeight) {
+        m_cubeFixedHeight = viewport[3];
+        xenos::SystemConstants system;
+        system.screen = {1.0F, static_cast<float>(viewport[3]), 0.0F, 0.0F};
+        xenos::SystemConstants alphaToMask = system;
+        alphaToMask.alphaTest = {kAlphaGreaterEqual, 0.5F, 0.0F, 0.0F};
+        const auto controlBytes = xenos::ControlConstants{}.pack();
+        const auto systemBytes = system.pack();
+        const auto alphaToMaskBytes = alphaToMask.pack();
+        glNamedBufferSubData(
+            m_cubeFixed, kControlOffset, static_cast<GLsizeiptr>(controlBytes.size()), controlBytes.data());
+        glNamedBufferSubData(
+            m_cubeFixed, kSystemOffset, static_cast<GLsizeiptr>(systemBytes.size()), systemBytes.data());
+        glNamedBufferSubData(m_cubeFixed, kSystemAlphaToMaskOffset, static_cast<GLsizeiptr>(alphaToMaskBytes.size()),
+            alphaToMaskBytes.data());
+    }
+    glBindBufferRange(GL_UNIFORM_BUFFER, xenos::binding::kControlConstants, m_cubeFixed, kControlOffset,
+        static_cast<GLsizeiptr>(xenos::ControlConstants::kBytes));
+    if (m_bindless) {
+        flushHandles();
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, trackbinding::kTextureHandles, m_handleBuffer);
+    }
+    m_boundTextures.fill(0);
+
+    // drawItems() and applyState() read the frame buffer, the fixed blocks
+    // and the instance count from the renderer; the cube's stand in for the
+    // scene's until it is drawn.
+    const GLuint sceneFrames = m_frameBuffer;
+    const GLuint sceneFixed = m_fixedBlocks;
+    m_frameBuffer = m_cubeFrames;
+    m_fixedBlocks = m_cubeFixed;
+    m_drawInstances = instances;
+    const auto order = [](const DrawItem& a, const DrawItem& b) {
+        return std::tie(a.program, a.frameSlot, a.mesh, a.batch) < std::tie(b.program, b.frameSlot, b.mesh, b.batch);
+    };
+    std::sort(opaque.begin(), opaque.end(), order);
+    std::sort(blended.begin(), blended.end(), order);
+    drawItems(opaque);
+    drawItems(blended);
+    applyState(world::TrackShaders::RenderState{});
+    m_frameBuffer = sceneFrames;
+    m_fixedBlocks = sceneFixed;
+    m_drawInstances = 1;
     glBindVertexArray(0);
     glUseProgram(0);
     m_boundTextures.fill(0);

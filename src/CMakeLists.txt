@@ -95,6 +95,8 @@ add_library(fh1engine STATIC
     game/Race.h
     game/RaceData.cpp
     game/RaceData.h
+    game/RenderScenario.cpp
+    game/RenderScenario.h
     game/Smashables.cpp
     game/Smashables.h
     game/SpeedTraps.cpp
@@ -117,6 +119,10 @@ add_library(fh1engine STATIC
     render/CubeMap.h
     render/DrivingLineRenderer.cpp
     render/DrivingLineRenderer.h
+    render/EnvironmentCube.cpp
+    render/EnvironmentCube.h
+    render/EnvironmentCubeMath.cpp
+    render/EnvironmentCubeMath.h
     render/FrameRenderer.cpp
     render/FrameRenderer.h
     render/FrameStats.cpp

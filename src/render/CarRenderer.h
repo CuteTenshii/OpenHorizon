@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -41,6 +42,16 @@ struct CarPose {
     /// metallic finish.
     glm::vec3 paint{0.8F};
     bool metallic = false;
+    /// The car effect's useStaticCubeMap (pixel b2): reflect the track's
+    /// static cube (envStaticSampler) instead of the dynamic one
+    /// (envSampler). Verified in the car item's setup (0x8246D448): the
+    /// focus car of the view takes the static cube only while the dynamic
+    /// one is not updated (0x8241A428: EnvMapFrequencyScale of 0, or the
+    /// renderer's flag +8316, set through its vtable slot 236 by callers not
+    /// traced, or the camera's vtable slot 120, not identified); every other
+    /// car takes the dynamic one. Not applied: cars whose item field +632
+    /// is 2 take the static cube, and what that field holds was not traced.
+    bool useStaticCubeMap = false;
 };
 
 /// One car model on the GPU, drawn with the game's own car effect: every
@@ -70,6 +81,18 @@ public:
     /// The screen-space sun shadow mask every car samples as ShadowMaskSamp
     /// (ShadowPass); 0 for none (white).
     static void setShadowMask(GLuint texture);
+    /// The cube maps every car reflects, as the renderer hands them to the
+    /// car draw (SetEnvCubemaps, 0x8247B268): `dynamicCube` for envSampler
+    /// (the renderer's vtable slot 268, its dynamic cube at +7448, see
+    /// EnvironmentCube) and `staticCube` for envStaticSampler (slot 276, the
+    /// track's staticCarCubemap.xpr at +8164). 0 leaves a sampler black.
+    static void setEnvironmentCubes(GLuint dynamicCube, GLuint staticCube);
+    /// The value the draws give pixel constant `name`, from the first pass
+    /// declaring it; nothing when none does.
+    std::optional<glm::vec4> pixelConstant(std::string_view name) const;
+    /// The texture the draws bind to sampler `sampler`, from the first pass
+    /// sampling it; 0 when none does or it is left empty.
+    GLuint boundTexture(std::string_view sampler) const;
     /// The shadow map technique of a batch, as the car's render item
     /// builder (0x82E637A0) picks it: none for the motion blur meshes and
     /// the materials that cast no shadow (carmodel::castsNoShadow()),
@@ -123,8 +146,11 @@ private:
         /// (carmodel::materialDrawState()).
         bool cull = true;
         bool alphaToMask = false;
-        /// The program's constants with its defaults and literals loaded.
+        /// The program's constants with its defaults and literals loaded,
+        /// and reflectionScaler as the car draw sets it.
         std::shared_ptr<const XenosConstants> defaults;
+        /// The boolean register of useStaticCubeMap, when the pass has it.
+        std::optional<std::uint32_t> useStaticCubeMap;
         /// The texture on each of the program's sampler units for the
         /// batch the pass draws; 0 leaves a unit empty.
         std::vector<std::pair<GLuint, GLuint>> textures;

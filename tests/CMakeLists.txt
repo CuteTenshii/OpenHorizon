@@ -113,6 +113,14 @@ target_link_libraries(tst_shading PRIVATE fh1engine)
 # disc.
 add_test(NAME tst_shading COMMAND tst_shading)
 
+add_executable(tst_envcube TestHarness.h tst_envcube.cpp)
+target_compile_options(tst_envcube PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_envcube PRIVATE fh1engine)
+# The dynamic environment cube's face schedule, face cameras and mip filter
+# maths on synthetic data; an offscreen render of the cube when a GL context
+# is available.
+add_test(NAME tst_envcube COMMAND tst_envcube)
+
 add_executable(tst_car TestHarness.h tst_car.cpp)
 target_compile_options(tst_car PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_car PRIVATE fh1data)

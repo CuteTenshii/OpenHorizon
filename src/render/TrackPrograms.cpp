@@ -206,6 +206,31 @@ std::string bindlessSamplers(
     return glsl;
 }
 
+/// The vertex shader drawing an instance per face of a layered cube target
+/// (see the constructor): the face's transform applied to the clip
+/// position the translated shader computes, and the face's layer.
+std::string layeredCubeVertex(const std::string& glsl)
+{
+    constexpr std::string_view kPosition
+        = "    gl_Position = vec4(xe_oPos.xyz * xe_clipScale.xyz + xe_oPos.w * xe_clipOffset.xyz, xe_oPos.w);\n";
+    const std::size_t position = glsl.find(kPosition);
+    const std::size_t version = glsl.find('\n');
+    if (position == std::string::npos || version == std::string::npos || !glsl.starts_with("#version")) {
+        throw DataError("the translated vertex shader has no clip position to place on a cube face");
+    }
+    std::string out = glsl.substr(0, version + 1);
+    out += "#extension GL_ARB_shader_viewport_layer_array : require\n";
+    out += std::format("layout(std140, binding = {}) uniform XeCubeFaces\n{{\n    mat4 xe_faceTransform[6];\n"
+                       "    ivec4 xe_faceLayer[6];\n}};\n",
+        trackbinding::kCubeFaces);
+    const std::size_t end = position + kPosition.size();
+    out += glsl.substr(version + 1, end - version - 1);
+    out += "    gl_Position = xe_faceTransform[gl_InstanceID] * gl_Position;\n";
+    out += "    gl_Layer = xe_faceLayer[gl_InstanceID].x;\n";
+    out += glsl.substr(end);
+    return out;
+}
+
 /// Points the generated code's reads of the redirected registers at the
 /// frame and material blocks.
 std::string redirect(const std::string& glsl, const Redirects& redirects, bool bindless, xenos::ShaderStage stage)
@@ -371,9 +396,11 @@ void TrackFrameConstants::setHackMatrix(const glm::mat4& viewProjection, const g
     }
 }
 
-TrackPrograms::TrackPrograms(const world::TrackShaders& shaders, bool bindless, std::string_view technique)
+TrackPrograms::TrackPrograms(
+    const world::TrackShaders& shaders, bool bindless, std::string_view technique, bool layeredCube)
     : m_shaders(shaders)
     , m_bindless(bindless)
+    , m_layeredCube(layeredCube)
     , m_technique(technique)
     , m_sources(shaders.size())
     , m_programs(shaders.size())
@@ -421,6 +448,9 @@ std::shared_ptr<const TrackPrograms::Source> TrackPrograms::source(std::uint32_t
         } else {
             built->fragment = redirect(program.fragmentGlsl, redirectsOf(program, xenos::ShaderStage::Pixel),
                 m_bindless, xenos::ShaderStage::Pixel);
+        }
+        if (m_layeredCube) {
+            built->vertex = layeredCubeVertex(built->vertex);
         }
         if (m_bindless) {
             built->vertex = bindlessSamplers(std::move(built->vertex), program.samplers, xenos::ShaderStage::Vertex);
@@ -569,8 +599,9 @@ const TrackPrograms::Program* TrackPrograms::adopt(std::uint32_t effect, Program
         program->shader = Shader(build);
         program->samplers = src->samplers;
         const world::TrackShaders::Entry& entry = m_shaders.at(effect);
-        const std::optional<world::TrackShaders::RenderState>& other
-            = m_technique == kDepthOnly ? entry.depthOnlyState : entry.shadowDepthOnlyState;
+        const std::optional<world::TrackShaders::RenderState>& other = m_technique == kDepthOnly
+            ? entry.depthOnlyState
+            : (m_technique == kRealtimeCubemap ? entry.realtimeCubemapState : entry.shadowDepthOnlyState);
         program->state = m_technique == kDefault ? entry.state : other.value_or(world::TrackShaders::RenderState{});
         glCreateBuffers(1, &program->defaults);
         std::vector<std::uint8_t> bytes(2 * kBlockBytes);

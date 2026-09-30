@@ -44,6 +44,10 @@ inline constexpr GLuint kMaterial = 5;
 /// With bindless textures: the texture handle table (storage buffer
 /// XeTextureHandles, one uvec2 handle per entry).
 inline constexpr GLuint kTextureHandles = 6;
+/// With layered cube faces (see TrackPrograms): the faces' transforms and
+/// layers (uniform block XeCubeFaces, std140: six mat4, then six ivec4
+/// whose x is the layer), indexed by the draw's instance.
+inline constexpr GLuint kCubeFaces = 7;
 } // namespace trackbinding
 
 /// A batch's material as the programs read it: the material constants, the
@@ -214,8 +218,18 @@ public:
     /// of camera-relative positions.
     static constexpr std::string_view kDepthOnly = "DepthOnly";
     static constexpr std::string_view kShadowDepthOnly = "ShadowDepthOnly";
+    /// Drawn into the faces of the dynamic environment cube (see
+    /// WorldRenderer::drawCubeFace()).
+    static constexpr std::string_view kRealtimeCubemap = "RealtimeCubemap";
 
-    TrackPrograms(const world::TrackShaders& shaders, bool bindless, std::string_view technique = kDefault);
+    /// With `layeredCube` the vertex shaders draw one instance per face of a
+    /// layered cube target: each instance's clip position is multiplied by
+    /// its face's transform and sent to its face's layer (XeCubeFaces; needs
+    /// GL_ARB_shader_viewport_layer_array). The frame constants then map
+    /// positions to the cube's centre only (see WorldRenderer::
+    /// drawCubeFaces()).
+    TrackPrograms(const world::TrackShaders& shaders, bool bindless, std::string_view technique = kDefault,
+        bool layeredCube = false);
     ~TrackPrograms();
     TrackPrograms(const TrackPrograms&) = delete;
     TrackPrograms& operator=(const TrackPrograms&) = delete;
@@ -240,6 +254,7 @@ public:
     const Program* program(std::uint32_t effect);
     std::size_t compiledCount() const { return m_compiled; }
     bool bindless() const { return m_bindless; }
+    bool layeredCube() const { return m_layeredCube; }
 
 private:
     struct Source {
@@ -265,6 +280,7 @@ private:
 
     const world::TrackShaders& m_shaders;
     bool m_bindless = false;
+    bool m_layeredCube = false;
     std::string m_technique;
     std::mutex m_mutex;
     std::vector<std::shared_ptr<const Source>> m_sources;

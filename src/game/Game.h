@@ -22,6 +22,7 @@
 #include "game/PostProcessing.h"
 #include "game/Race.h"
 #include "game/RaceData.h"
+#include "game/RenderScenario.h"
 #include "game/Smashables.h"
 #include "game/SpeedTraps.h"
 #include "game/TimeOfDay.h"
@@ -35,7 +36,9 @@
 #include "profile/ProfileStore.h"
 #include "radio/Radio.h"
 #include "render/CarRenderer.h"
+#include "render/CubeMap.h"
 #include "render/DrivingLineRenderer.h"
+#include "render/EnvironmentCube.h"
 #include "render/FrameRenderer.h"
 #include "render/FrameStats.h"
 #include "render/Overlay.h"
@@ -179,6 +182,14 @@ public:
     const render::WorldRenderer* worldRenderer() const { return m_worldRenderer.get(); }
     /// The sun shadows' passes and the maps' placement (see drawShadows()).
     const render::ShadowPass* shadowPass() const { return m_shadowPass.get(); }
+    /// The dynamic environment cube the cars reflect; null on a track that
+    /// does not set Performance/DynamicCubemap, or before the world loads.
+    const render::EnvironmentCube* environmentCube() const { return m_environmentCube.get(); }
+    /// The player's car model; null when it could not be loaded.
+    const render::CarRenderer* playerCarModel() const
+    {
+        return m_vehicles.empty() ? nullptr : m_vehicles.front()->model.get();
+    }
     const render::FrameRenderer* frameRenderer() const { return m_frame.get(); }
     const render::ShadowCascades& shadowCascades() const { return m_shadowCascades; }
     /// The cloud layers, null when they could not be loaded.
@@ -325,6 +336,12 @@ private:
     /// for this frame (see render::ShadowPass), and hands the mask to the
     /// world and the cars.
     void drawShadows(const render::FrameParams& frame);
+    /// The faces of the environment cube due this frame, around the player's
+    /// car, the camera's focus.
+    void drawEnvironmentCube(const render::FrameParams& frame);
+    /// Makes the environment cube on a track that asks for it and loads the
+    /// static car cube and the render scenario's rate.
+    void loadEnvironmentCubes();
     void drawVehicles(const render::FrameParams& frame);
     void drawVehicleGlass(const render::FrameParams& frame);
     render::CarPose carPose(const Vehicle& vehicle) const;
@@ -384,6 +401,13 @@ private:
     /// The sun shadows: where their maps lie, and their passes.
     render::ShadowCascades m_shadowCascades;
     std::unique_ptr<render::ShadowPass> m_shadowPass;
+    /// The environment cube (see environmentCube()), the track's static car
+    /// cube (envStaticSampler; staticCarCubemap.xpr, as the presentation
+    /// loads it at 0x82E212F8) and the in-game render scenario's
+    /// EnvMapFrequencyScale.
+    std::unique_ptr<render::EnvironmentCube> m_environmentCube;
+    std::optional<render::CubeMap> m_staticCarCube;
+    float m_envMapFrequencyScale = 0.0F;
     std::unique_ptr<render::FrameStats> m_frameStats;
     render::PresentTarget m_present;
     /// The input of the frame being run.

@@ -133,6 +133,14 @@ void FrameRenderer::sky(const FrameParams& frame)
     }
 }
 
+void FrameRenderer::cubeSky(const FrameParams& frame)
+{
+    dome(frame);
+    if (m_skyObjects != nullptr) {
+        m_skyObjects->draw(frame);
+    }
+}
+
 void FrameRenderer::dome(const FrameParams& frame)
 {
     m_skyShader.use();

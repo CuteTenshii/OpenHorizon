@@ -19,8 +19,10 @@
 #include <atomic>
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -172,8 +174,7 @@ void setSceneLighting(Shader& shader, const SceneLighting& lighting);
 /// (setShadowMask()), white without one. What else the effects sample that
 /// the game supplies itself is bound as follows, the features behind it
 /// not being implemented: other samplers a material leaves to the engine
-/// (lightmaps it did not bake) black; cube maps other than the track's own
-/// (below) black.
+/// (lightmaps it did not bake) black.
 ///
 /// Cube samplers take the cube map their material names: the reflective
 /// materials' Cube_MapSampler names one of the track's own cube textures
@@ -244,7 +245,8 @@ public:
     /// pool when the renderer is made; precompile() links them.
     std::size_t programsPending() const
     {
-        return m_programs.pendingCount() + m_depthPrograms.pendingCount() + m_shadowPrograms.pendingCount();
+        return m_programs.pendingCount() + m_depthPrograms.pendingCount() + m_shadowPrograms.pendingCount()
+            + m_cubePrograms.pendingCount();
     }
     /// Links translated track effects for up to `budget` on the GL thread,
     /// for a loading screen to call every frame. Returns whether any remain.
@@ -262,6 +264,45 @@ public:
     /// each pass's own cull mode; where the pass sets none it is off (the
     /// state the game's shadow pass inherits there was not traced).
     void drawShadowCasters(const glm::mat4& lightViewProjection, const glm::vec3& camera);
+    /// Draws one face of the dynamic environment cube (EnvironmentCube)
+    /// into the target the caller bound: the loaded tiles and moving
+    /// objects with their effects' RealtimeCubemap technique, from the face
+    /// camera `face` (its cameraPosition the cube's centre).
+    ///
+    /// Verified: the face draw hands the scene mode 1 to every track item
+    /// (0x82469B18 takes the view's pass, 1 for cube faces), and the
+    /// presentation's opaque and second buckets (masks 1 and 8, 0x824751AC
+    /// and 0x82475368) are drawn for it. Inferred: mode 1 selects the
+    /// effects' second technique, RealtimeCubemap in all of Colorado's that
+    /// have one (the item side of the lookup, slot 164, was not traced).
+    /// The tiles drawn are those with any part within `reach` metres of the
+    /// centre: the cube's list job takes TrackSettings' Cubemap FarDistance
+    /// squared (0x82E91F40); where it compares it was not traced.
+    /// Not applied, as their rules were not traced: the list's cap of
+    /// MeshLimit meshes ranked by size over squared distance from the camera
+    /// with MeshSizeThreshold (0x82470E00, scaled by factors of the list
+    /// descriptor, +180 and +184, whose values were not found), the
+    /// VisibilityThreshold of the visibility object (0x82CEEAE8), and the
+    /// buckets drawn only while the sun shadows are on (mask 2, 0x824755B0).
+    /// Procedural copies (ScatterPass) are left out, their part in the
+    /// cube's lists not being traced.
+    void drawCubeFace(const FrameParams& face, float reach);
+    /// Whether drawCubeFaces() can draw several faces in one pass: the
+    /// driver lets vertex shaders pick the layer
+    /// (GL_ARB_shader_viewport_layer_array). Without it, drawCubeFace()
+    /// draws them one at a time.
+    bool cubeFacesLayered() const { return m_cubePrograms.layeredCube(); }
+    /// As drawCubeFace() for several faces at once, into the layered cube
+    /// target the caller bound: every batch is drawn once, as one instance
+    /// per face, which puts its clip position (relative to the cube's
+    /// centre, `frame.cameraPosition`) through `transforms[i]` into layer
+    /// `layers[i]`. The same tiles and batches are drawn as face by face,
+    /// without the culling to each face's frustum; the track effects' cube
+    /// passes read the camera only through its position and their world-
+    /// view-projection matrix, so each face shows what drawCubeFace() would
+    /// draw. Needs cubeFacesLayered().
+    void drawCubeFaces(
+        const FrameParams& frame, std::span<const glm::mat4> transforms, std::span<const int> layers, float reach);
     /// The screen-space sun shadow mask ShadowMaskSamp reads (ShadowPass);
     /// 0 for none (white). Pass 0 before the texture is deleted.
     void setShadowMask(GLuint texture);
@@ -384,6 +425,11 @@ private:
     void evictTextures();
     void collect(const GpuMesh& mesh, std::uint32_t frameSlot);
     void drawItems(const std::vector<DrawItem>& items);
+    /// drawCubeFace() and drawCubeFaces(): the batches of `m_cubePrograms`
+    /// in the tiles and moving objects `wanted` keeps, drawn `instances`
+    /// times with frame constants for `viewProjection` and `inverseView`.
+    void drawCubePass(const FrameParams& frame, const glm::mat4& viewProjection, const glm::mat4& inverseView,
+        const std::function<bool(const glm::vec3&, const glm::vec3&)>& wanted, GLsizei instances);
     /// drawDepthOnly() and drawShadowCasters(): every drawable batch of
     /// `programs` whose tile or object lies inside `viewProjection`'s clip
     /// box (with `farPlane` its far plane too).
@@ -427,6 +473,20 @@ private:
     /// The effects' DepthOnly and ShadowDepthOnly techniques.
     TrackPrograms m_depthPrograms;
     TrackPrograms m_shadowPrograms;
+    /// The effects' RealtimeCubemap technique, for drawCubeFace().
+    TrackPrograms m_cubePrograms;
+    /// Frame blocks of the cube faces, packed one after another over a
+    /// frame, and the fixed blocks written for the faces' size.
+    GLuint m_cubeFrames = 0;
+    std::size_t m_cubeFrameSlots = 0;
+    std::size_t m_cubeFrameUsed = 0;
+    std::uint64_t m_cubeFrameOf = 0;
+    GLuint m_cubeFixed = 0;
+    int m_cubeFixedHeight = -1;
+    /// The XeCubeFaces block of drawCubeFaces().
+    GLuint m_cubeFaceBlock = 0;
+    /// Instances drawItems() draws of each batch.
+    GLsizei m_drawInstances = 1;
     /// Frame blocks of the depth passes, packed one after another over a
     /// frame, with the translator's fixed blocks for them.
     GLuint m_depthFrames = 0;

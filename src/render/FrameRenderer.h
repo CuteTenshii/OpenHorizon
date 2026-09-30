@@ -51,6 +51,14 @@ public:
     /// Draws the sky behind everything drawn so far, with the sun, moon and
     /// stars when setSkyObjects() gave them.
     void sky(const FrameParams& frame);
+    /// The sky in a face of the environment cube (EnvironmentCube), into the
+    /// target bound: the dome and the sun, moon and stars. Inferred that the
+    /// faces draw the sky: CRealtimeSky's draw (0x82E37A18) has a branch for
+    /// the cube's pass (1), which draws the sun, moon and stars after the
+    /// clouds (0x82E37A84-0x82E37AE8); the path from the face draw to it was
+    /// not found. The clouds are left out, their cube map pass not being
+    /// implemented (see Clouds).
+    void cubeSky(const FrameParams& frame);
     /// What sky() draws over the dome; nullptr for none. Not owned.
     void setSkyObjects(SkyObjects* objects) { m_skyObjects = objects; }
     /// The cloud layers sky() draws after the sky objects, with their

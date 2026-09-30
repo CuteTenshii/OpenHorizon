@@ -28,6 +28,9 @@ public:
         Streaming,
         /// The sun shadows: their maps, the screen depth and the mask.
         DrawShadows,
+        /// The dynamic environment cube the cars reflect: its faces and
+        /// their mip chain (EnvironmentCube).
+        DrawEnvironmentCube,
         DrawWorld,
         DrawCars,
         /// The sky and the sun, moon and stars drawn with it.
