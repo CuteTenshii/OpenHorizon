@@ -6,6 +6,7 @@
 
 #include <lzx/zip.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstring>
 #include <utility>
@@ -206,6 +207,11 @@ TrackShaders TrackShaders::load(const lzx::ZipArchive& archive)
             }
             entry.fileDeclaration = std::move(*declaration);
             entry.renderDeclaration = std::move(*render);
+            entry.readsVertexMaterial = std::any_of(
+                vertex.constants.constants.begin(), vertex.constants.constants.end(), [](const xenos::ConstantInfo& c) {
+                return c.set == xenos::RegisterSet::Float4
+                    && (c.name.starts_with("vc360_") || c.name.starts_with("c360_"));
+            });
             parsed[i] = std::move(entry);
         } catch (const DataError&) {
             parsed[i].reset();

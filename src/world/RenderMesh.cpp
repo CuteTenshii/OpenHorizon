@@ -87,8 +87,8 @@ void readMaterialTable(BeReader& r, RenderMesh& mesh)
             r.expect(3, "material entry tag");
             info.shader = r.u32();
             r.expect(0, "material entry header");
-            // Two groups of shader constants (float4 each); the second
-            // holds the material's own values.
+            // Two groups of shader constants (float4 each): the vertex
+            // shader's, then the pixel shader's.
             for (int group = 0; group < 2; ++group) {
                 r.expect(1, "shader constant tag");
                 const std::uint32_t constants = r.u32();
@@ -100,9 +100,7 @@ void readMaterialTable(BeReader& r, RenderMesh& mesh)
                     const float y = r.f32();
                     const float z = r.f32();
                     const float w = r.f32();
-                    if (group == 1) {
-                        info.constants.emplace_back(x, y, z, w);
-                    }
+                    (group == 0 ? info.vertexConstants : info.constants).emplace_back(x, y, z, w);
                 }
             }
             r.expect(1, "texture slot tag");

@@ -22,6 +22,7 @@
 #include <lzx/zip.h>
 #include <lzx/zip_writer.h>
 
+#include <glm/common.hpp>
 #include <glm/geometric.hpp>
 
 #include <algorithm>
@@ -112,6 +113,7 @@ struct TestMaterialInfo {
     /// -1 is written as an engine-supplied slot.
     std::vector<int> textureSlots;
     std::vector<glm::vec4> constants;
+    std::vector<glm::vec4> vertexConstants;
 };
 
 struct TestTail {
@@ -225,7 +227,12 @@ Bytes renderModel(const std::vector<TestPart>& parts, const std::optional<TestTa
         w.u32(info.shader);
         w.u32(0);
         w.u32(1);
-        w.u32(0);
+        w.u32(static_cast<std::uint32_t>(info.vertexConstants.size()));
+        for (const glm::vec4& c : info.vertexConstants) {
+            for (int k = 0; k < 4; ++k) {
+                w.f32(c[k]);
+            }
+        }
         w.u32(1);
         if (info.constants.empty()) {
             w.u32(1);
@@ -729,6 +736,7 @@ TEST(parsesMaterialTablesAndTexcoords)
     second.shader = 1;
     second.textureSlots = {3, -1, -1, -1, -1, 0};
     second.constants = {glm::vec4(4, 4, 6, 6), glm::vec4(3, 3, 1, 1)};
+    second.vertexConstants = {glm::vec4(0.05F, 1, 0, 0)};
     TestTail tail;
     tail.materials = {first, second};
     tail.shaders = {"shaders\\track\\add_diff_opac_rgba.fx", "shaders\\track\\h_diff_1.fx"};
@@ -738,6 +746,8 @@ TEST(parsesMaterialTablesAndTexcoords)
     CHECK_EQ(mesh.materialTable[1].shader, 1U);
     CHECK_EQ(mesh.materialTable[1].textureSlots, (std::vector<int>{3, -1, -1, -1, -1, 0}));
     CHECK(mesh.materialTable[1].constants == (std::vector<glm::vec4>{glm::vec4(4, 4, 6, 6), glm::vec4(3, 3, 1, 1)}));
+    CHECK(mesh.materialTable[1].vertexConstants == (std::vector<glm::vec4>{glm::vec4(0.05F, 1, 0, 0)}));
+    CHECK(mesh.materialTable[0].vertexConstants.empty());
     CHECK_EQ(mesh.shaders.size(), std::size_t{2});
     CHECK_EQ(mesh.shaders[1], std::string("shaders\\track\\h_diff_1.fx"));
 
@@ -1494,6 +1504,101 @@ TEST(loadsColorado)
     CHECK(lake.blend);
     CHECK_EQ(lake.sourceBlend, 6U);
     CHECK_EQ(lake.destinationBlend, 7U);
+
+    // The river under the interstate west of the festival (Shape012) waves
+    // by its vertex constant vc360_3, (0.05, 1, 0, 0): 5 cm at 1 rad/s. Its
+    // pixel constant c360_3 (65, 0.2, 50, 0.03), whose 65 once lifted the
+    // water into sheets tens of metres high, stays the pixel shader's.
+    const std::optional<std::uint32_t> lakeEffect
+        = colorado.shaders.find("shaders\\track\\lake_anim_norm_opac_refl_3.fx");
+    std::vector<std::uint32_t> riverChunks;
+    for (std::uint32_t c = 0; c < index.chunks().size(); ++c) {
+        if (colorado.archive->entries()[index.chunks()[c].entry].name.ends_with("coloradoout.11726.rmb.bin")) {
+            riverChunks.push_back(c);
+        }
+    }
+    CHECK(lakeEffect.has_value());
+    CHECK_EQ(riverChunks.size(), std::size_t{1});
+    const world::ShadedMesh river
+        = world::buildShadedMesh(*colorado.archive, index, riverChunks, colorado.shaders, &*colorado.textures);
+    std::size_t riverBatches = 0;
+    for (const world::ShadedMesh::Batch& batch : river.batches) {
+        if (!lakeEffect || batch.shader != *lakeEffect) {
+            continue;
+        }
+        ++riverBatches;
+        CHECK_EQ(batch.constants.size(), world::ShadedMesh::kFirstVertexConstant + 1);
+        if (batch.constants.size() == world::ShadedMesh::kFirstVertexConstant + 1) {
+            CHECK(batch.constants[3] == glm::vec4(65.0F, 0.2F, 50.0F, 0.03F));
+            CHECK(batch.constants[world::ShadedMesh::kFirstVertexConstant] == glm::vec4(0.05F, 1.0F, 0.0F, 0.0F));
+        }
+    }
+    CHECK_EQ(riverBatches, std::size_t{1});
+
+    // The effects that read vertex material constants draw placed props in
+    // the model's own space. The festival's feather flag at -716.6, -474.8
+    // (coloradoout.06265, anim_flag_diff_spec_norm_3_lm) keeps its
+    // vertices within the model's bounds, 1.4 m wide and 8.9 m high about
+    // the foot of its pole, and draws with its placement.
+    std::size_t readingVertexMaterial = 0;
+    for (std::uint32_t e = 0; e < colorado.shaders.size(); ++e) {
+        readingVertexMaterial += colorado.shaders.at(e).readsVertexMaterial ? 1 : 0;
+    }
+    CHECK_EQ(readingVertexMaterial, std::size_t{18});
+    const std::optional<std::uint32_t> flagEffect
+        = colorado.shaders.find("shaders\\track\\anim_flag_diff_spec_norm_3_lm.fx");
+    std::vector<std::uint32_t> flagChunks;
+    for (std::uint32_t c = 0; c < index.chunks().size(); ++c) {
+        const world::WorldChunk& chunk = index.chunks()[c];
+        if (chunk.placed && chunk.lod == 0
+            && colorado.archive->entries()[chunk.entry].name.ends_with("coloradoout.06265.rmb.bin")
+            && glm::length(
+                   glm::vec2(chunk.placement.position.x, chunk.placement.position.z) - glm::vec2(-716.61F, -474.83F))
+                < 0.1F) {
+            flagChunks.push_back(c);
+        }
+    }
+    CHECK(flagEffect.has_value());
+    CHECK_EQ(flagChunks.size(), std::size_t{1});
+    if (flagEffect && flagChunks.size() == 1) {
+        const world::WorldChunk& flag = index.chunks()[flagChunks.front()];
+        const world::ShadedMesh flagMesh
+            = world::buildShadedMesh(*colorado.archive, index, flagChunks, colorado.shaders, &*colorado.textures);
+        std::size_t flagBatches = 0;
+        for (const world::ShadedMesh::Batch& batch : flagMesh.batches) {
+            if (batch.shader != *flagEffect) {
+                continue;
+            }
+            ++flagBatches;
+            CHECK(batch.model[3] == glm::vec4(flag.placement.position, 1.0F));
+            CHECK(glm::length(glm::vec3(batch.model * glm::vec4(1.0F, 2.0F, 3.0F, 1.0F))
+                      - flag.placement.apply(glm::vec3(1.0F, 2.0F, -3.0F)))
+                < 1e-3F);
+            const fh::xenos::VertexDeclaration& declaration = colorado.shaders.at(batch.shader).renderDeclaration;
+            const auto position = std::find_if(declaration.elements.begin(), declaration.elements.end(),
+                [](const fh::xenos::VertexDeclElement& element) {
+                return element.usage == static_cast<std::uint8_t>(fh::xenos::DeclUsage::Position);
+            });
+            CHECK(position != declaration.elements.end());
+            if (position == declaration.elements.end()) {
+                continue;
+            }
+            glm::vec3 low(1e9F);
+            glm::vec3 high(-1e9F);
+            for (std::uint32_t v = 0; v < batch.vertexCount; ++v) {
+                glm::vec3 p(0.0F);
+                std::memcpy(&p,
+                    flagMesh.vertices.data() + batch.vertexOffset + std::size_t{v} * batch.stride + position->offset,
+                    sizeof p);
+                low = glm::min(low, p);
+                high = glm::max(high, p);
+            }
+            CHECK(low.x > 0.0F && high.x < 1.5F);
+            CHECK(low.y > 1.2F && high.y < 9.0F);
+            CHECK(std::abs(low.z) < 0.1F && std::abs(high.z) < 0.1F);
+        }
+        CHECK(flagBatches > 0);
+    }
     CHECK(stateOf("h_vblnd_decal_lm").slopeScaleDepthBias == 1.0F);
     CHECK(!stateOf("h_vblnd_decal_lm").depthWrite);
 

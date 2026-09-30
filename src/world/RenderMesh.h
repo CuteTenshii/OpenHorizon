@@ -37,8 +37,9 @@ namespace fh::world {
 ///               u32 4, u32 0, u32 indexCount, u32 indexWidth (2 or 4),
 ///               indices, u32 endTag, u32 1
 ///     tail      u32 1, 1, 1, u32 count, per table entry: u32 3, u32 shader,
-///               u32 0, twice (u32 1, u32 n, n × f32[4] shader constants),
-///               u32 1, u32 slotCount, slotCount × s32 texture slot (-2:
+///               u32 0, twice (u32 1, u32 n, n × f32[4] shader constants:
+///               the vertex shader's, then the pixel shader's), u32 1,
+///               u32 slotCount, slotCount × s32 texture slot (-2:
 ///               supplied by the engine); then u32 1, u32 shaderCount, shader
 ///               paths (u32 length, text), then compiled shader code
 ///
@@ -85,12 +86,24 @@ struct RenderMesh {
         /// for textures the engine supplies (lightmaps, shadows). Slot k
         /// feeds the shader's sampler register k.
         std::vector<int> textureSlots;
-        /// The second group of shader constants (the first is empty in
-        /// every track model). For the blended ground shaders the first two
-        /// hold the texture scales of their layers: Blend_A and Blend_B in
-        /// the first (x, y and z, w), Blend_C and the splat map in the
-        /// second. Inferred from the data.
+        /// The second group of shader constants: the pixel shader's, from
+        /// c0 (the effects' c360_0 on). For the blended ground shaders the
+        /// first two hold the texture scales of their layers: Blend_A and
+        /// Blend_B in the first (x, y and z, w), Blend_C and the splat map
+        /// in the second. Inferred from the data.
         std::vector<glm::vec4> constants;
+        /// The first group of shader constants: the vertex shader's, from
+        /// c3 (the effects' vc360_3 on, c360_3 in the bunting effects; c0
+        /// to c2 are the material's texture coordinate and position
+        /// transforms). Verified over the 322940 table entries of
+        /// Colorado's models: the group holds exactly as many constants as
+        /// the effect's highest vertex-stage material register less 2, and
+        /// none for effects without one; the second group covers the pixel
+        /// stage's registers from c0. Such as the waves of the lakes
+        /// (vc360_3: amplitude in metres, phase speed; (0.05, 1, 0, 0) on
+        /// Colorado's rivers), the sway of flags and trees. Where the
+        /// executable uploads them was not traced.
+        std::vector<glm::vec4> vertexConstants;
     };
 
     /// World-space bounding box (Z already flipped).

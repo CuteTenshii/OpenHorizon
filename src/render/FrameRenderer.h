@@ -78,6 +78,9 @@ public:
     /// The scene colour (the square root of linear colour, before
     /// post-processing), for reading back in tests.
     GLuint sceneColour() const { return m_colour; }
+    /// The scene depth (reversed: 0 where nothing was drawn), for reading
+    /// back in tests.
+    GLuint sceneDepth() const { return m_depth; }
 
 private:
     void resize(int width, int height);

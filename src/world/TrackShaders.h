@@ -80,6 +80,18 @@ public:
         /// the environment cube's faces draw with (172 of Colorado's 173
         /// effects have it; light_pollution does not).
         std::optional<RenderState> realtimeCubemapState;
+        /// Whether the Default pass's vertex shader reads material constants
+        /// (vc360_N, or c360_N as the bunting effects name them), as 18 of
+        /// Colorado's 173 effects do: the flags, flagpoles, trees, bunting,
+        /// water, flipbook and countdown screens, light pollution and a
+        /// retro-reflective material. These are the effects that animate in
+        /// the vertex stage, which may work on the position in the model's
+        /// own space: the game draws each prop with its own world matrix,
+        /// and the flags' sway turns the position about the model's origin
+        /// and divides by its x (see buildShadedMesh()). Which of the others
+        /// depend on the model's space was not checked one by one; all of
+        /// them are drawn in it.
+        bool readsVertexMaterial = false;
     };
 
     /// Reads every `.fxobj` of `archive` on all hardware threads. Effects that

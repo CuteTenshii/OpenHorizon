@@ -32,8 +32,9 @@ constexpr int kMaxTextureUploadsPerFrame = 48;
 constexpr float kTranslatePriority = -3000.0F;
 constexpr std::size_t kFrameBlockBytes = sizeof(TrackFrameConstants);
 /// Without bindless textures each batch's material is a uniform block of
-/// its own, on the 256-byte offset alignment.
-constexpr std::size_t kMaterialBlockBytes = 256;
+/// its own, on a multiple of the 256-byte offset alignment.
+constexpr std::size_t kMaterialBlockBytes = 512;
+static_assert(kTrackMaterialBlockBytes <= kMaterialBlockBytes);
 /// Texture handle table entries allocated at first; it doubles as needed.
 constexpr std::size_t kInitialHandles = 4096;
 constexpr std::size_t kProgramBlockBytes = 256 * sizeof(glm::vec4);
@@ -260,9 +261,9 @@ WorldRenderer::WorldRenderer(const world::TrackWorld& world, JobPool& jobs)
     glGetIntegerv(GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT, &storageAlignment);
     if (static_cast<std::size_t>(uniformAlignment) > kMaterialBlockBytes
         || static_cast<std::size_t>(storageAlignment) > world::ShadedMesh::kVertexAlignment) {
-        throw std::runtime_error(std::format("buffer offset alignment {} / {} exceeds the 256 bytes the world "
+        throw std::runtime_error(std::format("buffer offset alignment {} / {} exceeds the {} / {} bytes the world "
                                              "renderer packs its blocks to",
-            uniformAlignment, storageAlignment));
+            uniformAlignment, storageAlignment, kMaterialBlockBytes, world::ShadedMesh::kVertexAlignment));
     }
     // Translate every track effect up front, ahead of the tiles; the GL
     // thread links them in slices (precompile()) or on first use.
@@ -428,6 +429,7 @@ std::shared_ptr<WorldRenderer::GpuMesh> WorldRenderer::upload(const TileBuild& b
         std::copy_n(batch.constants.begin(), std::min(batch.constants.size(), TrackMaterial::kConstants),
             material.constants.begin());
         material.base[0] = static_cast<std::uint32_t>(batch.vertexOffset / sizeof(std::uint32_t));
+        material.setModel(batch.model);
         for (std::size_t r = 0; r < batch.textures.size() && r < material.textures.size(); ++r) {
             const std::uint32_t id = batch.textures[r];
             const bool engine = id == world::ShadedMesh::kNoTexture || id == world::ShadedMesh::kEngineTexture;
@@ -441,7 +443,7 @@ std::shared_ptr<WorldRenderer::GpuMesh> WorldRenderer::upload(const TileBuild& b
                 gpu->textureIds.push_back(id);
             }
         }
-        // Without bindless textures the block ends after the base word.
+        // Without bindless textures the block ends before the texture entries.
         std::memcpy(materials.data() + b * stride, &material, std::min(stride, sizeof material));
     }
     glCreateBuffers(1, &gpu->materials);

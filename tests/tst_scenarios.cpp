@@ -2623,6 +2623,259 @@ TEST(carImpactPlaysTheCollisionSounds)
     }
 }
 
+/// The scene's depth as the last frame left it, with the camera that drew
+/// it, rows from the bottom as OpenGL stores them.
+struct SceneReadback {
+    int width = 0;
+    int height = 0;
+    std::vector<float> depth;
+    glm::mat4 inverseViewProjection{1.0F};
+
+    std::size_t at(int x, int y) const
+    {
+        return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
+    }
+    /// The world point the depth buffer holds at pixel (x, y).
+    glm::vec3 worldAt(int x, int y) const
+    {
+        const glm::vec4 ndc(2.0F * (static_cast<float>(x) + 0.5F) / static_cast<float>(width) - 1.0F,
+            2.0F * (static_cast<float>(y) + 0.5F) / static_cast<float>(height) - 1.0F, depth[at(x, y)], 1.0F);
+        const glm::vec4 world = inverseViewProjection * ndc;
+        return glm::vec3(world) / world.w;
+    }
+};
+
+SceneReadback readScene(Session& session)
+{
+    SceneReadback scene;
+    // The sun shadow mask is made at the scene's size.
+    const fh::render::ShadowPass* pass = session.game().shadowPass();
+    const fh::render::FrameRenderer* frame = session.game().frameRenderer();
+    if (pass == nullptr || frame == nullptr || pass->width() <= 0) {
+        return scene;
+    }
+    scene.width = pass->width();
+    scene.height = pass->height();
+    const std::size_t pixels = static_cast<std::size_t>(scene.width) * static_cast<std::size_t>(scene.height);
+    scene.depth.resize(pixels);
+    glGetTextureImage(frame->sceneDepth(), 0, GL_DEPTH_COMPONENT, GL_FLOAT,
+        static_cast<GLsizei>(scene.depth.size() * sizeof(float)), scene.depth.data());
+    const fh::render::Camera& camera = session.game().camera();
+    scene.inverseViewProjection = glm::inverse(
+        camera.projection(static_cast<float>(scene.width) / static_cast<float>(scene.height)) * camera.view());
+    return scene;
+}
+
+// Seen from the hill north of it at dusk, Redstone_Lake_01 was hidden
+// under its own bed: its vertex shader lifts every vertex by vc360_3.x
+// times a sine, and that constant came from the material's pixel group
+// (65 there, a value of the pixel shader's), which sank the whole surface
+// tens of metres. The water must be what the camera sees where the lake
+// lies, at the height its model gives.
+TEST(redstoneLakeShowsItsWater)
+{
+    if (!gameDir()) {
+        return;
+    }
+    // The lake's model; the name is the disc's, whose one part is
+    // Redstone_Lake_01_NOLOD.
+    fh::Vfs vfs;
+    vfs.mountDisc(fh::pathFromUtf8(gameDir()));
+    const std::optional<fh::Bytes> file = vfs.read("media/tracks/colorado/bin/coloradoout.12840.rmb.bin");
+    CHECK(file.has_value());
+    if (!file) {
+        return;
+    }
+    const fh::world::RenderMesh lake = fh::world::rendermesh::parse(*file, "Redstone_Lake_01");
+    std::vector<std::array<glm::vec3, 3>> triangles;
+    for (const fh::world::RenderMesh::Part& part : lake.parts) {
+        for (const fh::world::RenderMesh::Material& material : part.materials) {
+            for (std::size_t t = 0; t + 2 < material.triangles.size(); t += 3) {
+                triangles.push_back({part.positions[material.triangles[t]], part.positions[material.triangles[t + 1]],
+                    part.positions[material.triangles[t + 2]]});
+            }
+        }
+    }
+    CHECK(!triangles.empty());
+    // The water's height at (x, z), if the lake covers it.
+    const auto surfaceAt = [&triangles](float x, float z) -> std::optional<float> {
+        for (const auto& [a, b, c] : triangles) {
+            const float det = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+            if (std::abs(det) < 1e-6F) {
+                continue;
+            }
+            const float u = ((b.z - c.z) * (x - c.x) + (c.x - b.x) * (z - c.z)) / det;
+            const float v = ((c.z - a.z) * (x - c.x) + (a.x - c.x) * (z - c.z)) / det;
+            if (u >= 0.0F && v >= 0.0F && u + v <= 1.0F) {
+                return u * a.y + v * b.y + (1.0F - u - v) * c.y;
+            }
+        }
+        return std::nullopt;
+    };
+
+    fh::GameOptions options;
+    options.spawnAt = glm::vec2(1800.0F, 1650.0F);
+    options.spawnHeading = std::numbers::pi_v<float>;
+    options.startTime = 19.0F * 3600.0F;
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(3.0F, {});
+    session.capture("lake_redstone_dusk");
+    const SceneReadback scene = readScene(session);
+    CHECK(scene.width > 0);
+    // Where the camera looks into the lake's outline, it sees the water, or
+    // the shore where the ground rises above it; never ground below it.
+    int onWater = 0;
+    int belowWater = 0;
+    for (int y = 0; y < scene.height; y += 2) {
+        for (int x = 0; x < scene.width; x += 2) {
+            if (scene.depth[scene.at(x, y)] <= 0.0F) {
+                continue;
+            }
+            const glm::vec3 p = scene.worldAt(x, y);
+            const std::optional<float> water = surfaceAt(p.x, p.z);
+            if (!water) {
+                continue;
+            }
+            // The waves (vc360_3 of the vertex group) move the surface by
+            // centimetres; a quarter metre also covers the depth's rounding.
+            if (p.y < *water - 0.25F) {
+                ++belowWater;
+            } else if (p.y < *water + 0.25F) {
+                ++onWater;
+            }
+        }
+    }
+    std::fprintf(stderr, "redstone lake: %d samples on the water, %d below it\n", onWater, belowWater);
+    CHECK(onWater > 1000);
+    CHECK(belowWater * 20 < onWater);
+}
+
+// A player at dusk on the interstate west of the festival (colorado, x
+// -3033, z -3517) saw huge dark sheets stand beyond the far carriageway,
+// their tops following the ridges and their feet fading into the ground.
+// They were the river under the interstate's bridge (Shape012 in
+// coloradoout.11726, lake_anim_norm_opac_refl_3): its waves lifted the
+// white-painted vertices by up to 65 m, the pixel constant the programs
+// read in place of the model's vertex constant. The sky above the mesa
+// across the river stays sky over a whole wave period of the river's
+// material (vc360_3.y = 0.2 rad/s: 31.4 s).
+TEST(riverWavesStayOnTheRiverAtTheInterstate)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::GameOptions options;
+    options.spawnAt = glm::vec2(-3033.0F, -3517.0F);
+    options.spawnHeading = -2.51F;
+    options.startTime = 19.5F * 3600.0F;
+    Session session(options);
+    CHECK(session.waitForCar());
+    const fh::Game& game = session.game();
+    const int width = game.shadowPass()->width();
+    const int height = game.shadowPass()->height();
+    std::vector<float> depth(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
+    // Screen points above the mesa's top across the river, as fractions of
+    // the picture from its top left: sky in the scene without the sheets.
+    constexpr std::array<glm::vec2, 6> kSky{
+        {{0.50F, 0.06F}, {0.60F, 0.06F}, {0.70F, 0.08F}, {0.80F, 0.08F}, {0.90F, 0.08F}, {0.97F, 0.10F}}};
+    std::size_t covered = 0;
+    std::size_t samples = 0;
+    float worstAt = -1.0F;
+    std::size_t worst = 0;
+    for (float t = 0.0F; t < 32.0F; t += 0.5F) {
+        session.run(0.5F, {});
+        glGetTextureImage(game.frameRenderer()->sceneDepth(), 0, GL_DEPTH_COMPONENT, GL_FLOAT,
+            static_cast<GLsizei>(depth.size() * sizeof(float)), depth.data());
+        std::size_t now = 0;
+        for (const glm::vec2& point : kSky) {
+            // The depth texture's rows start at the bottom of the picture;
+            // reversed depth leaves the sky at 0.
+            const int x = static_cast<int>(point.x * static_cast<float>(width));
+            const int y = height - 1 - static_cast<int>(point.y * static_cast<float>(height));
+            now += depth[static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)]
+                    > 0.0F
+                ? 1
+                : 0;
+        }
+        covered += now;
+        samples += kSky.size();
+        if (now > worst) {
+            worst = now;
+            worstAt = t;
+            session.capture("river_waves_interstate_worst");
+        }
+    }
+    session.capture("river_waves_interstate");
+    std::fprintf(stderr, "river waves: %zu of %zu sky samples covered, worst %zu at %.1f s\n", covered, samples, worst,
+        static_cast<double>(worstAt));
+    CHECK_EQ(covered, std::size_t{0});
+}
+
+// A player at the festival saw the red "HORIZON Colorado" feather flags
+// by the large marquee stretched into sheets many metres wide. The flags'
+// vertex shader (anim_flag_diff_spec_norm_3_lm) sways them about the
+// model's origin, at the foot of the pole, and divides by the position's x,
+// the distance from the pole: it was given world positions, hundreds of
+// metres from the origin, rather than the model's own. Seen from the
+// north-west, past a tree and a floodlight mast, the sky above the four
+// flags (coloradoout.06265 at -716.6, -474.8; -695.7, -490.8; -724.1,
+// -489.3; -721.2, -535.1) stays sky while they sway.
+TEST(festivalFlagsKeepTheirSize)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::GameOptions options;
+    options.spawnAt = glm::vec2(-735.0F, -455.0F);
+    options.spawnHeading = 2.48F;
+    Session session(options);
+    CHECK(session.waitForCar());
+    // Columns of the picture in 32nds from its left, and rows from its top
+    // (1%, 4%, ... 13%): right of the tree (columns 0 to 4) and clear of
+    // the mast (14 to 16).
+    constexpr int kColumns = 32;
+    constexpr std::array<std::pair<int, int>, 2> kSkyColumns{{{5, 13}, {17, 31}}};
+    constexpr int kRows = 5;
+    std::size_t covered = 0;
+    std::size_t samples = 0;
+    std::size_t worst = 0;
+    float worstAt = -1.0F;
+    for (float t = 0.0F; t < 20.0F; t += 0.5F) {
+        session.run(0.5F, {});
+        const SceneReadback scene = readScene(session);
+        CHECK(!scene.depth.empty());
+        if (scene.depth.empty()) {
+            return;
+        }
+        std::size_t now = 0;
+        for (const auto& [first, last] : kSkyColumns) {
+            for (int column = first; column <= last; ++column) {
+                for (int row = 0; row < kRows; ++row) {
+                    const float x = (static_cast<float>(column) + 0.5F) / static_cast<float>(kColumns);
+                    const float y = 0.01F + 0.03F * static_cast<float>(row);
+                    // The depth texture's rows start at the bottom of the
+                    // picture; reversed depth leaves the sky at 0.
+                    const int px = static_cast<int>(x * static_cast<float>(scene.width));
+                    const int py = scene.height - 1 - static_cast<int>(y * static_cast<float>(scene.height));
+                    now += scene.depth[scene.at(px, py)] > 0.0F ? 1 : 0;
+                    ++samples;
+                }
+            }
+        }
+        covered += now;
+        if (now > worst) {
+            worst = now;
+            worstAt = t;
+            session.capture("festival_flags_worst");
+        }
+    }
+    session.capture("festival_flags");
+    std::fprintf(stderr, "festival flags: %zu of %zu sky samples covered, worst %zu at %.1f s\n", covered, samples,
+        worst, static_cast<double>(worstAt));
+    CHECK_EQ(covered, std::size_t{0});
+}
+
 } // namespace
 
 int main(int argc, char** argv)

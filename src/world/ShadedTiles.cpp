@@ -12,6 +12,7 @@
 #include <memory>
 #include <tuple>
 #include <unordered_map>
+#include <utility>
 
 namespace fh::world {
 
@@ -27,11 +28,14 @@ struct BatchKey {
     std::vector<float> constants;
     bool backdrop = false;
     std::uint32_t chunk = ShadedMesh::kMergedChunks;
+    /// The chunk of a batch kept in its model's space, which merges with
+    /// no other chunk's.
+    std::uint32_t modelChunk = ShadedMesh::kMergedChunks;
 
     bool operator<(const BatchKey& other) const
     {
-        return std::tie(shader, textures, constants, backdrop, chunk)
-            < std::tie(other.shader, other.textures, other.constants, other.backdrop, other.chunk);
+        return std::tie(shader, textures, constants, backdrop, chunk, modelChunk)
+            < std::tie(other.shader, other.textures, other.constants, other.backdrop, other.chunk, other.modelChunk);
     }
 };
 
@@ -40,6 +44,23 @@ struct BatchData {
     Bytes vertices;
     std::vector<std::uint32_t> indices;
 };
+
+/// A material's constants laid out as ShadedMesh::Batch::constants.
+std::vector<glm::vec4> batchConstants(const RenderMesh::MaterialInfo& info)
+{
+    std::vector<glm::vec4> constants(info.constants.begin(),
+        info.constants.begin()
+            + static_cast<std::ptrdiff_t>(std::min(info.constants.size(), ShadedMesh::kFirstVertexConstant)));
+    if (info.vertexConstants.empty()) {
+        return constants;
+    }
+    constants.resize(ShadedMesh::kFirstVertexConstant, glm::vec4(0.0F));
+    const std::size_t vertexCount
+        = std::min(info.vertexConstants.size(), ShadedMesh::kMaterialConstants - ShadedMesh::kFirstVertexConstant);
+    constants.insert(constants.end(), info.vertexConstants.begin(),
+        info.vertexConstants.begin() + static_cast<std::ptrdiff_t>(vertexCount));
+    return constants;
+}
 
 float determinant(const std::array<float, 9>& r)
 {
@@ -68,22 +89,30 @@ glm::vec3 decodeDec3N(std::uint32_t word)
 }
 
 /// Maps model-file coordinates (Z as stored) of a chunk to world
-/// coordinates, for points and for directions.
+/// coordinates, for points and for directions; or with `modelSpace`, for a
+/// placed chunk, leaves them as they are.
 class ChunkTransform {
 public:
-    explicit ChunkTransform(const WorldChunk& chunk)
+    ChunkTransform(const WorldChunk& chunk, bool modelSpace)
         : m_chunk(chunk)
         , m_origin(chunk.placed ? chunk.placement.apply(glm::vec3(0.0F)) : glm::vec3(0.0F))
+        , m_modelSpace(modelSpace && chunk.placed)
     {
     }
 
     glm::vec3 point(const glm::vec3& file) const
     {
+        if (m_modelSpace) {
+            return file;
+        }
         const glm::vec3 parsed(file.x, file.y, -file.z);
         return m_chunk.placed ? m_chunk.placement.apply(parsed) : parsed;
     }
     glm::vec3 direction(const glm::vec3& file) const
     {
+        if (m_modelSpace) {
+            return file;
+        }
         const glm::vec3 parsed(file.x, file.y, -file.z);
         return m_chunk.placed ? m_chunk.placement.apply(parsed) - m_origin : parsed;
     }
@@ -91,7 +120,17 @@ public:
 private:
     const WorldChunk& m_chunk;
     glm::vec3 m_origin;
+    bool m_modelSpace = false;
 };
+
+/// The matrix taking a placed chunk's model-file coordinates (Z as stored)
+/// to world coordinates, as Placement::apply() does.
+glm::mat4 placementMatrix(const Placement& placement)
+{
+    const std::array<float, 9>& r = placement.rows;
+    return {glm::vec4(r[0], r[1], r[2], 0.0F), glm::vec4(r[3], r[4], r[5], 0.0F), glm::vec4(r[6], r[7], r[8], 0.0F),
+        glm::vec4(placement.position, 1.0F)};
+}
 
 /// Appends vertex `v` of `part`, converted as ShadedMesh describes, to `out`.
 void convertVertex(const RenderMesh::Part& part, const RenderMesh::Material& material, std::uint32_t v,
@@ -212,7 +251,8 @@ ShadedMesh buildShadedMesh(const lzx::ZipArchive& archive, const WorldIndex& ind
         // See buildTileMesh: with the parser's Z flip, a positive determinant
         // is the placement that mirrors, which turns triangles inside out.
         const bool mirrored = chunk.placed && determinant(chunk.placement.rows) > 0.0F;
-        const ChunkTransform transform(chunk);
+        const ChunkTransform worldTransform(chunk, false);
+        const ChunkTransform modelTransform(chunk, true);
         for (const RenderMesh::Part& part : mesh.parts) {
             for (const RenderMesh::Material& material : part.materials) {
                 if (isNotSurface(mesh, material) || material.triangles.empty()) {
@@ -246,23 +286,27 @@ ShadedMesh buildShadedMesh(const lzx::ZipArchive& archive, const WorldIndex& ind
                         key.textures[k] = (*objectTextures)[static_cast<std::size_t>(slot)];
                     }
                 }
-                const std::size_t constantCount = std::min(info.constants.size(), ShadedMesh::kMaterialConstants);
-                for (std::size_t k = 0; k < constantCount; ++k) {
-                    const glm::vec4& value = info.constants[k];
+                std::vector<glm::vec4> constants = batchConstants(info);
+                for (const glm::vec4& value : constants) {
                     key.constants.insert(key.constants.end(), {value.x, value.y, value.z, value.w});
                 }
                 key.backdrop = chunk.backdrop;
                 key.chunk = chunk.backdrop ? c : ShadedMesh::kMergedChunks;
+                const bool modelSpace = chunk.placed && effect.readsVertexMaterial;
+                key.modelChunk = modelSpace ? c : ShadedMesh::kMergedChunks;
+                const ChunkTransform& transform = modelSpace ? modelTransform : worldTransform;
 
                 BatchData& data = batches[key];
                 if (data.batch.stride == 0) {
                     data.batch.shader = key.shader;
                     data.batch.textures = key.textures;
-                    data.batch.constants.assign(
-                        info.constants.begin(), info.constants.begin() + static_cast<std::ptrdiff_t>(constantCount));
+                    data.batch.constants = std::move(constants);
                     data.batch.stride = renderStride(effect.renderDeclaration);
                     data.batch.backdrop = key.backdrop;
                     data.batch.chunk = key.chunk;
+                    if (modelSpace) {
+                        data.batch.model = placementMatrix(chunk.placement);
+                    }
                 }
                 remap.assign(part.positions.size(), ShadedMesh::kNoTexture);
                 const auto runStart = static_cast<std::uint32_t>(data.indices.size());

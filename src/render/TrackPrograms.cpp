@@ -7,6 +7,7 @@
 #include "world/TrackSettings.h"
 
 #include <glm/gtc/matrix_access.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
@@ -19,6 +20,47 @@
 #include <string_view>
 
 namespace fh::render {
+
+void TrackMaterial::setModel(const glm::mat4& matrix)
+{
+    const glm::mat4 inverse = glm::affineInverse(matrix);
+    for (int i = 0; i < 3; ++i) {
+        model[static_cast<std::size_t>(i)] = glm::row(matrix, i);
+        modelInverse[static_cast<std::size_t>(i)] = glm::row(inverse, i);
+    }
+}
+
+std::optional<std::uint32_t> materialSlot(std::string_view name, xenos::ShaderStage stage)
+{
+    // Vertex shaders name them "vc360_N" and a few (bunting) "c360_N".
+    std::string_view prefix = "c360_";
+    if (stage == xenos::ShaderStage::Vertex && name.starts_with("vc360_")) {
+        prefix = "vc360_";
+    }
+    if (!name.starts_with(prefix)) {
+        return std::nullopt;
+    }
+    std::uint32_t number = 0;
+    const char* first = name.data() + prefix.size();
+    const char* last = name.data() + name.size();
+    const auto [ptr, ec] = std::from_chars(first, last, number);
+    if (ec != std::errc() || ptr != last) {
+        return std::nullopt;
+    }
+    if (stage == xenos::ShaderStage::Vertex) {
+        if (number < world::ShadedMesh::kFirstVertexRegister) {
+            return std::nullopt;
+        }
+        number = number - world::ShadedMesh::kFirstVertexRegister
+            + static_cast<std::uint32_t>(world::ShadedMesh::kFirstVertexConstant);
+    } else if (number >= world::ShadedMesh::kFirstVertexConstant) {
+        return std::nullopt;
+    }
+    if (number >= TrackMaterial::kConstants) {
+        return std::nullopt;
+    }
+    return number;
+}
 
 namespace {
 
@@ -61,28 +103,6 @@ constexpr std::array kFrameNames{
     FrameName{"sunColor", 251},
 };
 
-/// The material constant number of a constant named "c360_N" (pixel stage)
-/// or "vc360_N" (vertex stage), or nothing.
-std::optional<std::uint32_t> materialNumber(std::string_view name, xenos::ShaderStage stage)
-{
-    // Vertex shaders name them "vc360_N" and a few (bunting) "c360_N".
-    std::string_view prefix = "c360_";
-    if (stage == xenos::ShaderStage::Vertex && name.starts_with("vc360_")) {
-        prefix = "vc360_";
-    }
-    if (!name.starts_with(prefix)) {
-        return std::nullopt;
-    }
-    std::uint32_t number = 0;
-    const char* first = name.data() + prefix.size();
-    const char* last = name.data() + name.size();
-    const auto [ptr, ec] = std::from_chars(first, last, number);
-    if (ec != std::errc() || ptr != last || number >= TrackMaterial::kConstants) {
-        return std::nullopt;
-    }
-    return number;
-}
-
 struct Redirects {
     std::set<std::uint32_t> frame;
     std::map<std::uint32_t, std::uint32_t> material;
@@ -95,7 +115,7 @@ Redirects redirectsOf(const xenos::ShaderProgramSource& source, xenos::ShaderSta
         if (c.stage != stage || c.set != xenos::RegisterSet::Float4) {
             continue;
         }
-        if (const std::optional<std::uint32_t> number = materialNumber(c.name, stage)) {
+        if (const std::optional<std::uint32_t> number = materialSlot(c.name, stage)) {
             r.material.emplace(c.index, *number);
             continue;
         }
@@ -120,11 +140,12 @@ std::string materialDeclarations(bool bindless, xenos::ShaderStage stage)
 {
     if (!bindless) {
         return std::format("layout(std140, binding = {}) uniform XeMaterialConstants\n{{\n    vec4 c[{}];\n    uvec4 "
-                           "base;\n}} xe_material;\n",
+                           "base;\n    vec4 model[3];\n    vec4 modelInverse[3];\n}} xe_material;\n",
             trackbinding::kMaterial, TrackMaterial::kConstants);
     }
-    std::string d = std::format(
-        "struct XeMaterial\n{{\n    vec4 c[{}];\n    uvec4 base;\n    uvec4 tex[4];\n}};\n", TrackMaterial::kConstants);
+    std::string d = std::format("struct XeMaterial\n{{\n    vec4 c[{}];\n    uvec4 base;\n    vec4 model[3];\n    vec4 "
+                                "modelInverse[3];\n    uvec4 tex[4];\n}};\n",
+        TrackMaterial::kConstants);
     d += std::format(
         "layout(std430, binding = {}) readonly buffer XeMaterials\n{{\n    XeMaterial xe_materials[];\n}};\n",
         trackbinding::kMaterial);
@@ -231,9 +252,47 @@ std::string layeredCubeVertex(const std::string& glsl)
     return out;
 }
 
+/// The first and last frame registers of the matrices a vertex stage
+/// drawing in a model's space composes with the batch's model matrix: wvp,
+/// worldI, worldIT and world (WorldViewProjMatrix, WorldInvTransMatrix and
+/// WorldMatrix in some effects; see TrackFrameConstants::make()).
+constexpr std::uint32_t kFirstModelRegister = 128;
+constexpr std::uint32_t kLastModelRegister = 143;
+
+/// Rows of the frame's matrices times the batch's model matrix
+/// (TrackMaterial::model): row i of F·M is F's row i applied to M's rows;
+/// row i of (F·M)⁻¹ = M⁻¹·F⁻¹ is M⁻¹'s row i applied to F⁻¹'s rows, of
+/// which the frame block holds 0 to 2 (worldI); row i of its transpose is
+/// its column i. The last rows of the inverses are an affine transform's.
+constexpr std::string_view kModelRows = R"(vec4 xe_modelTimes(vec4 row)
+{
+    return row.x * xe_material.model[0] + row.y * xe_material.model[1] + row.z * xe_material.model[2]
+        + vec4(0.0, 0.0, 0.0, row.w);
+}
+vec4 xe_modelInverseRow(uint i)
+{
+    vec4 n = i < 3u ? xe_material.modelInverse[min(i, 2u)] : vec4(0.0, 0.0, 0.0, 1.0);
+    return n.x * xe_frame.c[132] + n.y * xe_frame.c[133] + n.z * xe_frame.c[134] + vec4(0.0, 0.0, 0.0, n.w);
+}
+vec4 xe_modelRow(uint reg)
+{
+    uint i = reg & 3u;
+    if (reg < 132u || reg >= 140u) {
+        return xe_modelTimes(xe_frame.c[reg]);
+    }
+    if (reg < 136u) {
+        return xe_modelInverseRow(i);
+    }
+    return vec4(xe_modelInverseRow(0u)[i], xe_modelInverseRow(1u)[i], xe_modelInverseRow(2u)[i], i == 3u ? 1.0 : 0.0);
+}
+)";
+
 /// Points the generated code's reads of the redirected registers at the
-/// frame and material blocks.
-std::string redirect(const std::string& glsl, const Redirects& redirects, bool bindless, xenos::ShaderStage stage)
+/// frame and material blocks; with `modelSpace` (a vertex stage drawing in
+/// a model's space, see TrackMaterial), the reads of the frame's matrices at
+/// their products with the batch's model matrix.
+std::string redirect(
+    const std::string& glsl, const Redirects& redirects, bool bindless, xenos::ShaderStage stage, bool modelSpace)
 {
     constexpr std::string_view kBlockEnd = "} xe_consts;\n";
     constexpr std::string_view kRead = "xe_consts.c[";
@@ -262,7 +321,9 @@ std::string redirect(const std::string& glsl, const Redirects& redirects, bool b
             const bool direct = close > digits && close < glsl.size() && glsl[close] == ']'
                 && std::from_chars(glsl.data() + digits, glsl.data() + close, reg).ec == std::errc();
             if (direct && redirects.frame.contains(reg)) {
-                out += std::format("xe_frame.c[{}]", reg);
+                out += modelSpace && reg >= kFirstModelRegister && reg <= kLastModelRegister
+                    ? std::format("xe_modelRow({}u)", reg)
+                    : std::format("xe_frame.c[{}]", reg);
                 at = close + 1;
             } else if (const auto m = redirects.material.find(reg); direct && m != redirects.material.end()) {
                 out += std::format("xe_material.c[{}]", m->second);
@@ -277,6 +338,9 @@ std::string redirect(const std::string& glsl, const Redirects& redirects, bool b
     out += std::format("layout(std140, binding = {}) uniform XeFrameConstants\n{{\n    vec4 c[256];\n}} xe_frame;\n",
         trackbinding::kFrame);
     out += materialDeclarations(bindless, stage);
+    if (modelSpace) {
+        out += kModelRows;
+    }
     copyUntil(glsl.size());
     // The batch's first vertex, in 32-bit words of the tile's vertex
     // buffer, comes with its material block, so the whole buffer stays
@@ -441,13 +505,13 @@ std::shared_ptr<const TrackPrograms::Source> TrackPrograms::source(std::uint32_t
         const xenos::Pass& pass = technique->passes.front();
         const xenos::ShaderProgramSource program = xenos::buildProgram(entry.effect, pass, &entry.renderDeclaration);
         built->vertex = redirect(program.vertexGlsl, redirectsOf(program, xenos::ShaderStage::Vertex), m_bindless,
-            xenos::ShaderStage::Vertex);
+            xenos::ShaderStage::Vertex, entry.readsVertexMaterial);
         if (pass.pixelShader < 0) {
             // Depth only: the translator's empty pixel shader.
             built->fragment = program.fragmentGlsl;
         } else {
             built->fragment = redirect(program.fragmentGlsl, redirectsOf(program, xenos::ShaderStage::Pixel),
-                m_bindless, xenos::ShaderStage::Pixel);
+                m_bindless, xenos::ShaderStage::Pixel, false);
         }
         if (m_layeredCube) {
             built->vertex = layeredCubeVertex(built->vertex);

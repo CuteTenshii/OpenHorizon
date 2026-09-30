@@ -158,6 +158,27 @@ TEST(emissiveSwitchOnFollowsTheSampler)
     CHECK_NEAR(TrackFrameConstants::emissiveSwitchOn(1.0F, 0.0F, 28810.0F).w, 10.0, 1e-3);
 }
 
+// A model's material table holds the vertex shader's constants apart from
+// the pixel shader's: vc360_3 reads the first of the vertex group, never the
+// pixel constant c360_3 of the same material.
+TEST(materialConstantsReadTheirStagesGroup)
+{
+    using render::materialSlot;
+    using xenos::ShaderStage;
+    constexpr auto kVertex = static_cast<std::uint32_t>(world::ShadedMesh::kFirstVertexConstant);
+    CHECK(materialSlot("c360_0", ShaderStage::Pixel) == std::optional<std::uint32_t>(0));
+    CHECK(materialSlot("c360_6", ShaderStage::Pixel) == std::optional<std::uint32_t>(6));
+    CHECK(materialSlot("vc360_3", ShaderStage::Vertex) == std::optional<std::uint32_t>(kVertex));
+    CHECK(materialSlot("vc360_9", ShaderStage::Vertex) == std::optional<std::uint32_t>(kVertex + 6));
+    // The bunting effects' vertex shaders name theirs c360_N.
+    CHECK(materialSlot("c360_4", ShaderStage::Vertex) == std::optional<std::uint32_t>(kVertex + 1));
+    CHECK(!materialSlot("vc360_2", ShaderStage::Vertex).has_value());
+    CHECK(!materialSlot("vc360_10", ShaderStage::Vertex).has_value());
+    CHECK(!materialSlot("c360_8", ShaderStage::Pixel).has_value());
+    CHECK(!materialSlot("vc360_3", ShaderStage::Pixel).has_value());
+    CHECK(!materialSlot("FogColor", ShaderStage::Vertex).has_value());
+}
+
 TEST(sceneConstantsTakeTheTrackSettings)
 {
     constexpr std::string_view kXml = R"(<TrackSettings Version="64">

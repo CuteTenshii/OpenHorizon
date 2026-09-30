@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -36,7 +37,8 @@ struct SceneLighting;
 namespace trackbinding {
 /// The frame's scene constants (XeFrameConstants, 256 vec4, std140).
 inline constexpr GLuint kFrame = 4;
-/// A batch's material constants (XeMaterialConstants, 16 vec4, std140),
+/// A batch's material (XeMaterialConstants, std140, TrackMaterial up to its
+/// texture entries),
 /// or with bindless textures every batch's material of the mesh (storage
 /// buffer XeMaterials, one TrackMaterial each, indexed by the draw's base
 /// instance).
@@ -50,19 +52,43 @@ inline constexpr GLuint kTextureHandles = 6;
 inline constexpr GLuint kCubeFaces = 7;
 } // namespace trackbinding
 
-/// A batch's material as the programs read it: the material constants, the
-/// batch's first vertex in 32-bit words of its mesh's vertex buffer, and
-/// with bindless textures the texture handle table entry of each sampler
-/// register (kEngineTextureEntry where the engine supplies the texture).
-/// The layout is the same under std140 and std430.
+/// A batch's material as the programs read it: the material constants (laid
+/// out as world::ShadedMesh::Batch::constants, see materialSlot()), the
+/// batch's first vertex in 32-bit words of its mesh's vertex buffer, rows 0
+/// to 2 of the batch's model matrix (world::ShadedMesh::Batch::model) and of
+/// its inverse, and with bindless textures the texture handle table entry of
+/// each sampler register (kEngineTextureEntry where the engine supplies the
+/// texture). The layout is the same under std140 and std430.
+///
+/// The vertex stage of the effects that read vertex material constants
+/// (world::TrackShaders::Entry::readsVertexMaterial) draws with the frame's
+/// matrices times the model matrix: wvp, world, worldI and worldIT as the
+/// game sets them for a prop, whose vertices stay in its model's space.
 struct TrackMaterial {
     static constexpr std::size_t kConstants = 15;
     static constexpr std::uint32_t kEngineTextureEntry = 0xFFFFFFFF;
     std::array<glm::vec4, kConstants> constants{};
     std::array<std::uint32_t, 4> base{};
+    std::array<glm::vec4, 3> model{
+        glm::vec4(1.0F, 0.0F, 0.0F, 0.0F), glm::vec4(0.0F, 1.0F, 0.0F, 0.0F), glm::vec4(0.0F, 0.0F, 1.0F, 0.0F)};
+    std::array<glm::vec4, 3> modelInverse = model;
     std::array<std::uint32_t, 16> textures{};
+
+    /// Sets model and modelInverse from `matrix`, an affine transform.
+    void setModel(const glm::mat4& matrix);
 };
-static_assert(sizeof(TrackMaterial) == 320);
+static_assert(sizeof(TrackMaterial) == 416);
+/// The bytes of TrackMaterial a program reads without bindless textures: all
+/// but the texture entries.
+inline constexpr std::size_t kTrackMaterialBlockBytes = offsetof(TrackMaterial, textures);
+
+/// The slot of TrackMaterial::constants a material constant of a track
+/// effect reads, by its name in `stage`: "c360_N" in the pixel stage reads
+/// the material's pixel constant N, "vc360_N" (or "c360_N", as the bunting
+/// effects name them) in the vertex stage its vertex constant N - 3 (see
+/// world::ShadedMesh::Batch::constants). Nothing for other names, and for
+/// constants past the slots.
+std::optional<std::uint32_t> materialSlot(std::string_view name, xenos::ShaderStage stage);
 
 /// Fixed entries of the texture handle table: the textures the engine
 /// supplies (see WorldRenderer) come first, the track's own after them.

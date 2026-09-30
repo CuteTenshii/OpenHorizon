@@ -393,7 +393,7 @@ private:
         GLuint vao = 0;
         GLuint vertices = 0;
         GLuint indices = 0;
-        /// One TrackMaterial per batch, 256 bytes apart without bindless
+        /// One TrackMaterial per batch, 512 bytes apart without bindless
         /// textures (a uniform block each), packed with them.
         GLuint materials = 0;
         std::vector<world::ShadedMesh::Batch> batches;
