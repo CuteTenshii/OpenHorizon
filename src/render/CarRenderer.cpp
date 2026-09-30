@@ -207,7 +207,9 @@ public:
         }
         std::shared_ptr<XenosProgram> program;
         try {
-            program = std::make_shared<XenosProgram>(source->program, name, source->squareRootOutput);
+            // Written as the pixel shader writes it: the scene target holds
+            // square-root colour as the game's does (see FrameRenderer).
+            program = std::make_shared<XenosProgram>(source->program, name);
         } catch (const std::exception& e) {
             logWarning("car shader {}: {}", name, e.what());
         }

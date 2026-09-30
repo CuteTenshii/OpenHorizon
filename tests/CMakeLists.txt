@@ -132,6 +132,13 @@ target_link_libraries(tst_profile PRIVATE fh1profile)
 # names an extracted disc.
 add_test(NAME tst_profile COMMAND tst_profile)
 
+add_executable(tst_postprocess TestHarness.h tst_postprocess.cpp)
+target_compile_options(tst_postprocess PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_postprocess PRIVATE fh1engine)
+# The GPU cases run in an offscreen context and skip without one; the
+# Colorado case runs only when FH1_GAME_DIR names an extracted disc.
+add_test(NAME tst_postprocess COMMAND tst_postprocess)
+
 add_executable(tst_scenarios TestHarness.h tst_scenarios.cpp)
 target_compile_options(tst_scenarios PRIVATE ${FH1N_WARNINGS})
 target_link_libraries(tst_scenarios PRIVATE fh1engine)

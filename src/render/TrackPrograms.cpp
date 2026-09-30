@@ -263,18 +263,6 @@ std::string redirect(const std::string& glsl, const Redirects& redirects, bool b
     return out;
 }
 
-/// Squares colour output 0 (see TrackPrograms).
-std::string squareOutput(std::string glsl)
-{
-    constexpr std::string_view kWrite = "    xe_color0 = xe_oC[0];\n";
-    const std::size_t at = glsl.find(kWrite);
-    if (at == std::string::npos) {
-        return glsl;
-    }
-    glsl.insert(at + kWrite.size(), "    xe_color0.rgb *= xe_color0.rgb;\n");
-    return glsl;
-}
-
 void loadDefaults(const xenos::ShaderProgramSource& source, xenos::ShaderStage stage, std::array<glm::vec4, 256>& block)
 {
     for (const xenos::ConstantBinding& c : source.constants) {
@@ -431,8 +419,8 @@ std::shared_ptr<const TrackPrograms::Source> TrackPrograms::source(std::uint32_t
             // Depth only: the translator's empty pixel shader.
             built->fragment = program.fragmentGlsl;
         } else {
-            built->fragment = squareOutput(redirect(program.fragmentGlsl,
-                redirectsOf(program, xenos::ShaderStage::Pixel), m_bindless, xenos::ShaderStage::Pixel));
+            built->fragment = redirect(program.fragmentGlsl, redirectsOf(program, xenos::ShaderStage::Pixel),
+                m_bindless, xenos::ShaderStage::Pixel);
         }
         if (m_bindless) {
             built->vertex = bindlessSamplers(std::move(built->vertex), program.samplers, xenos::ShaderStage::Vertex);

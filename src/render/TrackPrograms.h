@@ -183,8 +183,8 @@ struct TrackFrameConstants {
 /// The pixel shaders write the square root of the colour (every track
 /// effect's Default pass ends in `sqrt oC0`), which the game's scene target
 /// stores and its post-processing squares back when it reads the target
-/// (0x821C8238, 0x821C7F7C: `mul r, r, r` on each fetched colour). The HDR
-/// target here holds linear colour, so the programs square their output.
+/// (0x821C8238, 0x821C7F7C: `mul r, r, r` on each fetched colour). The
+/// scene target here holds the same, so the output is written as it is.
 class TrackPrograms {
 public:
     struct Sampler {

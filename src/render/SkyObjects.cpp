@@ -67,7 +67,7 @@ layout(location = 0) out vec4 fragColour;
 void main()
 {
     vec4 texel = texture(uSunMap, vUv);
-    fragColour = vec4(texel.rgb * uSunColour.rgb, texel.a * uSunColour.a);
+    fragColour = vec4(sqrt(max(texel.rgb * uSunColour.rgb, vec3(0.0))), texel.a * uSunColour.a);
 }
 )";
 

@@ -30,41 +30,9 @@ void main()
     vec4 far = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, 0.0, 1.0);
     vec4 near = uInverseViewProjection * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
     vec3 direction = normalize(far.xyz / far.w - near.xyz / near.w);
-    fragColour = vec4(skyColour(direction), 1.0);
-}
-)";
-
-const char* const kTonemapFragment = R"(#version 450 core
-in vec2 vUv;
-layout(binding = 0) uniform sampler2D uScene;
-uniform float uAverageLevel;
-uniform float uExposureBias;
-uniform float uA;
-uniform float uB;
-uniform float uC;
-uniform float uD;
-uniform float uE;
-uniform float uF;
-uniform float uWhite;
-uniform float uVignettePower;
-layout(location = 0) out vec4 fragColour;
-// The filmic curve whose six parameters the game's TimeOfDay.xml gives.
-vec3 filmic(vec3 x)
-{
-    return ((x * (uA * x + uC * uB) + uD * uE) / (x * (uA * x + uB) + uD * uF)) - uE / uF;
-}
-void main()
-{
-    // Exposure keyed to the frame's average brightness, from the top of the
-    // HDR target's mip chain.
-    vec3 average = textureLod(uScene, vec2(0.5), uAverageLevel).rgb;
-    float luminance = max(dot(average, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
-    float exposure = clamp(0.18 / luminance, 0.05, 20.0) * uExposureBias;
-    vec3 hdr = texture(uScene, vUv).rgb * exposure;
-    vec3 mapped = filmic(hdr) / filmic(vec3(uWhite));
-    vec2 centred = vUv - 0.5;
-    float vignette = 1.0 - pow(length(centred) * 1.2, uVignettePower) * 0.35;
-    fragColour = vec4(clamp(mapped * vignette, 0.0, 1.0), 1.0);
+    // The scene target holds the square root of colour, as the game's sky
+    // shaders write it (Sky_PS and SkyFog_PS end in `sqrt oC0`).
+    fragColour = vec4(sqrt(max(skyColour(direction), vec3(0.0))), 1.0);
 }
 )";
 
@@ -92,7 +60,6 @@ glm::mat4 Camera::projection(float aspect) const
 
 FrameRenderer::FrameRenderer()
     : m_skyShader("sky", kFullscreenVertex, std::string("#version 450 core\n") + kSceneLightingGlsl + kSkyFragmentBody)
-    , m_tonemapShader("tonemap", kFullscreenVertex, kTonemapFragment)
 {
     glCreateVertexArrays(1, &m_emptyVao);
     glCreateFramebuffers(1, &m_framebuffer);
@@ -118,9 +85,11 @@ void FrameRenderer::resize(int width, int height)
         glDeleteTextures(1, &m_depth);
     }
     glCreateTextures(GL_TEXTURE_2D, 1, &m_colour);
-    m_levels = 1 + static_cast<int>(std::floor(std::log2(static_cast<float>(std::max(width, height)))));
-    glTextureStorage2D(m_colour, m_levels, GL_RGBA16F, width, height);
-    glTextureParameteri(m_colour, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    // Half floats hold the square-root colour with room above the [0, 4]
+    // the game's 7e3 target (inferred from its cube map faces, 0x82426C38)
+    // blends in; the post-processing clamps to the resolve's [0, 4].
+    glTextureStorage2D(m_colour, 1, GL_RGBA16F, width, height);
+    glTextureParameteri(m_colour, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTextureParameteri(m_colour, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glCreateTextures(GL_TEXTURE_2D, 1, &m_depth);
     glTextureStorage2D(m_depth, 1, GL_DEPTH_COMPONENT32F, width, height);
@@ -153,6 +122,14 @@ void FrameRenderer::begin(int width, int height)
 
 void FrameRenderer::sky(const FrameParams& frame)
 {
+    dome(frame);
+    if (m_skyObjects != nullptr) {
+        m_skyObjects->draw(frame);
+    }
+}
+
+void FrameRenderer::dome(const FrameParams& frame)
+{
     m_skyShader.use();
     m_skyShader.set("uInverseViewProjection", glm::inverse(frame.projection * frame.view));
     setSceneLighting(m_skyShader, frame.lighting);
@@ -165,35 +142,11 @@ void FrameRenderer::sky(const FrameParams& frame)
     glDepthFunc(GL_GREATER);
     glDepthMask(GL_TRUE);
     glEnable(GL_CULL_FACE);
-    if (m_skyObjects != nullptr) {
-        m_skyObjects->draw(frame);
-    }
 }
 
-void FrameRenderer::finish(const ToneSettings& tone)
+void FrameRenderer::finish(const PostFrame& post)
 {
-    glGenerateTextureMipmap(m_colour);
-    glBindFramebuffer(GL_FRAMEBUFFER, m_output);
-    glViewport(0, 0, m_width, m_height);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    glEnable(GL_FRAMEBUFFER_SRGB);
-    m_tonemapShader.use();
-    m_tonemapShader.set("uAverageLevel", static_cast<float>(m_levels - 1));
-    m_tonemapShader.set("uExposureBias", tone.exposureBias);
-    m_tonemapShader.set("uA", tone.shoulderStrength);
-    m_tonemapShader.set("uB", tone.linearStrength);
-    m_tonemapShader.set("uC", tone.linearAngle);
-    m_tonemapShader.set("uD", tone.toeStrength);
-    m_tonemapShader.set("uE", tone.toeNumerator);
-    m_tonemapShader.set("uF", tone.toeDenominator);
-    m_tonemapShader.set("uWhite", tone.white);
-    m_tonemapShader.set("uVignettePower", tone.vignettePower);
-    glBindTextureUnit(0, m_colour);
-    glBindVertexArray(m_emptyVao);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-    glDisable(GL_FRAMEBUFFER_SRGB);
-    glBindVertexArray(0);
+    m_post.run(m_colour, m_width, m_height, m_output, post);
 }
 
 } // namespace fh::render

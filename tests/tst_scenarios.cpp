@@ -1600,6 +1600,62 @@ TEST(sunShadowsFallByDayOnly)
     }
 }
 
+// "The world still feels horrible": the picture the post-processing makes
+// at noon, dusk and night at the free-roam start, and at noon inside the
+// Redrock post-processing zone (the centroid of its first triangle in
+// PostProcessingZones_safe.xml), each after 5 s standing still so the
+// exposure has settled.
+TEST(postProcessingAtTimesAndInAZone)
+{
+    if (!gameDir()) {
+        return;
+    }
+    struct Shot {
+        const char* name;
+        float seconds;
+        std::optional<glm::vec2> at;
+        /// The zone the player is in, and the range of the filmic white
+        /// point: TrackSettings' is 1 by day and 11 at night, blended by
+        /// DayNightPostProcess, which is part way at dusk.
+        const char* zone;
+        float whiteMin;
+        float whiteMax;
+    };
+    const Shot shots[] = {
+        {"post_noon", 12.0F * 3600.0F, std::nullopt, "Inner_Festival", 1.0F, 1.0F},
+        {"post_dusk", 1150.0F * 60.0F, std::nullopt, "Inner_Festival", 1.1F, 10.9F},
+        {"post_night", 23.0F * 3600.0F, std::nullopt, "Inner_Festival", 11.0F, 11.0F},
+        {"post_zone_redrock", 12.0F * 3600.0F, glm::vec2(-6384.0F, -4888.0F), "Redrock", 1.0F, 1.0F},
+    };
+    for (const Shot& shot : shots) {
+        fh::GameOptions options;
+        options.startTime = shot.seconds;
+        options.spawnAt = shot.at;
+        Session session(options);
+        CHECK(session.waitForCar());
+        session.run(4.0F, {});
+        // The GPU time of the post-processing (the frame statistics' tonemap
+        // part), averaged over the last second, for the report.
+        double tonemapSeconds = 0.0;
+        int frames = 0;
+        for (float t = 0.0F; t < 1.0F; t += kStep) {
+            session.run(kStep, {});
+            tonemapSeconds += session.game()
+                                  .frameStats()
+                                  .gpuFrameSeconds()[static_cast<std::size_t>(fh::render::FrameStats::Part::Tonemap)];
+            ++frames;
+        }
+        std::fprintf(stderr, "%s: post-processing GPU %.3f ms\n", shot.name, tonemapSeconds * 1000.0 / frames);
+        session.capture(shot.name);
+        CHECK_EQ(std::string(session.game().postProcessingZone()), std::string(shot.zone));
+        const fh::PostSettings* settings = session.game().postSettings();
+        CHECK(settings != nullptr);
+        if (settings != nullptr) {
+            CHECK(settings->filmic.white >= shot.whiteMin - 1e-4F && settings->filmic.white <= shot.whiteMax + 1e-4F);
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)

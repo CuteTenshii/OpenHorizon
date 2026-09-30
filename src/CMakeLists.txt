@@ -89,6 +89,8 @@ add_library(fh1engine STATIC
     game/GameObjects.h
     game/Outposts.cpp
     game/Outposts.h
+    game/PostProcessing.cpp
+    game/PostProcessing.h
     game/Race.cpp
     game/Race.h
     game/RaceData.cpp
@@ -119,6 +121,10 @@ add_library(fh1engine STATIC
     render/PresentTarget.h
     render/Overlay.cpp
     render/Overlay.h
+    render/PostMath.cpp
+    render/PostMath.h
+    render/PostProcess.cpp
+    render/PostProcess.h
     render/ScatterPass.cpp
     render/ScatterPass.h
     render/ShadowCascades.cpp

@@ -32,7 +32,8 @@ struct FrameParams;
 /// the object loads (0x82E342F0), blended over the sky (source alpha,
 /// inverse source alpha) with colour `clamp(SunObjectColour, 0, 1)` and
 /// alpha SunObjectAlpha. The pixel shader multiplies the texture by that
-/// colour. Textures clamp at their edges and filter linearly. The values
+/// colour and writes the square root of the product (Sun_PS's `sqrt oC0`),
+/// as the scene target holds. Textures clamp at their edges and filter linearly. The values
 /// reach the object through the sky's parameter block, copied whole into
 /// it (0x82E35624: 48 bytes from offset 512, where the time-of-day sampler
 /// at 0x8265A7CC puts SunObjectAlpha, SunObjectSize, CubeSunObjectSize,
@@ -51,11 +52,6 @@ struct FrameParams;
 /// as the dome is: the game's vertex shaders put them there too (z = w -
 /// 1e-6). Inferred, not read: that the game's MatWVP is the camera's view
 /// without its translation, which the stars' unit distance implies.
-///
-/// Known difference: the game blends in the square-root space its scene
-/// target stores (every one of these pixel shaders but the stars' ends in
-/// `sqrt`, and the post-processing squares the target back), while this
-/// renderer blends linear colour.
 class SkyObjects {
 public:
     /// Loads the textures and stars; throws DataError if they are missing

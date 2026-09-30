@@ -97,7 +97,8 @@ void main()
         vec3 colour = mix(vec3(0.02, 0.07, 0.08), skyColour(mirrored), fresnel);
         float glint = pow(max(dot(mirrored, toSun), 0.0), 200.0);
         colour += uSunColour * glint * 4.0;
-        fragColour = vec4(applyFog(colour, vPosition, uCamera), mix(0.7, 1.0, fresnel));
+        // The scene target holds square-root colour (see FrameRenderer).
+        fragColour = vec4(sqrt(max(applyFog(colour, vPosition, uCamera), vec3(0.0))), mix(0.7, 1.0, fresnel));
         return;
     }
 
@@ -116,7 +117,7 @@ void main()
     float sun = max(dot(normal, toSun), 0.0);
     vec3 ambient = hemisphereAmbient(normal, uAmbientTop, uAmbientBottom);
     vec3 colour = albedo * (ambient + uSunColour * sun);
-    fragColour = vec4(applyFog(colour, vPosition, uCamera), 1.0);
+    fragColour = vec4(sqrt(max(applyFog(colour, vPosition, uCamera), vec3(0.0))), 1.0);
 }
 )";
 

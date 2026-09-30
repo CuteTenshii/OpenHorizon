@@ -31,10 +31,9 @@ namespace fh::render {
 /// combine with bloom and tone map (0x82432628) is a separate render-thread
 /// step. Inferred: that step runs after the views.
 ///
-/// Inferred: the console's scene target stores colours gamma-2 encoded (as
-/// the game's particle shaders show by encoding their output with a square
-/// root) and the line's shader writes its colour unencoded, so the colour
-/// is squared into this renderer's linear target. The bias direction: the
+/// Verified: the line's pixel shader (0x8215C848) writes its colour as it
+/// is into the square-root scene target (see FrameRenderer). The bias
+/// direction: the
 /// game's depth is taken to run the same reversed way as here, so a
 /// positive bias pulls the line towards the eye.
 ///

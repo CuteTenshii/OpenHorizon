@@ -4,6 +4,7 @@
 // under colorado's time of day.
 
 #include "base/Log.h"
+#include "game/PostProcessing.h"
 #include "game/TimeOfDay.h"
 #include "particles/Effect.h"
 #include "particles/ParticleManager.h"
@@ -236,16 +237,12 @@ int drawScene(const fh::Vfs& vfs, const particles::ParticleManager& manager, par
     constexpr int kHeight = 540;
     fh::TimeOfDay timeOfDay(fh::TimeOfDayCurves::load(vfs, "colorado"));
     timeOfDay.setSeconds(options.minutes * 60.0F);
-    const fh::PostEffectSettings post = fh::PostEffectSettings::load(vfs, "colorado");
-    fh::render::ToneSettings tone;
-    tone.shoulderStrength = post.shoulderStrength;
-    tone.linearStrength = post.linearStrength;
-    tone.linearAngle = post.linearAngle;
-    tone.toeStrength = post.toeStrength;
-    tone.toeNumerator = post.toeNumerator;
-    tone.toeDenominator = post.toeDenominator;
-    tone.white = std::max(post.white, 6.0F);
-    tone.vignettePower = post.vignettePower;
+    // Colorado's post-processing outside every zone at that time, with the
+    // exposure adapted to this one frame.
+    fh::PostProcessing post = fh::PostProcessing::load(vfs, "colorado");
+    post.update(std::nullopt, 0.0F, timeOfDay.curves(), timeOfDay.minutes());
+    timeOfDay.setFog(post.fog());
+    const fh::render::PostFrame postFrame = post.frame(static_cast<float>(kWidth) / static_cast<float>(kHeight), true);
 
     fh::render::FrameRenderer frameRenderer;
     fh::render::Camera camera;
@@ -270,7 +267,7 @@ int drawScene(const fh::Vfs& vfs, const particles::ParticleManager& manager, par
     frameRenderer.begin(kWidth, kHeight);
     frameRenderer.sky(frame);
     renderer.draw(manager, pf);
-    frameRenderer.finish(tone);
+    frameRenderer.finish(postFrame);
     if (!savePng(out, kWidth, kHeight)) {
         std::fprintf(stderr, "fh1particles: cannot write %s\n", out.c_str());
         return 1;

@@ -72,26 +72,6 @@ private:
     std::optional<FogTemplate> m_fogTemplate;
 };
 
-/// The post-processing settings of `Ribbon_00/TimeOfDay.xml` that the frame
-/// renderer uses.
-struct PostEffectSettings {
-    /// Filmic tone curve parameters: shoulder, linear and toe strengths, the
-    /// linear angle, toe numerator and denominator, and the white point, in
-    /// the form of the common "Uncharted 2" operator the names match.
-    float shoulderStrength = 0.22F;
-    float linearStrength = 0.3F;
-    float linearAngle = 0.1F;
-    float toeStrength = 0.2F;
-    float toeNumerator = 0.01F;
-    float toeDenominator = 0.3F;
-    float white = 11.2F;
-    float exposure = 1.0F;
-    float vignettePower = 3.0F;
-    float desaturate = 1.0F;
-
-    static PostEffectSettings load(const Vfs& vfs, std::string_view track);
-};
-
 /// The game clock and the lighting it gives.
 class TimeOfDay {
 public:
@@ -116,6 +96,12 @@ public:
     /// 0 by day, 1 when the street lights are on.
     float lights() const;
     float stars() const;
+    /// The curves, for the post-processing's multipliers.
+    const TimeOfDayCurves& curves() const { return m_curves; }
+    /// The fog template blend of the post-processing zones (see
+    /// PostProcessing::fog()), which replaces the file's default template
+    /// in lighting().
+    void setFog(const TimeOfDayCurves::FogTemplate& fog) { m_fog = fog; }
 
 private:
     /// Normalised direction from the curve `position` towards the curve
@@ -124,6 +110,7 @@ private:
 
     TimeOfDayCurves m_curves;
     float m_seconds = kStartSeconds;
+    std::optional<TimeOfDayCurves::FogTemplate> m_fog;
 };
 
 } // namespace fh

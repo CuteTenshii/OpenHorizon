@@ -204,6 +204,7 @@ layout(binding = 1) uniform sampler2D u_depthTexture;
 layout(binding = 2) uniform sampler2D u_gradientTexture;
 uniform int u_variant;
 uniform int u_soft;
+uniform int u_gammaOutput;
 uniform float u_density;
 uniform float u_gradientRows;
 // The renderer's projection: infinite far plane, reversed depth, so the
@@ -232,6 +233,12 @@ void main()
         const vec2 screen = v_screen.xy * (1.0 / v_screen.w) * 0.5 + 0.5;
         const float sceneDepth = u_nearPlane / texture(u_depthTexture, screen).r;
         colour.a *= clamp(u_density * (sceneDepth - v_screen.z), 0.0, 1.0);
+    }
+    // Alpha-blended effects encode into the scene target's square-root
+    // colour before premultiplying, as the game's pixel shaders do under
+    // their c7.x flag; additive ones write their colour as it is.
+    if (u_gammaOutput != 0) {
+        colour.rgb = sqrt(abs(colour.rgb));
     }
     o_colour = vec4(colour.rgb * colour.a, colour.a);
 }

@@ -351,6 +351,7 @@ void ParticleRenderer::drawSystem(const ParticleSystem& system, const ParticleFr
         static_cast<float>(d.framesY));
     glProgramUniform1f(m_program, uniform("u_gradientRows"), static_cast<float>(d.gradientRows));
     glProgramUniform1i(m_program, uniform("u_soft"), d.soft() ? 1 : 0);
+    glProgramUniform1i(m_program, uniform("u_gammaOutput"), m.blend == BlendType::Alpha ? 1 : 0);
 
     if (m.blend == BlendType::Additive) {
         glBlendFunc(GL_ONE, GL_ONE);

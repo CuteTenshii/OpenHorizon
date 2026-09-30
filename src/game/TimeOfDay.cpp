@@ -20,9 +20,9 @@ constexpr float kSecondsPerDay = 86400.0F;
 /// The executable puts `FogDensity * 0.01` into the shaders' base-2
 /// extinction per metre (0x824297B4, the factor at 0x82000CCC).
 constexpr float kFogDensityPerMetre = 0.01F;
-/// The template the game falls back to outside every post-processing zone
-/// is not decoded; "NoFog" is used, and "LightFog", the other template
-/// most zones use, holds the same values.
+/// The template lighting() uses until the post-processing's zone blend is
+/// set (TimeOfDay::setFog); the blend's own record outside every zone is
+/// in PostProcessing.
 constexpr const char* kDefaultFogTemplate = "NoFog";
 
 pugi::xml_document parseTrackFile(const Vfs& vfs, const std::string& path)
@@ -126,31 +126,6 @@ glm::vec3 TimeOfDayCurves::sample(std::string_view curve, float minutes) const
     return glm::mix(before.value, after.value, f);
 }
 
-PostEffectSettings PostEffectSettings::load(const Vfs& vfs, std::string_view track)
-{
-    const std::string path = std::format("media/tracks/{}/Ribbon_00/TimeOfDay.xml", track);
-    const pugi::xml_document doc = parseTrackFile(vfs, path);
-    const pugi::xml_node effects = doc.child("posteffects");
-    PostEffectSettings s;
-    if (const pugi::xml_node tone = effects.child("filmicTone")) {
-        s.white = tone.attribute("white").as_float(s.white);
-        s.shoulderStrength = tone.attribute("shoulderStrength").as_float(s.shoulderStrength);
-        s.linearStrength = tone.attribute("linearStrength").as_float(s.linearStrength);
-        s.linearAngle = tone.attribute("linearAngle").as_float(s.linearAngle);
-        s.toeStrength = tone.attribute("toeStrength").as_float(s.toeStrength);
-        s.toeNumerator = tone.attribute("toeNumerator").as_float(s.toeNumerator);
-        s.toeDenominator = tone.attribute("toeDenominator").as_float(s.toeDenominator);
-        s.exposure = tone.attribute("exposure").as_float(s.exposure);
-    }
-    if (const pugi::xml_node vignette = effects.child("vignette")) {
-        s.vignettePower = vignette.attribute("vignettePower").as_float(s.vignettePower);
-    }
-    if (const pugi::xml_node desat = effects.child("desat")) {
-        s.desaturate = desat.attribute("desaturateAmount").as_float(s.desaturate);
-    }
-    return s;
-}
-
 TimeOfDay::TimeOfDay(TimeOfDayCurves curves)
     : m_curves(std::move(curves))
 {
@@ -226,7 +201,8 @@ render::SceneLighting TimeOfDay::lighting() const
     // at night to 1 by day.
     l.shadowIntensity = m_curves.sampleScalar("ShadowIntensity", t);
 
-    const TimeOfDayCurves::FogTemplate fog = m_curves.fogTemplate().value_or(TimeOfDayCurves::FogTemplate{});
+    const std::optional<TimeOfDayCurves::FogTemplate>& chosen = m_fog ? m_fog : m_curves.fogTemplate();
+    const TimeOfDayCurves::FogTemplate fog = chosen.value_or(TimeOfDayCurves::FogTemplate{});
     l.fogColour = m_curves.sample("FogColour", t) * fog.colour;
     l.fogDensity = m_curves.sampleScalar("FogDensity", t) * fog.density * kFogDensityPerMetre;
     l.fogStart = m_curves.sampleScalar("FogStartDistance", t) * fog.startDistance;
@@ -236,7 +212,7 @@ render::SceneLighting TimeOfDay::lighting() const
     l.fogHeightFadeEnd = m_curves.sampleScalar("FogHeightFadeEnd", t) * fog.heightFadeEnd;
     l.fogSkyHeightFadeStart = m_curves.sampleScalar("FogSkyHeightFadeStart", t) * fog.heightFadeStart;
     l.fogSkyHeightFadeEnd = m_curves.sampleScalar("FogSkyHeightFadeEnd", t) * fog.heightFadeEnd;
-    if (m_curves.fogTemplate()) {
+    if (chosen) {
         l.fogScatterColour = m_curves.sample("FogSunScatterColour", t) * fog.scatterColour;
         l.fogScatterStart = fog.scatterStartDistance;
         l.fogScatterRamp = fog.scatterRampDistance;

@@ -8,6 +8,7 @@
 #include "car/CarSpec.h"
 #include "carmodel/CarModel.h"
 #include "data/Database.h"
+#include "game/PostProcessing.h"
 #include "game/TimeOfDay.h"
 #include "platform/Window.h"
 #include "render/CarRenderer.h"
@@ -404,18 +405,12 @@ int renderViews(
 
     fh::TimeOfDay timeOfDay(fh::TimeOfDayCurves::load(vfs, "colorado"));
     timeOfDay.setSeconds(minutes * 60.0F);
-    const fh::PostEffectSettings post = fh::PostEffectSettings::load(vfs, "colorado");
-    fh::render::ToneSettings tone;
-    tone.shoulderStrength = post.shoulderStrength;
-    tone.linearStrength = post.linearStrength;
-    tone.linearAngle = post.linearAngle;
-    tone.toeStrength = post.toeStrength;
-    tone.toeNumerator = post.toeNumerator;
-    tone.toeDenominator = post.toeDenominator;
-    // As the game loop does: the game's white point of 1 assumes its own
-    // exposure scheme, which the automatic exposure here does not follow.
-    tone.white = std::max(post.white, 6.0F);
-    tone.vignettePower = post.vignettePower;
+    // Colorado's post-processing outside every zone at that time, with the
+    // exposure adapted to this one frame.
+    fh::PostProcessing post = fh::PostProcessing::load(vfs, "colorado");
+    post.update(std::nullopt, 0.0F, timeOfDay.curves(), timeOfDay.minutes());
+    timeOfDay.setFog(post.fog());
+    const fh::render::PostFrame postFrame = post.frame(static_cast<float>(kWidth) / static_cast<float>(kHeight), true);
 
     fh::render::FrameRenderer frameRenderer;
     fh::render::CarRenderer car(model);
@@ -478,7 +473,7 @@ int renderViews(
         car.draw(frame, pose, false);
         frameRenderer.sky(frame);
         car.draw(frame, pose, true);
-        frameRenderer.finish(tone);
+        frameRenderer.finish(postFrame);
         const std::string path = std::format("{}_{}.png", prefix, view.name);
         if (!savePng(path, kWidth, kHeight)) {
             std::fprintf(stderr, "fh1carmodel: cannot write %s\n", path.c_str());

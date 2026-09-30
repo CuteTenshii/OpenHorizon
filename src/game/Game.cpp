@@ -458,18 +458,7 @@ void Game::loadWorld()
     if (m_options.startTime) {
         m_timeOfDay->setSeconds(*m_options.startTime);
     }
-    const PostEffectSettings post = PostEffectSettings::load(m_vfs, m_options.track);
-    m_tone.shoulderStrength = post.shoulderStrength;
-    m_tone.linearStrength = post.linearStrength;
-    m_tone.linearAngle = post.linearAngle;
-    m_tone.toeStrength = post.toeStrength;
-    m_tone.toeNumerator = post.toeNumerator;
-    m_tone.toeDenominator = post.toeDenominator;
-    // The game's white point of 1 assumes its own exposure scheme, which is
-    // not decoded yet; with the automatic exposure here a white point of 1
-    // clips every highlight, so the curve's usual value stands in.
-    m_tone.white = std::max(post.white, 6.0F);
-    m_tone.vignettePower = post.vignettePower;
+    m_postProcessing.emplace(PostProcessing::load(m_vfs, m_options.track));
 
     drawLoading();
     m_events = loadRaceEvents(*m_database, *m_strings, m_options.track);
@@ -2868,6 +2857,14 @@ bool Game::frame(const InputState& controls, float dt)
             m_timeOfDay->advance(dt);
             m_time += dt;
         }
+        // The zone blend follows the player's car, and the fog template it
+        // blends multiplies the time of day's fog curves. Inferred: the
+        // blend's clock stops while paused, as the time of day's does.
+        const glm::vec3 carPosition = player().physics->position();
+        m_postProcessing->update(
+            m_playerPlaced ? std::optional<glm::vec2>(glm::vec2(carPosition.x, carPosition.z)) : std::nullopt,
+            m_paused ? 0.0F : dt, m_timeOfDay->curves(), m_timeOfDay->minutes());
+        m_timeOfDay->setFog(m_postProcessing->fog());
         if (inControl()) {
             updateEventStarts();
         }
@@ -3007,7 +3004,9 @@ bool Game::frame(const InputState& controls, float dt)
             m_frameStats->mark(Part::DrawParticles);
             m_overlayVertices = m_overlay->queuedVertices();
             m_overlay->flush(frame.projection * frame.view, m_present.width(), m_present.height());
-            m_frame->finish(m_tone);
+            m_frame->finish(m_postProcessing->frame(
+                static_cast<float>(m_present.width()) / static_cast<float>(m_present.height()), m_resetExposure));
+            m_resetExposure = false;
             m_frameStats->mark(Part::Tonemap);
             if (const float fade = fadeAlpha(); fade > 0.0F && m_fadeIn) {
                 m_overlay->rect(0.0F, 0.0F, static_cast<float>(m_present.width()),

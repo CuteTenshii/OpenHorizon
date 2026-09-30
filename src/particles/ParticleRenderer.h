@@ -52,10 +52,8 @@ struct ParticleFrame {
 ///
 /// Differences from the game, all for lack of engine features or data:
 /// the particles are not shadowed (no shadow map; the shader's shadow term
-/// is 1); alpha-blended particles skip the final square root the game's
-/// pixel shaders apply, which encodes into the console's gamma-2 target,
-/// because the target here is linear HDR; for the same reason textures
-/// whose fetch constant marks them gamma are sampled as sRGB; the
+/// is 1); textures whose fetch constant marks them gamma are sampled as
+/// sRGB; the
 /// RelativeTransform the renderer can pass is identity (world systems);
 /// particles are stored as floats where the game uses halves; Modeled
 /// particles (car debris meshes) are not drawn.

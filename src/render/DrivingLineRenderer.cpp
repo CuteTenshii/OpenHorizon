@@ -43,9 +43,9 @@ layout(binding = 0) uniform sampler2D uRaceLine;
 layout(location = 0) out vec4 fragColour;
 void main()
 {
-    // The game writes the colour as it is into its gamma-2 scene target;
-    // this target is linear.
-    fragColour = vec4(vColour.rgb * vColour.rgb, vColour.a * texture(uRaceLine, vUv).a);
+    // The game's shader (0x8215C848) writes the colour as it is into its
+    // square-root scene target, which this target also is.
+    fragColour = vec4(vColour.rgb, vColour.a * texture(uRaceLine, vUv).a);
 }
 )";
 

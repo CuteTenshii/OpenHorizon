@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Gl.h"
+#include "PostProcess.h"
 #include "Shader.h"
 #include "SkyObjects.h"
 #include "WorldRenderer.h"
@@ -27,24 +28,14 @@ struct Camera {
     glm::mat4 projection(float aspect) const;
 };
 
-/// The tone curve and exposure for turning the HDR frame into display
-/// colours. The curve parameters are those of the game's filmicTone
-/// element; the defaults are the curve's usual published values.
-struct ToneSettings {
-    float shoulderStrength = 0.22F;
-    float linearStrength = 0.3F;
-    float linearAngle = 0.1F;
-    float toeStrength = 0.2F;
-    float toeNumerator = 0.01F;
-    float toeDenominator = 0.3F;
-    float white = 11.2F;
-    /// Multiplies the automatic exposure.
-    float exposureBias = 1.0F;
-    float vignettePower = 3.0F;
-};
-
-/// Owns the offscreen HDR target and the passes around the scene: clearing
-/// to reversed depth, the sky, and tonemapping to the window.
+/// Owns the offscreen scene target and the passes around the scene:
+/// clearing to reversed depth, the sky, and the game's post-processing to
+/// the window.
+///
+/// The scene target holds the square root of linear colour, as the game's
+/// does: its shaders end in `sqrt oC0`, blend in that space, and its
+/// post-processing squares what it reads (see PostProcess.h). Every pass
+/// drawing into the target writes that.
 class FrameRenderer {
 public:
     FrameRenderer();
@@ -60,19 +51,20 @@ public:
     void sky(const FrameParams& frame);
     /// What sky() draws over the dome; nullptr for none. Not owned.
     void setSkyObjects(SkyObjects* objects) { m_skyObjects = objects; }
-    /// Tonemaps the HDR target onto the window's framebuffer, with exposure
-    /// adapted to the frame's average brightness, and leaves the window
-    /// bound for overlays.
-    void finish(const ToneSettings& tone);
+    /// Runs the post-processing on the scene target into the output
+    /// framebuffer and leaves it bound for overlays.
+    void finish(const PostFrame& post);
     /// Where finish() writes the tonemapped picture: the window's
     /// framebuffer (0) unless the game draws into its own 16:9 picture.
     void setOutputFramebuffer(GLuint framebuffer) { m_output = framebuffer; }
-    /// The HDR scene colour (linear, before tonemapping), for reading back
-    /// in tests.
+    /// The HDR scene colour (linear, before post-processing), for reading
+    /// back in tests.
     GLuint sceneColour() const { return m_colour; }
 
 private:
     void resize(int width, int height);
+    /// The dome, where nothing was drawn (depth still at the cleared 0).
+    void dome(const FrameParams& frame);
 
     GLuint m_framebuffer = 0;
     GLuint m_colour = 0;
@@ -81,9 +73,8 @@ private:
     GLuint m_output = 0;
     int m_width = 0;
     int m_height = 0;
-    int m_levels = 1;
     Shader m_skyShader;
-    Shader m_tonemapShader;
+    PostProcess m_post;
     SkyObjects* m_skyObjects = nullptr;
 };
 

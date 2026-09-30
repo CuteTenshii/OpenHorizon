@@ -19,6 +19,7 @@
 #include "game/Flyers.h"
 #include "game/GameObjects.h"
 #include "game/Outposts.h"
+#include "game/PostProcessing.h"
 #include "game/Race.h"
 #include "game/RaceData.h"
 #include "game/Smashables.h"
@@ -163,6 +164,14 @@ public:
     /// Whether the last frame drew the world (the map screen does not).
     bool worldDrawn() const { return m_worldDrawn; }
     float timeOfDaySeconds() const { return m_timeOfDay ? m_timeOfDay->seconds() : 0.0F; }
+    /// The post-processing zone blended towards, empty outside every zone.
+    std::string_view postProcessingZone() const
+    {
+        return m_postProcessing ? m_postProcessing->zoneName() : std::string_view();
+    }
+    /// The post-processing settings of the last frame, or nullptr before
+    /// the track has loaded.
+    const PostSettings* postSettings() const { return m_postProcessing ? &m_postProcessing->settings() : nullptr; }
     const Race* race() const { return m_race.get(); }
     /// The clock the world's animation runs on (render::FrameParams::time).
     float animationTime() const { return m_time; }
@@ -360,7 +369,9 @@ private:
     std::optional<world::TrackWorld> m_world;
     std::optional<GameObjects> m_objects;
     std::optional<TimeOfDay> m_timeOfDay;
-    render::ToneSettings m_tone;
+    std::optional<PostProcessing> m_postProcessing;
+    /// The adapted luminance jumps to the first frame's (tonemapReset).
+    bool m_resetExposure = true;
     std::unique_ptr<render::FrameRenderer> m_frame;
     /// The sun, moon and stars m_frame draws over the sky.
     std::unique_ptr<render::SkyObjects> m_skyObjects;
