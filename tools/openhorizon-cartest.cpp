@@ -230,9 +230,9 @@ int main(int argc, char** argv)
             brakingRun(spec, r);
             skidpadRun(spec, r);
             const float ours[6] = {r.to60, r.to100, r.quarterTime, r.topSpeed, r.brake60, r.lateralG};
-            const float theirs[6] = {spec.reference.timeTo60Mph, spec.reference.timeTo100Mph,
-                spec.reference.quarterMileTime, spec.reference.topSpeed, spec.reference.brakeDistance60Mph,
-                spec.reference.lateralG60Mph};
+            const float theirs[6]
+                = {spec.reference.timeTo60Mph, spec.reference.timeTo100Mph, spec.reference.quarterMileTime,
+                    spec.reference.topSpeed, spec.reference.brakeDistance60Mph, spec.reference.lateralG60Mph};
             std::printf("%-28s", spec.mediaName.c_str());
             for (int k = 0; k < 6; ++k) {
                 std::printf(" %6.2f/%6.2f", ours[k], theirs[k]);

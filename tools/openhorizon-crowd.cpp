@@ -85,7 +85,7 @@ std::optional<std::pair<float, float>> parsePoint(std::string_view text)
     if (z.empty() || *end != '\0') {
         return std::nullopt;
     }
-    return std::pair {px, pz};
+    return std::pair{px, pz};
 }
 
 std::optional<float> parseNumber(std::string_view text)
@@ -382,7 +382,7 @@ public:
         std::optional<std::pair<float, std::uint32_t>> best;
         forEachAt(p.x, p.z, [&](const Triangle& t, float y) {
             if (t.kind != Kind::CrowdArea && y <= maxY && (!best || y > best->first)) {
-                best = std::pair {y, t.name};
+                best = std::pair{y, t.name};
             }
         });
         return best;
@@ -504,7 +504,7 @@ public:
         float distance = 0.0F;
         float halfWidth = 0.0F;
         /// Unit horizontal direction from the person to the line.
-        glm::vec2 toward {0.0F};
+        glm::vec2 toward{0.0F};
     };
 
     /// The nearest point of any line within kRoadSearch metres horizontally

@@ -59,8 +59,8 @@ void printEffectSummary(const xenos::Effect& effect)
     for (const xenos::Technique& technique : effect.techniques) {
         print(std::format("technique {}\n", technique.name));
         for (const xenos::Pass& pass : technique.passes) {
-            print(std::format("  pass {}: vertex shader {}, pixel shader {}\n", pass.name, pass.vertexShader,
-                pass.pixelShader));
+            print(std::format(
+                "  pass {}: vertex shader {}, pixel shader {}\n", pass.name, pass.vertexShader, pass.pixelShader));
         }
     }
     for (std::size_t d = 0; d < effect.declarations.size(); ++d) {
@@ -97,8 +97,8 @@ int glsl(const openhorizon::Vfs& vfs, const std::string& path)
                 }
                 print("//// samplers\n");
                 for (const xenos::SamplerBinding& s : program.samplers) {
-                    print(std::format("//   {:<40} unit {} {} {}\n", s.name, s.unit, xenos::dimensionName(s.dimension),
-                        s.glslName));
+                    print(std::format(
+                        "//   {:<40} unit {} {} {}\n", s.name, s.unit, xenos::dimensionName(s.dimension), s.glslName));
                 }
                 print("//// vertex input\n");
                 for (const xenos::VertexInputElement& e : program.vertexInput.elements) {

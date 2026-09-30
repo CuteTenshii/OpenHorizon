@@ -77,8 +77,8 @@ struct Options {
                 if (equals == std::string::npos) {
                     return std::nullopt;
                 }
-                options.parameters.emplace_back(value.substr(0, equals), std::strtof(value.c_str() + equals + 1,
-                    nullptr));
+                options.parameters.emplace_back(
+                    value.substr(0, equals), std::strtof(value.c_str() + equals + 1, nullptr));
             } else {
                 options.values[name.substr(2)] = value;
             }
@@ -150,8 +150,10 @@ int exportBank(const openhorizon::Vfs& vfs, const std::string& path, const std::
         std::replace_if(stem.begin(), stem.end(), [](char c) { return c == '/' || c == '\\' || c == ':'; }, '_');
         const std::filesystem::path file = outDir / std::format("{:04}_{}.wav", i, stem);
         writeWav(file, decodeSample(bank, i), WavFormat::Pcm16);
-        std::printf("%s\n", std::format("{}  {} Hz  {} ch  {} frames  {}", file.string(), sample.frequency,
-            sample.channels, sample.sampleCount, codecName(sample.codec)).c_str());
+        std::printf("%s\n",
+            std::format("{}  {} Hz  {} ch  {} frames  {}", file.string(), sample.frequency, sample.channels,
+                sample.sampleCount, codecName(sample.codec))
+                .c_str());
     }
     return 0;
 }
@@ -249,8 +251,8 @@ int verifyBanks(const openhorizon::Vfs& vfs, const std::string& folder)
 int listEvents(AudioLibrary& library, const std::string& projectPath)
 {
     const std::shared_ptr<const FevProject> project = library.project(projectPath);
-    std::printf("%s\n", std::format("project {} (FEV version 0x{:08x}), banks:", project->name(),
-        project->version()).c_str());
+    std::printf(
+        "%s\n", std::format("project {} (FEV version 0x{:08x}), banks:", project->name(), project->version()).c_str());
     for (const FevBank& bank : project->banks()) {
         std::printf("  %s\n", AudioLibrary::bankPathFor(projectPath, bank.name).c_str());
     }
@@ -264,8 +266,8 @@ int listEvents(AudioLibrary& library, const std::string& projectPath)
     for (const FevEvent& event : project->events()) {
         std::string parameters;
         for (const FevParameter& parameter : event.parameters) {
-            parameters += std::format("{}{} {}..{}", parameters.empty() ? "" : ", ", parameter.name,
-                parameter.minimum, parameter.maximum);
+            parameters += std::format(
+                "{}{} {}..{}", parameters.empty() ? "" : ", ", parameter.name, parameter.minimum, parameter.maximum);
         }
         std::size_t sounds = 0;
         std::string first;
@@ -276,8 +278,10 @@ int listEvents(AudioLibrary& library, const std::string& projectPath)
                 }
             }
         }
-        std::printf("%s\n", std::format("{:<56} {:<7} {:>2} layers {:>2} sounds {:<28} {}", event.path,
-            event.simple ? "simple" : "complex", event.layers.size(), sounds, first, parameters).c_str());
+        std::printf("%s\n",
+            std::format("{:<56} {:<7} {:>2} layers {:>2} sounds {:<28} {}", event.path,
+                event.simple ? "simple" : "complex", event.layers.size(), sounds, first, parameters)
+                .c_str());
     }
     std::size_t waveforms = 0;
     std::size_t wavetables = 0;
@@ -300,14 +304,17 @@ int describeEvent(AudioLibrary& library, const std::string& projectPath, const s
         openhorizon::logError("{} has no event '{}'", projectPath, eventPath);
         return 1;
     }
-    std::printf("%s\n", std::format("{}: volume {} pitch {} priority {} max playbacks {} mode 0x{:x} distance {}..{}",
-        event->path, event->volume, event->pitch, event->priority, event->maxPlaybacks, event->mode,
-        event->minDistance, event->maxDistance).c_str());
+    std::printf("%s\n",
+        std::format("{}: volume {} pitch {} priority {} max playbacks {} mode 0x{:x} distance {}..{}", event->path,
+            event->volume, event->pitch, event->priority, event->maxPlaybacks, event->mode, event->minDistance,
+            event->maxDistance)
+            .c_str());
     for (std::size_t i = 0; i < event->parameters.size(); ++i) {
         const FevParameter& parameter = event->parameters[i];
-        std::printf("%s\n", std::format("  parameter {} {}: {}..{} velocity {} flags 0x{:x} seek speed {}", i,
-            parameter.name, parameter.minimum, parameter.maximum, parameter.velocity, parameter.flags,
-            parameter.seekSpeed).c_str());
+        std::printf("%s\n",
+            std::format("  parameter {} {}: {}..{} velocity {} flags 0x{:x} seek speed {}", i, parameter.name,
+                parameter.minimum, parameter.maximum, parameter.velocity, parameter.flags, parameter.seekSpeed)
+                .c_str());
     }
     for (const FevUserProperty& property : event->userProperties) {
         std::visit([&](const auto& value) {
@@ -322,12 +329,15 @@ int describeEvent(AudioLibrary& library, const std::string& projectPath, const s
         const std::string control = layer.controlParameter < event->parameters.size()
             ? event->parameters[layer.controlParameter].name
             : std::string("none");
-        std::printf("%s\n", std::format("  layer {}: flags 0x{:x} priority {} follows {}", l, layer.flags,
-            layer.priority, control).c_str());
+        std::printf("%s\n",
+            std::format("  layer {}: flags 0x{:x} priority {} follows {}", l, layer.flags, layer.priority, control)
+                .c_str());
         for (const FevSoundInstance& sound : layer.sounds) {
             const FevSoundDefinition& definition = project->soundDefinition(sound.soundDefinition);
-            std::printf("%s\n", std::format("    sound {} at {:.4f} length {:.4f}{} ({} waveforms)", definition.name,
-                sound.start, sound.length, sound.oneShot ? " one-shot" : "", definition.waveforms.size()).c_str());
+            std::printf("%s\n",
+                std::format("    sound {} at {:.4f} length {:.4f}{} ({} waveforms)", definition.name, sound.start,
+                    sound.length, sound.oneShot ? " one-shot" : "", definition.waveforms.size())
+                    .c_str());
         }
         for (const FevEnvelope& envelope : layer.envelopes) {
             const std::string follows = envelope.parameter < event->parameters.size()
@@ -338,9 +348,10 @@ int describeEvent(AudioLibrary& library, const std::string& projectPath, const s
                 points += std::format(" ({:.4f}, {:.4f}{})", point.position, point.value,
                     point.curveShape != 0 ? std::format(" shape {}", point.curveShape) : std::string());
             }
-            std::printf("%s\n", std::format("    envelope property 0x{:x} dsp '{}' #{} parent {} follows {}:{}",
-                envelope.property, envelope.dspName, envelope.dspParameter, envelope.parent, follows, points)
-                .c_str());
+            std::printf("%s\n",
+                std::format("    envelope property 0x{:x} dsp '{}' #{} parent {} follows {}:{}", envelope.property,
+                    envelope.dspName, envelope.dspParameter, envelope.parent, follows, points)
+                    .c_str());
         }
     }
     return 0;
@@ -366,13 +377,15 @@ struct Recording {
             energy += static_cast<double>(s) * s;
         }
         const double rms = samples.empty() ? 0.0 : std::sqrt(energy / static_cast<double>(samples.size()));
-        std::printf("%s\n", std::format("wrote {}: {:.2f} s, peak {:.3f}, rms {:.3f}", path.string(),
-            static_cast<double>(samples.size()) / (2.0 * AudioDevice::kSampleRate), peak, rms).c_str());
+        std::printf("%s\n",
+            std::format("wrote {}: {:.2f} s, peak {:.3f}, rms {:.3f}", path.string(),
+                static_cast<double>(samples.size()) / (2.0 * AudioDevice::kSampleRate), peak, rms)
+                .c_str());
     }
 };
 
-int playEvent(AudioLibrary& library, const std::string& projectPath, const std::string& eventPath,
-    const Options& options)
+int playEvent(
+    AudioLibrary& library, const std::string& projectPath, const std::string& eventPath, const Options& options)
 {
     const std::shared_ptr<const FevProject> project = library.project(projectPath);
     const FevEvent* event = project->findEvent(eventPath);
@@ -446,8 +459,10 @@ int runEngine(const openhorizon::Vfs& vfs, const std::string& car, const Options
     EngineSound engine(*device, vfs, car, settings);
     const float idle = engine.tuning().engine.idleRpm;
     const float redline = engine.tuning().engine.redlineRpm;
-    std::printf("%s\n", std::format("{}: idle {} rpm, redline {} rpm, {} cylinders", car, idle, redline,
-        engine.tuning().engine.cylinders).c_str());
+    std::printf("%s\n",
+        std::format(
+            "{}: idle {} rpm, redline {} rpm, {} cylinders", car, idle, redline, engine.tuning().engine.cylinders)
+            .c_str());
 
     Recording recording;
     const int updates = static_cast<int>(seconds * kUpdateRate);
@@ -495,10 +510,12 @@ int runTyres(const openhorizon::Vfs& vfs, const Options& options)
     settings.perWheel = options.number("lod2", 0.0F) == 0.0F;
     TyreSound tyres(device.mixer(), std::make_shared<AudioLibrary>(vfs), settings);
     const TyreSmoothing& smoothing = tyres.smoothing();
-    std::printf("%s\n", std::format("smoothing per second: combined slip {}, slip angle {}, slip ratio {}, load {}, "
-        "rpm {}; leaves the ground after {} s", smoothing.combinedSlipRate, smoothing.slipAngleRate,
-        smoothing.slipRatioRate, smoothing.normLoadRate, smoothing.tireRpmRate, smoothing.timeUntilLeavesGround)
-        .c_str());
+    std::printf("%s\n",
+        std::format("smoothing per second: combined slip {}, slip angle {}, slip ratio {}, load {}, "
+                    "rpm {}; leaves the ground after {} s",
+            smoothing.combinedSlipRate, smoothing.slipAngleRate, smoothing.slipRatioRate, smoothing.normLoadRate,
+            smoothing.tireRpmRate, smoothing.timeUntilLeavesGround)
+            .c_str());
     if (!tyres.surfaces().find(surface)) {
         std::printf("%s is not in Tires.xml, so the game plays no tyre sound on it\n", surface.c_str());
     }
@@ -539,9 +556,11 @@ int runTyres(const openhorizon::Vfs& vfs, const Options& options)
             count += block.size();
             recording.append(block);
         }
-        std::printf("%s\n", std::format("{:<10} rms {:.4f}{}", stage.name,
-            std::sqrt(energy / static_cast<double>(std::max<std::size_t>(count, 1))),
-            tyres.isPlaying() ? "" : " (no event sounding)").c_str());
+        std::printf("%s\n",
+            std::format("{:<10} rms {:.4f}{}", stage.name,
+                std::sqrt(energy / static_cast<double>(std::max<std::size_t>(count, 1))),
+                tyres.isPlaying() ? "" : " (no event sounding)")
+                .c_str());
     }
     recording.write(*wav);
     return 0;

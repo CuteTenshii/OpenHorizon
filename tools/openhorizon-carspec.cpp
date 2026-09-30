@@ -38,8 +38,8 @@ void print(const openhorizon::CarSpec& s)
     }
     std::printf(", reverse %.2f, shift %.2f s, clutch %.0f Nm\n", s.reverseRatio, s.shiftTime, s.clutchMaxTorque);
     std::printf("  tyres %.0f/%.0fR%.0f (r %.3f) and %.0f/%.0fR%.0f (r %.3f), compound %s\n", s.frontTires.widthMm,
-        s.frontTires.aspect, s.frontTires.rimDiameterIn, s.frontTires.radius(), s.rearTires.widthMm,
-        s.rearTires.aspect, s.rearTires.rimDiameterIn, s.rearTires.radius(), s.compound.name.c_str());
+        s.frontTires.aspect, s.frontTires.rimDiameterIn, s.frontTires.radius(), s.rearTires.widthMm, s.rearTires.aspect,
+        s.rearTires.rimDiameterIn, s.rearTires.radius(), s.compound.name.c_str());
     const auto axle = [](const char* name, const openhorizon::AxleSuspension& a) {
         std::printf("  %s: ride %.3f, spring %.0f N/m, damp %.0f/%.0f, bar %.0f Nm/rad, camber %.1f\n", name,
             a.rideHeight, a.springRate, a.bumpDamping, a.reboundDamping, a.antiRollStiffness, a.staticCamberDeg);

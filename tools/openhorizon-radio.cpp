@@ -82,8 +82,8 @@ int stations(const openhorizon::Vfs& vfs, const std::map<std::string, std::strin
     const RadioSystemData& system = assets->catalog()->system;
     const std::size_t off = system.offStation();
     const RadioText text(vfs, option(options, "lang", "en"), off + 1, off);
-    std::printf("%-22s %-20s %6s %6s %7s %7s  %s\n", "station", "display name", "tracks", "idents", "DJ", "volume",
-        "kind");
+    std::printf(
+        "%-22s %-20s %6s %6s %7s %7s  %s\n", "station", "display name", "tracks", "idents", "DJ", "volume", "kind");
     for (std::size_t i = 0; i < system.stations.size(); ++i) {
         const Station& s = system.stations[i];
         const char* kind = i == off ? "off (tunable)" : (i < off ? "tunable" : "positional");
@@ -112,8 +112,8 @@ int tracks(const openhorizon::Vfs& vfs, const std::string& stationText)
         }
         const SoundBankInfo& i = info->second;
         std::printf("  %-32s %-5d %9.3f %9.3f %9.3f %9.3f  %s / %s\n", t.fmodName.c_str(), i.soundBankIndex,
-            i.offsetSongStart / 1000.0, i.offsetEventStart / 1000.0, i.offsetIdentStart / 1000.0,
-            i.fileLength / 1000.0, t.name.c_str(), t.artist.c_str());
+            i.offsetSongStart / 1000.0, i.offsetEventStart / 1000.0, i.offsetIdentStart / 1000.0, i.fileLength / 1000.0,
+            t.name.c_str(), t.artist.c_str());
     }
     const auto lines = [&](const char* what, const VoiceList& list) {
         std::printf("%s: %zu (noRepeat %d)\n", what, list.lines.size(), list.noRepeat);
@@ -162,8 +162,8 @@ int simulate(const openhorizon::Vfs& vfs, const std::string& stationText, double
     const std::map<std::string, std::string>& options)
 {
     const auto assets = RadioAssets::load(vfs, option(options, "vo", "EN"));
-    const std::uint32_t seed = static_cast<std::uint32_t>(std::strtoul(option(options, "seed", "0").c_str(),
-        nullptr, 10));
+    const std::uint32_t seed
+        = static_cast<std::uint32_t>(std::strtoul(option(options, "seed", "0").c_str(), nullptr, 10));
     RadioSequencer sequencer(assets->catalog(), seed);
     sequencer.selectStation(stationIndex(assets->catalog()->system, stationText), false);
     sequencer.startFreeRoam();
@@ -201,8 +201,8 @@ int simulate(const openhorizon::Vfs& vfs, const std::string& stationText, double
             case RadioEvent::Kind::Resumed:
             case RadioEvent::Kind::Stopped:
                 std::printf("%s %-8s %s\n", clock(e.frame).c_str(), station.c_str(),
-                    e.kind == RadioEvent::Kind::Paused ? "paused" : (e.kind == RadioEvent::Kind::Resumed ? "resumed"
-                                                                                                        : "stopped"));
+                    e.kind == RadioEvent::Kind::Paused ? "paused"
+                                                       : (e.kind == RadioEvent::Kind::Resumed ? "resumed" : "stopped"));
                 break;
             }
         }
@@ -210,8 +210,8 @@ int simulate(const openhorizon::Vfs& vfs, const std::string& stationText, double
     print();
     while (sequencer.frame() < total) {
         const std::size_t until = sequencer.framesUntilEvent();
-        const std::size_t step = std::min<std::size_t>({kStep - sinceUpdate, until,
-            static_cast<std::size_t>(total - sequencer.frame())});
+        const std::size_t step
+            = std::min<std::size_t>({kStep - sinceUpdate, until, static_cast<std::size_t>(total - sequencer.frame())});
         sequencer.advance(step);
         sinceUpdate += step;
         if (sinceUpdate == kStep) {

@@ -102,8 +102,8 @@ double secondsSince(std::chrono::steady_clock::time_point start)
 std::string surfaceLabel(const TrackCollision& collision, std::uint8_t surface)
 {
     const std::string_view category = collision.surfaces().categoryOf(surface);
-    return std::format("{} ({}, {})", collision.surfaces().nameOf(surface), surface,
-        category.empty() ? "no category" : category);
+    return std::format(
+        "{} ({}, {})", collision.surfaces().nameOf(surface), surface, category.empty() ? "no category" : category);
 }
 
 std::string flagText(std::uint8_t flags)
@@ -305,22 +305,22 @@ int exportObj(const TrackCollision& collision, const std::filesystem::path& out,
     everything.activeRoute = openhorizon::collision::kAllRoutes;
     collision.forEachTriangle(centre - glm::vec2(radius), centre + glm::vec2(radius), everything,
         [&](std::size_t, const FizTile& tile, std::uint16_t index) {
-            const FizTriangle& triangle = tile.triangles[index];
-            Face face;
-            for (int k = 0; k < 3; ++k) {
-                face.corners[k] = tile.positions[triangle.vertices[k]];
-            }
-            const std::string_view category = collision.surfaces().categoryOf(triangle.surface);
-            face.material = category.empty() ? "Unknown" : std::string(category);
-            if (triangle.belongsToRoutes()) {
-                face.group = "route_barriers";
-            } else if ((triangle.flags & openhorizon::collision::TriangleFlags::kSolid) == 0) {
-                face.group = "camera_only";
-            } else {
-                face.group = "world";
-            }
-            faces.push_back(std::move(face));
-        });
+        const FizTriangle& triangle = tile.triangles[index];
+        Face face;
+        for (int k = 0; k < 3; ++k) {
+            face.corners[k] = tile.positions[triangle.vertices[k]];
+        }
+        const std::string_view category = collision.surfaces().categoryOf(triangle.surface);
+        face.material = category.empty() ? "Unknown" : std::string(category);
+        if (triangle.belongsToRoutes()) {
+            face.group = "route_barriers";
+        } else if ((triangle.flags & openhorizon::collision::TriangleFlags::kSolid) == 0) {
+            face.group = "camera_only";
+        } else {
+            face.group = "world";
+        }
+        faces.push_back(std::move(face));
+    });
     std::sort(faces.begin(), faces.end(),
         [](const Face& l, const Face& r) { return std::tie(l.group, l.material) < std::tie(r.group, r.material); });
 
@@ -362,8 +362,7 @@ int exportObj(const TrackCollision& collision, const std::filesystem::path& out,
         std::fprintf(stderr, "openhorizon-fiz: could not write %s\n", out.string().c_str());
         return 1;
     }
-    std::printf("wrote %zu triangles to %s and %s\n", faces.size(), out.string().c_str(),
-        mtlPath.string().c_str());
+    std::printf("wrote %zu triangles to %s and %s\n", faces.size(), out.string().c_str(), mtlPath.string().c_str());
     return 0;
 }
 
@@ -536,8 +535,7 @@ int validate(const openhorizon::Vfs& vfs, std::string_view track, const TrackCol
                 makeSample("offroad", std::format("tile {}", entry.id), glm::vec3(p.x, 0.0F, p.y), false));
         }
     }
-    std::printf("random points in tile cells: %zu, with collision below: %zu\n", randomPoints,
-        randomPointsWithGround);
+    std::printf("random points in tile cells: %zu, with collision below: %zu\n", randomPoints, randomPointsWithGround);
 
     const QueryFilter solid;
     for (Sample& sample : samples) {
@@ -604,8 +602,8 @@ int validate(const openhorizon::Vfs& vfs, std::string_view track, const TrackCol
         std::map<std::string, std::size_t> names;
     };
     std::map<std::string, Summary> summaries;
-    std::printf("%-8s %-34s %10s %10s %9s %9s %9s %8s  %s\n", "kind", "label", "x", "z", "ref y", "coll y",
-        "render y", "diff", "surface");
+    std::printf("%-8s %-34s %10s %10s %9s %9s %9s %8s  %s\n", "kind", "label", "x", "z", "ref y", "coll y", "render y",
+        "diff", "surface");
     for (const Sample& sample : samples) {
         Summary& summary = summaries[sample.kind];
         ++summary.count;
@@ -663,8 +661,8 @@ int main(int argc, char** argv)
         const std::string command = argv[3];
         const auto start = std::chrono::steady_clock::now();
         const std::unique_ptr<TrackCollision> collision = TrackCollision::open(vfs, track);
-        std::fprintf(stderr, "opened %zu collision tiles in %.2f s\n", collision->index().tiles().size(),
-            secondsSince(start));
+        std::fprintf(
+            stderr, "opened %zu collision tiles in %.2f s\n", collision->index().tiles().size(), secondsSince(start));
         if (command == "stats" && argc == 4) {
             return stats(vfs, track, *collision);
         }
