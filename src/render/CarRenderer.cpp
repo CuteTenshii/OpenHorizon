@@ -1,6 +1,7 @@
 #include "CarRenderer.h"
 
 #include "base/Log.h"
+#include "carmodel/CarMaterials.h"
 
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -143,6 +144,15 @@ constexpr std::array kConstantNames{"matWVP", "matWV", "matW", "matWInvT", "c_ey
     "q_ModelToWorld", "tireRotation", "wheelScale", "tireDeformation", "wheelMorph", "shDirectionalLightI",
     "shHemisphericalLightR", "shHemisphericalLightG", "shHemisphericalLightB", "shDirectionalColour", "PaintColor",
     "dynamicLightsAmount", "dynamicLights2"};
+
+/// Direct3D's alpha comparison "greater or equal", in the translator's
+/// alphaTest numbering.
+constexpr float kAlphaGreaterEqual = 7.0F;
+/// Alpha to mask on the single-sample scene target: a pixel is kept when
+/// its alpha reaches one half, as WorldRenderer emulates it for the
+/// foliage. Inferred from how the Xbox 360 dithers alpha to coverage; the
+/// offsets the car draw leaves in RB_COLORCONTROL were not traced.
+constexpr float kAlphaToMaskThreshold = 0.5F;
 
 /// Texture units whose binding draw() tracks, enough for every sampler
 /// unit of the translated shaders (pixel s0 to s15, vertex from 16).
@@ -299,8 +309,14 @@ CarRenderer::CarRenderer(const carmodel::CarModel& model)
             known = byTechnique.emplace(batch.technique, std::move(passes)).first;
         }
         m_passes.push_back(known->second);
+        const carmodel::MaterialDrawState state = carmodel::materialDrawState(batch.material);
         for (Pass& pass : m_passes.back()) {
             pass.textures = texturesFor(*pass.program, batch);
+            pass.cull = state.cull;
+            pass.alphaToMask = state.alphaToMask;
+            if (!state.blend) {
+                pass.blend = carmodel::CarPass::Blend{};
+            }
             for (const bool metallic : {false, true}) {
                 ParameterSlots& resolved = pass.parameters[metallic ? 1 : 0];
                 if (const ShaderSettings::Parameters* parameters = settingsFor(batch, metallic)) {
@@ -422,6 +438,10 @@ void CarRenderer::fillConstants(XenosConstants& c, const Pass& pass, const Frame
     // running lamps and light-state bits have no source here and stay 0.
     set(Constant::LampAmounts, glm::vec4(pose.brakeLights, 0.0F, 0.0F, 0.0F));
     set(Constant::HeadLampAmounts, glm::vec4(pose.headLights, 0.0F, 0.0F, 0.0F));
+
+    if (pass.alphaToMask) {
+        c.system.alphaTest = {kAlphaGreaterEqual, kAlphaToMaskThreshold, 0.0F, 0.0F};
+    }
     c.system.streamBase[kVertexStream] = range.byteOffset / 4;
     c.system.streamBase[kMorphStream] = 0;
     c.system.streamBase[kDamageStream] = 0;
@@ -560,6 +580,7 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
     // what changes is set.
     const std::optional<carmodel::CarPass::Blend>* blend = nullptr;
     std::optional<bool> mirrored;
+    bool culled = true;
     GLuint program = 0;
     std::array<GLuint, kTextureUnits> bound{};
     bound.fill(kUnknownTexture);
@@ -568,6 +589,14 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
         if (blend == nullptr || !sameBlend(*blend, draw.pass->blend)) {
             applyBlend(draw.pass->blend, translucent);
             blend = &draw.pass->blend;
+        }
+        if (culled != draw.pass->cull) {
+            if (draw.pass->cull) {
+                glEnable(GL_CULL_FACE);
+            } else {
+                glDisable(GL_CULL_FACE);
+            }
+            culled = draw.pass->cull;
         }
         if (mirrored != draw.mirrored) {
             glFrontFace(draw.mirrored ? GL_CW : GL_CCW);
@@ -590,6 +619,7 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
             reinterpret_cast<const void*>(static_cast<std::uintptr_t>(batch.firstIndex) * sizeof(std::uint32_t)));
     }
     glDisable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
     glFrontFace(GL_CCW);
     glBindVertexArray(0);
     if (translucent) {

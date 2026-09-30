@@ -402,6 +402,25 @@ TEST(techniqueNamesFollowTheExecutable)
     CHECK(carmodel::isMotionBlurMaterial("blur_rim"));
 }
 
+// The rear window's heating wires drew as opaque dark bands across the
+// glass: their mesh covers the window in strips and its texture is clear
+// (alpha 0) except for the wire, which the game keeps by alpha to mask.
+TEST(defrostLinesDrawMaskedAndUnculled)
+{
+    const carmodel::MaterialDrawState defrost = carmodel::materialDrawState("defrost_lines");
+    CHECK(defrost.alphaToMask);
+    CHECK(!defrost.cull);
+    CHECK(!defrost.blend);
+    CHECK(carmodel::materialDrawState("Defrost_Lines_2").alphaToMask);
+    const carmodel::MaterialDrawState window = carmodel::materialDrawState("window");
+    CHECK(!window.alphaToMask);
+    CHECK(window.cull);
+    CHECK(window.blend);
+    CHECK(carmodel::castsNoShadow("defrost_lines"));
+    CHECK(carmodel::castsNoShadow("liverybadge"));
+    CHECK(!carmodel::castsNoShadow("window"));
+}
+
 TEST(loadFlagsEvaluateTextureTableExpressions)
 {
     const std::vector<std::string> set{"LOD0", "Cockpit"};

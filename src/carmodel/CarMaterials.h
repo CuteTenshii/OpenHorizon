@@ -53,6 +53,38 @@ bool isTyreMaterial(std::string_view material);
 /// True for rim materials (0x82E542C0).
 bool isRimMaterial(std::string_view material);
 
+/// Render states the car draw sets around one mesh, over those of its draw
+/// list and its technique's passes.
+struct MaterialDrawState {
+    /// Back faces are culled (the list's D3DCULL_CW); false draws both sides.
+    bool cull = true;
+    /// Colour 0's alpha masks the pixels it covers (RB_COLORCONTROL's
+    /// alpha-to-mask bit).
+    bool alphaToMask = false;
+    /// False forces blending off, whatever the draw list uses.
+    bool blend = true;
+};
+
+/// The render states the car draw (0x82E63638 to 0x82E63728) sets for a
+/// material. Verified: for names containing `defrost_lines` (0x82E56238,
+/// the case-insensitive search at 0x82CC0AE0) it sets the cull mode to none
+/// (0x8247C4D0, which writes the value into PA_SU_SC_MODE_CNTL's cull
+/// bits), enables alpha to mask (0x8247D9A0, RB_COLORCONTROL bit 4) and
+/// disables blending (0x8247C398) before the draw, and after it restores
+/// D3DCULL_CW, alpha to mask off and blending on. Every other material
+/// keeps the defaults. The rear window's heating wires need it: their mesh
+/// covers the glass in strips whose texture is clear but for the wire.
+/// Inferred: that the name searched (a string at +4 of the object the draw
+/// passes) is the material's; its technique name contains the same words.
+MaterialDrawState materialDrawState(std::string_view material);
+
+/// True for materials the shadow map technique choosers (0x82E62130 and
+/// 0x82E62338) give no technique, so that they cast no shadow: names
+/// containing `defrost_lines` (0x82E56238) or `liverybadge` (0x82E62190 and
+/// 0x82E62390, the same search). Not applied: their third early out, a
+/// flag byte of the mesh (+152) whose meaning was not traced.
+bool castsNoShadow(std::string_view material);
+
 /// True for meshes that stand in for a spinning wheel at speed (blurred
 /// rims and tyre lips); a renderer shows them instead of the sharp ones
 /// above some wheel speed.

@@ -146,6 +146,22 @@ std::string missingTechnique(std::string_view material, bool cockpitFlag)
     return "missing";
 }
 
+MaterialDrawState materialDrawState(std::string_view material)
+{
+    MaterialDrawState state;
+    if (containsNoCase(material, "defrost_lines")) {
+        state.cull = false;
+        state.alphaToMask = true;
+        state.blend = false;
+    }
+    return state;
+}
+
+bool castsNoShadow(std::string_view material)
+{
+    return containsNoCase(material, "defrost_lines") || containsNoCase(material, "liverybadge");
+}
+
 bool isMotionBlurMaterial(std::string_view material)
 {
     return contains(toLower(material), "blur");

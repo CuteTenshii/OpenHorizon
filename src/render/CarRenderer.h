@@ -99,6 +99,10 @@ private:
         /// The program's slots for the per-draw constants.
         std::shared_ptr<const ConstantSlots> slots;
         std::optional<carmodel::CarPass::Blend> blend;
+        /// The states the car draw sets for the batch's material
+        /// (carmodel::materialDrawState()).
+        bool cull = true;
+        bool alphaToMask = false;
         /// The program's constants with its defaults and literals loaded.
         std::shared_ptr<const XenosConstants> defaults;
         /// The texture on each of the program's sampler units for the
