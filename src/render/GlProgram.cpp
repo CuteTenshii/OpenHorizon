@@ -23,7 +23,7 @@ namespace {
 /// Bumped whenever the entry layout or what the key covers changes, so old
 /// entries stop matching.
 constexpr std::uint32_t kCacheVersion = 1;
-constexpr std::array<char, 8> kMagic{'F', 'H', '1', 'P', 'R', 'O', 'G', '\0'};
+constexpr std::array<char, 8> kMagic{'O', 'H', 'Z', 'P', 'R', 'O', 'G', '\0'};
 
 /// The count glMaxShaderCompilerThreadsKHR takes for "as many threads as
 /// the implementation likes" (0xFFFFFFFF in both extensions' specifications).

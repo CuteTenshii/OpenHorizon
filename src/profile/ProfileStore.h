@@ -31,7 +31,7 @@ namespace openhorizon::profile {
 /// varint byte count and that many bytes of UTF-8, "name" a varint index
 /// into the string table:
 ///
-///     "FH1P"              magic
+///     "OHZP"              magic
 ///     u16                 format version (kFormatVersion)
 ///     varint count, text  string table: every property and field name and
 ///                         state type name, once, in order of first use
@@ -77,7 +77,7 @@ public:
     /// This engine's file format version; 1 was an XML file.
     static constexpr int kFormatVersion = 2;
     static constexpr std::string_view kFileName = "ForzaProfile.bin";
-    static constexpr std::string_view kMagic = "FH1P";
+    static constexpr std::string_view kMagic = "OHZP";
 
     /// `profile` in the Data user folder: `~/.local/share/openhorizon/profile`
     /// on Linux, `%LOCALAPPDATA%\OpenHorizon\profile` on Windows (see

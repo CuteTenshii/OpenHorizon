@@ -321,7 +321,7 @@ std::string resealed(std::string bytes)
 /// A file of the binary layout around `body` (what follows the header).
 std::string sealed(std::string_view body)
 {
-    std::string bytes("FH1P\x02\x00", 6);
+    std::string bytes("OHZP\x02\x00", 6);
     bytes += body;
     bytes.append(4, '\0');
     return resealed(bytes);
