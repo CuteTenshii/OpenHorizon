@@ -5,7 +5,10 @@
 // FH1_GAME_DIR names an extracted disc, the real radio data, its banks and
 // a mixed render.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "audio/AudioDevice.h"
 #include "audio/Decode.h"
@@ -37,6 +40,10 @@ extern "C" {
 #include <thread>
 #include <vector>
 
+using Catch::Matchers::WithinAbs;
+
+using fh::test::gameDir;
+
 namespace {
 
 using namespace fh::radio;
@@ -44,33 +51,33 @@ using fh::Bytes;
 
 constexpr int kRate = RadioSequencer::kOutputRate;
 
-TEST(stringIdKeysMatchTheStringTables)
+TEST_CASE("stringIdKeysMatchTheStringTables", "[radio]")
 {
     // Keys of the texts as found in the disc's myprofile.str and ingame.str.
-    CHECK_EQ(stringIdKey("IDS_RadioOff"), 19192);
-    CHECK_EQ(stringIdKey("IDS_RadioStation_Option_1"), 41630);
-    CHECK_EQ(stringIdKey("IDS_RadioStation_Option_2"), 41758);
-    CHECK_EQ(stringIdKey("IDS_RadioStation_Option_3"), 41886);
-    CHECK_EQ(stringIdKey("IDS_RadioStation_Option_Off"), 4222);
-    CHECK_EQ(stringIdKey("ids_radiooff"), stringIdKey("IDS_RADIOOFF"));
+    CHECK(stringIdKey("IDS_RadioOff") == 19192);
+    CHECK(stringIdKey("IDS_RadioStation_Option_1") == 41630);
+    CHECK(stringIdKey("IDS_RadioStation_Option_2") == 41758);
+    CHECK(stringIdKey("IDS_RadioStation_Option_3") == 41886);
+    CHECK(stringIdKey("IDS_RadioStation_Option_Off") == 4222);
+    CHECK(stringIdKey("ids_radiooff") == stringIdKey("IDS_RADIOOFF"));
 }
 
-TEST(randomFollowsTheGamesGenerator)
+TEST_CASE("randomFollowsTheGamesGenerator", "[radio]")
 {
     // Bits 16 to 30 of seed * 0x41C64E6D + 12345, from seed 12345.
     RadioRandom random(12345);
-    CHECK_EQ(random.next(), 21468);
-    CHECK_EQ(random.next(), 9988);
-    CHECK_EQ(random.next(), 22117);
+    CHECK(random.next() == 21468);
+    CHECK(random.next() == 9988);
+    CHECK(random.next() == 22117);
     std::set<int> seen;
     for (int i = 0; i < 2000; ++i) {
         const int v = random.integer(0, 4);
-        CHECK(v >= 0 && v <= 4);
+        CHECK((v >= 0 && v <= 4));
         seen.insert(v);
         const float f = random.range(2.0F, 3.0F);
-        CHECK(f >= 2.0F && f <= 3.0F);
+        CHECK((f >= 2.0F && f <= 3.0F));
     }
-    CHECK_EQ(seen.size(), std::size_t{5});
+    CHECK(seen.size() == std::size_t{5});
 }
 
 constexpr const char* kSystemXml = R"(<?xml version="1.0"?>
@@ -116,34 +123,34 @@ constexpr const char* kSystemXml = R"(<?xml version="1.0"?>
 </RadioSystem>
 )";
 
-TEST(radioSystemParsesAndSortsStations)
+TEST_CASE("radioSystemParsesAndSortsStations", "[radio]")
 {
     const RadioSystemData data = parseRadioSystem(kSystemXml, "test.xml");
-    CHECK_EQ(data.stations.size(), std::size_t{4});
-    CHECK_EQ(data.stations[0].name, std::string("Radio4_Silent"));
-    CHECK_EQ(data.stations[1].name, std::string("Radio5_3d"));
-    CHECK_EQ(data.stations[2].name, std::string("RadioA"));
-    CHECK_EQ(data.stations[3].name, std::string("RadioB"));
-    CHECK_EQ(data.offStation(), std::size_t{0});
-    CHECK_EQ(data.settings.maxTracksBetweenDJ, 1);
-    CHECK_NEAR(data.settings.duckValue, 0.3, 1e-6);
+    CHECK(data.stations.size() == std::size_t{4});
+    CHECK(data.stations[0].name == std::string("Radio4_Silent"));
+    CHECK(data.stations[1].name == std::string("Radio5_3d"));
+    CHECK(data.stations[2].name == std::string("RadioA"));
+    CHECK(data.stations[3].name == std::string("RadioB"));
+    CHECK(data.offStation() == std::size_t{0});
+    CHECK(data.settings.maxTracksBetweenDJ == 1);
+    CHECK_THAT(data.settings.duckValue, WithinAbs(0.3, 1e-6));
     // Unset attributes keep the game's defaults.
-    CHECK_NEAR(data.settings.levelFadeDownTime, 3.0, 1e-6);
+    CHECK_THAT(data.settings.levelFadeDownTime, WithinAbs(3.0, 1e-6));
     const Station& b = data.stations[3];
-    CHECK_EQ(b.playlist.tracks.size(), std::size_t{3});
-    CHECK_EQ(b.playlist.tracks[0].fmodName, std::string("B_Two"));
-    CHECK_EQ(b.playlist.tracks[1].fmodName, std::string("B_One"));
-    CHECK_EQ(b.playlist.noRepeatAttribute, 15);
-    CHECK_EQ(b.regular.lines[2].group, 20);
-    CHECK_EQ(b.special.size(), std::size_t{1});
-    CHECK_EQ(b.special[0].gameplayEvent, std::string("Event"));
-    CHECK_NEAR(data.stations[1].panLevel3d, 0.5, 1e-6);
-    CHECK_NEAR(data.stations[1].volume, 0.35, 1e-6);
-    CHECK_EQ(data.festivalUpdates.size(), std::size_t{1});
-    CHECK_THROWS(parseRadioSystem("<Other/>", "bad.xml"));
+    CHECK(b.playlist.tracks.size() == std::size_t{3});
+    CHECK(b.playlist.tracks[0].fmodName == std::string("B_Two"));
+    CHECK(b.playlist.tracks[1].fmodName == std::string("B_One"));
+    CHECK(b.playlist.noRepeatAttribute == 15);
+    CHECK(b.regular.lines[2].group == 20);
+    CHECK(b.special.size() == std::size_t{1});
+    CHECK(b.special[0].gameplayEvent == std::string("Event"));
+    CHECK_THAT(data.stations[1].panLevel3d, WithinAbs(0.5, 1e-6));
+    CHECK_THAT(data.stations[1].volume, WithinAbs(0.35, 1e-6));
+    CHECK(data.festivalUpdates.size() == std::size_t{1});
+    CHECK_THROWS_AS(parseRadioSystem("<Other/>", "bad.xml"), std::exception);
 }
 
-TEST(soundBankInfoParses)
+TEST_CASE("soundBankInfoParses", "[radio]")
 {
     const SoundBankInfoMap info = parseSoundBankInfo(R"(<SoundBanks>
   <Bank Name="R1_Test"><SoundBankInfo SoundBankIndex="46" OffsetEventStart="83050" OffsetIdentStart="450863"
@@ -151,15 +158,15 @@ TEST(soundBankInfoParses)
     SyncpointStartNextTrack="-1"/></Bank>
 </SoundBanks>)",
         "info.xml");
-    CHECK_EQ(info.size(), std::size_t{1});
+    CHECK(info.size() == std::size_t{1});
     const SoundBankInfo& i = info.at("R1_Test");
-    CHECK_EQ(i.soundBankIndex, 46);
-    CHECK_EQ(i.offsetEventStart, 83050U);
-    CHECK_EQ(i.offsetIdentStart, 450863U);
-    CHECK_EQ(i.offsetSongStart, 20376U);
-    CHECK_EQ(i.fileLength, 455616U);
-    CHECK_EQ(i.syncpointIndexIdentStart, 2);
-    CHECK_EQ(i.syncpointStartNextTrack, -1);
+    CHECK(i.soundBankIndex == 46);
+    CHECK(i.offsetEventStart == 83050U);
+    CHECK(i.offsetIdentStart == 450863U);
+    CHECK(i.offsetSongStart == 20376U);
+    CHECK(i.fileLength == 455616U);
+    CHECK(i.syncpointIndexIdentStart == 2);
+    CHECK(i.syncpointStartNextTrack == -1);
 }
 
 /// A catalog for kSystemXml: every track is 60 s with SongStart at 2 s,
@@ -258,7 +265,7 @@ std::vector<const RadioEvent*> ofKind(const std::vector<RadioEvent>& events, Rad
     return out;
 }
 
-TEST(sequencerRunsTheFreeRoamFlow)
+TEST_CASE("sequencerRunsTheFreeRoamFlow", "[radio]")
 {
     RadioSequencer s(tunableCatalog(), 7);
     s.selectStation(1, false);
@@ -274,33 +281,33 @@ TEST(sequencerRunsTheFreeRoamFlow)
     // Each later track starts 3 s after an ident, and each ident at a
     // track's IdentStart.
     for (std::size_t i = 1; i < tracks.size() && i - 1 < idents.size(); ++i) {
-        CHECK_EQ(tracks[i]->frame, idents[i - 1]->frame + 3U * kRate);
+        CHECK(tracks[i]->frame == idents[i - 1]->frame + 3U * kRate);
     }
     CHECK(!idents.empty());
-    CHECK_EQ(idents.empty() ? 0 : idents[0]->frame,
-        static_cast<std::uint64_t>(std::llround((55000.0F - tracks[0]->startMs) * kRate / 1000.0F)));
+    CHECK((idents.empty() ? 0 : idents[0]->frame)
+        == static_cast<std::uint64_t>(std::llround((55000.0F - tracks[0]->startMs) * kRate / 1000.0F)));
     // One track per DJ line: every change after the first has a line, and
     // the track starts so the 4 s line ends by EventStart; the intro (8 s) is
     // long enough, so it starts at SongStart.
-    CHECK_EQ(lines.size(), tracks.size() - 1);
+    CHECK(lines.size() == tracks.size() - 1);
     for (std::size_t i = 1; i < tracks.size() && i - 1 < lines.size(); ++i) {
-        CHECK_NEAR(tracks[i]->startMs, 2000.0, 0.5);
-        CHECK_EQ(lines[i - 1]->frame, tracks[i]->frame);
+        CHECK_THAT(tracks[i]->startMs, WithinAbs(2000.0, 0.5));
+        CHECK(lines[i - 1]->frame == tracks[i]->frame);
     }
     // No track repeats before the other two have played.
     for (std::size_t i = 0; i + 2 < tracks.size(); ++i) {
         std::set<std::string> window{tracks[i]->name, tracks[i + 1]->name, tracks[i + 2]->name};
-        CHECK_EQ(window.size(), std::size_t{3});
+        CHECK(window.size() == std::size_t{3});
     }
     // The group 20 line is on, so all three lines play in turn.
     std::set<std::string> said;
     for (const RadioEvent* e : lines) {
         said.insert(e->name);
     }
-    CHECK_EQ(said.size(), std::size_t{3});
+    CHECK(said.size() == std::size_t{3});
 }
 
-TEST(sequencerStartsTracksEarlyForLongDjLines)
+TEST_CASE("sequencerStartsTracksEarlyForLongDjLines", "[radio]")
 {
     RadioSequencer s(tunableCatalog(12.0), 3);
     s.selectStation(1, false);
@@ -309,11 +316,11 @@ TEST(sequencerStartsTracksEarlyForLongDjLines)
     CHECK(tracks.size() >= 3);
     for (std::size_t i = 1; i < tracks.size(); ++i) {
         // EventStart 10 s minus the 12 s line, clamped at the start.
-        CHECK_NEAR(tracks[i]->startMs, 0.0, 0.5);
+        CHECK_THAT(tracks[i]->startMs, WithinAbs(0.0, 0.5));
     }
 }
 
-TEST(sequencerDialogueGroupsAndDjSwitch)
+TEST_CASE("sequencerDialogueGroupsAndDjSwitch", "[radio]")
 {
     RadioSequencer s(tunableCatalog(), 11);
     s.selectStation(1, false);
@@ -330,72 +337,72 @@ TEST(sequencerDialogueGroupsAndDjSwitch)
     CHECK(!ofKind(later, RadioEvent::Kind::TrackStarted).empty());
 }
 
-TEST(sequencerTunesThroughStationsAndOff)
+TEST_CASE("sequencerTunesThroughStationsAndOff", "[radio]")
 {
     RadioSequencer s(testCatalog(), 5);
     // Stations sort as Radio4_Silent, Radio5_3d, RadioA, RadioB: the off
     // station is first, so nothing is tuneable beyond it.
-    CHECK_EQ(s.offStation(), std::size_t{0});
-    CHECK_EQ(s.tunableStationCount(), std::size_t{1});
+    CHECK(s.offStation() == std::size_t{0});
+    CHECK(s.tunableStationCount() == std::size_t{1});
     s.startFreeRoam();
     CHECK(s.paused());
     s.nextStation();
-    CHECK_EQ(s.currentStation(), std::size_t{0});
+    CHECK(s.currentStation() == std::size_t{0});
 }
 
-TEST(sequencerStationChangesResumeAndPause)
+TEST_CASE("sequencerStationChangesResumeAndPause", "[radio]")
 {
     RadioSequencer s(tunableCatalog(), 9);
-    CHECK_EQ(s.offStation(), std::size_t{2});
+    CHECK(s.offStation() == std::size_t{2});
     s.startFreeRoam();
     run(s, 20.0);
     const std::string first = s.voice(RadioChannel::Music).fmodName;
-    CHECK(first == "A_Solo" || first == "A_Duet");
-    CHECK_EQ(s.currentStation(), std::size_t{0});
+    CHECK((first == "A_Solo" || first == "A_Duet"));
+    CHECK(s.currentStation() == std::size_t{0});
     s.nextStation();
-    CHECK_EQ(s.currentStation(), std::size_t{1});
+    CHECK(s.currentStation() == std::size_t{1});
     const auto events = run(s, 5.0);
     CHECK(!ofKind(events, RadioEvent::Kind::TrackStarted).empty());
     // Back to the first station: its track carries on where it would be.
     s.previousStation();
     const auto back = ofKind(s.takeEvents(), RadioEvent::Kind::TrackStarted);
-    CHECK_EQ(back.size(), std::size_t{1});
+    CHECK(back.size() == std::size_t{1});
     if (!back.empty()) {
-        CHECK_EQ(back[0]->name, first);
+        CHECK(back[0]->name == first);
     }
     // Off pauses everything and stops the clock.
     s.nextStation();
     s.nextStation();
-    CHECK_EQ(s.currentStation(), std::size_t{2});
+    CHECK(s.currentStation() == std::size_t{2});
     run(s, 1.0);
     CHECK(s.paused());
     const std::uint64_t elapsed = s.voice(RadioChannel::Music).elapsed;
     run(s, 10.0);
-    CHECK_EQ(s.voice(RadioChannel::Music).elapsed, elapsed);
-    CHECK_NEAR(s.musicGain(), 0.0, 1e-6);
+    CHECK(s.voice(RadioChannel::Music).elapsed == elapsed);
+    CHECK_THAT(s.musicGain(), WithinAbs(0.0, 1e-6));
     // Past the off station the D-pad comes round to the first station, and
     // back from the first one to off.
     s.nextStation();
-    CHECK_EQ(s.currentStation(), std::size_t{0});
+    CHECK(s.currentStation() == std::size_t{0});
     run(s, 1.0);
     CHECK(!s.paused());
     s.previousStation();
-    CHECK_EQ(s.currentStation(), std::size_t{2});
+    CHECK(s.currentStation() == std::size_t{2});
 }
 
-TEST(sequencerDucksAndFadesLevels)
+TEST_CASE("sequencerDucksAndFadesLevels", "[radio]")
 {
     RadioSequencer s(tunableCatalog(), 1);
     s.startFreeRoam();
     s.update(0.5F, 0.0F);
     // 2 s level fade-in by default, musicLevel 0.85.
-    CHECK_NEAR(s.musicGain(), 0.85 * 0.25, 1e-4);
+    CHECK_THAT(s.musicGain(), WithinAbs(0.85 * 0.25, 1e-4));
     s.update(2.0F, 0.0F);
-    CHECK_NEAR(s.musicGain(), 0.85, 1e-4);
-    CHECK_NEAR(s.identGain(), 0.3, 1e-4);
+    CHECK_THAT(s.musicGain(), WithinAbs(0.85, 1e-4));
+    CHECK_THAT(s.identGain(), WithinAbs(0.3, 1e-4));
     s.setUserVolume(0.5F);
     s.update(0.01F, 0.0F);
-    CHECK_NEAR(s.musicGain(), 0.425, 1e-4);
+    CHECK_THAT(s.musicGain(), WithinAbs(0.425, 1e-4));
     s.setUserVolume(0.0F);
     s.update(0.01F, 0.0F);
     CHECK(s.paused());
@@ -452,13 +459,12 @@ Bytes encodeTone(std::size_t frames)
     return out;
 }
 
-TEST(mpegStreamDecodesFromAnyFrame)
+TEST_CASE("mpegStreamDecodesFromAnyFrame", "[radio]")
 {
     const std::size_t mpegFrames = 200;
     const Bytes data = encodeTone(mpegFrames * 1152);
     if (data.empty()) {
-        std::fprintf(stderr, "skipped: FFmpeg has no MP2 encoder\n");
-        return;
+        SKIP("FFmpeg has no MP2 encoder");
     }
     fh::audio::FsbSample sample;
     sample.name = "tone";
@@ -484,7 +490,7 @@ TEST(mpegStreamDecodesFromAnyFrame)
     while (!whole.finished()) {
         whole.decode(3000, all);
     }
-    CHECK_EQ(all.size(), std::size_t{sample.sampleCount} * 2);
+    CHECK(all.size() == std::size_t{sample.sampleCount} * 2);
     for (const std::size_t start : {std::size_t{1}, std::size_t{1152 * 20 + 77}, std::size_t{1152 * 150}}) {
         fh::audio::MpegSampleStream part(sample, source, "tone", start);
         std::vector<float> got;
@@ -496,7 +502,7 @@ TEST(mpegStreamDecodesFromAnyFrame)
         }
         CHECK(worst < 1e-4F);
     }
-    CHECK_THROWS(fh::audio::MpegSampleStream(sample, source, "tone", sample.sampleCount + 1));
+    CHECK_THROWS_AS(fh::audio::MpegSampleStream(sample, source, "tone", sample.sampleCount + 1), std::exception);
 }
 
 /// Builds an FSB4 bank with one MPEG sample that carries a SYNC chunk.
@@ -549,27 +555,29 @@ Bytes syncBank()
     return out;
 }
 
-TEST(fsbReadsSyncPointsAndHeadersAlone)
+TEST_CASE("fsbReadsSyncPointsAndHeadersAlone", "[radio]")
 {
     const Bytes file = syncBank();
     const fh::audio::FsbBank full = fh::audio::FsbBank::parse(file, "sync.fsb");
     const fh::audio::FsbSample& s = full.sample(0);
-    CHECK_EQ(s.syncPoints.size(), std::size_t{2});
-    CHECK_EQ(s.syncPoints[0].frame, 4800U);
-    CHECK_EQ(s.syncPoints[0].name, std::string("SongStart"));
-    CHECK_EQ(s.syncPoints[1].frame, 90000U);
-    CHECK_EQ(s.syncPoints[1].name, std::string("IdentStart"));
+    CHECK(s.syncPoints.size() == std::size_t{2});
+    CHECK(s.syncPoints[0].frame == 4800U);
+    CHECK(s.syncPoints[0].name == std::string("SongStart"));
+    CHECK(s.syncPoints[1].frame == 90000U);
+    CHECK(s.syncPoints[1].name == std::string("IdentStart"));
 
     const std::size_t headerBytes = fh::audio::FsbBank::headersSize(file, "sync.fsb");
-    CHECK_EQ(headerBytes, file.size() - 64);
+    CHECK(headerBytes == file.size() - 64);
     const fh::audio::FsbBank headers = fh::audio::FsbBank::parseHeaders(
         Bytes(file.begin(), file.begin() + static_cast<std::ptrdiff_t>(headerBytes)), file.size(), "sync.fsb");
     CHECK(!headers.hasData());
-    CHECK_EQ(headers.sample(0).dataOffset, full.sample(0).dataOffset);
-    CHECK_EQ(headers.sample(0).syncPoints.size(), std::size_t{2});
-    CHECK_THROWS(headers.sampleData(0));
-    CHECK_THROWS(fh::audio::FsbBank::parseHeaders(
-        Bytes(file.begin(), file.begin() + static_cast<std::ptrdiff_t>(headerBytes)), file.size() - 1, "short"));
+    CHECK(headers.sample(0).dataOffset == full.sample(0).dataOffset);
+    CHECK(headers.sample(0).syncPoints.size() == std::size_t{2});
+    CHECK_THROWS_AS(headers.sampleData(0), std::exception);
+    CHECK_THROWS_AS(
+        fh::audio::FsbBank::parseHeaders(
+            Bytes(file.begin(), file.begin() + static_cast<std::ptrdiff_t>(headerBytes)), file.size() - 1, "short"),
+        std::exception);
 }
 
 class ConstantStream final : public fh::audio::PcmStream {
@@ -591,55 +599,42 @@ private:
     std::size_t m_left = 1000;
 };
 
-TEST(mixerPlaysStreams)
+TEST_CASE("mixerPlaysStreams", "[radio]")
 {
     fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
     const fh::audio::VoiceId voice = device.mixer().playStream(std::make_shared<ConstantStream>(), {});
     CHECK(voice != fh::audio::kNoVoice);
     const std::vector<float> out = device.render(1200);
-    CHECK_NEAR(out[200], 0.25, 1e-5);
-    CHECK_NEAR(out[201], -0.5, 1e-5);
-    CHECK_NEAR(out[1100 * 2], 0.0, 1e-6);
+    CHECK_THAT(out[200], WithinAbs(0.25, 1e-5));
+    CHECK_THAT(out[201], WithinAbs(-0.5, 1e-5));
+    CHECK_THAT(out[1100 * 2], WithinAbs(0.0, 1e-6));
     CHECK(!device.mixer().isPlaying(voice));
 }
 
-const char* gameDir()
-{
-    const char* dir = std::getenv("FH1_GAME_DIR");
-    if (!dir || !*dir) {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return nullptr;
-    }
-    return dir;
-}
-
-TEST(discRadioDataResolves)
+TEST_CASE("discRadioDataResolves", "[radio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const auto assets = RadioAssets::load(vfs);
     const RadioCatalog& c = *assets->catalog();
-    CHECK_EQ(c.system.stations.size(), std::size_t{9});
-    CHECK_EQ(c.system.offStation(), std::size_t{3});
-    CHECK_EQ(c.system.stations[0].name, std::string("Radio1"));
-    CHECK_EQ(c.system.settings.maxTracksBetweenDJ, 1);
+    CHECK(c.system.stations.size() == std::size_t{9});
+    CHECK(c.system.offStation() == std::size_t{3});
+    CHECK(c.system.stations[0].name == std::string("Radio1"));
+    CHECK(c.system.settings.maxTracksBetweenDJ == 1);
     const RadioText text(vfs, "en", 4, 3);
-    CHECK_EQ(text.stationName(0), std::string("HORIZON BASS ARENA"));
-    CHECK_EQ(text.stationName(1), std::string("HORIZON PULSE"));
-    CHECK_EQ(text.stationName(2), std::string("HORIZON ROCKS"));
-    CHECK_EQ(text.stationName(3), std::string("OFF"));
-    CHECK_EQ(text.radioOff(), std::string("RADIO OFF"));
+    CHECK(text.stationName(0) == std::string("HORIZON BASS ARENA"));
+    CHECK(text.stationName(1) == std::string("HORIZON PULSE"));
+    CHECK(text.stationName(2) == std::string("HORIZON ROCKS"));
+    CHECK(text.stationName(3) == std::string("OFF"));
+    CHECK(text.radioOff() == std::string("RADIO OFF"));
 
     // Every name the stations use has a sample, and the info's index points
     // at the sample of that name; offsets are its sync points in whole ms.
     const auto checkInfo = [&](const SoundBankInfoMap& info, RadioBank bankKind, const std::string& name) {
         const auto it = info.find(name);
         if (it == info.end()) {
-            fh::test::fail(__FILE__, __LINE__, std::format("no sound bank info for {}", name));
+            FAIL_CHECK(std::format("no sound bank info for {}", name));
             return;
         }
         const fh::audio::FsbBank& bank = assets->bank(bankKind);
@@ -658,7 +653,7 @@ TEST(discRadioDataResolves)
             const auto sync = static_cast<std::size_t>(it->second.syncpointIndexIdentStart);
             CHECK(sync < s.syncPoints.size());
             if (sync < s.syncPoints.size()) {
-                CHECK_EQ(s.syncPoints[sync].name, std::string("IdentStart"));
+                CHECK(s.syncPoints[sync].name == std::string("IdentStart"));
                 CHECK(std::abs(static_cast<long>(ms(s.syncPoints[sync].frame))
                           - static_cast<long>(it->second.offsetIdentStart))
                     <= 1);
@@ -668,7 +663,7 @@ TEST(discRadioDataResolves)
             const auto sync = static_cast<std::size_t>(it->second.syncpointStartNextTrack);
             CHECK(sync < s.syncPoints.size());
             if (sync < s.syncPoints.size()) {
-                CHECK_EQ(s.syncPoints[sync].name, std::string("StartNextTrack"));
+                CHECK(s.syncPoints[sync].name == std::string("StartNextTrack"));
             }
         }
     };
@@ -686,12 +681,9 @@ TEST(discRadioDataResolves)
     }
 }
 
-TEST(discStreamMatchesWholeDecode)
+TEST_CASE("discStreamMatchesWholeDecode", "[radio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const auto assets = RadioAssets::load(vfs);
@@ -706,7 +698,7 @@ TEST(discStreamMatchesWholeDecode)
         while (!stream.finished()) {
             stream.decode(8192, got);
         }
-        CHECK_EQ(got.size(), (whole.frames() - start) * channels);
+        CHECK(got.size() == (whole.frames() - start) * channels);
         float worst = 0.0F;
         for (std::size_t i = 0; i < got.size() && i + start * channels < whole.samples.size(); ++i) {
             worst = std::max(worst, std::abs(got[i] - whole.samples[start * channels + i]));
@@ -715,12 +707,9 @@ TEST(discStreamMatchesWholeDecode)
     }
 }
 
-TEST(discStationsNeverRepeatEarly)
+TEST_CASE("discStationsNeverRepeatEarly", "[radio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const auto assets = RadioAssets::load(vfs);
@@ -737,18 +726,15 @@ TEST(discStationsNeverRepeatEarly)
             for (std::size_t j = i; j < i + n; ++j) {
                 window.insert(tracks[j]->name);
             }
-            CHECK_EQ(window.size(), n);
+            CHECK(window.size() == n);
         }
         CHECK(ofKind(events, RadioEvent::Kind::DialogueStarted).size() + 1 >= tracks.size());
     }
 }
 
-TEST(discRadioRendersOffline)
+TEST_CASE("discRadioRendersOffline", "[radio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
@@ -756,8 +742,8 @@ TEST(discRadioRendersOffline)
     options.worker = false;
     options.seed = 4;
     Radio radio(vfs, device, options);
-    CHECK_EQ(radio.stations().size(), std::size_t{9});
-    CHECK_EQ(radio.stations()[1].displayName, std::string("HORIZON PULSE"));
+    CHECK(radio.stations().size() == std::size_t{9});
+    CHECK(radio.stations()[1].displayName == std::string("HORIZON PULSE"));
     radio.selectStation(1);
     radio.startFreeRoam();
     double energy = 0.0;
@@ -768,7 +754,7 @@ TEST(discRadioRendersOffline)
         radio.update(1.0F / 60.0F);
     }
     CHECK(energy > 1.0);
-    CHECK_EQ(radio.nowPlaying().station, std::size_t{1});
+    CHECK(radio.nowPlaying().station == std::size_t{1});
     CHECK(!radio.nowPlaying().title.empty());
     radio.turnOff();
     for (int frame = 0; frame < 60; ++frame) {
@@ -783,12 +769,9 @@ TEST(discRadioRendersOffline)
     CHECK(after < 1e-6);
 }
 
-TEST(discRadioWorkerProducesAudio)
+TEST_CASE("discRadioWorkerProducesAudio", "[radio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
@@ -808,8 +791,3 @@ TEST(discRadioWorkerProducesAudio)
 }
 
 } // namespace
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}

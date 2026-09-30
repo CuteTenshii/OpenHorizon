@@ -2,7 +2,13 @@
 // zone blend, the colour grading tables and the maths of the final combine,
 // against the executable's formulas; the GPU chain on a uniform picture in
 // an offscreen context; and Colorado's files when FH1_GAME_DIR is set.
-#include "TestHarness.h"
+#include "support/GlContext.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/reporters/catch_reporter_event_listener.hpp>
+#include <catch2/reporters/catch_reporter_registrars.hpp>
 
 #include "base/Error.h"
 #include "base/Host.h"
@@ -27,6 +33,8 @@
 #include <optional>
 #include <string>
 #include <vector>
+
+using Catch::Matchers::WithinAbs;
 
 namespace {
 
@@ -176,47 +184,47 @@ fh::GradingLut identityLut()
         "identity");
 }
 
-TEST(templatesReadTheAttributesTheGameReads)
+TEST_CASE("templatesReadTheAttributesTheGameReads", "[postprocess]")
 {
     const fh::PostTemplates t = templates();
-    CHECK_EQ(t.bloom.size(), std::size_t{2});
-    CHECK_EQ(t.bloom[0].name, std::string("Hazy"));
-    CHECK_NEAR(t.bloom[0].cutoff, 1.0, 1e-6);
-    CHECK_NEAR(t.bloom[0].scale, 1.2, 1e-6);
-    CHECK_NEAR(t.bloom[0].persist, 0.001, 1e-7);
+    CHECK(t.bloom.size() == std::size_t{2});
+    CHECK(t.bloom[0].name == std::string("Hazy"));
+    CHECK_THAT(t.bloom[0].cutoff, WithinAbs(1.0, 1e-6));
+    CHECK_THAT(t.bloom[0].scale, WithinAbs(1.2, 1e-6));
+    CHECK_THAT(t.bloom[0].persist, WithinAbs(0.001, 1e-7));
 
     // The colour settings' blue post modulation comes from the red
     // attribute, as the game's loader reads it.
     const fh::PostTemplates::ColourSettings& c = t.colourSettings.at(0);
-    CHECK_NEAR(c.desaturation, 0.9, 1e-6);
-    CHECK_NEAR(c.luminosity.y, 0.71, 1e-6);
-    CHECK_NEAR(c.postMod.x, 1.1, 1e-6);
-    CHECK_NEAR(c.postMod.y, 1.2, 1e-6);
-    CHECK_NEAR(c.postMod.z, 1.1, 1e-6);
-    CHECK_NEAR(c.exposureBias, 0.5, 1e-6);
-    CHECK_NEAR(c.brightness, 0.125, 1e-6);
-    CHECK_NEAR(c.contrast, 0.25, 1e-6);
+    CHECK_THAT(c.desaturation, WithinAbs(0.9, 1e-6));
+    CHECK_THAT(c.luminosity.y, WithinAbs(0.71, 1e-6));
+    CHECK_THAT(c.postMod.x, WithinAbs(1.1, 1e-6));
+    CHECK_THAT(c.postMod.y, WithinAbs(1.2, 1e-6));
+    CHECK_THAT(c.postMod.z, WithinAbs(1.1, 1e-6));
+    CHECK_THAT(c.exposureBias, WithinAbs(0.5, 1e-6));
+    CHECK_THAT(c.brightness, WithinAbs(0.125, 1e-6));
+    CHECK_THAT(c.contrast, WithinAbs(0.25, 1e-6));
 
     const fh::VignetteSettings& v = t.vignette.at(0).settings;
-    CHECK_NEAR(v.angleDegrees, -2.3, 1e-6);
-    CHECK_NEAR(v.position.y, 0.2, 1e-6);
-    CHECK_NEAR(v.scale.x, 0.01, 1e-6);
-    CHECK_NEAR(v.power, 2.0, 1e-6);
-    CHECK_NEAR(v.colour.g, 0.811, 1e-6);
-    CHECK_NEAR(v.minIntensity, 0.75, 1e-6);
+    CHECK_THAT(v.angleDegrees, WithinAbs(-2.3, 1e-6));
+    CHECK_THAT(v.position.y, WithinAbs(0.2, 1e-6));
+    CHECK_THAT(v.scale.x, WithinAbs(0.01, 1e-6));
+    CHECK_THAT(v.power, WithinAbs(2.0, 1e-6));
+    CHECK_THAT(v.colour.g, WithinAbs(0.811, 1e-6));
+    CHECK_THAT(v.minIntensity, WithinAbs(0.75, 1e-6));
 
     // The fog loader's own defaults stand for missing attributes.
     const auto& f = t.fog.at(0).settings;
-    CHECK_NEAR(f.colour.r, 0.84, 1e-6);
-    CHECK_NEAR(f.colour.g, 0.5, 1e-6);
-    CHECK_NEAR(f.density, 2.35, 1e-6);
-    CHECK_NEAR(f.startDistance, 10.0, 1e-6);
-    CHECK_NEAR(f.scatterPower, 10.0, 1e-6);
-    CHECK_NEAR(f.scatterStartDistance, 0.0, 1e-6);
-    CHECK_NEAR(f.scatterRampDistance, 2000.0, 1e-6);
-    CHECK_NEAR(f.heightFadeAmount, 0.8, 1e-6);
-    CHECK_NEAR(f.heightFadeStart, 100.0, 1e-6);
-    CHECK_NEAR(f.heightFadeEnd, 400.0, 1e-6);
+    CHECK_THAT(f.colour.r, WithinAbs(0.84, 1e-6));
+    CHECK_THAT(f.colour.g, WithinAbs(0.5, 1e-6));
+    CHECK_THAT(f.density, WithinAbs(2.35, 1e-6));
+    CHECK_THAT(f.startDistance, WithinAbs(10.0, 1e-6));
+    CHECK_THAT(f.scatterPower, WithinAbs(10.0, 1e-6));
+    CHECK_THAT(f.scatterStartDistance, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(f.scatterRampDistance, WithinAbs(2000.0, 1e-6));
+    CHECK_THAT(f.heightFadeAmount, WithinAbs(0.8, 1e-6));
+    CHECK_THAT(f.heightFadeStart, WithinAbs(100.0, 1e-6));
+    CHECK_THAT(f.heightFadeEnd, WithinAbs(400.0, 1e-6));
 
     // Bloom, colour and vignette templates have no defaults in the game.
     bool threw = false;
@@ -229,23 +237,23 @@ TEST(templatesReadTheAttributesTheGameReads)
     CHECK(threw);
 }
 
-TEST(zonesResolveTheirTemplatesAndKeepTheirTriangles)
+TEST_CASE("zonesResolveTheirTemplatesAndKeepTheirTriangles", "[postprocess]")
 {
     const std::vector<PostZone> zones = fh::parsePostZones(kZones, templates());
     // The zone naming a missing template is dropped, as the loader drops it.
-    CHECK_EQ(zones.size(), std::size_t{2});
+    CHECK(zones.size() == std::size_t{2});
     if (zones.size() != 2) {
         return;
     }
     const PostZone& a = zones[0];
-    CHECK_EQ(a.name, std::string("A"));
-    CHECK_EQ(a.bloom, std::size_t{0});
-    CHECK_EQ(a.vignetteTop, std::size_t{0});
-    CHECK_EQ(a.vignetteBottom, std::size_t{1});
-    CHECK_EQ(a.gradingMapNight, std::string("an.dds"));
-    CHECK_NEAR(a.lerpTime, 10.0, 1e-6);
+    CHECK(a.name == std::string("A"));
+    CHECK(a.bloom == std::size_t{0});
+    CHECK(a.vignetteTop == std::size_t{0});
+    CHECK(a.vignetteBottom == std::size_t{1});
+    CHECK(a.gradingMapNight == std::string("an.dds"));
+    CHECK_THAT(a.lerpTime, WithinAbs(10.0, 1e-6));
     // NumTriangles caps the triangles read; a fourth point is ignored.
-    CHECK_EQ(a.triangles.size(), std::size_t{1});
+    CHECK(a.triangles.size() == std::size_t{1});
     CHECK(a.contains({10.0F, 10.0F}));
     CHECK(!a.contains({1050.0F, 1050.0F}));
     CHECK(!a.contains({-10.0F, 10.0F}));
@@ -255,83 +263,83 @@ TEST(zonesResolveTheirTemplatesAndKeepTheirTriangles)
     CHECK(zones[1].contains({90.0F, 90.0F}));
 }
 
-TEST(zoneBlendSnapsFromOutsideAndEasesBetweenZones)
+TEST_CASE("zoneBlendSnapsFromOutsideAndEasesBetweenZones", "[postprocess]")
 {
     const std::vector<PostZone> zones = fh::parsePostZones(kZones, templates());
     PostZoneTracker tracker;
     const float dt = 0.5F;
     tracker.update(zones, glm::vec2(-50.0F, -50.0F), dt);
-    CHECK_EQ(tracker.target(), PostZoneTracker::kNone);
-    CHECK_NEAR(tracker.blend(zones), 1.0, 1e-6);
+    CHECK(tracker.target() == PostZoneTracker::kNone);
+    CHECK_THAT(tracker.blend(zones), WithinAbs(1.0, 1e-6));
 
     // Entering a zone from outside every zone snaps.
     tracker.update(zones, glm::vec2(10.0F, 10.0F), dt);
-    CHECK_EQ(tracker.target(), 0);
-    CHECK_EQ(tracker.source(), PostZoneTracker::kNone);
-    CHECK_NEAR(tracker.blend(zones), 1.0, 1e-6);
+    CHECK(tracker.target() == 0);
+    CHECK(tracker.source() == PostZoneTracker::kNone);
+    CHECK_THAT(tracker.blend(zones), WithinAbs(1.0, 1e-6));
 
     // From A into B the blend starts again and eases over B's 4 s.
     tracker.update(zones, glm::vec2(90.0F, 90.0F), dt);
-    CHECK_EQ(tracker.target(), 1);
-    CHECK_EQ(tracker.source(), 0);
-    CHECK_NEAR(tracker.elapsed(), 0.0, 1e-6);
-    CHECK_NEAR(tracker.blend(zones), 0.0, 1e-6);
+    CHECK(tracker.target() == 1);
+    CHECK(tracker.source() == 0);
+    CHECK_THAT(tracker.elapsed(), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(tracker.blend(zones), WithinAbs(0.0, 1e-6));
     tracker.update(zones, glm::vec2(90.0F, 90.0F), 1.0F);
     tracker.update(zones, glm::vec2(90.0F, 90.0F), 1.0F);
     // Half way through: smoothstep(0.5) is 0.5.
-    CHECK_NEAR(tracker.blend(zones), 0.5, 1e-6);
+    CHECK_THAT(tracker.blend(zones), WithinAbs(0.5, 1e-6));
     tracker.update(zones, glm::vec2(90.0F, 90.0F), 0.5F);
     const float x = 2.5F / 4.0F;
-    CHECK_NEAR(tracker.blend(zones), x * x * (3.0F - 2.0F * x), 1e-6);
+    CHECK_THAT(tracker.blend(zones), WithinAbs(x * x * (3.0F - 2.0F * x), 1e-6));
 
     // Turning back into A mirrors the time: 2.5 s of B's 4 s leaves 3/8 of
     // A's 10 s to run back.
     tracker.update(zones, glm::vec2(10.0F, 10.0F), dt);
-    CHECK_EQ(tracker.target(), 0);
-    CHECK_EQ(tracker.source(), 1);
-    CHECK_NEAR(tracker.elapsed(), (1.0 - 2.5 / 4.0) * 10.0, 1e-5);
+    CHECK(tracker.target() == 0);
+    CHECK(tracker.source() == 1);
+    CHECK_THAT(tracker.elapsed(), WithinAbs((1.0 - 2.5 / 4.0) * 10.0, 1e-5));
 
     // No player: everything back to the settings outside every zone.
     tracker.update(zones, std::nullopt, dt);
-    CHECK_EQ(tracker.target(), PostZoneTracker::kNone);
-    CHECK_EQ(tracker.source(), PostZoneTracker::kNone);
-    CHECK_NEAR(tracker.blend(zones), 1.0, 1e-6);
+    CHECK(tracker.target() == PostZoneTracker::kNone);
+    CHECK(tracker.source() == PostZoneTracker::kNone);
+    CHECK_THAT(tracker.blend(zones), WithinAbs(1.0, 1e-6));
 }
 
-TEST(trackSettingsGiveTheDefaultBlock)
+TEST_CASE("trackSettingsGiveTheDefaultBlock", "[postprocess]")
 {
     const fh::TrackPostSettings track = fh::parseTrackPostSettings(kTrackSettings);
     const fh::PostSettings& s = track.settings;
-    CHECK_NEAR(s.bloomCutoff, 1.0, 1e-6);
-    CHECK_NEAR(s.bloomLowerGradient, 0.5, 1e-6);
-    CHECK_NEAR(s.bloomUpperGradient, 2.0, 1e-6);
-    CHECK_NEAR(s.bloomScale, 1.5, 1e-6);
-    CHECK_NEAR(s.bloomWeights[4], 5.0, 1e-6);
-    CHECK_NEAR(s.desatPostMod.x, 1.04, 1e-6);
-    CHECK_NEAR(s.contrast, 0.1, 1e-6);
-    CHECK_NEAR(s.brightness, 0.2, 1e-6);
-    CHECK_NEAR(s.tonemapDelay, 0.075, 1e-7);
-    CHECK_NEAR(s.adaptiveKeys.w, 65.0, 1e-6);
-    CHECK_NEAR(s.adaptiveExposures.y, 0.437, 1e-6);
-    CHECK_NEAR(s.filmic.shoulderStrength, 0.7, 1e-6);
-    CHECK_NEAR(s.filmic.exposure, 0.31, 1e-6);
+    CHECK_THAT(s.bloomCutoff, WithinAbs(1.0, 1e-6));
+    CHECK_THAT(s.bloomLowerGradient, WithinAbs(0.5, 1e-6));
+    CHECK_THAT(s.bloomUpperGradient, WithinAbs(2.0, 1e-6));
+    CHECK_THAT(s.bloomScale, WithinAbs(1.5, 1e-6));
+    CHECK_THAT(s.bloomWeights[4], WithinAbs(5.0, 1e-6));
+    CHECK_THAT(s.desatPostMod.x, WithinAbs(1.04, 1e-6));
+    CHECK_THAT(s.contrast, WithinAbs(0.1, 1e-6));
+    CHECK_THAT(s.brightness, WithinAbs(0.2, 1e-6));
+    CHECK_THAT(s.tonemapDelay, WithinAbs(0.075, 1e-7));
+    CHECK_THAT(s.adaptiveKeys.w, WithinAbs(65.0, 1e-6));
+    CHECK_THAT(s.adaptiveExposures.y, WithinAbs(0.437, 1e-6));
+    CHECK_THAT(s.filmic.shoulderStrength, WithinAbs(0.7, 1e-6));
+    CHECK_THAT(s.filmic.exposure, WithinAbs(0.31, 1e-6));
     // The bottom vignette starts as a copy of the top.
-    CHECK_NEAR(s.vignetteTop.angleDegrees, 10.0, 1e-6);
-    CHECK_NEAR(s.vignetteBottom.scale.y, 2.0, 1e-6);
-    CHECK_NEAR(s.vignetteBottom.minIntensity, 0.25, 1e-6);
+    CHECK_THAT(s.vignetteTop.angleDegrees, WithinAbs(10.0, 1e-6));
+    CHECK_THAT(s.vignetteBottom.scale.y, WithinAbs(2.0, 1e-6));
+    CHECK_THAT(s.vignetteBottom.minIntensity, WithinAbs(0.25, 1e-6));
     // The night curve: its own attributes over the day's.
-    CHECK_NEAR(track.filmicNight.white, 11.0, 1e-6);
-    CHECK_NEAR(track.filmicNight.shoulderStrength, 0.23, 1e-6);
-    CHECK_NEAR(track.filmicNight.toeNumerator, 0.003, 1e-7);
-    CHECK_NEAR(track.filmicNight.exposure, 0.31, 1e-6);
+    CHECK_THAT(track.filmicNight.white, WithinAbs(11.0, 1e-6));
+    CHECK_THAT(track.filmicNight.shoulderStrength, WithinAbs(0.23, 1e-6));
+    CHECK_THAT(track.filmicNight.toeNumerator, WithinAbs(0.003, 1e-7));
+    CHECK_THAT(track.filmicNight.exposure, WithinAbs(0.31, 1e-6));
 }
 
-TEST(gradingTablesReadAndBlendAsTheGameRebuildsThem)
+TEST_CASE("gradingTablesReadAndBlendAsTheGameRebuildsThem", "[postprocess]")
 {
     const fh::GradingLut identity = identityLut();
-    CHECK_EQ(identity[(((5 * 16) + 3) * 16 + 2) * 4 + 0], std::uint8_t{34});
-    CHECK_EQ(identity[(((5 * 16) + 3) * 16 + 2) * 4 + 1], std::uint8_t{51});
-    CHECK_EQ(identity[(((5 * 16) + 3) * 16 + 2) * 4 + 2], std::uint8_t{85});
+    CHECK(identity[(((5 * 16) + 3) * 16 + 2) * 4 + 0] == std::uint8_t{34});
+    CHECK(identity[(((5 * 16) + 3) * 16 + 2) * 4 + 1] == std::uint8_t{51});
+    CHECK(identity[(((5 * 16) + 3) * 16 + 2) * 4 + 2] == std::uint8_t{85});
     const fh::GradingLut red = fh::parseGradingLut(ddsVolume([](std::uint32_t, std::uint32_t y, std::uint32_t z) {
         return std::array<std::uint8_t, 3>{255, static_cast<std::uint8_t>(y * 17), static_cast<std::uint8_t>(z * 17)};
     }),
@@ -344,8 +352,8 @@ TEST(gradingTablesReadAndBlendAsTheGameRebuildsThem)
     CHECK(none == identity);
     // Half way from identity to red: red at texel x = 0 is 0 + 0.5 * 1.
     const fh::GradingLut half = fh::blendGradingLuts(identity, identity, red, identity, 0.5F, 1.0F, 0.0F);
-    CHECK_EQ(half[0], std::uint8_t{128});
-    CHECK_EQ(half[1], std::uint8_t{0});
+    CHECK(half[0] == std::uint8_t{128});
+    CHECK(half[1] == std::uint8_t{0});
 
     bool threw = false;
     try {
@@ -360,7 +368,7 @@ TEST(gradingTablesReadAndBlendAsTheGameRebuildsThem)
     CHECK(threw);
 }
 
-TEST(filmicCurveAndExposureFollowTheCombine)
+TEST_CASE("filmicCurveAndExposureFollowTheCombine", "[postprocess]")
 {
     post::Filmic k{1.0F, 0.7F, 0.038F, 0.634F, 0.22F, 0.003F, 0.107F};
     const auto expected = [&](float x) {
@@ -372,33 +380,34 @@ TEST(filmicCurveAndExposureFollowTheCombine)
         const float f = k.f;
         return (x * (a * x + c * b) + d * e) / (x * (a * x + b) + d * f) - e / f;
     };
-    CHECK_NEAR(post::filmic(k, 0.0F), 0.0, 1e-6);
-    CHECK_NEAR(post::filmic(k, 0.5F), expected(0.5F), 1e-6);
-    CHECK_NEAR(post::filmic(k, 1.0F), expected(1.0F), 1e-6);
+    CHECK_THAT(post::filmic(k, 0.0F), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(post::filmic(k, 0.5F), WithinAbs(expected(0.5F), 1e-6));
+    CHECK_THAT(post::filmic(k, 1.0F), WithinAbs(expected(1.0F), 1e-6));
 
     const glm::vec4 keys = glm::vec4(0.0F, 4.0F, 13.0F, 65.0F) / 255.0F;
     const glm::vec4 exposures(1.3F, 0.437F, 0.001F, -0.8F);
     // Below the dark key: the first segment.
-    CHECK_NEAR(post::exposureLog2(0.0F, keys, exposures, 0.0F), 1.3, 1e-6);
-    CHECK_NEAR(post::exposureLog2(2.0F / 255.0F, keys, exposures, 0.0F), 1.3 + 0.5 * (0.437 - 1.3), 1e-5);
+    CHECK_THAT(post::exposureLog2(0.0F, keys, exposures, 0.0F), WithinAbs(1.3, 1e-6));
+    CHECK_THAT(post::exposureLog2(2.0F / 255.0F, keys, exposures, 0.0F), WithinAbs(1.3 + 0.5 * (0.437 - 1.3), 1e-5));
     // Between dark and light: the middle segment.
-    CHECK_NEAR(post::exposureLog2(8.5F / 255.0F, keys, exposures, 0.0F), 0.437 + 0.5 * (0.001 - 0.437), 1e-5);
+    CHECK_THAT(
+        post::exposureLog2(8.5F / 255.0F, keys, exposures, 0.0F), WithinAbs(0.437 + 0.5 * (0.001 - 0.437), 1e-5));
     // At or above the light key: the last, clamped at its end.
-    CHECK_NEAR(post::exposureLog2(13.0F / 255.0F, keys, exposures, 0.0F), 0.001, 1e-6);
-    CHECK_NEAR(post::exposureLog2(1.0F, keys, exposures, 0.31F), -0.8 + 0.31, 1e-6);
+    CHECK_THAT(post::exposureLog2(13.0F / 255.0F, keys, exposures, 0.0F), WithinAbs(0.001, 1e-6));
+    CHECK_THAT(post::exposureLog2(1.0F, keys, exposures, 0.31F), WithinAbs(-0.8 + 0.31, 1e-6));
 }
 
-TEST(colourTransformAppliesContrastBrightnessSaturationAndScale)
+TEST_CASE("colourTransformAppliesContrastBrightnessSaturationAndScale", "[postprocess]")
 {
     const glm::vec3 w(0.2126F, 0.7152F, 0.0722F);
     const glm::vec3 c(0.2F, 0.5F, 0.9F);
     const auto apply = [](const glm::mat4& m, const glm::vec3& v) { return glm::vec3(m * glm::vec4(v, 1.0F)); };
     const glm::vec3 same = apply(post::colourTransform(0.0F, 0.0F, 1.0F, w, glm::vec3(1.0F)), c);
-    CHECK_NEAR(same.x, 0.2, 1e-6);
-    CHECK_NEAR(same.z, 0.9, 1e-6);
+    CHECK_THAT(same.x, WithinAbs(0.2, 1e-6));
+    CHECK_THAT(same.z, WithinAbs(0.9, 1e-6));
     // Contrast k: (c - 0.5) (1 + k) + 0.5.
     const glm::vec3 contrast = apply(post::colourTransform(0.5F, 0.0F, 1.0F, w, glm::vec3(1.0F)), c);
-    CHECK_NEAR(contrast.x, (0.2 - 0.5) * 1.5 + 0.5, 1e-6);
+    CHECK_THAT(contrast.x, WithinAbs((0.2 - 0.5) * 1.5 + 0.5, 1e-6));
     // Then brightness adds, then saturation s c + (1 - s) dot(c, w), then
     // the post modulation scales.
     const float s = 0.9F;
@@ -407,44 +416,24 @@ TEST(colourTransformAppliesContrastBrightnessSaturationAndScale)
     const glm::vec3 afterContrast = (c - 0.5F) * 1.5F + 0.5F + 0.1F;
     const float grey = glm::dot(afterContrast, w);
     const glm::vec3 wanted = (afterContrast * s + (1.0F - s) * grey) * mod;
-    CHECK_NEAR(all.x, wanted.x, 1e-5);
-    CHECK_NEAR(all.y, wanted.y, 1e-5);
-    CHECK_NEAR(all.z, wanted.z, 1e-5);
+    CHECK_THAT(all.x, WithinAbs(wanted.x, 1e-5));
+    CHECK_THAT(all.y, WithinAbs(wanted.y, 1e-5));
+    CHECK_THAT(all.z, WithinAbs(wanted.z, 1e-5));
 }
 
-TEST(vignetteTransformRotatesAndScales)
+TEST_CASE("vignetteTransformRotatesAndScales", "[postprocess]")
 {
     const glm::vec4 t = post::vignetteTransform(0.0F, glm::vec2(0.5F, 2.0F), 16.0F / 9.0F);
-    CHECK_NEAR(t.x, 0.5 * 16.0 / 9.0, 1e-6);
-    CHECK_NEAR(t.y, 0.0, 1e-6);
-    CHECK_NEAR(t.z, 0.0, 1e-6);
-    CHECK_NEAR(t.w, 2.0, 1e-6);
+    CHECK_THAT(t.x, WithinAbs(0.5 * 16.0 / 9.0, 1e-6));
+    CHECK_THAT(t.y, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(t.z, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(t.w, WithinAbs(2.0, 1e-6));
     const float a = 0.3F;
     const glm::vec4 r = post::vignetteTransform(a, glm::vec2(1.0F), 1.0F);
-    CHECK_NEAR(r.x, std::cos(a), 1e-6);
-    CHECK_NEAR(r.y, std::sin(a), 1e-6);
-    CHECK_NEAR(r.z, -std::sin(a), 1e-6);
-    CHECK_NEAR(r.w, std::cos(a), 1e-6);
-}
-
-/// One offscreen context for the GPU cases, or null when the machine has
-/// none (they then skip).
-fh::Window* window()
-{
-    static std::unique_ptr<fh::Window> instance = [] {
-        fh::WindowOptions options;
-        options.width = 64;
-        options.height = 64;
-        options.hidden = true;
-        options.vsync = false;
-        try {
-            return std::make_unique<fh::Window>(options);
-        } catch (const std::exception& e) {
-            std::fprintf(stderr, "skipped: no OpenGL context (%s)\n", e.what());
-            return std::unique_ptr<fh::Window>();
-        }
-    }();
-    return instance.get();
+    CHECK_THAT(r.x, WithinAbs(std::cos(a), 1e-6));
+    CHECK_THAT(r.y, WithinAbs(std::sin(a), 1e-6));
+    CHECK_THAT(r.z, WithinAbs(-std::sin(a), 1e-6));
+    CHECK_THAT(r.w, WithinAbs(std::cos(a), 1e-6));
 }
 
 struct Picture {
@@ -493,11 +482,9 @@ fh::render::PostFrame uniformFrame()
     return f;
 }
 
-TEST(gpuChainTonemapsAUniformPictureAsTheFormulasDo)
+TEST_CASE("gpuChainTonemapsAUniformPictureAsTheFormulasDo", "[postprocess]")
 {
-    if (window() == nullptr) {
-        return;
-    }
+    fh::test::requireGlContext();
     constexpr int kWidth = 160;
     constexpr int kHeight = 90;
     Picture scene = picture(kWidth, kHeight, GL_RGBA16F);
@@ -516,7 +503,7 @@ TEST(gpuChainTonemapsAUniformPictureAsTheFormulasDo)
     // No bloom (scale 0): the tonemapped scene alone.
     fh::render::PostFrame frame = uniformFrame();
     postProcess.run(scene.texture, kWidth, kHeight, out.framebuffer, frame);
-    CHECK_NEAR(centre(), expectedUniform(s, frame, 0.0F), 1.5 / 255.0);
+    CHECK_THAT(centre(), WithinAbs(expectedUniform(s, frame, 0.0F), 1.5 / 255.0));
 
     // Bloom: a uniform hot extract survives the blurs (their weights sum
     // to 1), so the bloom squared is 0.2 times the weights' sum times it.
@@ -528,7 +515,7 @@ TEST(gpuChainTonemapsAUniformPictureAsTheFormulasDo)
     const float exposure
         = std::exp2(post::exposureLog2(s * s, frame.luminanceKeys, frame.exposures, frame.exposureBias));
     const float hot = std::max(s * s * exposure - 1.0F / 255.0F, 0.0F);
-    CHECK_NEAR(centre(), expectedUniform(s, frame, 0.2F * 5.0F * hot), 1.5 / 255.0);
+    CHECK_THAT(centre(), WithinAbs(expectedUniform(s, frame, 0.2F * 5.0F * hot), 1.5 / 255.0));
 
     // The adapted luminance moves by 0.075 of the way per frame after a
     // reset: a darker scene is exposed with a luminance barely changed.
@@ -543,17 +530,15 @@ TEST(gpuChainTonemapsAUniformPictureAsTheFormulasDo)
         * std::exp2(post::exposureLog2(adapted, frame.luminanceKeys, frame.exposures, frame.exposureBias));
     const float wanted
         = std::sqrt(std::clamp(post::filmic(frame.filmic, x) / post::filmic(frame.filmic, 1.0F), 0.0F, 1.0F));
-    CHECK_NEAR(centre(), wanted, 1.5 / 255.0);
+    CHECK_THAT(centre(), WithinAbs(wanted, 1.5 / 255.0));
 
     release(scene);
     release(out);
 }
 
-TEST(gpuCombineDrawsEachHalfWithItsVignette)
+TEST_CASE("gpuCombineDrawsEachHalfWithItsVignette", "[postprocess]")
 {
-    if (window() == nullptr) {
-        return;
-    }
+    fh::test::requireGlContext();
     constexpr int kWidth = 64;
     constexpr int kHeight = 36;
     Picture scene = picture(kWidth, kHeight, GL_RGBA16F);
@@ -573,19 +558,17 @@ TEST(gpuCombineDrawsEachHalfWithItsVignette)
     glBindFramebuffer(GL_FRAMEBUFFER, out.framebuffer);
     glReadPixels(kWidth / 2, kHeight - 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, top.data());
     glReadPixels(kWidth / 2, 1, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, bottom.data());
-    CHECK_EQ(top[0], std::uint8_t{0});
-    CHECK_NEAR(static_cast<float>(bottom[0]) / 255.0F, expectedUniform(0.5F, frame, 0.0F), 1.5 / 255.0);
+    CHECK(top[0] == std::uint8_t{0});
+    CHECK_THAT(static_cast<float>(bottom[0]) / 255.0F, WithinAbs(expectedUniform(0.5F, frame, 0.0F), 1.5 / 255.0));
     release(scene);
     release(out);
 }
 
 // Not a check: the GPU time of the whole chain at the console's 1280x720,
 // for the record.
-TEST(gpuChainTimeAt720p)
+TEST_CASE("gpuChainTimeAt720p", "[postprocess]")
 {
-    if (window() == nullptr) {
-        return;
-    }
+    fh::test::requireGlContext();
     constexpr int kWidth = 1280;
     constexpr int kHeight = 720;
     Picture scene = picture(kWidth, kHeight, GL_RGBA16F);
@@ -615,12 +598,6 @@ TEST(gpuChainTimeAt720p)
     glDeleteQueries(1, &query);
     release(scene);
     release(out);
-}
-
-std::optional<std::string> gameDir()
-{
-    std::optional<std::string> dir = fh::environmentVariable("FH1_GAME_DIR");
-    return dir && !dir->empty() ? dir : std::nullopt;
 }
 
 /// The whole combine for a uniform scene of square-root colour `s` on the
@@ -684,18 +661,16 @@ float referenceCombine(float s, const fh::render::PostFrame& f, const fh::render
 // one, 0.22 and 0.10 in the square-root scene target, through the whole
 // chain with Colorado's noon settings at the free-roam start (the
 // Inner_Festival zone), against the traced formulas.
-TEST(coloradoNoonShadowAndSunComeOutAsTheFormulasGive)
+TEST_CASE("coloradoNoonShadowAndSunComeOutAsTheFormulasGive", "[postprocess]")
 {
-    const std::optional<std::string> dir = gameDir();
-    if (!dir || window() == nullptr) {
-        return;
-    }
+    const char* dir = fh::test::gameDir();
+    fh::test::requireGlContext();
     fh::Vfs vfs;
-    vfs.mountDisc(fh::pathFromUtf8(*dir));
+    vfs.mountDisc(fh::pathFromUtf8(dir));
     fh::PostProcessing p = fh::PostProcessing::load(vfs, "colorado");
     const fh::TimeOfDayCurves curves = fh::TimeOfDayCurves::load(vfs, "colorado");
     p.update(glm::vec2(-1366.0F, -377.0F), 1.0F / 60.0F, curves, 12.0F * 60.0F);
-    CHECK_EQ(std::string(p.zoneName()), std::string("Inner_Festival"));
+    CHECK(std::string(p.zoneName()) == std::string("Inner_Festival"));
     constexpr int kWidth = 1280;
     constexpr int kHeight = 720;
     const fh::render::PostFrame frame = p.frame(static_cast<float>(kWidth) / static_cast<float>(kHeight), true);
@@ -721,43 +696,40 @@ TEST(coloradoNoonShadowAndSunComeOutAsTheFormulasGive)
         expected[i] = referenceCombine(values[i], frame, frame.vignetteBottom, v);
         std::fprintf(stderr, "scene %.2f: chain %.0f, formulas %.1f (of 255)\n", values[i], measured[i] * 255.0F,
             expected[i] * 255.0F);
-        CHECK_NEAR(measured[i], expected[i], 2.0 / 255.0);
+        CHECK_THAT(measured[i], WithinAbs(expected[i], 2.0 / 255.0));
     }
     release(scene);
     release(out);
 }
 
-TEST(coloradoPostProcessingLoadsAndFollowsItsZones)
+TEST_CASE("coloradoPostProcessingLoadsAndFollowsItsZones", "[postprocess]")
 {
-    const std::optional<std::string> dir = gameDir();
-    if (!dir) {
-        return;
-    }
+    const char* dir = fh::test::gameDir();
     fh::Vfs vfs;
-    vfs.mountDisc(fh::pathFromUtf8(*dir));
+    vfs.mountDisc(fh::pathFromUtf8(dir));
     fh::PostProcessing p = fh::PostProcessing::load(vfs, "colorado");
     // Every one of the sixteen zones names templates that exist.
-    CHECK_EQ(p.zones().size(), std::size_t{16});
+    CHECK(p.zones().size() == std::size_t{16});
     const fh::TimeOfDayCurves curves = fh::TimeOfDayCurves::load(vfs, "colorado");
     const float noon = 12.0F * 60.0F;
     // Outside every zone: TrackSettings' block times the curves.
     p.update(glm::vec2(20000.0F, 20000.0F), 1.0F / 60.0F, curves, noon);
     CHECK(p.zoneName().empty());
-    CHECK_NEAR(p.settings().bloomScale, 1.0 * curves.sampleScalar("BloomScaleMultiplier", noon), 1e-5);
-    CHECK_NEAR(p.settings().filmic.shoulderStrength, 0.700001, 1e-5);
+    CHECK_THAT(p.settings().bloomScale, WithinAbs(1.0 * curves.sampleScalar("BloomScaleMultiplier", noon), 1e-5));
+    CHECK_THAT(p.settings().filmic.shoulderStrength, WithinAbs(0.700001, 1e-5));
     // The fog outside every zone multiplies the curves by one and scatters
     // the sun from 2000 m over 2000 m.
-    CHECK_NEAR(p.fog().density, 1.0, 1e-6);
-    CHECK_NEAR(p.fog().scatterStartDistance, 2000.0, 1e-6);
+    CHECK_THAT(p.fog().density, WithinAbs(1.0, 1e-6));
+    CHECK_THAT(p.fog().scatterStartDistance, WithinAbs(2000.0, 1e-6));
     // Entering Redrock (the centroid of its first triangle) snaps to its
     // Hot_hazy bloom, Saturated colour settings and Redrock fog.
     p.update(glm::vec2(-6384.0F, -4888.0F), 1.0F / 60.0F, curves, noon);
-    CHECK_EQ(std::string(p.zoneName()), std::string("Redrock"));
-    CHECK_NEAR(p.settings().bloomScale, 1.0 * curves.sampleScalar("BloomScaleMultiplier", noon), 1e-5);
-    CHECK_NEAR(p.settings().bloomCutoff, 1.0 * curves.sampleScalar("BloomCutoffMultiplier", noon), 1e-5);
-    CHECK_NEAR(p.fog().density, 2.35, 1e-5);
-    CHECK_NEAR(p.settings().vignetteTop.angleDegrees, -2.3, 1e-5);
-    CHECK_NEAR(p.settings().vignetteBottom.minIntensity, 0.749, 1e-5);
+    CHECK(std::string(p.zoneName()) == std::string("Redrock"));
+    CHECK_THAT(p.settings().bloomScale, WithinAbs(1.0 * curves.sampleScalar("BloomScaleMultiplier", noon), 1e-5));
+    CHECK_THAT(p.settings().bloomCutoff, WithinAbs(1.0 * curves.sampleScalar("BloomCutoffMultiplier", noon), 1e-5));
+    CHECK_THAT(p.fog().density, WithinAbs(2.35, 1e-5));
+    CHECK_THAT(p.settings().vignetteTop.angleDegrees, WithinAbs(-2.3, 1e-5));
+    CHECK_THAT(p.settings().vignetteBottom.minIntensity, WithinAbs(0.749, 1e-5));
     // At noon the day grading applies in full: the Redrock table, not the
     // identity.
     const fh::GradingLut identity = identityLut();
@@ -765,17 +737,25 @@ TEST(coloradoPostProcessingLoadsAndFollowsItsZones)
     // At night the filmic curve is the night one.
     const float midnight = 0.0F;
     p.update(glm::vec2(-6384.0F, -4888.0F), 1.0F / 60.0F, curves, midnight);
-    CHECK_NEAR(p.settings().filmic.white, 11.0, 1e-5);
+    CHECK_THAT(p.settings().filmic.white, WithinAbs(11.0, 1e-5));
 }
 
 } // namespace
 
-int main(int argc, char** argv)
-{
-    // Never open a window on the desktop.
-    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen", false);
-    fh::setEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy", false);
-    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache),
-        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-postprocess-cache"));
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}
+namespace {
+
+/// Keeps the cases' shader programs out of the player's own cache.
+class CacheFolder : public Catch::EventListenerBase {
+public:
+    using Catch::EventListenerBase::EventListenerBase;
+
+    void testRunStarting(const Catch::TestRunInfo& /*info*/) override
+    {
+        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache),
+            fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-postprocess-cache"));
+    }
+};
+
+} // namespace
+
+CATCH_REGISTER_LISTENER(CacheFolder)

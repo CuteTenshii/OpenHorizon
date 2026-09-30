@@ -2,7 +2,10 @@
 // files built here in the layout CarBin documents, the name rules, and, when
 // FH1_GAME_DIR names an extracted disc, a few real cars.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "carmodel/CarBin.h"
 #include "carmodel/CarMaterials.h"
@@ -18,6 +21,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+using Catch::Matchers::WithinAbs;
 
 namespace {
 
@@ -236,68 +241,68 @@ TestPart quadPart()
     return part;
 }
 
-TEST(appendTrianglesUnrollsStripsAndRestarts)
+TEST_CASE("appendTrianglesUnrollsStripsAndRestarts", "[carmodel]")
 {
     std::vector<std::uint32_t> out;
     const std::vector<std::uint32_t> strip{0, 1, 2, 3, 0xFFFF, 4, 5, 6};
     carmodel::carbin::appendTriangles(strip, 6, 7, out);
-    CHECK_EQ(out, (std::vector<std::uint32_t>{0, 1, 2, 2, 1, 3, 4, 5, 6}));
+    CHECK(out == (std::vector<std::uint32_t>{0, 1, 2, 2, 1, 3, 4, 5, 6}));
 
     out.clear();
     const std::vector<std::uint32_t> list{0, 1, 2, 2, 2, 3};
     carmodel::carbin::appendTriangles(list, 4, 4, out);
-    CHECK_EQ(out, (std::vector<std::uint32_t>{0, 1, 2}));
+    CHECK(out == (std::vector<std::uint32_t>{0, 1, 2}));
 }
 
-TEST(parseReadsPartMeshAndVertices)
+TEST_CASE("parseReadsPartMeshAndVertices", "[carmodel]")
 {
     const TestPart part = quadPart();
     const Bytes file = brakeFile(part, false);
     const CarBin model = carmodel::carbin::parse(file, "test", CarBin::Kind::Brake);
-    CHECK_EQ(model.parts.size(), std::size_t{1});
-    CHECK_EQ(model.lodCount, 1U);
-    CHECK_NEAR(model.lightingRange.x, -0.33, 1e-6);
-    CHECK_NEAR(model.lightingRange.y, 0.66, 1e-6);
+    CHECK(model.parts.size() == std::size_t{1});
+    CHECK(model.lodCount == 1U);
+    CHECK_THAT(model.lightingRange.x, WithinAbs(-0.33, 1e-6));
+    CHECK_THAT(model.lightingRange.y, WithinAbs(0.66, 1e-6));
     if (model.parts.empty()) {
         return;
     }
     const CarBin::Part& p = model.parts.front();
-    CHECK_EQ(p.name, std::string("rotorLF"));
-    CHECK_EQ(p.lod0Vertices.count, 4U);
+    CHECK(p.name == std::string("rotorLF"));
+    CHECK(p.lod0Vertices.count == 4U);
     CHECK(p.vertices.empty());
-    CHECK_EQ(p.meshes.size(), std::size_t{1});
+    CHECK(p.meshes.size() == std::size_t{1});
     const CarBin::Mesh& mesh = p.meshes.front();
-    CHECK_EQ(mesh.name, std::string("rotor"));
+    CHECK(mesh.name == std::string("rotor"));
     CHECK(!mesh.translucent);
-    CHECK_EQ(mesh.triangles, (std::vector<std::uint32_t>{0, 1, 2, 2, 1, 3}));
-    CHECK_NEAR(mesh.uv0.x, 0.25, 1e-6);
-    CHECK_NEAR(mesh.uv0.y, 0.5, 1e-6);
+    CHECK(mesh.triangles == (std::vector<std::uint32_t>{0, 1, 2, 2, 1, 3}));
+    CHECK_THAT(mesh.uv0.x, WithinAbs(0.25, 1e-6));
+    CHECK_THAT(mesh.uv0.y, WithinAbs(0.5, 1e-6));
 
     // Half diagonal |(1, 2, 2)| = 3; a third of it along +X from (0, 1, 2).
     const carmodel::Vertex v0 = carmodel::carbin::decodeVertex(p, p.verticesFor(mesh), 0);
-    CHECK_NEAR(v0.position.x, 1.0, 1e-3);
-    CHECK_NEAR(v0.position.y, 1.0, 1e-3);
+    CHECK_THAT(v0.position.x, WithinAbs(1.0, 1e-3));
+    CHECK_THAT(v0.position.y, WithinAbs(1.0, 1e-3));
     // Z is negated into car space.
-    CHECK_NEAR(v0.position.z, -2.0, 1e-3);
+    CHECK_THAT(v0.position.z, WithinAbs(-2.0, 1e-3));
     const carmodel::Vertex v3 = carmodel::carbin::decodeVertex(p, p.verticesFor(mesh), 3);
-    CHECK_NEAR(v3.position.z, -3.0, 1e-3);
-    CHECK_NEAR(v0.normal.x, 1.0, 1e-4);
-    CHECK_NEAR(v0.tangent.y, 1.0, 1e-4);
-    CHECK_EQ(v0.lighting[0], std::uint8_t{106});
+    CHECK_THAT(v3.position.z, WithinAbs(-3.0, 1e-3));
+    CHECK_THAT(v0.normal.x, WithinAbs(1.0, 1e-4));
+    CHECK_THAT(v0.tangent.y, WithinAbs(1.0, 1e-4));
+    CHECK(v0.lighting[0] == std::uint8_t{106});
 
     const glm::vec2 uv = carmodel::carbin::meshUv0(mesh, carmodel::carbin::decodeVertex(p, p.verticesFor(mesh), 1));
-    CHECK_NEAR(uv.x, 0.75, 1e-5);
-    CHECK_NEAR(uv.y, 0.0, 1e-5);
+    CHECK_THAT(uv.x, WithinAbs(0.75, 1e-5));
+    CHECK_THAT(uv.y, WithinAbs(0.0, 1e-5));
 }
 
-TEST(parseMarksTranslucentMeshesFromDrawLists)
+TEST_CASE("parseMarksTranslucentMeshesFromDrawLists", "[carmodel]")
 {
     const Bytes file = brakeFile(quadPart(), true);
     const CarBin model = carmodel::carbin::parse(file, "test", CarBin::Kind::Brake);
-    CHECK(!model.parts.empty() && model.parts.front().meshes.front().translucent);
+    CHECK((!model.parts.empty() && model.parts.front().meshes.front().translucent));
 }
 
-TEST(parseReadsStrippedFiles)
+TEST_CASE("parseReadsStrippedFiles", "[carmodel]")
 {
     TestPart part = quadPart();
     part.stripped = true;
@@ -307,27 +312,27 @@ TEST(parseReadsStrippedFiles)
     if (!model.parts.empty()) {
         const CarBin::Part& p = model.parts.front();
         CHECK(p.lod0Vertices.stripped);
-        CHECK_EQ(p.lod0Vertices.count, 4U);
+        CHECK(p.lod0Vertices.count == 4U);
         CHECK(p.lod0Vertices.data.empty());
         CHECK(p.meshes.front().indicesStripped);
-        CHECK_EQ(p.meshes.front().indexCount, 4U);
+        CHECK(p.meshes.front().indexCount == 4U);
         CHECK(p.meshes.front().triangles.empty());
     }
 }
 
-TEST(parseRejectsDamagedFiles)
+TEST_CASE("parseRejectsDamagedFiles", "[carmodel]")
 {
     const Bytes file = brakeFile(quadPart(), false);
     Bytes trailing = file;
     trailing.push_back(0);
-    CHECK_THROWS(carmodel::carbin::parse(trailing, "trailing", CarBin::Kind::Brake));
+    CHECK_THROWS_AS(carmodel::carbin::parse(trailing, "trailing", CarBin::Kind::Brake), std::exception);
     const Bytes truncated(file.begin(), file.end() - 5);
-    CHECK_THROWS(carmodel::carbin::parse(truncated, "truncated", CarBin::Kind::Brake));
+    CHECK_THROWS_AS(carmodel::carbin::parse(truncated, "truncated", CarBin::Kind::Brake), std::exception);
     // A brake file read as a wheel meets the wrong preamble version.
-    CHECK_THROWS(carmodel::carbin::parse(file, "kind", CarBin::Kind::Wheel));
+    CHECK_THROWS_AS(carmodel::carbin::parse(file, "kind", CarBin::Kind::Wheel), std::exception);
 }
 
-TEST(parseReadsCarPreambleLights)
+TEST_CASE("parseReadsCarPreambleLights", "[carmodel]")
 {
     const Bytes brake = brakeFile(quadPart(), false);
     Writer w;
@@ -344,14 +349,14 @@ TEST(parseReadsCarPreambleLights)
     // The rest is the brake file after its one-word preamble.
     w.data.insert(w.data.end(), brake.begin() + 4, brake.end());
     const CarBin model = carmodel::carbin::parse(w.data, "car", CarBin::Kind::Car);
-    CHECK_EQ(model.lights.size(), std::size_t{1});
+    CHECK(model.lights.size() == std::size_t{1});
     if (!model.lights.empty()) {
-        CHECK_NEAR(model.lights.front().position.z, 2.0, 1e-6);
-        CHECK_NEAR(model.lights.front().direction.z, 1.0, 1e-4);
+        CHECK_THAT(model.lights.front().position.z, WithinAbs(2.0, 1e-6));
+        CHECK_THAT(model.lights.front().direction.z, WithinAbs(1.0, 1e-4));
     }
 }
 
-TEST(kindFromPathFollowsFolders)
+TEST_CASE("kindFromPathFollowsFolders", "[carmodel]")
 {
     CHECK(carmodel::carbin::kindFromPath("media/wheels/alf_8c_08/alf_8c_08.carbin") == CarBin::Kind::Wheel);
     CHECK(carmodel::carbin::kindFromPath("media/cars/alf_8c_08/alf_8c_08_rotorlf_lod0.carbin") == CarBin::Kind::Brake);
@@ -359,42 +364,42 @@ TEST(kindFromPathFollowsFolders)
     CHECK(carmodel::carbin::kindFromPath("media/cars/alf_8c_08/alf_8c_08_lod0.carbin") == CarBin::Kind::Car);
 }
 
-TEST(partVariantsFollowUpgradeNames)
+TEST_CASE("partVariantsFollowUpgradeNames", "[carmodel]")
 {
     CHECK(carmodel::partVariant("body").stock);
     CHECK(carmodel::partVariant("bumperFa").stock);
-    CHECK_EQ(carmodel::partVariant("bumperFa").slot, std::string("bumperF"));
+    CHECK(carmodel::partVariant("bumperFa").slot == std::string("bumperF"));
     CHECK(!carmodel::partVariant("bumperFb").stock);
     CHECK(!carmodel::partVariant("bumperFrace").stock);
-    CHECK_EQ(carmodel::partVariant("bumperFrace").variant, std::string("race"));
+    CHECK(carmodel::partVariant("bumperFrace").variant == std::string("race"));
     CHECK(carmodel::partVariant("bumperFrameF").variant.empty());
     CHECK(carmodel::partVariant("winga_arm1").stock);
-    CHECK_EQ(carmodel::partVariant("exhaustLb").slot, std::string("exhaustL"));
+    CHECK(carmodel::partVariant("exhaustLb").slot == std::string("exhaustL"));
     CHECK(!carmodel::partVariant("cagerace").stock);
     CHECK(!carmodel::partVariant("lexanLHL").stock);
 }
 
-TEST(techniqueNamesFollowTheExecutable)
+TEST_CASE("techniqueNamesFollowTheExecutable", "[carmodel]")
 {
-    CHECK_EQ(carmodel::techniqueName("body", "bumperFa"), std::string("body"));
+    CHECK(carmodel::techniqueName("body", "bumperFa") == std::string("body"));
     // Brake parts draw as rotor or caliper whatever their material.
-    CHECK_EQ(carmodel::techniqueName("chrome", "rotorLF"), std::string("rotor"));
-    CHECK_EQ(carmodel::techniqueName("metal", "caliperRR"), std::string("caliper"));
-    CHECK_EQ(carmodel::techniqueName("brake_badge", "caliperRR"), std::string("brake_badge"));
+    CHECK(carmodel::techniqueName("chrome", "rotorLF") == std::string("rotor"));
+    CHECK(carmodel::techniqueName("metal", "caliperRR") == std::string("caliper"));
+    CHECK(carmodel::techniqueName("brake_badge", "caliperRR") == std::string("brake_badge"));
     // Cockpit parts, matched without regard to case.
-    CHECK_EQ(carmodel::techniqueName("leather", "interior"), std::string("cockpit_leather"));
-    CHECK_EQ(carmodel::techniqueName("plastic", "doorcardLF"), std::string("cockpit_plastic"));
-    CHECK_EQ(carmodel::techniqueName("leather", "headlightL"), std::string("leather"));
+    CHECK(carmodel::techniqueName("leather", "interior") == std::string("cockpit_leather"));
+    CHECK(carmodel::techniqueName("plastic", "doorcardLF") == std::string("cockpit_plastic"));
+    CHECK(carmodel::techniqueName("leather", "headlightL") == std::string("leather"));
     // Tyres and rims get _V2 only with the builder's flag clear.
-    CHECK_EQ(carmodel::techniqueName("rim", "wheel"), std::string("rim"));
-    CHECK_EQ(carmodel::techniqueName("rim", "wheel", false), std::string("rim_V2"));
-    CHECK_EQ(carmodel::techniqueName("wheel_black", "wheel", false), std::string("wheel_black_V2"));
-    CHECK_EQ(carmodel::techniqueName("window", "glassF"), std::string("frontwindow"));
-    CHECK_EQ(carmodel::techniqueName("window_2", "lexanF"), std::string("frontwindow_2"));
-    CHECK_EQ(carmodel::techniqueName("window", "glassLF"), std::string("window"));
-    CHECK_EQ(carmodel::missingTechnique("tire"), std::string("missingTire"));
-    CHECK_EQ(carmodel::missingTechnique("tire", false), std::string("missingTire_V2"));
-    CHECK_EQ(carmodel::missingTechnique("body"), std::string("missing"));
+    CHECK(carmodel::techniqueName("rim", "wheel") == std::string("rim"));
+    CHECK(carmodel::techniqueName("rim", "wheel", false) == std::string("rim_V2"));
+    CHECK(carmodel::techniqueName("wheel_black", "wheel", false) == std::string("wheel_black_V2"));
+    CHECK(carmodel::techniqueName("window", "glassF") == std::string("frontwindow"));
+    CHECK(carmodel::techniqueName("window_2", "lexanF") == std::string("frontwindow_2"));
+    CHECK(carmodel::techniqueName("window", "glassLF") == std::string("window"));
+    CHECK(carmodel::missingTechnique("tire") == std::string("missingTire"));
+    CHECK(carmodel::missingTechnique("tire", false) == std::string("missingTire_V2"));
+    CHECK(carmodel::missingTechnique("body") == std::string("missing"));
     CHECK(carmodel::isTyreMaterial("sidewall"));
     CHECK(carmodel::isTyreMaterial("ghostTire_x"));
     CHECK(carmodel::isRimMaterial("blur_lip"));
@@ -405,7 +410,7 @@ TEST(techniqueNamesFollowTheExecutable)
 // The rear window's heating wires drew as opaque dark bands across the
 // glass: their mesh covers the window in strips and its texture is clear
 // (alpha 0) except for the wire, which the game keeps by alpha to mask.
-TEST(defrostLinesDrawMaskedAndUnculled)
+TEST_CASE("defrostLinesDrawMaskedAndUnculled", "[carmodel]")
 {
     const carmodel::MaterialDrawState defrost = carmodel::materialDrawState("defrost_lines");
     CHECK(defrost.alphaToMask);
@@ -421,7 +426,7 @@ TEST(defrostLinesDrawMaskedAndUnculled)
     CHECK(!carmodel::castsNoShadow("window"));
 }
 
-TEST(loadFlagsEvaluateTextureTableExpressions)
+TEST_CASE("loadFlagsEvaluateTextureTableExpressions", "[carmodel]")
 {
     const std::vector<std::string> set{"LOD0", "Cockpit"};
     CHECK(carmodel::loadFlagsMatch("", set));
@@ -432,13 +437,9 @@ TEST(loadFlagsEvaluateTextureTableExpressions)
     CHECK(carmodel::loadFlagsMatch("!SuperLOD", set));
 }
 
-TEST(realCarsLoad)
+TEST_CASE("realCarsLoad", "[carmodel]")
 {
-    const char* gameDir = std::getenv("FH1_GAME_DIR");
-    if (gameDir == nullptr || *gameDir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return;
-    }
+    const char* gameDir = fh::test::gameDir();
     fh::Vfs vfs;
     vfs.mountDisc(gameDir);
     std::optional<fh::Database> db;
@@ -460,20 +461,20 @@ TEST(realCarsLoad)
         std::fprintf(stderr, "warning: %s\n", warning.c_str());
     }
     CHECK(alfa.mesh.triangleCount() > 150000);
-    CHECK_EQ(alfa.wheels.size(), std::size_t{4});
-    CHECK_EQ(alfa.mesh.vertices.size() % carmodel::carbin::kVertexStride, std::size_t{0});
+    CHECK(alfa.wheels.size() == std::size_t{4});
+    CHECK(alfa.mesh.vertices.size() % carmodel::carbin::kVertexStride == std::size_t{0});
     // The collision box of maxdata.xml, less the door mirrors.
-    CHECK_NEAR(alfa.mesh.boundsMin.y, -0.030, 0.02);
-    CHECK_NEAR(alfa.mesh.boundsMax.y, 1.228, 0.02);
-    CHECK_NEAR(alfa.mesh.boundsMin.z, -2.167, 0.02);
-    CHECK_NEAR(alfa.mesh.boundsMax.z, 2.200, 0.02);
+    CHECK_THAT(alfa.mesh.boundsMin.y, WithinAbs(-0.030, 0.02));
+    CHECK_THAT(alfa.mesh.boundsMax.y, WithinAbs(1.228, 0.02));
+    CHECK_THAT(alfa.mesh.boundsMin.z, WithinAbs(-2.167, 0.02));
+    CHECK_THAT(alfa.mesh.boundsMax.z, WithinAbs(2.200, 0.02));
     CHECK(!alfa.textures.empty());
     for (const carmodel::CarModel::Texture& texture : alfa.textures) {
         CHECK(!texture.chain.levels.empty());
     }
     for (const carmodel::WheelMount& wheel : alfa.wheels) {
-        CHECK_NEAR(std::abs(wheel.centre.z), 2.654 / 2.0, 0.01);
-        CHECK(wheel.radius > 0.3F && wheel.radius < 0.4F);
+        CHECK_THAT(std::abs(wheel.centre.z), WithinAbs(2.654 / 2.0, 0.01));
+        CHECK((wheel.radius > 0.3F && wheel.radius < 0.4F));
     }
     // Every batch draws with a technique of the car effect, and the
     // samplers it reads find their files.
@@ -494,7 +495,7 @@ TEST(realCarsLoad)
     CHECK(body != nullptr);
     if (body != nullptr) {
         // metallic.xml's PaintScale over normal.xml's.
-        CHECK_NEAR(body->at("PaintScale").x, 0.5, 1e-6);
+        CHECK_THAT(body->at("PaintScale").x, WithinAbs(0.5, 1e-6));
     }
 
     carmodel::CarModelOptions geometryOnly;
@@ -502,15 +503,10 @@ TEST(realCarsLoad)
     for (const char* name : {"VW_Beetle_68", "KEN_T440_12", "BUS_TOUR_12"}) {
         const carmodel::CarModel car = carmodel::CarModel::load(vfs, db ? &*db : nullptr, name, geometryOnly);
         CHECK(car.mesh.triangleCount() > 10000);
-        CHECK_EQ(car.wheels.size(), std::size_t{4});
+        CHECK(car.wheels.size() == std::size_t{4});
         // Nothing far below the ground once the wheelbase centre is the origin.
         CHECK(car.mesh.boundsMin.y > -0.4F);
     }
 }
 
 } // namespace
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}

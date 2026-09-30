@@ -3,7 +3,8 @@
 // the chevrons' size and placement, and the draw-out after a restart. On
 // synthetic lines; no disc needed.
 
-#include "TestHarness.h"
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "game/DrivingLine.h"
 #include "game/RaceData.h"
@@ -14,6 +15,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+using Catch::Matchers::WithinAbs;
 
 namespace {
 
@@ -39,7 +42,7 @@ float constantSpeed(float /*index*/)
     return 20.0F;
 }
 
-TEST(drivingLineColoursFollowTheSpeedMargin)
+TEST_CASE("drivingLineColoursFollowTheSpeedMargin", "[race]")
 {
     // Amber at the target and just under it, down to the braking margin.
     CHECK(fh::DrivingLine::colour(0.0F) == (Rgb{192, 164, 52}));
@@ -53,7 +56,7 @@ TEST(drivingLineColoursFollowTheSpeedMargin)
     CHECK(fh::DrivingLine::colour(2.5F) == (Rgb{118, 155, 48}));
 }
 
-TEST(drivingLineAlphaAlongTheLine)
+TEST_CASE("drivingLineAlphaAlongTheLine", "[race]")
 {
     // Faint behind the car, rising from 16 points after the first, full
     // from 22 and fading out by 102; the Full setting's (a * 255) >> 8.
@@ -66,7 +69,7 @@ TEST(drivingLineAlphaAlongTheLine)
     CHECK(fh::DrivingLine::positionAlpha(101, 0.0F) == 0);
 }
 
-TEST(drivingLineChevronsSitOnTheLine)
+TEST_CASE("drivingLineChevronsSitOnTheLine", "[race]")
 {
     const fh::RacingLine line = straightLine(400);
     fh::DrivingLine drivingLine(1.0F);
@@ -80,21 +83,21 @@ TEST(drivingLineChevronsSitOnTheLine)
     const fh::DrivingLine::Vertex& a = vertices[0];
     const fh::DrivingLine::Vertex& b = vertices[1];
     const fh::DrivingLine::Vertex& c = vertices[2];
-    CHECK_NEAR(a.position.z, 176.0, 1e-4);
-    CHECK_NEAR(a.position.y, 0.1, 1e-5);
-    CHECK_NEAR(glm::length(a.position - b.position), 1.2, 1e-5);
-    CHECK_NEAR(c.position.z - b.position.z, 2.4, 1e-5);
+    CHECK_THAT(a.position.z, WithinAbs(176.0, 1e-4));
+    CHECK_THAT(a.position.y, WithinAbs(0.1, 1e-5));
+    CHECK_THAT(glm::length(a.position - b.position), WithinAbs(1.2, 1e-5));
+    CHECK_THAT(c.position.z - b.position.z, WithinAbs(2.4, 1e-5));
     CHECK(a.uv == glm::vec2(0.0F, 1.0F));
     CHECK(c.uv == glm::vec2(1.0F, 0.0F));
     // At the target speed every chevron is amber.
     for (const fh::DrivingLine::Vertex& v : vertices) {
-        CHECK(v.colour[0] == 192 && v.colour[1] == 164 && v.colour[2] == 52);
+        CHECK((v.colour[0] == 192 && v.colour[1] == 164 && v.colour[2] == 52));
     }
     // The chevron 30 points after the first is at full brightness.
     CHECK(vertices[15 * 4].colour[3] > 200);
 }
 
-TEST(drivingLineDrawsOutAfterARestart)
+TEST_CASE("drivingLineDrawsOutAfterARestart", "[race]")
 {
     const fh::RacingLine line = straightLine(400);
     fh::DrivingLine drivingLine(1.0F);
@@ -110,7 +113,7 @@ TEST(drivingLineDrawsOutAfterARestart)
     CHECK(vertices[26 * 4].colour[3] == 0);
 }
 
-TEST(drivingLineStopsAtTheEndOfAnOpenLine)
+TEST_CASE("drivingLineStopsAtTheEndOfAnOpenLine", "[race]")
 {
     const fh::RacingLine line = straightLine(60);
     fh::DrivingLine drivingLine(1.0F);
@@ -121,8 +124,3 @@ TEST(drivingLineStopsAtTheEndOfAnOpenLine)
 }
 
 } // namespace
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}

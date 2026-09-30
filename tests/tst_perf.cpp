@@ -14,7 +14,11 @@
 // time while the CPU is still sending them).
 
 #include "RoadFollower.h"
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/reporters/catch_reporter_event_listener.hpp>
+#include <catch2/reporters/catch_reporter_registrars.hpp>
 
 #include "base/Host.h"
 #include "base/Log.h"
@@ -48,16 +52,6 @@ using PartTimes = fh::render::FrameStats::PartTimes;
 
 /// The scenarios' fixed step: every run drives the same way.
 constexpr float kStep = 1.0F / 60.0F;
-
-const char* gameDir()
-{
-    const char* dir = std::getenv("FH1_GAME_DIR");
-    if (dir == nullptr || *dir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return nullptr;
-    }
-    return dir;
-}
 
 fh::Window& window()
 {
@@ -220,11 +214,13 @@ std::optional<Drive> drive(const char* dir, int width, int height, float seconds
 // frames slower, and a machine shared with builds makes the tail noisy.
 constexpr double kDrawingBudgetMs = 16.0;
 
-TEST(freeRoamDrawingStaysInBudget)
+TEST_CASE("freeRoamDrawingStaysInBudget", "[perf]")
 {
-    const char* dir = gameDir();
-    if (!dir) {
-        return;
+    const char* dir = fh::test::gameDir();
+    try {
+        window();
+    } catch (const std::exception& e) {
+        SKIP("no OpenGL context (" << e.what() << ")");
     }
     const std::array<int, 2> size = perfSize({1600, 900});
     const std::optional<Drive> result = drive(dir, size[0], size[1], perfSeconds(30.0F));
@@ -240,22 +236,22 @@ TEST(freeRoamDrawingStaysInBudget)
     }
 }
 
+/// Keeps the drive off the player's own folders; the shader cache is the
+/// scenarios'.
+class PerfFolders : public Catch::EventListenerBase {
+public:
+    using Catch::EventListenerBase::EventListenerBase;
+
+    void testRunStarting(const Catch::TestRunInfo& /*info*/) override
+    {
+        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache),
+            fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-scenarios-cache"));
+        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Data),
+            fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-perf-data"));
+        fh::openLogFile(std::filesystem::temp_directory_path() / "fh1-perf.log");
+    }
+};
+
 } // namespace
 
-int main(int argc, char** argv)
-{
-    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen", false);
-    fh::setEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy", false);
-    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache),
-        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-scenarios-cache"));
-    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Data),
-        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-perf-data"));
-    fh::openLogFile(std::filesystem::temp_directory_path() / "fh1-perf.log");
-    try {
-        window();
-    } catch (const std::exception& e) {
-        std::fprintf(stderr, "skipped: no OpenGL context (%s)\n", e.what());
-        return 0;
-    }
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}
+CATCH_REGISTER_LISTENER(PerfFolders)

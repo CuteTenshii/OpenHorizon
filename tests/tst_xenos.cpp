@@ -3,7 +3,10 @@
 // the documented layout; and, when FH1_GAME_DIR names an extracted disc,
 // effects of the game translated and compiled (every one as a slow test).
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "vfs/Vfs.h"
 #include "xenos/Disassembler.h"
@@ -21,6 +24,10 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+
+using Catch::Matchers::WithinAbs;
+
+using fh::test::gameDir;
 
 namespace {
 
@@ -178,96 +185,96 @@ std::vector<std::uint32_t> pixelProgram()
     return words;
 }
 
-TEST(decodesControlFlow)
+TEST_CASE("decodesControlFlow", "[xenos]")
 {
     const auto pair = xenos::unpackCfPair(0x12345678, 0x9ABCDEF0, 0x0FEDCBA9);
-    CHECK_EQ(pair[0], std::uint64_t{0xDEF012345678});
-    CHECK_EQ(pair[1], std::uint64_t{0x0FEDCBA99ABC});
+    CHECK(pair[0] == std::uint64_t{0xDEF012345678});
+    CHECK(pair[1] == std::uint64_t{0x0FEDCBA99ABC});
 
     const xenos::CfInstruction exec
         = xenos::decodeCf(cfExec(xenos::CfOpcode::CondExecEnd, 9, 5, 0b1000'0001, 131, true));
     CHECK(exec.opcode == xenos::CfOpcode::CondExecEnd);
-    CHECK_EQ(exec.address, 9U);
-    CHECK_EQ(exec.count, 5U);
+    CHECK(exec.address == 9U);
+    CHECK(exec.count == 5U);
     CHECK(exec.slotIsFetch(0));
     CHECK(!exec.slotIsFetch(1));
     CHECK(!exec.slotIsFetch(3));
     CHECK(exec.slotSerialized(3));
     CHECK(exec.testsBool());
-    CHECK_EQ(exec.boolAddress, 131U);
+    CHECK(exec.boolAddress == 131U);
     CHECK(exec.condition);
     CHECK(exec.endsShader());
 
     const xenos::CfInstruction loopEnd = xenos::decodeCf(cfTarget(xenos::CfOpcode::LoopEnd, 4, 3));
     CHECK(loopEnd.opcode == xenos::CfOpcode::LoopEnd);
-    CHECK_EQ(loopEnd.address, 4U);
-    CHECK_EQ(loopEnd.loopId, 3U);
+    CHECK(loopEnd.address == 4U);
+    CHECK(loopEnd.loopId == 3U);
 
     const std::uint64_t allocBits = 2U | (std::uint64_t{2} << 41) | (std::uint64_t{12} << 44);
     const xenos::CfInstruction alloc = xenos::decodeCf(allocBits);
     CHECK(alloc.allocType == xenos::AllocType::Parameters);
-    CHECK_EQ(alloc.allocSize, 2U);
-    CHECK_EQ(xenos::disassembleCf(alloc), std::string("alloc interpolators/colors size=3"));
+    CHECK(alloc.allocSize == 2U);
+    CHECK(xenos::disassembleCf(alloc) == std::string("alloc interpolators/colors size=3"));
 }
 
-TEST(decodesAluAndFetches)
+TEST_CASE("decodesAluAndFetches", "[xenos]")
 {
     // The first ALU slot of a track vertex shader:
     // mul r0.xyz_, r0.yzww, c7.xyzz  +  sges r2.___w, |r0|.x
     const xenos::AluInstruction a = xenos::decodeAlu(0x24870200, 0x0015c06c, 0xa1000780);
-    CHECK_EQ(a.vectorOpcode, static_cast<std::uint32_t>(xenos::VectorOpcode::Mul));
-    CHECK_EQ(a.scalarOpcode, static_cast<std::uint32_t>(xenos::ScalarOpcode::Sges));
-    CHECK_EQ(a.vectorWriteMask, 0x7U);
-    CHECK_EQ(a.scalarDest, 2U);
+    CHECK(a.vectorOpcode == static_cast<std::uint32_t>(xenos::VectorOpcode::Mul));
+    CHECK(a.scalarOpcode == static_cast<std::uint32_t>(xenos::ScalarOpcode::Sges));
+    CHECK(a.vectorWriteMask == 0x7U);
+    CHECK(a.scalarDest == 2U);
     const xenos::AluOperand first = a.vectorOperand(0);
     CHECK(first.temporary);
-    CHECK_EQ(first.components[0], 1);
-    CHECK_EQ(first.components[3], 3);
+    CHECK(first.components[0] == 1);
+    CHECK(first.components[3] == 3);
     const xenos::AluOperand second = a.vectorOperand(1);
     CHECK(!second.temporary);
-    CHECK_EQ(second.index, 7U);
+    CHECK(second.index == 7U);
     const xenos::AluOperand scalar = a.scalarOperand();
     CHECK(scalar.absolute);
-    CHECK_EQ(scalar.components[3], 0);
-    CHECK_EQ(xenos::disassembleAlu(a, xenos::ShaderStage::Vertex),
-        std::string("mul r0.xyz_, r0.yzww, c7.xyzz  +  sges r2.___w, |r0|.x"));
+    CHECK(scalar.components[3] == 0);
+    CHECK(xenos::disassembleAlu(a, xenos::ShaderStage::Vertex)
+        == std::string("mul r0.xyz_, r0.yzww, c7.xyzz  +  sges r2.___w, |r0|.x"));
 
     // mulsc r0.___w, c255.y, r0.w: the temporary is encoded in the opcode's
     // low bit, the third source's select bit and its swizzle.
     const xenos::AluInstruction m = xenos::decodeAlu(0xa8810005, 0x006c1b83, 0xc10500ff);
     const xenos::AluOperand temporary = m.scalarTemporaryOperand();
     const xenos::AluOperand constant = m.scalarOperand();
-    CHECK_EQ(temporary.index, 0U);
-    CHECK_EQ(temporary.components[0], 3);
+    CHECK(temporary.index == 0U);
+    CHECK(temporary.components[0] == 3);
     CHECK(!constant.temporary);
-    CHECK_EQ(constant.index, 255U);
-    CHECK_EQ(constant.components[3], 1);
+    CHECK(constant.index == 255U);
+    CHECK(constant.components[3] == 1);
 
     const auto v = vfetch(1, 0x688, 57, true, true, 5, 3);
     const xenos::FetchInstruction f = xenos::decodeFetch(v[0], v[1], v[2]);
     CHECK(f.isVertexFetch());
-    CHECK_EQ(f.constIndex, 95U);
-    CHECK_EQ(f.format, 57U);
-    CHECK_EQ(f.stride, 5U);
-    CHECK_EQ(f.offset, 3);
+    CHECK(f.constIndex == 95U);
+    CHECK(f.format == 57U);
+    CHECK(f.stride == 5U);
+    CHECK(f.offset == 3);
     CHECK(!f.normalized);
 
     // tfetch r3.wzyx, r3.zyz, tf13 2D offset=(0.5,0.5,0) from a track pixel
     // shader.
     const xenos::FetchInstruction t = xenos::decodeFetch(0x98d83061, 0x1f1ff053, 0x00214000);
-    CHECK_EQ(t.opcode, 1U);
-    CHECK_EQ(t.constIndex, 13U);
+    CHECK(t.opcode == 1U);
+    CHECK(t.constIndex == 13U);
     CHECK(t.dimension == xenos::TextureDimension::D2);
-    CHECK_NEAR(t.offsetX, 0.5, 1e-6);
-    CHECK_NEAR(t.offsetY, 0.5, 1e-6);
-    CHECK_EQ(t.srcComponent(0), 2U);
-    CHECK_EQ(t.dstSelector(0), 3U);
+    CHECK_THAT(t.offsetX, WithinAbs(0.5, 1e-6));
+    CHECK_THAT(t.offsetY, WithinAbs(0.5, 1e-6));
+    CHECK(t.srcComponent(0) == 2U);
+    CHECK(t.dstSelector(0) == 3U);
 }
 
-TEST(translatesVertexShader)
+TEST_CASE("translatesVertexShader", "[xenos]")
 {
     const xenos::Program program = xenos::decodeProgram(xenos::ShaderStage::Vertex, vertexProgram());
-    CHECK_EQ(program.cf.size(), std::size_t{2});
+    CHECK(program.cf.size() == std::size_t{2});
     const std::string listing = xenos::disassemble(program);
     CHECK(contains(listing, "vfetch_full r1.xyz1, r0.x, vf95 format=32_32_32_FLOAT"));
     CHECK(contains(listing, "mul r2.xyz_, r1, c4  +  rcp r2.___w, c5.w"));
@@ -279,7 +286,7 @@ TEST(translatesVertexShader)
     options.literals[5] = {0.0F, 0.0F, 0.0F, 4.0F};
     const xenos::TranslationResult result = xenos::translate(program, options);
     CHECK(result.unsupported.empty());
-    CHECK_EQ(result.streams.size(), std::size_t{1});
+    CHECK(result.streams.size() == std::size_t{1});
     CHECK(contains(result.glsl, "uint xe_at = xe_streamBase[0u][0u] + xe_vindex * 3u + 0u;"));
     CHECK(contains(result.glsl, "vec4(uintBitsToFloat(xe_w.xyz), 1.0)"));
     CHECK(contains(result.glsl, "xe_v = xe_mul(xe_v0, xe_v1);"));
@@ -298,10 +305,10 @@ TEST(translatesVertexShader)
     uv.type = 0x2C2059;
     uv.usage = static_cast<std::uint8_t>(xenos::DeclUsage::Texcoord);
     CHECK(uv.format() == xenos::VertexFormat::F16_16);
-    CHECK_EQ(uv.endian(), 1U);
+    CHECK(uv.endian() == 1U);
     CHECK(!uv.isSigned());
-    CHECK_EQ(uv.selector(2), 4U);
-    CHECK_EQ(uv.selector(3), 5U);
+    CHECK(uv.selector(2) == 4U);
+    CHECK(uv.selector(3) == 5U);
     options.vertexFetches[1] = xenos::layoutFromDeclaration(uv, 20);
     const xenos::TranslationResult bound = xenos::translate(program, options);
     CHECK(contains(bound.glsl, "xe_vindex * 5u + 4u;"));
@@ -310,7 +317,7 @@ TEST(translatesVertexShader)
     checkCompiles(bound.glsl, xenos::ShaderStage::Vertex);
 }
 
-TEST(translatesPixelShader)
+TEST_CASE("translatesPixelShader", "[xenos]")
 {
     const xenos::Program program = xenos::decodeProgram(xenos::ShaderStage::Pixel, pixelProgram());
     const std::string listing = xenos::disassemble(program);
@@ -322,9 +329,9 @@ TEST(translatesPixelShader)
     options.parameterRegister = 5;
     const xenos::TranslationResult result = xenos::translate(program, options);
     CHECK(result.unsupported.empty());
-    CHECK_EQ(result.colorOutputs, 1U);
-    CHECK_EQ(result.samplers.size(), std::size_t{1});
-    CHECK_EQ(result.samplers[0].slot, 3U);
+    CHECK(result.colorOutputs == 1U);
+    CHECK(result.samplers.size() == std::size_t{1});
+    CHECK(result.samplers[0].slot == 3U);
     CHECK(contains(result.glsl, "layout(binding = 3) uniform sampler2D xe_tex3;"));
     CHECK(contains(result.glsl, "vec4 xe_f = texture(xe_tex3, xe_uv);"));
     CHECK(contains(result.glsl, "xe_oC[0].w = 1.0;"));
@@ -334,7 +341,7 @@ TEST(translatesPixelShader)
     checkCompiles(result.glsl, xenos::ShaderStage::Pixel);
 }
 
-TEST(translatesLoopsAndJumps)
+TEST_CASE("translatesLoopsAndJumps", "[xenos]")
 {
     // 0 loop i2 skip-to 3; 1 exec (r0 += c0); 2 endloop i2 body 1;
     // 3 cjmp !b140 to 5; 4 exec (kill if r0 > c1); 5 exece (oC0 = r0).
@@ -360,11 +367,11 @@ TEST(translatesLoopsAndJumps)
     append(words, alu(colour));
 
     const xenos::Program program = xenos::decodeProgram(xenos::ShaderStage::Pixel, words);
-    CHECK_EQ(program.cf.size(), std::size_t{6});
+    CHECK(program.cf.size() == std::size_t{6});
     CHECK(program.cf[0].opcode == xenos::CfOpcode::LoopStart);
-    CHECK_EQ(program.cf[0].loopId, 2U);
+    CHECK(program.cf[0].loopId == 2U);
     CHECK(program.cf[3].opcode == xenos::CfOpcode::CondJmp);
-    CHECK_EQ(program.cf[3].boolAddress, 140U);
+    CHECK(program.cf[3].boolAddress == 140U);
     const std::string listing = xenos::disassemble(program);
     CHECK(contains(listing, "loop i2 skip-to 3"));
     CHECK(contains(listing, "cjmp !b140 5"));
@@ -381,23 +388,23 @@ TEST(translatesLoopsAndJumps)
     xenos::ControlConstants control;
     control.setBool(140, true);
     control.setLoop(2, 3, 1, -1);
-    CHECK_EQ(control.bools[4], 1U << 12);
-    CHECK_EQ(control.loops[2], 3U | (1U << 8) | (0xFFU << 16));
+    CHECK(control.bools[4] == 1U << 12);
+    CHECK(control.loops[2] == (3U | (1U << 8) | (0xFFU << 16)));
     const auto packed = control.pack();
-    CHECK_EQ(packed.size(), std::size_t{160});
+    CHECK(packed.size() == std::size_t{160});
 }
 
-TEST(rejectsBrokenMicrocode)
+TEST_CASE("rejectsBrokenMicrocode", "[xenos]")
 {
     std::vector<std::uint32_t> words;
     appendCfPair(words, cfExec(xenos::CfOpcode::ExecEnd, 7, 2, 0), 0);
-    CHECK_THROWS(xenos::decodeProgram(xenos::ShaderStage::Vertex, words));
+    CHECK_THROWS_AS(xenos::decodeProgram(xenos::ShaderStage::Vertex, words), std::exception);
     words.push_back(0);
-    CHECK_THROWS(xenos::decodeProgram(xenos::ShaderStage::Vertex, words));
+    CHECK_THROWS_AS(xenos::decodeProgram(xenos::ShaderStage::Vertex, words), std::exception);
     std::vector<std::uint32_t> endless;
     appendCfPair(endless, cfExec(xenos::CfOpcode::Exec, 1, 1, 0), 0);
     append(endless, alu(AluFields{}));
-    CHECK_THROWS(xenos::decodeProgram(xenos::ShaderStage::Vertex, endless));
+    CHECK_THROWS_AS(xenos::decodeProgram(xenos::ShaderStage::Vertex, endless), std::exception);
 }
 
 /// Builds big-endian data.
@@ -624,66 +631,66 @@ Bytes testEffect()
     return file.bytes();
 }
 
-TEST(parsesEffectContainer)
+TEST_CASE("parsesEffectContainer", "[xenos]")
 {
     const Bytes data = testEffect();
     const xenos::Effect effect = xenos::parseEffect(data, "test.fxobj");
-    CHECK_EQ(effect.techniques.size(), std::size_t{1});
-    CHECK_EQ(effect.shaders.size(), std::size_t{2});
-    CHECK_EQ(effect.declarations.size(), std::size_t{1});
+    CHECK(effect.techniques.size() == std::size_t{1});
+    CHECK(effect.shaders.size() == std::size_t{2});
+    CHECK(effect.declarations.size() == std::size_t{1});
     if (effect.techniques.size() != 1 || effect.shaders.size() != 2 || effect.declarations.size() != 1) {
         return;
     }
     const xenos::Technique& technique = effect.techniques[0];
-    CHECK_EQ(technique.name, std::string("Main"));
-    CHECK_EQ(technique.passes.size(), std::size_t{1});
-    CHECK_EQ(technique.passes[0].name, std::string("p0"));
-    CHECK_EQ(technique.passes[0].vertexShader, 0);
-    CHECK_EQ(technique.passes[0].pixelShader, 1);
+    CHECK(technique.name == std::string("Main"));
+    CHECK(technique.passes.size() == std::size_t{1});
+    CHECK(technique.passes[0].name == std::string("p0"));
+    CHECK(technique.passes[0].vertexShader == 0);
+    CHECK(technique.passes[0].pixelShader == 1);
 
     const xenos::Shader& vertex = effect.shaders[0];
     CHECK(vertex.stage == xenos::ShaderStage::Vertex);
-    CHECK_EQ(vertex.microcode, vertexProgram());
-    CHECK_EQ(vertex.constants.target, std::string("vs_3_0"));
-    CHECK_EQ(vertex.constants.constants.size(), std::size_t{2});
+    CHECK(vertex.microcode == vertexProgram());
+    CHECK(vertex.constants.target == std::string("vs_3_0"));
+    CHECK(vertex.constants.constants.size() == std::size_t{2});
     const xenos::ConstantInfo* wvp = vertex.constants.find("WorldViewProj");
     CHECK(wvp != nullptr);
     if (wvp != nullptr) {
         CHECK(wvp->set == xenos::RegisterSet::Float4);
-        CHECK_EQ(wvp->registerIndex, 4);
-        CHECK_EQ(wvp->columns, 4);
+        CHECK(wvp->registerIndex == 4);
+        CHECK(wvp->columns == 4);
     }
-    CHECK_EQ(vertex.literals.size(), std::size_t{1});
+    CHECK(vertex.literals.size() == std::size_t{1});
     if (!vertex.literals.empty()) {
-        CHECK_EQ(vertex.literals[0].reg, 255U);
-        CHECK_NEAR(vertex.literals[0].value[3], 3.0, 1e-6);
+        CHECK(vertex.literals[0].reg == 255U);
+        CHECK_THAT(vertex.literals[0].value[3], WithinAbs(3.0, 1e-6));
     }
-    CHECK_EQ(vertex.vertexElements.size(), std::size_t{1});
+    CHECK(vertex.vertexElements.size() == std::size_t{1});
     if (!vertex.vertexElements.empty()) {
-        CHECK_EQ(vertex.vertexElements[0].fetchSlot, 1U);
-        CHECK_EQ(vertex.vertexElements[0].usage, 0U);
+        CHECK(vertex.vertexElements[0].fetchSlot == 1U);
+        CHECK(vertex.vertexElements[0].usage == 0U);
     }
-    CHECK_EQ(vertex.interpolators.size(), std::size_t{1});
+    CHECK(vertex.interpolators.size() == std::size_t{1});
     if (!vertex.interpolators.empty()) {
-        CHECK_EQ(vertex.interpolators[0].usage, 5U);
-        CHECK_EQ(vertex.interpolators[0].reg, 0U);
-        CHECK_EQ(vertex.interpolators[0].mask, 0xFU);
+        CHECK(vertex.interpolators[0].usage == 5U);
+        CHECK(vertex.interpolators[0].reg == 0U);
+        CHECK(vertex.interpolators[0].mask == 0xFU);
     }
 
     const xenos::Shader& pixel = effect.shaders[1];
     CHECK(pixel.stage == xenos::ShaderStage::Pixel);
-    CHECK_EQ(pixel.literals.size(), std::size_t{1});
+    CHECK(pixel.literals.size() == std::size_t{1});
     if (!pixel.literals.empty()) {
-        CHECK_EQ(pixel.literals[0].reg, 255U);
+        CHECK(pixel.literals[0].reg == 255U);
     }
     const xenos::ConstantInfo* sampler = pixel.constants.atRegister(xenos::RegisterSet::Sampler, 3);
-    CHECK(sampler != nullptr && sampler->name == "DiffuseSampler");
+    CHECK((sampler != nullptr && sampler->name == "DiffuseSampler"));
 
     const xenos::VertexDeclaration& declaration = effect.declarations[0];
-    CHECK_EQ(declaration.elements.size(), std::size_t{2});
-    CHECK_EQ(declaration.stride(0), 16U);
+    CHECK(declaration.elements.size() == std::size_t{2});
+    CHECK(declaration.stride(0) == 16U);
     CHECK(declaration.elements[0].format() == xenos::VertexFormat::F32_32_32_Float);
-    CHECK_EQ(declaration.elements[1].name, std::string("uv"));
+    CHECK(declaration.elements[1].name == std::string("uv"));
     CHECK(effect.declarationFor(vertex) == &declaration);
 
     const xenos::ShaderProgramSource program = xenos::buildProgram(effect, "Main");
@@ -692,61 +699,51 @@ TEST(parsesEffectContainer)
     CHECK(contains(program.vertexGlsl, "xe_var0 = xe_o[0];"));
     CHECK(contains(program.fragmentGlsl, "r[0] = xe_var0;"));
     const auto tint = program.findConstant("Tint");
-    CHECK_EQ(tint.size(), std::size_t{1});
+    CHECK(tint.size() == std::size_t{1});
     if (!tint.empty()) {
         CHECK(tint[0]->stage == xenos::ShaderStage::Pixel);
-        CHECK_EQ(tint[0]->index, 2U);
+        CHECK(tint[0]->index == 2U);
     }
     const auto fog = program.findConstant("UseFog");
-    CHECK(!fog.empty() && fog[0]->index == 133U);
+    CHECK((!fog.empty() && fog[0]->index == 133U));
     const xenos::SamplerBinding* diffuse = program.findSampler("DiffuseSampler");
-    CHECK(diffuse != nullptr && diffuse->unit == 3);
-    CHECK_EQ(program.vertexInput.elements.size(), std::size_t{2});
-    CHECK_EQ(program.vertexInput.strides.size(), std::size_t{1});
-    CHECK_EQ(program.colorOutputs, 1U);
+    CHECK((diffuse != nullptr && diffuse->unit == 3));
+    CHECK(program.vertexInput.elements.size() == std::size_t{2});
+    CHECK(program.vertexInput.strides.size() == std::size_t{1});
+    CHECK(program.colorOutputs == 1U);
     checkCompiles(program.vertexGlsl, xenos::ShaderStage::Vertex);
     checkCompiles(program.fragmentGlsl, xenos::ShaderStage::Pixel);
 
     Bytes truncated(data.begin(), data.begin() + 0x100);
-    CHECK_THROWS(xenos::parseEffect(truncated, "truncated.fxobj"));
+    CHECK_THROWS_AS(xenos::parseEffect(truncated, "truncated.fxobj"), std::exception);
 }
 
-TEST(packsSystemConstants)
+TEST_CASE("packsSystemConstants", "[xenos]")
 {
     xenos::SystemConstants system;
     system.clipScale[2] = -1.0F;
     system.clipOffset[2] = 1.0F;
     system.streamBase[5] = 77;
     const auto bytes = system.pack();
-    CHECK_EQ(bytes.size(), std::size_t{144});
+    CHECK(bytes.size() == std::size_t{144});
     float z = 0.0F;
     std::memcpy(&z, bytes.data() + 8, 4);
-    CHECK_NEAR(z, -1.0, 0.0);
+    CHECK_THAT(z, WithinAbs(-1.0, 0.0));
     std::uint32_t base = 0;
     std::memcpy(&base, bytes.data() + 80 + 5 * 4, 4);
-    CHECK_EQ(base, 77U);
-}
-
-const char* gameDir()
-{
-    const char* dir = std::getenv("FH1_GAME_DIR");
-    if (dir == nullptr || *dir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return nullptr;
-    }
-    return dir;
+    CHECK(base == 77U);
 }
 
 /// Every effect of `report` parsed, and every shader and pass translated and
 /// compiled with nothing left unsupported.
 void checkAllTranslate(const xenos::CheckReport& report)
 {
-    CHECK_EQ(report.effectParseFailures, std::size_t{0});
-    CHECK_EQ(report.decodeFailures, std::size_t{0});
-    CHECK_EQ(report.translated, report.shaders);
-    CHECK_EQ(report.compiled, report.shaders);
-    CHECK_EQ(report.shadersWithUnsupported, std::size_t{0});
-    CHECK_EQ(report.passesCompiled, report.passes);
+    CHECK(report.effectParseFailures == std::size_t{0});
+    CHECK(report.decodeFailures == std::size_t{0});
+    CHECK(report.translated == report.shaders);
+    CHECK(report.compiled == report.shaders);
+    CHECK(report.shadersWithUnsupported == std::size_t{0});
+    CHECK(report.passesCompiled == report.passes);
 }
 
 // translatesEveryGameShader takes most of a minute, a GLSL compile for each
@@ -755,12 +752,9 @@ void checkAllTranslate(const xenos::CheckReport& report)
 // predicated exec and conditional jump, a blended track material from
 // Colorado's bin.zip with two passes, and a particle effect with a pass
 // that only sets render states.
-TEST(translatesRepresentativeGameShaders)
+TEST_CASE("translatesRepresentativeGameShaders", "[xenos]")
 {
     const char* dir = gameDir();
-    if (dir == nullptr) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const std::vector<std::string> paths{"media/shaders/cars/rim_carbon_fiber3.fxobj",
@@ -768,8 +762,8 @@ TEST(translatesRepresentativeGameShaders)
         "media/shaders/v2/effects/particle_smoke.fxobj"};
     const xenos::CheckReport report = xenos::checkEffects(vfs, paths);
     std::fprintf(stderr, "%s", xenos::formatReport(report).c_str());
-    CHECK_EQ(report.effects, paths.size());
-    CHECK_EQ(report.shaders, std::size_t{8});
+    CHECK(report.effects == paths.size());
+    CHECK(report.shaders == std::size_t{8});
     checkAllTranslate(report);
     CHECK(report.stateOnlyPasses > 0);
     for (const char* opcode : {"cexec_pc", "pexec", "cjmp"}) {
@@ -777,12 +771,9 @@ TEST(translatesRepresentativeGameShaders)
     }
 }
 
-SLOW_TEST(translatesEveryGameShader)
+TEST_CASE("translatesEveryGameShader", "[xenos][slow][.]")
 {
     const char* dir = gameDir();
-    if (dir == nullptr) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const std::vector<std::string> paths = xenos::listEffects(vfs);
@@ -794,8 +785,3 @@ SLOW_TEST(translatesEveryGameShader)
 }
 
 } // namespace
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}

@@ -1,197 +1,175 @@
-add_executable(tst_base TestHarness.h tst_base.cpp)
-target_compile_options(tst_base PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_base PRIVATE fh1base)
+include(Catch)
+
+# What every test program shares: the Catch2 session, which keeps the
+# game's error boxes closed and picks SDL's offscreen drivers, and
+# fh::test::gameDir(), which skips a case when there is no disc.
+add_library(fh1testsupport STATIC support/TestSupport.h support/TestSupport.cpp)
+target_compile_options(fh1testsupport PRIVATE ${FH1N_WARNINGS})
+target_include_directories(fh1testsupport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(fh1testsupport PUBLIC Catch2::Catch2 fh1base)
+
+add_library(fh1testmain STATIC support/Main.cpp)
+target_compile_options(fh1testmain PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(fh1testmain PUBLIC fh1testsupport)
+
+# The hidden offscreen context of the cases that draw.
+add_library(fh1testgl STATIC support/GlContext.h support/GlContext.cpp)
+target_compile_options(fh1testgl PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(fh1testgl PUBLIC fh1testsupport fh1platform)
+
+# fh1n_add_test_program(NAME SOURCES... [LIBRARIES...] [NO_MAIN])
+#
+# Builds a test program and registers each of its test cases with ctest as
+# NAME.<case>, so ctest runs and reports them one by one. Cases tagged
+# [slow] (sweeps over every file of a kind on the disc) carry the label
+# slow, which the default runs leave out. The cases of one program share
+# folders under the temporary directory, so they take a lock of the
+# program's name: they run one at a time, while different programs run in
+# parallel.
+function(fh1n_add_test_program name)
+    cmake_parse_arguments(ARG "NO_MAIN" "" "SOURCES;LIBRARIES" ${ARGN})
+    add_executable(${name} ${ARG_SOURCES})
+    target_compile_options(${name} PRIVATE ${FH1N_WARNINGS})
+    if(ARG_NO_MAIN)
+        target_link_libraries(${name} PRIVATE fh1testsupport ${ARG_LIBRARIES})
+    else()
+        target_link_libraries(${name} PRIVATE fh1testmain ${ARG_LIBRARIES})
+    endif()
+    # Listing the cases when ctest runs rather than after the build keeps a
+    # build from starting the programs it has just linked.
+    catch_discover_tests(${name}
+        TEST_PREFIX "${name}."
+        TEST_SPEC "~[slow]"
+        DISCOVERY_MODE PRE_TEST
+        PROPERTIES RESOURCE_LOCK ${name})
+    catch_discover_tests(${name}
+        TEST_PREFIX "${name}."
+        TEST_SPEC "[slow]"
+        DISCOVERY_MODE PRE_TEST
+        PROPERTIES RESOURCE_LOCK ${name} LABELS slow)
+endfunction()
+
 # UTF-8 paths, user folders and the file system on host paths; needs no disc.
-add_test(NAME tst_base COMMAND tst_base)
+fh1n_add_test_program(tst_base SOURCES tst_base.cpp LIBRARIES fh1base)
 
-add_executable(tst_crash TestHarness.h tst_crash.cpp)
-target_compile_options(tst_crash PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_crash PRIVATE fh1base)
 # Starts itself as a child that crashes on purpose and checks the child's
-# log and exit status, then the texts of the error boxes; needs no disc.
-add_test(NAME tst_crash COMMAND tst_crash)
+# log and exit status, then the texts of the error boxes; needs no disc. Its
+# own main() runs the child and the reporter before the Catch2 session.
+fh1n_add_test_program(tst_crash SOURCES tst_crash.cpp LIBRARIES fh1base NO_MAIN)
 
-add_executable(tst_world TestHarness.h tst_world.cpp)
-target_compile_options(tst_world PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_world PRIVATE fh1world)
-# The Colorado test inside runs only when FH1_GAME_DIR names an extracted
-# disc; the variable is read when the test runs, not when it is configured.
-add_test(NAME tst_world COMMAND tst_world)
+# The Colorado case inside runs only when FH1_GAME_DIR names an extracted
+# disc; the variable is read when the case runs, not when it is configured.
+fh1n_add_test_program(tst_world SOURCES tst_world.cpp LIBRARIES fh1world)
 
-add_executable(tst_collision TestHarness.h tst_collision.cpp)
-target_compile_options(tst_collision PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_collision PRIVATE fh1collision)
-# As with tst_world, the Colorado test runs only when FH1_GAME_DIR is set.
-add_test(NAME tst_collision COMMAND tst_collision)
+# As with tst_world, the Colorado case runs only when FH1_GAME_DIR is set.
+fh1n_add_test_program(tst_collision SOURCES tst_collision.cpp LIBRARIES fh1collision)
 
-add_executable(tst_audio TestHarness.h tst_audio.cpp)
-target_compile_options(tst_audio PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_audio PRIVATE fh1audio)
-# The disc tests inside (decoding a few banks of every kind, parsing every
+# The disc cases inside (decoding a few banks of every kind, parsing every
 # project and engine tuning) run only when FH1_GAME_DIR names an extracted
-# disc. Decoding every sample takes most of a minute: it is the slow test
-# tst_audio_slow, left out unless the label slow is asked for (ctest -L slow).
-add_test(NAME tst_audio COMMAND tst_audio)
-add_test(NAME tst_audio_slow COMMAND tst_audio --slow)
-set_tests_properties(tst_audio_slow PROPERTIES LABELS slow)
+# disc. Decoding every sample takes most of a minute: that case is tagged
+# [slow].
+fh1n_add_test_program(tst_audio SOURCES tst_audio.cpp LIBRARIES fh1audio)
 
-add_executable(tst_carmodel TestHarness.h tst_carmodel.cpp)
-target_compile_options(tst_carmodel PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_carmodel PRIVATE fh1carmodel)
-# The disc test inside (loading real cars) runs only when FH1_GAME_DIR names
+# The disc case inside (loading real cars) runs only when FH1_GAME_DIR names
 # an extracted disc.
-add_test(NAME tst_carmodel COMMAND tst_carmodel)
+fh1n_add_test_program(tst_carmodel SOURCES tst_carmodel.cpp LIBRARIES fh1carmodel)
 
-add_executable(tst_spectators TestHarness.h tst_spectators.cpp)
-target_compile_options(tst_spectators PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_spectators PRIVATE fh1spectators)
-# The Colorado test inside runs only when FH1_GAME_DIR names an extracted disc.
-add_test(NAME tst_spectators COMMAND tst_spectators)
+# The Colorado case inside runs only when FH1_GAME_DIR names an extracted disc.
+fh1n_add_test_program(tst_spectators SOURCES tst_spectators.cpp LIBRARIES fh1spectators)
 
-add_executable(tst_xenos TestHarness.h tst_xenos.cpp)
-target_compile_options(tst_xenos PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_xenos PRIVATE fh1xenoscheck)
 # The game's shaders are tested only when FH1_GAME_DIR is set: a few
-# effects by default, and every effect in the slow test tst_xenos_slow.
-add_test(NAME tst_xenos COMMAND tst_xenos)
-add_test(NAME tst_xenos_slow COMMAND tst_xenos --slow)
-set_tests_properties(tst_xenos_slow PROPERTIES LABELS slow)
+# effects by default, and every effect in the [slow] case.
+fh1n_add_test_program(tst_xenos SOURCES tst_xenos.cpp LIBRARIES fh1xenoscheck)
 
-add_executable(tst_ui TestHarness.h tst_ui.cpp)
-target_compile_options(tst_ui PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_ui PRIVATE fh1ui)
-# The disc tests inside (every scene, gauge and font) run only when
+# The disc cases inside (every scene, gauge and font) run only when
 # FH1_GAME_DIR names an extracted disc.
-add_test(NAME tst_ui COMMAND tst_ui)
+fh1n_add_test_program(tst_ui SOURCES tst_ui.cpp LIBRARIES fh1ui)
 
-add_executable(tst_radio TestHarness.h tst_radio.cpp)
-target_compile_options(tst_radio PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_radio PRIVATE fh1radio)
-# The disc tests inside (the real stations, banks and a mixed render) run
+# The disc cases inside (the real stations, banks and a mixed render) run
 # only when FH1_GAME_DIR names an extracted disc.
-add_test(NAME tst_radio COMMAND tst_radio)
+fh1n_add_test_program(tst_radio SOURCES tst_radio.cpp LIBRARIES fh1radio)
 
-add_executable(tst_menu TestHarness.h tst_menu.cpp)
-target_compile_options(tst_menu PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_menu PRIVATE fh1ui)
-# The disc tests inside (the pause menu's entries and texts, the scenes and
-# the map's data) run only when FH1_GAME_DIR names an extracted disc.
-add_test(NAME tst_menu COMMAND tst_menu)
+# The disc cases inside (the pause menu's entries and texts, the scenes and
+# the map's data) run only when FH1_GAME_DIR names an extracted disc; the
+# drawing ones need an offscreen context too.
+fh1n_add_test_program(tst_menu SOURCES tst_menu.cpp LIBRARIES fh1ui fh1testgl)
 
-add_executable(tst_particles TestHarness.h tst_particles.cpp)
-target_compile_options(tst_particles PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_particles PRIVATE fh1particles)
-# The disc test inside (every effect file, the surface table and the effect
+# The disc case inside (every effect file, the surface table and the effect
 # list the game loads) runs only when FH1_GAME_DIR names an extracted disc.
-add_test(NAME tst_particles COMMAND tst_particles)
+fh1n_add_test_program(tst_particles SOURCES tst_particles.cpp LIBRARIES fh1particles)
 
-add_executable(tst_render TestHarness.h tst_render.cpp)
-target_compile_options(tst_render PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_render PRIVATE fh1platform)
 # The GL cases run in an offscreen context and skip without one; the cache
 # goes to a folder of their own under the temporary directory.
-add_test(NAME tst_render COMMAND tst_render)
+fh1n_add_test_program(tst_render SOURCES tst_render.cpp LIBRARIES fh1platform fh1testgl)
 
-add_executable(tst_input TestHarness.h tst_input.cpp)
-target_compile_options(tst_input PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_input PRIVATE fh1platform)
 # The thumbstick shaping on raw pad values; no disc and no window needed.
-add_test(NAME tst_input COMMAND tst_input)
+fh1n_add_test_program(tst_input SOURCES tst_input.cpp LIBRARIES fh1platform)
 
-add_executable(tst_clouds TestHarness.h tst_clouds.cpp)
-target_compile_options(tst_clouds PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_clouds PRIVATE fh1engine)
 # clouddefs.xml, cloud curves, motion and domes on synthetic data; the disc's files,
 # Colorado's curves and an offscreen draw when FH1_GAME_DIR names an extracted disc.
-add_test(NAME tst_clouds COMMAND tst_clouds)
+fh1n_add_test_program(tst_clouds SOURCES tst_clouds.cpp LIBRARIES fh1engine fh1testgl)
 
-add_executable(tst_shadows TestHarness.h tst_shadows.cpp)
-target_compile_options(tst_shadows PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_shadows PRIVATE fh1engine)
 # The shadow cascades' fitting on synthetic cameras; the ShadowIntensity curve
 # and an offscreen shadow mask when FH1_GAME_DIR names an extracted disc.
-add_test(NAME tst_shadows COMMAND tst_shadows)
+fh1n_add_test_program(tst_shadows SOURCES tst_shadows.cpp LIBRARIES fh1engine)
 
-add_executable(tst_shading TestHarness.h tst_shading.cpp)
-target_compile_options(tst_shading PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_shading PRIVATE fh1engine)
 # The cube decoder and the track's scene constants on synthetic data; the
 # disc's cube maps and settings only when FH1_GAME_DIR names an extracted
 # disc.
-add_test(NAME tst_shading COMMAND tst_shading)
+fh1n_add_test_program(tst_shading SOURCES tst_shading.cpp LIBRARIES fh1engine)
 
-add_executable(tst_animated TestHarness.h tst_animated.cpp)
-target_compile_options(tst_animated PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_animated PRIVATE fh1animated)
-# The disc tests inside (Colorado's animated objects and a few files of the
+# The disc cases inside (Colorado's animated objects and a few files of the
 # media/animatedobjects pack) run only when FH1_GAME_DIR names an extracted
-# disc; reading every file of the pack is the slow test tst_animated_slow.
-add_test(NAME tst_animated COMMAND tst_animated)
-add_test(NAME tst_animated_slow COMMAND tst_animated --slow)
-set_tests_properties(tst_animated_slow PROPERTIES LABELS slow)
+# disc; reading every file of the pack is the [slow] case.
+fh1n_add_test_program(tst_animated SOURCES tst_animated.cpp LIBRARIES fh1animated)
 
-add_executable(tst_envcube TestHarness.h tst_envcube.cpp)
-target_compile_options(tst_envcube PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_envcube PRIVATE fh1engine)
 # The dynamic environment cube's face schedule, face cameras and mip filter
 # maths on synthetic data; an offscreen render of the cube when a GL context
 # is available.
-add_test(NAME tst_envcube COMMAND tst_envcube)
+fh1n_add_test_program(tst_envcube SOURCES tst_envcube.cpp LIBRARIES fh1engine fh1testgl)
 
-add_executable(tst_car TestHarness.h tst_car.cpp)
-target_compile_options(tst_car PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_car PRIVATE fh1data fh1collision)
 # The real cars on a flat or tilted plane; skips without FH1_GAME_DIR.
-add_test(NAME tst_car COMMAND tst_car)
+fh1n_add_test_program(tst_car SOURCES tst_car.cpp LIBRARIES fh1data fh1collision)
 
-add_executable(tst_activities TestHarness.h tst_activities.cpp)
-target_compile_options(tst_activities PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_activities PRIVATE fh1engine)
-# The Colorado test inside runs only when FH1_GAME_DIR names an extracted disc.
-add_test(NAME tst_activities COMMAND tst_activities)
+# The Colorado case inside runs only when FH1_GAME_DIR names an extracted disc.
+fh1n_add_test_program(tst_activities SOURCES tst_activities.cpp LIBRARIES fh1engine)
 
-add_executable(tst_race TestHarness.h tst_race.cpp)
-target_compile_options(tst_race PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_race PRIVATE fh1engine)
 # The driving line's rules on synthetic lines; needs no disc.
-add_test(NAME tst_race COMMAND tst_race)
+fh1n_add_test_program(tst_race SOURCES tst_race.cpp LIBRARIES fh1engine)
 
-add_executable(tst_profile TestHarness.h tst_profile.cpp)
-target_compile_options(tst_profile PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_profile PRIVATE fh1profile)
 # The schema reader and the profile store on synthetic data, in folders
 # under the temporary directory; the disc's schema only when FH1_GAME_DIR
 # names an extracted disc.
-add_test(NAME tst_profile COMMAND tst_profile)
+fh1n_add_test_program(tst_profile SOURCES tst_profile.cpp LIBRARIES fh1profile)
 
-add_executable(tst_postprocess TestHarness.h tst_postprocess.cpp)
-target_compile_options(tst_postprocess PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_postprocess PRIVATE fh1engine)
 # The GPU cases run in an offscreen context and skip without one; the
-# Colorado case runs only when FH1_GAME_DIR names an extracted disc.
-add_test(NAME tst_postprocess COMMAND tst_postprocess)
+# Colorado cases run only when FH1_GAME_DIR names an extracted disc.
+fh1n_add_test_program(tst_postprocess SOURCES tst_postprocess.cpp LIBRARIES fh1engine fh1testgl)
 
-add_executable(tst_cutscenes TestHarness.h tst_cutscenes.cpp)
-target_compile_options(tst_cutscenes PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_cutscenes PRIVATE fh1engine)
 # The cutscene clock, triggers, fades and cameras on synthetic cutscenes;
 # the disc's race and free-roam cutscenes only when FH1_GAME_DIR names an
 # extracted disc.
-add_test(NAME tst_cutscenes COMMAND tst_cutscenes)
+fh1n_add_test_program(tst_cutscenes SOURCES tst_cutscenes.cpp LIBRARIES fh1engine)
 
-add_executable(tst_scenarios RoadFollower.h TestHarness.h tst_scenarios.cpp)
+# The whole game offscreen with scripted controls; the scenarios skip
+# without FH1_GAME_DIR or an OpenGL context. A game takes about 3 GB, so
+# they take the lock "game" and run one at a time, beside the unit tests.
+add_executable(tst_scenarios RoadFollower.h tst_scenarios.cpp)
 target_compile_options(tst_scenarios PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_scenarios PRIVATE fh1engine)
-# The whole game offscreen with scripted controls; skips without
-# FH1_GAME_DIR. Each scenario loads the game, so they take minutes.
-add_test(NAME tst_scenarios COMMAND tst_scenarios)
-set_tests_properties(tst_scenarios PROPERTIES TIMEOUT 1800)
+target_link_libraries(tst_scenarios PRIVATE fh1testmain fh1engine)
+catch_discover_tests(tst_scenarios
+    TEST_PREFIX "tst_scenarios."
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES RESOURCE_LOCK game TIMEOUT 600)
 
-add_executable(tst_perf RoadFollower.h TestHarness.h tst_perf.cpp)
-target_compile_options(tst_perf PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(tst_perf PRIVATE fh1engine)
 # Free roam driven along the roads, timed per part of the frame, against a
 # drawing budget. Needs the disc and a GPU, and its timings depend on the
-# machine and its load: labelled perf and left out of the pre-push run.
-add_test(NAME tst_perf COMMAND tst_perf)
-set_tests_properties(tst_perf PROPERTIES LABELS perf TIMEOUT 600)
+# machine and its load: labelled perf, left out of the default runs, and
+# run alone.
+add_executable(tst_perf RoadFollower.h tst_perf.cpp)
+target_compile_options(tst_perf PRIVATE ${FH1N_WARNINGS})
+target_link_libraries(tst_perf PRIVATE fh1testmain fh1engine)
+catch_discover_tests(tst_perf
+    TEST_PREFIX "tst_perf."
+    DISCOVERY_MODE PRE_TEST
+    PROPERTIES RUN_SERIAL TRUE LABELS perf TIMEOUT 600)

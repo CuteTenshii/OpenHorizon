@@ -5,6 +5,10 @@
 # remembers it) and skip otherwise. The slow tests, sweeps over every file
 # of a kind on the disc, run only when a label option asks for them.
 #
+# ctest runs a test case per process and as many at once as there are
+# processors; the scenarios hold a lock that keeps them to one at a time,
+# since a game takes about 3 GB, and the perf case runs alone.
+#
 #   scripts/run-tests.sh [BUILD_DIR] [ctest arguments...]
 #   scripts/run-tests.sh build -L slow     # just the slow tests
 set -euo pipefail
@@ -39,4 +43,4 @@ fi
 
 cmake -S "$root" -B "$build" -G Ninja
 cmake --build "$build"
-ctest --test-dir "$build" --output-on-failure "$@"
+ctest --test-dir "$build" --output-on-failure --parallel "$(getconf _NPROCESSORS_ONLN)" "$@"

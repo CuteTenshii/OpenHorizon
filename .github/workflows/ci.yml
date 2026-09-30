@@ -45,7 +45,7 @@ jobs:
         env:
           SDL_VIDEO_DRIVER: offscreen
           SDL_AUDIO_DRIVER: dummy
-        run: ctest --test-dir build --output-on-failure -LE 'perf|slow'
+        run: ctest --test-dir build --output-on-failure --parallel 4 -LE 'perf|slow'
 
   windows:
     name: Windows build and tests (MSVC)
@@ -101,7 +101,7 @@ jobs:
         env:
           SDL_VIDEO_DRIVER: offscreen
           SDL_AUDIO_DRIVER: dummy
-        run: ctest --preset windows-release -LE "perf|slow"
+        run: ctest --preset windows-release --parallel 4 -LE "perf|slow"
 
   format:
     name: Formatting of changed lines

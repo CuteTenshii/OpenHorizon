@@ -3,7 +3,10 @@
 // temporary folder, and, when FH1_GAME_DIR names an extracted disc, the crowd
 // of Colorado.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "spectators/CrowdDraw.h"
 #include "spectators/CrowdSet.h"
@@ -24,6 +27,8 @@
 #include <numbers>
 #include <string>
 #include <vector>
+
+using Catch::Matchers::WithinAbs;
 
 namespace {
 
@@ -437,75 +442,75 @@ void writeText(const std::filesystem::path& path, std::string_view text)
 
 } // namespace
 
-TEST(configParsesModelsSetsSkeletonsAndClasses)
+TEST_CASE("configParsesModelsSetsSkeletonsAndClasses", "[spectators]")
 {
     const sp::SpectatorConfig config = sp::SpectatorConfig::parse(kConfig, "test.xml");
-    CHECK_EQ(config.version, 2);
-    CHECK_EQ(config.spriteAngles, 10);
+    CHECK(config.version == 2);
+    CHECK(config.spriteAngles == 10);
     CHECK(!config.spritesBothSides);
-    CHECK_EQ(config.models.size(), std::size_t {2});
-    CHECK_EQ(config.models[1].texture, std::string("Female03"));
-    CHECK_EQ(config.models[1].spritesPerTexture, 9);
-    CHECK_EQ(config.modelSets[0].models.size(), std::size_t {2});
-    CHECK_EQ(config.skeletons[0].suffix, std::string("_Stand"));
-    CHECK_EQ(config.skeletons[0].animations[0].file, std::string("Stand_Idle_01"));
-    CHECK_EQ(config.classes.size(), std::size_t {2});
-    CHECK_EQ(config.classes[0].id, 1);
-    CHECK_EQ(config.classes[0].cheers[0].weight, 0.5F);
+    CHECK(config.models.size() == std::size_t{2});
+    CHECK(config.models[1].texture == std::string("Female03"));
+    CHECK(config.models[1].spritesPerTexture == 9);
+    CHECK(config.modelSets[0].models.size() == std::size_t{2});
+    CHECK(config.skeletons[0].suffix == std::string("_Stand"));
+    CHECK(config.skeletons[0].animations[0].file == std::string("Stand_Idle_01"));
+    CHECK(config.classes.size() == std::size_t{2});
+    CHECK(config.classes[0].id == 1);
+    CHECK(config.classes[0].cheers[0].weight == 0.5F);
     CHECK(!config.classes[0].randomSize.has_value());
-    CHECK(config.classes[1].randomSize.has_value() && !*config.classes[1].randomSize);
-    CHECK_EQ(config.classes[1].offset.y, 0.25F);
-    CHECK_EQ(config.classes[1].billboardOffsetY, -1.0F);
-    CHECK_EQ(config.findModel("male02"), 1);
-    CHECK_EQ(config.findModelSet("DEFAULT"), 0);
-    CHECK_EQ(config.findSkeleton("Sitting"), -1);
-    CHECK_THROWS(sp::SpectatorConfig::parse("<spectators>", "broken.xml"));
-    CHECK_THROWS(sp::SpectatorConfig::parse("<other/>", "other.xml"));
+    CHECK((config.classes[1].randomSize.has_value() && !*config.classes[1].randomSize));
+    CHECK(config.classes[1].offset.y == 0.25F);
+    CHECK(config.classes[1].billboardOffsetY == -1.0F);
+    CHECK(config.findModel("male02") == 1);
+    CHECK(config.findModelSet("DEFAULT") == 0);
+    CHECK(config.findSkeleton("Sitting") == -1);
+    CHECK_THROWS_AS(sp::SpectatorConfig::parse("<spectators>", "broken.xml"), std::exception);
+    CHECK_THROWS_AS(sp::SpectatorConfig::parse("<other/>", "other.xml"), std::exception);
 }
 
-TEST(skinnedModelParsesVerticesIndicesAndLevels)
+TEST_CASE("skinnedModelParsesVerticesIndicesAndLevels", "[spectators]")
 {
     const Bytes data = skinnedModel();
     const sp::SkinnedModel model = sp::parseSkinnedModel(data, "test.skinbin");
-    CHECK_EQ(model.vertices.size(), std::size_t {4});
-    CHECK_EQ(model.indices.size(), std::size_t {9});
-    CHECK_EQ(model.lods.size(), std::size_t {2});
-    CHECK_EQ(model.lods[1].firstIndex, 6U);
-    CHECK_EQ(model.lods[1].indexCount, 3U);
+    CHECK(model.vertices.size() == std::size_t{4});
+    CHECK(model.indices.size() == std::size_t{9});
+    CHECK(model.lods.size() == std::size_t{2});
+    CHECK(model.lods[1].firstIndex == 6U);
+    CHECK(model.lods[1].indexCount == 3U);
     CHECK(near(model.vertices[2].position, {0.5F, 1.0F, 0.0F}, 1e-6F));
-    CHECK_NEAR(model.vertices[1].texcoord.x, 1.0, 1e-6);
-    CHECK_NEAR(model.vertices[1].texcoord.y, 1.0, 1e-6);
-    CHECK_EQ(model.vertices[3].bones[0], 1);
-    CHECK_EQ(model.vertices[3].weights[1], 127);
-    CHECK_EQ(model.boneCount(), 2);
-    CHECK_NEAR(model.height(), 1.0, 1e-6);
+    CHECK_THAT(model.vertices[1].texcoord.x, WithinAbs(1.0, 1e-6));
+    CHECK_THAT(model.vertices[1].texcoord.y, WithinAbs(1.0, 1e-6));
+    CHECK(model.vertices[3].bones[0] == 1);
+    CHECK(model.vertices[3].weights[1] == 127);
+    CHECK(model.boneCount() == 2);
+    CHECK_THAT(model.height(), WithinAbs(1.0, 1e-6));
 
     Bytes badMarker = data;
     badMarker[3] = 2;
-    CHECK_THROWS(sp::parseSkinnedModel(badMarker, "bad.skinbin"));
+    CHECK_THROWS_AS(sp::parseSkinnedModel(badMarker, "bad.skinbin"), std::exception);
     Bytes truncated(data.begin(), data.end() - 6);
-    CHECK_THROWS(sp::parseSkinnedModel(truncated, "short.skinbin"));
+    CHECK_THROWS_AS(sp::parseSkinnedModel(truncated, "short.skinbin"), std::exception);
     Bytes badIndex = data;
     const std::size_t firstIndex = data.size() - 8 - 9 * 2;
     badIndex[firstIndex + 1] = 9;
-    CHECK_THROWS(sp::parseSkinnedModel(badIndex, "index.skinbin"));
+    CHECK_THROWS_AS(sp::parseSkinnedModel(badIndex, "index.skinbin"), std::exception);
 }
 
-TEST(spectatorMeshMirrorsXAndKeepsFrontsClockwise)
+TEST_CASE("spectatorMeshMirrorsXAndKeepsFrontsClockwise", "[spectators]")
 {
     const sp::SkinnedModel model = sp::parseSkinnedModel(skinnedModel(), "test.skinbin");
     const sp::SpectatorMesh mesh = sp::buildSpectatorMesh(model, 7);
-    CHECK_EQ(mesh.vertexCount(), std::size_t {4});
-    CHECK_EQ(mesh.lods.size(), std::size_t {2});
-    CHECK_EQ(mesh.lods[0].texture, 7U);
-    CHECK_EQ(mesh.triangleCount(0), std::size_t {2});
-    CHECK_EQ(mesh.triangleCount(1), std::size_t {1});
+    CHECK(mesh.vertexCount() == std::size_t{4});
+    CHECK(mesh.lods.size() == std::size_t{2});
+    CHECK(mesh.lods[0].texture == 7U);
+    CHECK(mesh.triangleCount(0) == std::size_t{2});
+    CHECK(mesh.triangleCount(1) == std::size_t{1});
     const float* v0 = &mesh.vertices[0];
-    CHECK_EQ(v0[0], -0.5F);
-    CHECK_EQ(v0[sp::SpectatorMesh::kNormal + 2], 1.0F);
-    CHECK_EQ(std::bit_cast<std::uint32_t>(v0[sp::SpectatorMesh::kColour]), 0xFFFFFFFFU);
-    CHECK_EQ(v0[sp::SpectatorMesh::kBones + 1], 1.0F);
-    CHECK_EQ(v0[sp::SpectatorMesh::kWeights], 1.0F);
+    CHECK(v0[0] == -0.5F);
+    CHECK(v0[sp::SpectatorMesh::kNormal + 2] == 1.0F);
+    CHECK(std::bit_cast<std::uint32_t>(v0[sp::SpectatorMesh::kColour]) == 0xFFFFFFFFU);
+    CHECK(v0[sp::SpectatorMesh::kBones + 1] == 1.0F);
+    CHECK(v0[sp::SpectatorMesh::kWeights] == 1.0F);
     // Clockwise from the front in a left-handed frame: the numeric cross
     // product of the edges points along the normal.
     for (std::size_t t = 0; t < mesh.indices.size(); t += 3) {
@@ -519,56 +524,56 @@ TEST(spectatorMeshMirrorsXAndKeepsFrontsClockwise)
     }
 }
 
-TEST(animationDecodesBitStreamChannels)
+TEST_CASE("animationDecodesBitStreamChannels", "[spectators]")
 {
     const Bytes data = animationFile();
     const sp::AnimationClip clip = sp::parseAnimation(data, "test.anim.bin");
-    CHECK_EQ(clip.frameCount, 3);
-    CHECK_EQ(clip.boneCount(), std::size_t {2});
-    CHECK_NEAR(clip.framesPerSecond(), 30.0, 1e-3);
-    CHECK_EQ(clip.animatedChannels, 2);
-    CHECK_EQ(clip.constantChannels, 1);
-    CHECK_EQ(clip.skeleton.bones[1].name, std::string("sk1_Bone_root"));
-    CHECK_EQ(clip.skeleton.bones[1].parent, 0);
+    CHECK(clip.frameCount == 3);
+    CHECK(clip.boneCount() == std::size_t{2});
+    CHECK_THAT(clip.framesPerSecond(), WithinAbs(30.0, 1e-3));
+    CHECK(clip.animatedChannels == 2);
+    CHECK(clip.constantChannels == 1);
+    CHECK(clip.skeleton.bones[1].name == std::string("sk1_Bone_root"));
+    CHECK(clip.skeleton.bones[1].parent == 0);
     CHECK(near(clip.skeleton.bones[1].modelPosition, {0.0F, 1.5F, 0.0F}, 1e-6F));
     for (int f = 0; f < 3; ++f) {
         const sp::BonePose& pose = clip.pose(f, 0);
         const float x
             = static_cast<float>(static_cast<int>(kRotationStored[static_cast<std::size_t>(f)]) + kRotationInitial)
             / 16383.0F;
-        CHECK_NEAR(pose.rotation.x, x, 1e-6);
-        CHECK_NEAR(pose.rotation.w, std::sqrt(1.0F - x * x), 1e-6);
-        CHECK_NEAR(pose.rotation.y, 0.0, 1e-9);
+        CHECK_THAT(pose.rotation.x, WithinAbs(x, 1e-6));
+        CHECK_THAT(pose.rotation.w, WithinAbs(std::sqrt(1.0F - x * x), 1e-6));
+        CHECK_THAT(pose.rotation.y, WithinAbs(0.0, 1e-9));
         const float tx = static_cast<float>(
                              static_cast<int>(kTranslationStored[static_cast<std::size_t>(f)]) + kTranslationInitial)
             / 128.0F;
-        CHECK_NEAR(pose.translation.x, tx, 1e-6);
-        CHECK_NEAR(pose.translation.y, -0.5, 1e-6);
-        CHECK_NEAR(pose.translation.z, 0.0, 1e-9);
+        CHECK_THAT(pose.translation.x, WithinAbs(tx, 1e-6));
+        CHECK_THAT(pose.translation.y, WithinAbs(-0.5, 1e-6));
+        CHECK_THAT(pose.translation.z, WithinAbs(0.0, 1e-9));
         CHECK(near(pose.scale, glm::vec3(1.0F), 1e-6F));
-        CHECK_NEAR(clip.pose(f, 1).rotation.w, 1.0, 1e-9);
+        CHECK_THAT(clip.pose(f, 1).rotation.w, WithinAbs(1.0, 1e-9));
     }
 
     Bytes badVersion = data;
     badVersion[0x190 + 0x0A + 12] = '7';
-    CHECK_THROWS(sp::parseAnimation(badVersion, "version.anim.bin"));
+    CHECK_THROWS_AS(sp::parseAnimation(badVersion, "version.anim.bin"), std::exception);
     Bytes notCaff = data;
     notCaff[0] = 'X';
-    CHECK_THROWS(sp::parseAnimation(notCaff, "magic.anim.bin"));
+    CHECK_THROWS_AS(sp::parseAnimation(notCaff, "magic.anim.bin"), std::exception);
     Bytes truncated(data.begin(), data.begin() + 0x190 + 0x40);
-    CHECK_THROWS(sp::parseAnimation(truncated, "short.anim.bin"));
+    CHECK_THROWS_AS(sp::parseAnimation(truncated, "short.anim.bin"), std::exception);
 }
 
-TEST(animationSamplesAndSkins)
+TEST_CASE("animationSamplesAndSkins", "[spectators]")
 {
     const sp::AnimationClip clip = sp::parseAnimation(animationFile(), "test.anim.bin");
     std::vector<sp::BonePose> pose(clip.boneCount());
     sp::samplePose(clip, 0.5F / 30.0F, pose);
-    CHECK_NEAR(pose[0].translation.x, 2.25, 1e-5);
+    CHECK_THAT(pose[0].translation.x, WithinAbs(2.25, 1e-5));
     // Looping: one duration later is the same pose.
     std::vector<sp::BonePose> later(clip.boneCount());
     sp::samplePose(clip, clip.duration + 0.5F / 30.0F, later);
-    CHECK_NEAR(later[0].translation.x, pose[0].translation.x, 1e-4);
+    CHECK_THAT(later[0].translation.x, WithinAbs(pose[0].translation.x, 1e-4));
 
     sp::samplePose(clip, 0.0F, pose);
     std::vector<glm::mat4> matrices(clip.boneCount());
@@ -590,47 +595,47 @@ TEST(animationSamplesAndSkins)
     CHECK(near(glm::vec3(moved), {0.0F, 1.0F, -1.0F}, 1e-5F));
 
     const sp::AnimationClip three = sp::parseAnimation(animationFile(3), "three.anim.bin");
-    CHECK_THROWS(sp::skinMatrices(three.skeleton, clip.skeleton, pose, matrices));
+    CHECK_THROWS_AS(sp::skinMatrices(three.skeleton, clip.skeleton, pose, matrices), std::exception);
 }
 
-TEST(crowdPlacementSetsParseBothLayouts)
+TEST_CASE("crowdPlacementSetsParseBothLayouts", "[spectators]")
 {
     const Bytes data = crowdSet("crowd_proc_test_fr04_1", "FR04_15", {0, 7}, {0.0F, 0.0F, 0.0F},
         {100.0F, 10.0F, 200.0F}, {{{0, 0, 0, 64, 1}}, {{65535, 32768, 65535, 192, 8}}});
-    CHECK_EQ(sp::placementSetType(data).value_or(0), sp::kCrowdSetType);
+    CHECK(sp::placementSetType(data).value_or(0) == sp::kCrowdSetType);
     const sp::CrowdPlacementSet set = sp::parseCrowdPlacementSet(data, "set.pgeo");
-    CHECK_EQ(set.name, std::string("crowd_proc_test_fr04_1"));
+    CHECK(set.name == std::string("crowd_proc_test_fr04_1"));
     CHECK(set.hasEventBlock);
-    CHECK_EQ(set.eventTag, std::string("FR04_15"));
-    CHECK_EQ(set.eventId(), std::string("FR04"));
-    CHECK_EQ(set.routes.size(), std::size_t {2});
-    CHECK_EQ(set.routes[1], 7);
-    CHECK_EQ(set.spectators.size(), std::size_t {2});
+    CHECK(set.eventTag == std::string("FR04_15"));
+    CHECK(set.eventId() == std::string("FR04"));
+    CHECK(set.routes.size() == std::size_t{2});
+    CHECK(set.routes[1] == 7);
+    CHECK(set.spectators.size() == std::size_t{2});
     CHECK(near(set.spectators[0].position, {0.0F, 0.0F, 0.0F}, 1e-4F));
     CHECK(near(set.spectators[1].position, {100.0F, 5.0F, 200.0F}, 1e-3F));
     // b / 255 of a turn, as the game's decoder reads it.
-    CHECK_NEAR(set.spectators[0].headingRadians(), 64.0 / 255.0 * 2.0 * std::numbers::pi, 1e-6);
-    CHECK_NEAR(set.spectators[1].headingRadians(), 192.0 / 255.0 * 2.0 * std::numbers::pi, 1e-6);
-    CHECK_EQ(set.spectators[1].crowdClass, 8);
-    CHECK_EQ(set.spectators[1].flags, 1);
+    CHECK_THAT(set.spectators[0].headingRadians(), WithinAbs(64.0 / 255.0 * 2.0 * std::numbers::pi, 1e-6));
+    CHECK_THAT(set.spectators[1].headingRadians(), WithinAbs(192.0 / 255.0 * 2.0 * std::numbers::pi, 1e-6));
+    CHECK(set.spectators[1].crowdClass == 8);
+    CHECK(set.spectators[1].flags == 1);
     CHECK(near(set.boundsMin, {1.0F, 1.0F, 1.0F}, 1e-6F));
 
     const Bytes plain = crowdSet("crowd_festival", "", {}, {-5.0F, 0.0F, -5.0F}, {5.0F, 3.0F, 5.0F}, {});
     const sp::CrowdPlacementSet empty = sp::parseCrowdPlacementSet(plain, "plain.pgeo");
     CHECK(!empty.hasEventBlock);
-    CHECK_EQ(empty.name, std::string("crowd_festival"));
+    CHECK(empty.name == std::string("crowd_festival"));
     CHECK(empty.spectators.empty());
 
     const sp::CrowdPlacementSet walk = sp::parseCrowdPlacementSet(walkSet("crowd_walk_1"), "walk.pgeo");
-    CHECK_EQ(walk.walkPaths.size(), std::size_t {1});
+    CHECK(walk.walkPaths.size() == std::size_t{1});
     const sp::WalkPath& path = walk.walkPaths[0];
-    CHECK_EQ(path.crowdClass, 1);
-    CHECK_EQ(path.points.size(), std::size_t {6});
+    CHECK(path.crowdClass == 1);
+    CHECK(path.points.size() == std::size_t{6});
     CHECK(near(path.points[0], {0.0F, 0.0F, 0.0F}, 1e-6F));
     CHECK(near(path.points[3], {0.0F, 0.0F, 10.0F}, 1e-6F));
-    CHECK_EQ(path.distances.size(), std::size_t {16});
-    CHECK_NEAR(path.length, 40.0, 1e-6);
-    CHECK_NEAR(path.loopLength(), 40.0, 1e-5);
+    CHECK(path.distances.size() == std::size_t{16});
+    CHECK_THAT(path.length, WithinAbs(40.0, 1e-6));
+    CHECK_THAT(path.loopLength(), WithinAbs(40.0, 1e-5));
     glm::vec3 direction(0.0F);
     CHECK(near(path.pointAt(15.0F, &direction), {10.0F, 0.0F, 5.0F}, 1e-5F));
     CHECK(near(direction, {0.0F, 0.0F, 1.0F}, 1e-6F));
@@ -638,11 +643,11 @@ TEST(crowdPlacementSetsParseBothLayouts)
 
     Bytes wrongSize = data;
     wrongSize.push_back(0);
-    CHECK_THROWS(sp::parseCrowdPlacementSet(wrongSize, "size.pgeo"));
+    CHECK_THROWS_AS(sp::parseCrowdPlacementSet(wrongSize, "size.pgeo"), std::exception);
     Bytes otherType = data;
     otherType[0x33] = 7;
     CHECK(sp::placementSetType(otherType) == std::optional<std::uint32_t>(7));
-    CHECK_THROWS(sp::parseCrowdPlacementSet(otherType, "type.pgeo"));
+    CHECK_THROWS_AS(sp::parseCrowdPlacementSet(otherType, "type.pgeo"), std::exception);
     CHECK(!sp::placementSetType(Bytes(0x40, 0)).has_value());
 
     Writer legacy;
@@ -650,24 +655,24 @@ TEST(crowdPlacementSetsParseBothLayouts)
     legacy.u32(0);
     legacy.u32(0);
     const sp::LegacyCrowdFile file = sp::parseLegacyCrowdFile(legacy.data, "test.crowd");
-    CHECK_EQ(file.version, 2U);
-    CHECK_EQ(file.entryCount, 0U);
-    CHECK_THROWS(sp::parseLegacyCrowdFile(Bytes(8, 0), "short.crowd"));
+    CHECK(file.version == 2U);
+    CHECK(file.entryCount == 0U);
+    CHECK_THROWS_AS(sp::parseLegacyCrowdFile(Bytes(8, 0), "short.crowd"), std::exception);
 }
 
-TEST(spritesChooseCellsByViewAngle)
+TEST_CASE("spritesChooseCellsByViewAngle", "[spectators]")
 {
     const sp::SpriteAtlasLayout layout {2048, 768};
-    CHECK_EQ(layout.columns(), 32);
-    CHECK_EQ(layout.cellCount(), 192);
+    CHECK(layout.columns() == 32);
+    CHECK(layout.cellCount() == 192);
     const glm::vec3 facing(0.0F, 0.0F, 1.0F);
     const glm::vec3 origin(0.0F);
     // Model 2's cells start at 18; standing people take three views.
     sp::SpriteFrame frame = sp::chooseSprite(layout, 18, false, facing, origin, {0.0F, 1.0F, 10.0F});
     CHECK(frame.view == sp::SpriteView::StandingFront);
-    CHECK_EQ(frame.cell, 19);
-    CHECK_NEAR(frame.uvMin.x, 19.0 * 64.0 / 2048.0, 1e-6);
-    CHECK_NEAR(frame.uvMax.y, 128.0 / 768.0, 1e-6);
+    CHECK(frame.cell == 19);
+    CHECK_THAT(frame.uvMin.x, WithinAbs(19.0 * 64.0 / 2048.0, 1e-6));
+    CHECK_THAT(frame.uvMax.y, WithinAbs(128.0 / 768.0, 1e-6));
     CHECK(
         sp::chooseSprite(layout, 0, false, facing, origin, {0.0F, 0.0F, -10.0F}).view == sp::SpriteView::StandingBack);
     frame = sp::chooseSprite(layout, 0, false, facing, origin, {10.0F, 0.0F, 0.0F});
@@ -679,7 +684,7 @@ TEST(spritesChooseCellsByViewAngle)
     // The first class's six views start three cells in (model 1: 9 + 3).
     frame = sp::chooseSprite(layout, 12, true, facing, origin, {10.0F, 0.0F, 10.0F});
     CHECK(frame.view == sp::SpriteView::SeatedTurned45);
-    CHECK_EQ(frame.cell, 9 + 6);
+    CHECK(frame.cell == 9 + 6);
     CHECK(sp::chooseSprite(layout, 12, true, facing, origin, {10.0F, 0.0F, -1.0F}).view == sp::SpriteView::SeatedSide);
     CHECK(sp::chooseSprite(layout, 12, true, facing, origin, {0.0F, 0.0F, -10.0F}).view == sp::SpriteView::SeatedBack);
     CHECK(sp::chooseSprite(layout, 12, true, facing, origin, {0.0F, 0.0F, 10.0F}).view == sp::SpriteView::SeatedFront);
@@ -696,29 +701,29 @@ TEST(spritesChooseCellsByViewAngle)
         atlas.rgba[(static_cast<std::size_t>(y) * 128 + 64 + 30) * 4 + 3] = 255;
     }
     const sp::SpriteMetrics metrics = sp::measureSprites(atlas, {1.8F});
-    CHECK_NEAR(metrics.metresPerTexel, 1.8 / 90.0, 1e-6);
-    CHECK_NEAR(metrics.groundRow, 110.0, 1e-6);
+    CHECK_THAT(metrics.metresPerTexel, WithinAbs(1.8 / 90.0, 1e-6));
+    CHECK_THAT(metrics.groundRow, WithinAbs(110.0, 1e-6));
     const sp::SpriteMetrics none = sp::measureSprites(atlas, {0.0F});
-    CHECK_NEAR(none.groundRow, 128.0, 1e-6);
+    CHECK_THAT(none.groundRow, WithinAbs(128.0, 1e-6));
 }
 
-TEST(crowdDrawFollowsTheGamesRules)
+TEST_CASE("crowdDrawFollowsTheGamesRules", "[spectators]")
 {
     namespace draw = sp::draw;
     // Models are whole within 60 m and gone at 80 m.
-    CHECK_NEAR(draw::modelFade(10.0F, draw::kModelFade), 1.0, 1e-6);
-    CHECK_NEAR(draw::modelFade(70.0F, draw::kModelFade), 0.5, 1e-6);
-    CHECK_NEAR(draw::modelFade(80.0F, draw::kModelFade), 0.0, 1e-6);
-    CHECK_NEAR(draw::modelFade(190.0F, draw::kWalkerFade), 0.5, 1e-6);
+    CHECK_THAT(draw::modelFade(10.0F, draw::kModelFade), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(draw::modelFade(70.0F, draw::kModelFade), WithinAbs(0.5, 1e-6));
+    CHECK_THAT(draw::modelFade(80.0F, draw::kModelFade), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(draw::modelFade(190.0F, draw::kWalkerFade), WithinAbs(0.5, 1e-6));
     // Sprites come in from 40 to 60 m and go from 650 to 700 m; those of
     // billboard-only people show from the camera out.
-    CHECK_NEAR(draw::spriteFade(30.0F, false), 0.0, 1e-6);
-    CHECK_NEAR(draw::spriteFade(50.0F, false), 0.5, 1e-6);
-    CHECK_NEAR(draw::spriteFade(100.0F, false), 1.0, 1e-6);
-    CHECK_NEAR(draw::spriteFade(675.0F, false), 0.5, 1e-6);
-    CHECK_NEAR(draw::spriteFade(700.0F, false), 0.0, 1e-6);
-    CHECK_NEAR(draw::spriteFade(5.0F, true), 1.0, 1e-6);
-    CHECK_NEAR(draw::spriteFade(800.0F, true), 0.0, 1e-6);
+    CHECK_THAT(draw::spriteFade(30.0F, false), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(draw::spriteFade(50.0F, false), WithinAbs(0.5, 1e-6));
+    CHECK_THAT(draw::spriteFade(100.0F, false), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(draw::spriteFade(675.0F, false), WithinAbs(0.5, 1e-6));
+    CHECK_THAT(draw::spriteFade(700.0F, false), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(draw::spriteFade(5.0F, true), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(draw::spriteFade(800.0F, true), WithinAbs(0.0, 1e-6));
 
     // Eight people within 10 m: the band's cap of five sends three on to the
     // next level; a person past 90 m takes the last band, clamped to the
@@ -731,18 +736,18 @@ TEST(crowdDrawFollowsTheGamesRules)
 
     // The shader's arc cosine is within 1e-4 of the true one.
     for (const float c : {-1.0F, -0.7F, -0.2F, 0.0F, 0.3F, 0.707F, 0.95F, 1.0F}) {
-        CHECK_NEAR(draw::shaderArcCos(c), std::acos(c), 1e-4);
+        CHECK_THAT(draw::shaderArcCos(c), WithinAbs(std::acos(c), 1e-4));
     }
     // Three views: front within 45 degrees, back past 135, side between;
     // six views: a column every 22.5 degrees from the front.
     const glm::vec2 north(0.0F, 1.0F);
-    CHECK_EQ(draw::spriteColumn(north, glm::normalize(glm::vec2(0.5F, 1.0F)), false).column, 1);
-    CHECK_EQ(draw::spriteColumn(north, glm::vec2(1.0F, 0.0F), false).column, 2);
-    CHECK_EQ(draw::spriteColumn(north, glm::normalize(glm::vec2(0.5F, -1.0F)), false).column, 0);
+    CHECK(draw::spriteColumn(north, glm::normalize(glm::vec2(0.5F, 1.0F)), false).column == 1);
+    CHECK(draw::spriteColumn(north, glm::vec2(1.0F, 0.0F), false).column == 2);
+    CHECK(draw::spriteColumn(north, glm::normalize(glm::vec2(0.5F, -1.0F)), false).column == 0);
     for (int step = 0; step <= 4; ++step) {
         const float angle = static_cast<float>(step) * std::numbers::pi_v<float> / 8.0F;
         const glm::vec2 toCamera(std::sin(angle), std::cos(angle));
-        CHECK_EQ(draw::spriteColumn(north, toCamera, true).column, step + 1);
+        CHECK(draw::spriteColumn(north, toCamera, true).column == step + 1);
     }
     // The front and back views are never mirrored.
     CHECK(!draw::spriteColumn(north, glm::vec2(-0.1F, 1.0F), true).mirrored);
@@ -750,25 +755,25 @@ TEST(crowdDrawFollowsTheGamesRules)
 
     // The crowd's generator and the C runtime's rand().
     draw::CrowdRandom random(0);
-    CHECK_EQ(random.next(), 0U);
-    CHECK_EQ(random.next(), 21468U);
-    CHECK_EQ(random.next(), 9988U);
+    CHECK(random.next() == 0U);
+    CHECK(random.next() == 21468U);
+    CHECK(random.next() == 9988U);
     draw::CrtRandom crt;
-    CHECK_EQ(crt.next(), 41U);
-    CHECK_EQ(crt.next(), 18467U);
+    CHECK(crt.next() == 41U);
+    CHECK(crt.next() == 18467U);
 
     // Three clips of equal weight fill 17, 17 and 16 of the 50 slots.
     const std::vector<std::uint32_t> clips{7, 8, 9};
     const std::vector<float> weights{1.0F, 1.0F, 1.0F};
     const std::vector<std::uint32_t> table = draw::clipTable(clips, weights);
-    CHECK_EQ(table.size(), draw::kClipSlots);
-    CHECK_EQ(std::count(table.begin(), table.end(), 7U), 17);
-    CHECK_EQ(std::count(table.begin(), table.end(), 8U), 17);
-    CHECK_EQ(std::count(table.begin(), table.end(), 9U), 16);
+    CHECK(table.size() == draw::kClipSlots);
+    CHECK(std::count(table.begin(), table.end(), 7U) == 17);
+    CHECK(std::count(table.begin(), table.end(), 8U) == 17);
+    CHECK(std::count(table.begin(), table.end(), 9U) == 16);
     CHECK(draw::clipTable({}, {}).empty());
 }
 
-TEST(sessionsChooseGroups)
+TEST_CASE("sessionsChooseGroups", "[spectators]")
 {
     sp::CrowdGroup ambient;
     sp::CrowdGroup start;
@@ -791,7 +796,7 @@ TEST(sessionsChooseGroups)
     CHECK(!race.belongsToRace("FR04", 0));
 }
 
-TEST(crowdSetLoadsFromADisc)
+TEST_CASE("crowdSetLoadsFromADisc", "[spectators]")
 {
     const std::filesystem::path root
         = std::filesystem::temp_directory_path() / std::format("fh1_spectators_test_{}", std::rand());
@@ -831,45 +836,45 @@ TEST(crowdSetLoadsFromADisc)
     auto vfs = std::make_unique<fh::Vfs>();
     vfs->mountDisc(root);
     const sp::CrowdSet crowd = sp::CrowdSet::load(*vfs, "testtrack");
-    CHECK_EQ(crowd.groups().size(), std::size_t {3});
-    CHECK_EQ(crowd.spectators().size(), std::size_t {3 + 2 + 1});
-    CHECK_EQ(crowd.models().size(), std::size_t {2});
-    CHECK_EQ(crowd.animations().size(), std::size_t {1});
-    CHECK_EQ(crowd.classes().size(), std::size_t {2});
-    CHECK_EQ(crowd.walkPaths().size(), std::size_t {1});
+    CHECK(crowd.groups().size() == std::size_t{3});
+    CHECK(crowd.spectators().size() == std::size_t{3 + 2 + 1});
+    CHECK(crowd.models().size() == std::size_t{2});
+    CHECK(crowd.animations().size() == std::size_t{1});
+    CHECK(crowd.classes().size() == std::size_t{2});
+    CHECK(crowd.walkPaths().size() == std::size_t{1});
     CHECK(crowd.report().legacyFile.has_value());
-    CHECK_EQ(crowd.report().unknownClassInstances, 1);
+    CHECK(crowd.report().unknownClassInstances == 1);
     // Missing: two textures, the sprites and the shadow; and the person of
     // an unknown class. The class's cheer names a clip its skeleton lacks,
     // which the game leaves out, as the load does.
-    CHECK_EQ(crowd.report().failures.size(), std::size_t{5});
+    CHECK(crowd.report().failures.size() == std::size_t{5});
     CHECK(crowd.classes()[0].cheers.empty());
-    CHECK_EQ(crowd.spriteTexture(), -1);
+    CHECK(crowd.spriteTexture() == -1);
 
     const sp::Spectator& first = crowd.spectators()[0];
-    CHECK_EQ(first.crowdClass, 0);
-    CHECK(first.model == 0 || first.model == 1);
-    CHECK_EQ(first.animation, 0);
-    CHECK(first.startFrame >= 0 && first.startFrame < crowd.animations()[0].clip.frameCount);
+    CHECK(first.crowdClass == 0);
+    CHECK((first.model == 0 || first.model == 1));
+    CHECK(first.animation == 0);
+    CHECK((first.startFrame >= 0 && first.startFrame < crowd.animations()[0].clip.frameCount));
     CHECK(near(crowd.spectators()[1].position, {100.0F, 0.25F, 100.0F}, 1e-3F));
 
     const std::vector<std::uint32_t> nearCentre = crowd.spectatorsNear(50.0F, 50.0F, 10.0F);
-    CHECK_EQ(nearCentre.size(), std::size_t {1});
+    CHECK(nearCentre.size() == std::size_t{1});
     // The two people of the first set and the walker, whose path runs
     // around the origin.
     const std::vector<std::uint32_t> nearOrigin = crowd.spectatorsNear(0.0F, 0.0F, 80.0F);
-    CHECK_EQ(nearOrigin.size(), std::size_t {3});
+    CHECK(nearOrigin.size() == std::size_t{3});
     CHECK(std::find(nearOrigin.begin(), nearOrigin.end(), 0U) != nearOrigin.end());
 
     const sp::CrowdGroup& routeGroup = crowd.groups()[1];
-    CHECK_EQ(routeGroup.eventId, std::string("NR07"));
-    CHECK_EQ(crowd.groupsFor(sp::CrowdSession::freeRoam()).size(), std::size_t {2});
-    CHECK_EQ(crowd.spectatorsFor(sp::CrowdSession::raceOn("NR07", 7)).size(), std::size_t {6});
-    CHECK_EQ(crowd.spectatorsFor(sp::CrowdSession::raceOn("NR07", 7), 0.0F).size(), std::size_t {0});
+    CHECK(routeGroup.eventId == std::string("NR07"));
+    CHECK(crowd.groupsFor(sp::CrowdSession::freeRoam()).size() == std::size_t{2});
+    CHECK(crowd.spectatorsFor(sp::CrowdSession::raceOn("NR07", 7)).size() == std::size_t{6});
+    CHECK(crowd.spectatorsFor(sp::CrowdSession::raceOn("NR07", 7), 0.0F).size() == std::size_t{0});
     CHECK(crowd.spectatorsFor(sp::CrowdSession::raceOn("NR07", 7), 0.5F).size() <= std::size_t {6});
 
     const sp::Spectator& walker = crowd.spectators().back();
-    CHECK_EQ(walker.walkPath, 0);
+    CHECK(walker.walkPath == 0);
     float heading = 0.0F;
     const auto walkerIndex = static_cast<std::uint32_t>(crowd.spectators().size() - 1);
     CHECK(near(crowd.walkerAt(walkerIndex, 0.0F, heading), walker.position, 1e-4F));
@@ -879,9 +884,9 @@ TEST(crowdSetLoadsFromADisc)
         near(later, crowd.walkPaths()[0].path.pointAt(walker.walkStart + 2.0F) + glm::vec3(0.0F, 0.25F, 0.0F), 1e-3F));
 
     const std::vector<glm::mat4> matrices = crowd.skinMatrices(0, 0, 0.0F);
-    CHECK_EQ(matrices.size(), std::size_t {2});
+    CHECK(matrices.size() == std::size_t{2});
     const std::vector<glm::vec3> skinned = crowd.skinnedPositions(0, 0, 0.0F);
-    CHECK_EQ(skinned.size(), std::size_t {4});
+    CHECK(skinned.size() == std::size_t{4});
     // Spectator space mirrors X, so the clip's +2 m along X becomes -2 m.
     CHECK(near(skinned[0], {-0.5F - 2.0F, -0.5F, 0.0F}, 1e-4F));
 
@@ -895,34 +900,30 @@ TEST(crowdSetLoadsFromADisc)
     std::filesystem::remove_all(root);
 }
 
-TEST(coloradoCrowd)
+TEST_CASE("coloradoCrowd", "[spectators]")
 {
-    const char* gameDir = std::getenv("FH1_GAME_DIR");
-    if (!gameDir) {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return;
-    }
+    const char* gameDir = fh::test::gameDir();
     fh::Vfs vfs;
     vfs.mountDisc(gameDir);
     const sp::CrowdSet crowd = sp::CrowdSet::load(vfs, "colorado");
-    CHECK_EQ(crowd.groups().size(), std::size_t {1783});
-    CHECK_EQ(crowd.spectators().size(), std::size_t {149373});
-    CHECK_EQ(crowd.walkPaths().size(), std::size_t {247});
-    CHECK_EQ(crowd.models().size(), std::size_t {40});
-    CHECK_EQ(crowd.animations().size(), std::size_t {56});
-    CHECK_EQ(crowd.textures().size(), std::size_t {22});
-    CHECK_EQ(crowd.skeletons().size(), std::size_t {3});
-    CHECK_EQ(crowd.report().unknownClassInstances, 0);
+    CHECK(crowd.groups().size() == std::size_t{1783});
+    CHECK(crowd.spectators().size() == std::size_t{149373});
+    CHECK(crowd.walkPaths().size() == std::size_t{247});
+    CHECK(crowd.models().size() == std::size_t{40});
+    CHECK(crowd.animations().size() == std::size_t{56});
+    CHECK(crowd.textures().size() == std::size_t{22});
+    CHECK(crowd.skeletons().size() == std::size_t{3});
+    CHECK(crowd.report().unknownClassInstances == 0);
     // Street_stand names two clips (Stand_Cheer_08 and _10) that its
     // skeleton does not list; the game leaves them out of the class, and
     // so does the load.
-    CHECK_EQ(crowd.report().failures.size(), std::size_t{0});
+    CHECK(crowd.report().failures.size() == std::size_t{0});
     for (const sp::CrowdClass& crowdClass : crowd.classes()) {
         if (crowdClass.name == "Street_stand") {
-            CHECK_EQ(crowdClass.cheers.size(), std::size_t{10});
+            CHECK(crowdClass.cheers.size() == std::size_t{10});
         }
     }
-    CHECK(crowd.report().legacyFile.has_value() && crowd.report().legacyFile->entryCount == 0);
+    CHECK((crowd.report().legacyFile.has_value() && crowd.report().legacyFile->entryCount == 0));
 
     // The people as the set's init places them.
     std::size_t riders = 0;
@@ -932,27 +933,27 @@ TEST(coloradoCrowd)
         if (person.animation >= 0) {
             CHECK(person.startFrame < crowd.animations()[static_cast<std::size_t>(person.animation)].clip.frameCount);
         }
-        CHECK(person.modelScale >= 0.95F && person.modelScale <= 1.05F);
+        CHECK((person.modelScale >= 0.95F && person.modelScale <= 1.05F));
         CHECK(person.spriteCell < 20 * 9);
         billboardOnly += person.billboardOnly ? 1 : 0;
         if (person.leader >= 0) {
             ++riders;
             CHECK(person.spriteCell < 0);
             const glm::vec3 carrier = crowd.spectators()[static_cast<std::size_t>(person.leader)].position;
-            CHECK(carrier.x == person.position.x && carrier.z == person.position.z);
+            CHECK((carrier.x == person.position.x && carrier.z == person.position.z));
         }
     }
     // Every shoulder rider of the disc has a carrier under them.
-    CHECK_EQ(riders, std::size_t{866});
+    CHECK(riders == std::size_t{866});
     CHECK(billboardOnly > 0);
     for (const sp::CrowdClass& crowdClass : crowd.classes()) {
-        CHECK_EQ(crowdClass.idleTable.size(), sp::draw::kClipSlots);
-        CHECK_EQ(crowdClass.cheerTable.size(), crowdClass.cheers.empty() ? std::size_t{0} : sp::draw::kClipSlots);
+        CHECK(crowdClass.idleTable.size() == sp::draw::kClipSlots);
+        CHECK(crowdClass.cheerTable.size() == (crowdClass.cheers.empty() ? std::size_t{0} : sp::draw::kClipSlots));
     }
 
     for (const sp::SpectatorAnimation& animation : crowd.animations()) {
         const sp::AnimationClip& clip = animation.clip;
-        CHECK_NEAR(clip.framesPerSecond(), 30.0, 0.05);
+        CHECK_THAT(clip.framesPerSecond(), WithinAbs(30.0, 0.05));
         // Bones turn at most about 55 degrees between frames (a fist pump's
         // elbow); a misread stream would jump anywhere.
         float largest = 0.0F;
@@ -966,19 +967,19 @@ TEST(coloradoCrowd)
     }
 
     for (const sp::SpectatorModel& model : crowd.models()) {
-        CHECK_EQ(model.mesh.lods.size(), std::size_t {4});
-        CHECK(model.height > (model.seated ? 1.2F : 1.7F) && model.height < 1.9F);
+        CHECK(model.mesh.lods.size() == std::size_t{4});
+        CHECK((model.height > (model.seated ? 1.2F : 1.7F) && model.height < 1.9F));
         const sp::SpectatorTexture& texture = crowd.textures()[model.texture];
-        CHECK_EQ(texture.chain.width, 256);
-        CHECK_EQ(texture.chain.levels.size(), std::size_t {9});
+        CHECK(texture.chain.width == 256);
+        CHECK(texture.chain.levels.size() == std::size_t{9});
     }
     const int sprites = crowd.spriteTexture();
     CHECK(sprites >= 0);
     if (sprites >= 0) {
-        CHECK_EQ(crowd.textures()[static_cast<std::size_t>(sprites)].chain.width, 2048);
+        CHECK(crowd.textures()[static_cast<std::size_t>(sprites)].chain.width == 2048);
     }
     CHECK(crowd.shadowTexture() >= 0);
-    CHECK(crowd.spriteMetrics().cellHeightMetres() > 2.0F && crowd.spriteMetrics().cellHeightMetres() < 3.5F);
+    CHECK((crowd.spriteMetrics().cellHeightMetres() > 2.0F && crowd.spriteMetrics().cellHeightMetres() < 3.5F));
 
     // The bind pose clip leaves the mesh where it is.
     const int idle = crowd.findAnimation("Stand_Idle_01");
@@ -1002,9 +1003,4 @@ TEST(coloradoCrowd)
     }
     CHECK(tagged > 0);
     CHECK(crowd.spectatorsFor(sp::CrowdSession::freeRoam()).size() < crowd.spectators().size());
-}
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
 }

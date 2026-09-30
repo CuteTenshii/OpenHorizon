@@ -6,7 +6,13 @@
 // and cursor area, and the title's movie and music. The loading screen's
 // cases draw it in an offscreen OpenGL context and skip without one.
 
-#include "TestHarness.h"
+#include "support/GlContext.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/reporters/catch_reporter_event_listener.hpp>
+#include <catch2/reporters/catch_reporter_registrars.hpp>
 
 #include "audio/AudioDevice.h"
 #include "audio/AudioLibrary.h"
@@ -48,6 +54,10 @@
 #include <string_view>
 #include <vector>
 
+using Catch::Matchers::WithinAbs;
+
+using fh::test::gameDir;
+
 namespace {
 
 using namespace fh::ui;
@@ -80,26 +90,26 @@ WorldMapTuning shippedTuning()
     return tuning;
 }
 
-TEST(wrap_breaks_at_spaces_within_the_width)
+TEST_CASE("wrap_breaks_at_spaces_within_the_width", "[menu]")
 {
     const auto measure = [](const std::string& text) { return static_cast<float>(text.size()); };
-    CHECK_EQ(wrapText("one two three", 7.0F, measure), std::string("one two\nthree"));
-    CHECK_EQ(wrapText("one\ntwo three", 20.0F, measure), std::string("one\ntwo three"));
-    CHECK_EQ(wrapText("unbreakable word", 4.0F, measure), std::string("unbreakable\nword"));
-    CHECK_EQ(wrapText("", 10.0F, measure), std::string());
+    CHECK(wrapText("one two three", 7.0F, measure) == std::string("one two\nthree"));
+    CHECK(wrapText("one\ntwo three", 20.0F, measure) == std::string("one\ntwo three"));
+    CHECK(wrapText("unbreakable word", 4.0F, measure) == std::string("unbreakable\nword"));
+    CHECK(wrapText("", 10.0F, measure).empty());
 }
 
-TEST(map_camera_opens_on_the_player_at_the_default_zoom)
+TEST_CASE("map_camera_opens_on_the_player_at_the_default_zoom", "[menu]")
 {
     WorldMapCamera camera(shippedTuning(), {-6278.0F, -6137.76F}, {6840.0F, 3811.0F});
     camera.reset({-1500.0F, 800.0F});
-    CHECK_NEAR(camera.zoom(), 0.38, 1e-6);
-    CHECK_NEAR(camera.distance(), 500.0 + 7152.0 * 0.38, 1e-2);
-    CHECK_NEAR(camera.cursor().x, -1500.0, 1e-3);
-    CHECK_NEAR(camera.position().y, 800.0, 1e-3);
+    CHECK_THAT(camera.zoom(), WithinAbs(0.38, 1e-6));
+    CHECK_THAT(camera.distance(), WithinAbs(500.0 + 7152.0 * 0.38, 1e-2));
+    CHECK_THAT(camera.cursor().x, WithinAbs(-1500.0, 1e-3));
+    CHECK_THAT(camera.position().y, WithinAbs(800.0, 1e-3));
 }
 
-TEST(map_camera_keeps_the_view_inside_the_edges)
+TEST_CASE("map_camera_keeps_the_view_inside_the_edges", "[menu]")
 {
     WorldMapCamera camera(shippedTuning(), {-6278.0F, -6137.76F}, {6840.0F, 3811.0F});
     camera.reset({6000.0F, 3500.0F});
@@ -107,24 +117,24 @@ TEST(map_camera_keeps_the_view_inside_the_edges)
     // wide, so its centre stays 5721 m inside the right edge and 3218 m
     // below the top.
     const float distance = camera.distance();
-    CHECK_NEAR(camera.position().x, 7700.0 - distance * 16.0 / 9.0, 1e-2);
-    CHECK_NEAR(camera.position().y, 4600.0 - distance, 1e-2);
+    CHECK_THAT(camera.position().x, WithinAbs(7700.0 - distance * 16.0 / 9.0, 1e-2));
+    CHECK_THAT(camera.position().y, WithinAbs(4600.0 - distance, 1e-2));
     // The cursor itself stays where it was put, inside the cursor area.
-    CHECK_NEAR(camera.cursor().x, 6000.0, 1e-3);
+    CHECK_THAT(camera.cursor().x, WithinAbs(6000.0, 1e-3));
 }
 
-TEST(map_cursor_moves_with_the_shaped_stick)
+TEST_CASE("map_cursor_moves_with_the_shaped_stick", "[menu]")
 {
     WorldMapCamera camera(shippedTuning(), {-6278.0F, -6137.76F}, {6840.0F, 3811.0F});
     camera.reset({0.0F, 0.0F});
     // Half deflection squared (Input_Linearity 2) at the default zoom's
     // speed of 900 + 9100 * 0.38 m/s, for one 60th of a second.
     camera.update({0.5F, 0.0F}, 0.0F, 1.0F / 60.0F);
-    CHECK_NEAR(camera.cursor().x, 0.25 * (900.0 + 9100.0 * 0.38) / 60.0, 1e-2);
-    CHECK_NEAR(camera.cursor().y, 0.0, 1e-6);
+    CHECK_THAT(camera.cursor().x, WithinAbs(0.25 * (900.0 + 9100.0 * 0.38) / 60.0, 1e-2));
+    CHECK_THAT(camera.cursor().y, WithinAbs(0.0, 1e-6));
 }
 
-TEST(map_camera_follows_only_past_the_dead_area)
+TEST_CASE("map_camera_follows_only_past_the_dead_area", "[menu]")
 {
     WorldMapCamera camera(shippedTuning(), {-6278.0F, -6137.76F}, {6840.0F, 3811.0F});
     camera.reset({0.0F, 0.0F});
@@ -134,7 +144,7 @@ TEST(map_camera_follows_only_past_the_dead_area)
     }
     CHECK(camera.cursor().x > 0.0F);
     CHECK(camera.cursor().x < 0.4F * camera.distance());
-    CHECK_NEAR(camera.position().x, 0.0, 1e-3);
+    CHECK_THAT(camera.position().x, WithinAbs(0.0, 1e-3));
     // Far enough and the camera follows, trailing by the dead area once
     // its spring settles (short of the view-edge clamp, 1979 m east).
     for (int i = 0; i < 20; ++i) {
@@ -143,22 +153,22 @@ TEST(map_camera_follows_only_past_the_dead_area)
     for (int i = 0; i < 600; ++i) {
         camera.update({0.0F, 0.0F}, 0.0F, 1.0F / 60.0F);
     }
-    CHECK_NEAR(camera.position().x, camera.cursor().x - 0.4 * camera.distance(), 1.0);
+    CHECK_THAT(camera.position().x, WithinAbs(camera.cursor().x - 0.4 * camera.distance(), 1.0));
 }
 
-TEST(map_zoom_stays_within_the_cursor_zoom_limits)
+TEST_CASE("map_zoom_stays_within_the_cursor_zoom_limits", "[menu]")
 {
     WorldMapCamera camera(shippedTuning(), {-6278.0F, -6137.76F}, {6840.0F, 3811.0F});
     camera.reset({0.0F, 0.0F});
     for (int i = 0; i < 300; ++i) {
         camera.update({0.0F, 0.0F}, 1.0F, 1.0F / 60.0F);
     }
-    CHECK_NEAR(camera.zoom(), 0.1, 1e-6);
-    CHECK_NEAR(camera.distance(), 500.0 + 7152.0 * 0.1, 1.0);
+    CHECK_THAT(camera.zoom(), WithinAbs(0.1, 1e-6));
+    CHECK_THAT(camera.distance(), WithinAbs(500.0 + 7152.0 * 0.1, 1.0));
     for (int i = 0; i < 300; ++i) {
         camera.update({0.0F, 0.0F}, -1.0F, 1.0F / 60.0F);
     }
-    CHECK_NEAR(camera.zoom(), 0.38, 1e-6);
+    CHECK_THAT(camera.zoom(), WithinAbs(0.38, 1e-6));
 }
 
 bool fires(const TitleFlow::Step& step, std::string_view event)
@@ -166,7 +176,7 @@ bool fires(const TitleFlow::Step& step, std::string_view event)
     return std::find(step.events.begin(), step.events.end(), event) != step.events.end();
 }
 
-TEST(movie_definitions_select_streams_by_number)
+TEST_CASE("movie_definitions_select_streams_by_number", "[menu]")
 {
     const MovieStreams title
         = MovieStreams::parse("<xml>\n<StreamDefinition>\n<Video id=\"2\" />\n</StreamDefinition>\n</xml>", "t");
@@ -177,12 +187,12 @@ TEST(movie_definitions_select_streams_by_number)
         "</StreamDefinition></xml>",
         "f");
     CHECK(fmv.video == 7);
-    CHECK_EQ(fmv.audio.size(), std::size_t{2});
-    CHECK_EQ(fmv.audio[0].id, 6);
-    CHECK_EQ(fmv.audio[0].language, std::string("EN"));
+    CHECK(fmv.audio.size() == std::size_t{2});
+    CHECK(fmv.audio[0].id == 6);
+    CHECK(fmv.audio[0].language == std::string("EN"));
 }
 
-TEST(title_prompt_fades_in_eight_updates_after_entering)
+TEST_CASE("title_prompt_fades_in_eight_updates_after_entering", "[menu]")
 {
     TitleFlow flow;
     const TitleFlow::Step enter = flow.enter();
@@ -195,7 +205,7 @@ TEST(title_prompt_fades_in_eight_updates_after_entering)
     CHECK(!fires(flow.update({}, 1.0F / 60.0F, false), "FADE_IN"));
 }
 
-TEST(title_prompt_starts_on_a_or_start_and_not_on_b)
+TEST_CASE("title_prompt_starts_on_a_or_start_and_not_on_b", "[menu]")
 {
     TitleFlow flow;
     flow.enter();
@@ -214,7 +224,7 @@ TEST(title_prompt_starts_on_a_or_start_and_not_on_b)
     CHECK(flow.update(a, 0.1F, false).action == TitleAction::Start);
 }
 
-TEST(title_prompt_goes_to_the_attract_after_53_idle_seconds)
+TEST_CASE("title_prompt_goes_to_the_attract_after_53_idle_seconds", "[menu]")
 {
     TitleFlow flow;
     flow.enter();
@@ -225,7 +235,7 @@ TEST(title_prompt_goes_to_the_attract_after_53_idle_seconds)
         step = flow.update({}, kStep, false);
         t += kStep;
     }
-    CHECK_NEAR(t, 53.5, 1e-3);
+    CHECK_THAT(t, WithinAbs(53.5, 1e-3));
     CHECK(step.stopMusic);
     MenuInput start;
     start.start = true;
@@ -250,7 +260,7 @@ bool plays(const TitleFlow::Step& step, std::string_view sound)
     return std::find(step.sounds.begin(), step.sounds.end(), sound) != step.sounds.end();
 }
 
-TEST(title_prompt_plays_its_slide_cues)
+TEST_CASE("title_prompt_plays_its_slide_cues", "[menu]")
 {
     // CSplash plays PressStartSlideOn on entering (0x82856418) and
     // PressStartSlideOff on Start (0x82856510).
@@ -266,7 +276,7 @@ TEST(title_prompt_plays_its_slide_cues)
     CHECK(flow.resume().sounds.empty());
 }
 
-TEST(ui_sound_table_matches_names_without_case)
+TEST_CASE("ui_sound_table_matches_names_without_case", "[menu]")
 {
     const UiSoundTable table = UiSoundTable::parse(R"(<ui4audio><defaults>
     <event play="Pause"                     group="UIInGame/UI/Nav"        cue="HUD_Pause" />
@@ -277,22 +287,22 @@ TEST(ui_sound_table_matches_names_without_case)
     <event play="Accept"                    group="UIInGame/UI/Blank"      cue="Blank" />
   </override></overrides></ui4audio>)",
         "test");
-    CHECK_EQ(table.size(), std::size_t{2});
+    CHECK(table.size() == std::size_t{2});
     const UiSound* pause = table.find("pause");
     CHECK(pause != nullptr);
     if (pause) {
-        CHECK_EQ(pause->event, std::string("UI/Nav/HUD_Pause"));
+        CHECK(pause->event == std::string("UI/Nav/HUD_Pause"));
         CHECK(!pause->looping);
     }
     const UiSound* map = table.find("Map_AmbientBackgroundLoop");
-    CHECK(map != nullptr && map->looping);
+    CHECK((map != nullptr && map->looping));
     CHECK(table.find("SpeedTrapFlash") == nullptr);
     CHECK(table.find("VO_PopUp_OthersStorefront") == nullptr);
     CHECK(table.find("Accept") == nullptr);
-    CHECK_THROWS(UiSoundTable::parse("<ui4audio/>", "test"));
+    CHECK_THROWS_AS(UiSoundTable::parse("<ui4audio/>", "test"), std::exception);
 }
 
-TEST(title_idle_timer_holds_while_the_sign_in_step_has_the_input)
+TEST_CASE("title_idle_timer_holds_while_the_sign_in_step_has_the_input", "[menu]")
 {
     TitleFlow flow;
     flow.enter();
@@ -302,17 +312,7 @@ TEST(title_idle_timer_holds_while_the_sign_in_step_has_the_input)
     for (int i = 0; i < 120; ++i) {
         CHECK(!fires(flow.update({}, 1.0F, false), "FADE_OUT"));
     }
-    CHECK_NEAR(flow.idleSeconds(), 0.0, 1e-9);
-}
-
-const char* gameDir()
-{
-    const char* dir = std::getenv("FH1_GAME_DIR");
-    if (dir == nullptr || *dir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return nullptr;
-    }
-    return dir;
+    CHECK_THAT(flow.idleSeconds(), WithinAbs(0.0, 1e-9));
 }
 
 std::vector<std::string> texts(const std::vector<PauseMenuEntry>& entries)
@@ -325,12 +325,9 @@ std::vector<std::string> texts(const std::vector<PauseMenuEntry>& entries)
     return out;
 }
 
-TEST(disc_pause_entries_follow_the_builder)
+TEST_CASE("disc_pause_entries_follow_the_builder", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     UiStrings strings(vfs, "en");
@@ -345,16 +342,13 @@ TEST(disc_pause_entries_follow_the_builder)
     PauseMenuContext tutorial;
     tutorial.firstTimeCareer = true;
     CHECK(texts(pauseMenuEntries(tutorial, strings)) == std::vector<std::string>({"RESUME", "QUIT"}));
-    CHECK_EQ(strings.get("ScreenTitles", "IDS_Pause"), std::string("GAME PAUSED"));
+    CHECK(strings.get("ScreenTitles", "IDS_Pause") == std::string("GAME PAUSED"));
     CHECK(!strings.has("CarChallenges", "IDS_PauseMenu_CarChallenges"));
 }
 
-TEST(disc_pause_scene_has_the_bound_controls)
+TEST_CASE("disc_pause_scene_has_the_bound_controls", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const Presentation scene(SceneFiles::load(vfs, "media/ui/scenes/ui4/925_pause_menu"));
@@ -369,10 +363,10 @@ TEST(disc_pause_scene_has_the_bound_controls)
         if (contract >= 0) {
             ++buttons;
             CHECK(scene.contractParameter(contract, "TEXT_BUTTON") >= 0);
-            CHECK_EQ(scene.slideNames(child).size(), std::size_t{8});
+            CHECK(scene.slideNames(child).size() == std::size_t{8});
         }
     }
-    CHECK_EQ(buttons, 7);
+    CHECK(buttons == 7);
     const int bar = scene.contract(scene.contractParameter(root, "COMPONENT_HELP_BUTTON_BAR"), "HELP_BUTTON_BAR");
     CHECK(scene.contractParameter(bar, "GROUP_BUTTONS") >= 0);
     // Every icon a help bar can show names a texture the disc has, but for
@@ -389,18 +383,15 @@ TEST(disc_pause_scene_has_the_bound_controls)
     CHECK(popup.contractParameter(box, "TEXT_MESSAGE") >= 0);
 }
 
-TEST(disc_map_data_is_where_the_map_reads_it)
+TEST_CASE("disc_map_data_is_where_the_map_reads_it", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const WorldMapTuning tuning = WorldMapTuning::load(vfs);
-    CHECK_NEAR(tuning.distanceMax, 7652.0, 1e-3);
-    CHECK_NEAR(tuning.zoomDefault, 0.38, 1e-6);
-    CHECK_NEAR(tuning.viewEdgeBottom, -6900.0, 1e-3);
+    CHECK_THAT(tuning.distanceMax, WithinAbs(7652.0, 1e-3));
+    CHECK_THAT(tuning.zoomDefault, WithinAbs(0.38, 1e-6));
+    CHECK_THAT(tuning.viewEdgeBottom, WithinAbs(-6900.0, 1e-3));
 
     const Presentation scene(SceneFiles::load(vfs, "media/ui/scenes/ui4/h_map"));
     const int root = scene.contract(0, "UIContract");
@@ -413,18 +404,15 @@ TEST(disc_map_data_is_where_the_map_reads_it)
     for (const NavWay& way : nav.ways) {
         if (way.tag("area_type") == "cursor_area") {
             ++areas;
-            CHECK_EQ(way.points.size(), std::size_t{5});
+            CHECK(way.points.size() == std::size_t{5});
         }
     }
-    CHECK_EQ(areas, 1);
+    CHECK(areas == 1);
 }
 
-TEST(disc_loading_tips_resolve_from_the_string_tables)
+TEST_CASE("disc_loading_tips_resolve_from_the_string_tables", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     UiStrings strings(vfs, "en");
@@ -434,12 +422,12 @@ TEST(disc_loading_tips_resolve_from_the_string_tables)
     if (!freeRoam) {
         return;
     }
-    CHECK_EQ(freeRoam->tipCount, 2);
+    CHECK(freeRoam->tipCount == 2);
     CHECK(freeRoam->random);
     bool raceEncounters = false;
     for (const LoadingTip& tip : freeRoam->tips) {
-        CHECK_NEAR(tip.displayTime, 8.0, 1e-6);
-        CHECK_EQ(tip.layout, 1);
+        CHECK_THAT(tip.displayTime, WithinAbs(8.0, 1e-6));
+        CHECK(tip.layout == 1);
         if (tip.title == "RACE ENCOUNTERS") {
             raceEncounters = true;
             CHECK(tip.message.starts_with("See a fellow Horizon racer"));
@@ -454,28 +442,8 @@ TEST(disc_loading_tips_resolve_from_the_string_tables)
     for (int i = 1; i <= 8; ++i) {
         CHECK(scene.contractParameter(root, std::format("TEXT_LINE_{}", i)) >= 0);
     }
-    CHECK_NEAR(textBoxWidth(scene, scene.contractParameter(root, "TEXT_LINE_1")), 0.385 * 1280.0, 1e-2);
+    CHECK_THAT(textBoxWidth(scene, scene.contractParameter(root, "TEXT_LINE_1")), WithinAbs(0.385 * 1280.0, 1e-2));
     CHECK(scene.contractParameter(root, "MATERIAL_BACKGROUND") >= 0);
-}
-
-/// One offscreen context for the loading screen's cases, or null when this
-/// machine has none (the cases then skip).
-fh::Window* glWindow()
-{
-    static std::unique_ptr<fh::Window> instance = [] {
-        fh::WindowOptions options;
-        options.width = 64;
-        options.height = 64;
-        options.hidden = true;
-        options.vsync = false;
-        try {
-            return std::make_unique<fh::Window>(options);
-        } catch (const std::exception& e) {
-            std::fprintf(stderr, "skipped: no OpenGL context (%s)\n", e.what());
-            return std::unique_ptr<fh::Window>();
-        }
-    }();
-    return instance.get();
 }
 
 /// The UI textures the bars are drawn with, decoded once.
@@ -570,18 +538,16 @@ float opacityAt(const DrawModel& model, glm::vec2 at, DecodedTextures& textures)
 // title's dark bar. Every line's capitals, from the baseline to the cap
 // height and along the whole line, must lie on the opaque part of the bar
 // the scene puts under that line.
-TEST(disc_loading_tip_lines_sit_on_their_bars)
+TEST_CASE("disc_loading_tip_lines_sit_on_their_bars", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir || !glWindow()) {
-        return;
-    }
+    fh::test::requireGlContext();
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     // Seed 33 draws the tip of the report first.
     LoadingScreen screen(vfs, "en", 33);
     screen.show("freeroam");
-    CHECK(screen.tip() != nullptr && screen.tip()->title == "DISCOUNT SIGNS");
+    CHECK((screen.tip() != nullptr && screen.tip()->title == "DISCOUNT SIGNS"));
     FontLibrary fonts(vfs, "en");
     DecodedTextures textures(vfs);
     constexpr float kStep = 1.0F / 60.0F;
@@ -592,7 +558,7 @@ TEST(disc_loading_tip_lines_sit_on_their_bars)
             screen.draw(width, height);
         }
         const std::vector<LoadingTipLine> lines = screen.tipLines();
-        CHECK_EQ(lines.size(), std::size_t{3});
+        CHECK(lines.size() == std::size_t{3});
         for (std::size_t i = 0; i < lines.size(); ++i) {
             const LoadingTipLine& line = lines[i];
             const VectorFont* font = fonts.font(line.text.font);
@@ -619,38 +585,33 @@ TEST(disc_loading_tip_lines_sit_on_their_bars)
     }
 }
 
-TEST(disc_loading_status_takes_the_place_of_please_wait)
+TEST_CASE("disc_loading_status_takes_the_place_of_please_wait", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir || !glWindow()) {
-        return;
-    }
+    fh::test::requireGlContext();
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     LoadingScreen screen(vfs, "en", 0);
     screen.show("freeroam");
-    CHECK_EQ(screen.message(), std::string("PLEASE WAIT"));
+    CHECK(screen.message() == std::string("PLEASE WAIT"));
     screen.setStatus("Compiling shaders 120/480");
-    CHECK_EQ(screen.message(), std::string("Compiling shaders 120/480"));
+    CHECK(screen.message() == std::string("Compiling shaders 120/480"));
     // The next screen keeps it until it is cleared.
     screen.show("freeroam");
-    CHECK_EQ(screen.message(), std::string("Compiling shaders 120/480"));
+    CHECK(screen.message() == std::string("Compiling shaders 120/480"));
     screen.update(1.0F / 60.0F);
     screen.draw(1280, 720);
     screen.setStatus(std::nullopt);
-    CHECK_EQ(screen.message(), std::string("PLEASE WAIT"));
+    CHECK(screen.message() == std::string("PLEASE WAIT"));
 }
 
-TEST(disc_title_scene_binds_the_movie_and_the_prompt)
+TEST_CASE("disc_title_scene_binds_the_movie_and_the_prompt", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     UiStrings strings(vfs, "en");
-    CHECK_EQ(strings.get("Main", "IDS_PressStart"), std::string("PRESS START"));
+    CHECK(strings.get("Main", "IDS_PressStart") == std::string("PRESS START"));
 
     Presentation scene(SceneFiles::load(vfs, "media/ui/scenes/ui4/120_p_pre_splash"));
     int root = -1;
@@ -660,13 +621,13 @@ TEST(disc_title_scene_binds_the_movie_and_the_prompt)
         }
     }
     CHECK(root >= 0);
-    CHECK_EQ(scene.name(scene.contractParameter(root, "TEXT_PRESS_START")), std::string("TitleTapeText"));
+    CHECK(scene.name(scene.contractParameter(root, "TEXT_PRESS_START")) == std::string("TitleTapeText"));
     const int video = scene.contract(scene.contractParameter(root, "COMPONENT_VIDEO"), "CUSTREND_MOVIERENDERER");
     CHECK(video >= 0);
     CHECK(scene.contractFlag(video, "VIDEOLOOP").value_or(false));
     CHECK(scene.contractFlag(video, "VIDEOAUTOPLAY").value_or(false));
     const int viewport = scene.contractParameter(video, "MODEL_VIEWPORT");
-    CHECK_EQ(scene.name(viewport), std::string("loading_image"));
+    CHECK(scene.name(viewport) == std::string("loading_image"));
     const BgfFile& bgf = scene.files().bgf;
     std::string path;
     for (const Attribute& attribute : bgf.elements[static_cast<std::size_t>(video)].attributes) {
@@ -674,19 +635,16 @@ TEST(disc_title_scene_binds_the_movie_and_the_prompt)
             path = bgf.strings[attribute.raw];
         }
     }
-    CHECK_EQ(path, std::string("GAME:\\Media\\UI\\Videos\\PressStart.wmv"));
+    CHECK(path == std::string("GAME:\\Media\\UI\\Videos\\PressStart.wmv"));
     for (const char* event : {"CONTROLLER_ONLY", "FADE_IN", "FADE_OUT", "START_OUTRO", "START_INTRO"}) {
         CHECK(scene.fireEvent(root, event));
     }
     CHECK(scene.slideNames(scene.find("Layer/Fader")).size() == 4);
 }
 
-TEST(disc_title_movie_is_the_wmv3_stream_its_definition_names)
+TEST_CASE("disc_title_movie_is_the_wmv3_stream_its_definition_names", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const MovieStreams streams
@@ -694,24 +652,21 @@ TEST(disc_title_movie_is_the_wmv3_stream_its_definition_names)
     CHECK(streams.video == 2);
     CHECK(streams.audio.empty());
     const MovieInfo info = MovieRenderer::probe(vfs, "GAME:\\Media\\UI\\Videos\\PressStart.wmv");
-    CHECK_EQ(info.streamId, 2);
-    CHECK_EQ(info.codec, std::string("wmv3"));
-    CHECK_EQ(info.width, 1280);
-    CHECK_EQ(info.height, 720);
-    CHECK_NEAR(info.duration, 53.93, 0.01);
-    CHECK_NEAR(info.firstFrameTime, 0.0, 1e-6);
+    CHECK(info.streamId == 2);
+    CHECK(info.codec == std::string("wmv3"));
+    CHECK(info.width == 1280);
+    CHECK(info.height == 720);
+    CHECK_THAT(info.duration, WithinAbs(53.93, 0.01));
+    CHECK_THAT(info.firstFrameTime, WithinAbs(0.0, 1e-6));
 }
 
-TEST(disc_ui_sounds_resolve_to_uiingame_events)
+TEST_CASE("disc_ui_sounds_resolve_to_uiingame_events", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const UiSoundTable table = UiSoundTable::load(vfs);
-    CHECK_EQ(table.size(), std::size_t{754});
+    CHECK(table.size() == std::size_t{754});
     fh::audio::AudioLibrary library(vfs);
     const auto project = library.project("Game:\\Media\\Audio\\UI\\UIInGame\\UIInGame.fev");
     const auto event = [&](std::string_view name) -> std::string {
@@ -719,13 +674,13 @@ TEST(disc_ui_sounds_resolve_to_uiingame_events)
         return sound ? sound->event : std::string();
     };
     // The names the pause flow, the pause menu, the map and the title play.
-    CHECK_EQ(event("Pause"), std::string("UI/Nav/HUD_Pause"));
-    CHECK_EQ(event("UnPause"), std::string("UI/Nav/HUD_UnPause"));
-    CHECK_EQ(event("Accept"), std::string("UI/Nav/Accept"));
-    CHECK_EQ(event("Cancel"), std::string("UI/Nav/Back"));
-    CHECK_EQ(event("Map_AmbientBackgroundLoop"), std::string("UI/HorizonMap/MAP_AmbientBackgroundLoop"));
-    CHECK_EQ(event("PressStartSlideOn"), std::string("UI/Blank/Blank"));
-    CHECK_EQ(event("PressStartSlideOff"), std::string("UI/Blank/Blank"));
+    CHECK(event("Pause") == std::string("UI/Nav/HUD_Pause"));
+    CHECK(event("UnPause") == std::string("UI/Nav/HUD_UnPause"));
+    CHECK(event("Accept") == std::string("UI/Nav/Accept"));
+    CHECK(event("Cancel") == std::string("UI/Nav/Back"));
+    CHECK(event("Map_AmbientBackgroundLoop") == std::string("UI/HorizonMap/MAP_AmbientBackgroundLoop"));
+    CHECK(event("PressStartSlideOn") == std::string("UI/Blank/Blank"));
+    CHECK(event("PressStartSlideOff") == std::string("UI/Blank/Blank"));
     for (const std::string_view name : {"Pause", "UnPause", "Accept", "Cancel", "Map_AmbientBackgroundLoop",
              "PressStartSlideOn", "PressStartSlideOff"}) {
         CHECK(project->findEvent(event(name)) != nullptr);
@@ -734,17 +689,17 @@ TEST(disc_ui_sounds_resolve_to_uiingame_events)
     // The title's music: SplashScreen loops the front end ambience, whose
     // one sound is the press start music.
     const UiSound* splash = table.find("SplashScreen");
-    CHECK(splash != nullptr && splash->looping);
-    CHECK_EQ(event("SplashScreen"), std::string("UI/FrontEnd/FE_Ambience"));
+    CHECK((splash != nullptr && splash->looping));
+    CHECK(event("SplashScreen") == std::string("UI/FrontEnd/FE_Ambience"));
     const fh::audio::FevEvent* ambience = project->findEvent(event("SplashScreen"));
     CHECK(ambience != nullptr);
     if (ambience != nullptr) {
-        CHECK_EQ(ambience->layers.size(), std::size_t{1});
+        CHECK(ambience->layers.size() == std::size_t{1});
         if (ambience->layers.size() == 1) {
-            CHECK_EQ(ambience->layers[0].sounds.size(), std::size_t{1});
+            CHECK(ambience->layers[0].sounds.size() == std::size_t{1});
             if (ambience->layers[0].sounds.size() == 1) {
-                CHECK_EQ(project->soundDefinition(ambience->layers[0].sounds[0].soundDefinition).name,
-                    std::string("/FrontEnd/PressStart_Music"));
+                CHECK(project->soundDefinition(ambience->layers[0].sounds[0].soundDefinition).name
+                    == std::string("/FrontEnd/PressStart_Music"));
             }
         }
     }
@@ -756,27 +711,27 @@ TEST(disc_ui_sounds_resolve_to_uiingame_events)
     UiSounds sounds(vfs, device.mixer(), library, fh::audio::kMasterBus);
     sounds.play("Pause");
     CHECK(sounds.isPlaying("Pause"));
-    CHECK_EQ(device.mixer().activeVoiceCount(), std::size_t{1});
+    CHECK(device.mixer().activeVoiceCount() == std::size_t{1});
     device.render(48000 * 3);
-    CHECK_EQ(device.mixer().activeVoiceCount(), std::size_t{0});
+    CHECK(device.mixer().activeVoiceCount() == std::size_t{0});
     CHECK(!sounds.isPlaying("pause"));
     sounds.play("Accept");
     sounds.play("Accept");
     device.render(256);
-    CHECK_EQ(device.mixer().activeVoiceCount(), std::size_t{1});
+    CHECK(device.mixer().activeVoiceCount() == std::size_t{1});
     device.render(48000 * 3);
     sounds.play("Map_AmbientBackgroundLoop");
     sounds.setParameter("Map_AmbientBackgroundLoop", "RadioIsPlaying", 1.0F);
     device.render(4800);
     CHECK(sounds.isPlaying("Map_AmbientBackgroundLoop"));
-    CHECK_EQ(device.mixer().activeVoiceCount(), std::size_t{0});
+    CHECK(device.mixer().activeVoiceCount() == std::size_t{0});
     sounds.setParameter("Map_AmbientBackgroundLoop", "RadioIsPlaying", 0.0F);
-    CHECK_EQ(device.mixer().activeVoiceCount(), std::size_t{1});
+    CHECK(device.mixer().activeVoiceCount() == std::size_t{1});
     sounds.stop("Map_AmbientBackgroundLoop");
     CHECK(!sounds.isPlaying("Map_AmbientBackgroundLoop"));
     sounds.play("PressStartSlideOn");
-    CHECK_EQ(sounds.played().size(), std::size_t{5});
-    CHECK_EQ(sounds.played().back(), std::string("PressStartSlideOn"));
+    CHECK(sounds.played().size() == std::size_t{5});
+    CHECK(sounds.played().back() == std::string("PressStartSlideOn"));
 }
 
 /// FR04 as gamedb has it, with its texts resolved: a festival race with a
@@ -795,57 +750,52 @@ EventScreenInfo festivalRaceInfo()
     return info;
 }
 
-TEST(disc_event_titles_follow_the_name_rule)
+TEST_CASE("disc_event_titles_follow_the_name_rule", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     UiStrings strings(vfs, "en");
     EventScreenInfo info = festivalRaceInfo();
-    CHECK_EQ(eventTitle(info), std::string("FERRARI MASSIMO"));
+    CHECK(eventTitle(info) == std::string("FERRARI MASSIMO"));
     // Past UI/EventTitleMaxLongNameLength (30) the short name stands in.
     info.name = "A name that runs well past thirty characters";
     info.shortName = "Short name";
-    CHECK_EQ(eventTitle(info), std::string("SHORT NAME"));
+    CHECK(eventTitle(info) == std::string("SHORT NAME"));
     info.name = "Caf\xC3\xA9 run";
-    CHECK_EQ(eventTitle(info), std::string("CAF\xC3\x89 RUN"));
+    CHECK(eventTitle(info) == std::string("CAF\xC3\x89 RUN"));
     const std::vector<std::pair<int, std::string>> kinds{{1, "FESTIVAL RACE"}, {2, "STREET RACE"}, {3, "SHOWCASE"},
         {5, "STAR SHOWDOWN"}, {6, "FESTIVAL HEADLINE RACE"}, {0, ""}, {7, ""}};
     for (const auto& [style, text] : kinds) {
         info.careerEventStyle = style;
-        CHECK_EQ(eventKindLine(info, strings), text);
+        CHECK(eventKindLine(info, strings) == text);
     }
     const std::vector<std::pair<int, std::string>> places{{1, "1ST"}, {2, "2ND"}, {3, "3RD"}, {4, "4TH"}, {11, "11TH"},
         {12, "12TH"}, {13, "13TH"}, {21, "21ST"}, {22, "22ND"}, {101, "101ST"}};
     for (const auto& [place, text] : places) {
-        CHECK_EQ(placeOrdinal(place, strings), text);
+        CHECK(placeOrdinal(place, strings) == text);
     }
 }
 
-TEST(disc_event_summary_shows_the_ticket_and_enters)
+TEST_CASE("disc_event_summary_shows_the_ticket_and_enters", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir || !glWindow()) {
-        return;
-    }
+    fh::test::requireGlContext();
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     EventSummaryScreen screen(vfs, "en");
     screen.open(festivalRaceInfo());
     CHECK(screen.isOpen());
-    CHECK_EQ(screen.text("TEXT_TITLE"), std::string("FESTIVAL RACE"));
-    CHECK_EQ(screen.text("TEXT_CAR_RESTRICTIONS"), std::string("Must be Ferrari"));
-    CHECK_EQ(screen.text("TEXT_RESTRICTION_TITLE"), std::string("ENTRY RESTRICTIONS:"));
+    CHECK(screen.text("TEXT_TITLE") == std::string("FESTIVAL RACE"));
+    CHECK(screen.text("TEXT_CAR_RESTRICTIONS") == std::string("Must be Ferrari"));
+    CHECK(screen.text("TEXT_RESTRICTION_TITLE") == std::string("ENTRY RESTRICTIONS:"));
     // The ticket is the event's own image in its style's folder.
     CHECK(!screen.ticket().empty());
     CHECK(vfs.exists(screen.ticket()));
     CHECK(screen.ticket().find("festivalraces") != std::string::npos);
     screen.update(MenuInput{}, 1.0F / 60.0F);
     screen.draw(1280, 720);
-    CHECK_EQ(screen.helpExtents().size(), std::size_t{2});
+    CHECK(screen.helpExtents().size() == std::size_t{2});
     MenuInput back;
     back.back = true;
     CHECK(screen.update(back, 1.0F / 60.0F) == EventSummaryScreen::Action::Back);
@@ -856,18 +806,16 @@ TEST(disc_event_summary_shows_the_ticket_and_enters)
     CHECK(screen.update(accept, 1.0F / 60.0F) == EventSummaryScreen::Action::Enter);
 }
 
-TEST(disc_event_title_card_is_done_after_four_seconds)
+TEST_CASE("disc_event_title_card_is_done_after_four_seconds", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir || !glWindow()) {
-        return;
-    }
+    fh::test::requireGlContext();
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     EventTitleCard card(vfs, "en");
     card.show(festivalRaceInfo());
-    CHECK_EQ(card.title(), std::string("FERRARI MASSIMO"));
-    CHECK_EQ(card.subtitle(), std::string("FESTIVAL RACE"));
+    CHECK(card.title() == std::string("FERRARI MASSIMO"));
+    CHECK(card.subtitle() == std::string("FESTIVAL RACE"));
     constexpr float kStep = 1.0F / 60.0F;
     int doneFrame = -1;
     for (int frame = 0; frame < 300 && doneFrame < 0; ++frame) {
@@ -877,15 +825,13 @@ TEST(disc_event_title_card_is_done_after_four_seconds)
         card.draw(1280, 720);
     }
     // 4.0 s at 60 Hz: done on the 240th frame.
-    CHECK(doneFrame >= 238 && doneFrame <= 240);
+    CHECK((doneFrame >= 238 && doneFrame <= 240));
 }
 
-TEST(disc_pre_race_menu_starts_or_quits_after_its_box)
+TEST_CASE("disc_pre_race_menu_starts_or_quits_after_its_box", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir || !glWindow()) {
-        return;
-    }
+    fh::test::requireGlContext();
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     PreRaceMenu menu(vfs, "en");
@@ -895,12 +841,12 @@ TEST(disc_pre_race_menu_starts_or_quits_after_its_box)
         texts.push_back(entry.text);
     }
     CHECK(texts == std::vector<std::string>({"START RACE", "OPTIONS", "QUIT RACE"}));
-    CHECK_EQ(menu.title(), std::string("FERRARI MASSIMO"));
-    CHECK_EQ(menu.subtitle(), std::string("FESTIVAL RACE"));
+    CHECK(menu.title() == std::string("FERRARI MASSIMO"));
+    CHECK(menu.subtitle() == std::string("FESTIVAL RACE"));
     constexpr float kStep = 1.0F / 60.0F;
     menu.update(MenuInput{}, kStep);
     menu.draw(1280, 720);
-    CHECK_EQ(menu.helpExtents().size(), std::size_t{1});
+    CHECK(menu.helpExtents().size() == std::size_t{1});
     MenuInput down;
     down.down = true;
     MenuInput accept;
@@ -909,16 +855,16 @@ TEST(disc_pre_race_menu_starts_or_quits_after_its_box)
     back.back = true;
     menu.update(down, kStep);
     menu.update(down, kStep);
-    CHECK_EQ(menu.focus(), 2);
+    CHECK(menu.focus() == 2);
     // The list does not wrap.
     menu.update(down, kStep);
-    CHECK_EQ(menu.focus(), 2);
+    CHECK(menu.focus() == 2);
     CHECK(menu.update(accept, kStep) == PreRaceMenu::Action::None);
     CHECK(menu.confirming());
     menu.draw(1280, 720);
     // B takes the box down and leaves the menu up; A in the box quits.
     CHECK(menu.update(back, kStep) == PreRaceMenu::Action::None);
-    CHECK(!menu.confirming() && menu.isOpen());
+    CHECK((!menu.confirming() && menu.isOpen()));
     menu.update(accept, kStep);
     CHECK(menu.update(accept, kStep) == PreRaceMenu::Action::Quit);
     CHECK(!menu.isOpen());
@@ -927,18 +873,16 @@ TEST(disc_pre_race_menu_starts_or_quits_after_its_box)
     CHECK(!menu.isOpen());
 }
 
-TEST(disc_finish_position_goes_after_its_tape)
+TEST_CASE("disc_finish_position_goes_after_its_tape", "[menu]")
 {
     const char* dir = gameDir();
-    if (!dir || !glWindow()) {
-        return;
-    }
+    fh::test::requireGlContext();
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     PostRaceFinishedScreen screen(vfs, "en");
     screen.show(3, 1);
-    CHECK_EQ(screen.title(), std::string("FINISHED"));
-    CHECK_EQ(screen.position(), std::string("3RD PLACE"));
+    CHECK(screen.title() == std::string("FINISHED"));
+    CHECK(screen.position() == std::string("3RD PLACE"));
     constexpr float kStep = 1.0F / 60.0F;
     float doneAt = -1.0F;
     bool swoosh = false;
@@ -954,26 +898,32 @@ TEST(disc_finish_position_goes_after_its_tape)
     }
     // The tape is in at 1 s of its slide, stays PositionWaitTime (1 s),
     // then its out slide fires HIDE_POSITION_TAPE_COMPLETE a second later.
-    CHECK(doneAt > 2.5F && doneAt < 3.5F);
+    CHECK((doneAt > 2.5F && doneAt < 3.5F));
     CHECK(swoosh);
     CHECK(!screen.isShown());
     screen.show(1, 6);
-    CHECK_EQ(screen.position(), std::string("WINNER"));
+    CHECK(screen.position() == std::string("WINNER"));
     screen.show(2, 6);
-    CHECK_EQ(screen.position(), std::string("FAILED"));
+    CHECK(screen.position() == std::string("FAILED"));
 }
+
+/// Keeps the cases' shader programs out of the player's own cache, and
+/// removes the folder they used after them.
+class CacheFolder : public Catch::EventListenerBase {
+public:
+    using Catch::EventListenerBase::EventListenerBase;
+
+    void testRunStarting(const Catch::TestRunInfo& /*info*/) override
+    {
+        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache), fh::pathToUtf8(folder()));
+    }
+
+    void testRunEnded(const Catch::TestRunStats& /*stats*/) override { std::filesystem::remove_all(folder()); }
+
+private:
+    static std::filesystem::path folder() { return std::filesystem::temp_directory_path() / "fh1-tst-menu-cache"; }
+};
 
 } // namespace
 
-int main(int argc, char** argv)
-{
-    // Never open a window on the desktop or play through the speakers, nor
-    // write to the player's own shader cache.
-    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen", false);
-    fh::setEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy", false);
-    const std::filesystem::path cache = std::filesystem::temp_directory_path() / "fh1-tst-menu-cache";
-    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache), fh::pathToUtf8(cache));
-    const int result = fh::test::runAllTests(argc > 1 ? argv[1] : "");
-    std::filesystem::remove_all(cache);
-    return result;
-}
+CATCH_REGISTER_LISTENER(CacheFolder)

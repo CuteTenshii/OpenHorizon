@@ -2,7 +2,10 @@
 // tables built here in the layouts the headers document, and, when
 // FH1_GAME_DIR names an extracted disc, Colorado's own collision.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "collision/CollisionIndex.h"
 #include "collision/FizTile.h"
@@ -21,6 +24,8 @@
 #include <map>
 #include <string>
 #include <vector>
+
+using Catch::Matchers::WithinAbs;
 
 namespace {
 
@@ -351,44 +356,44 @@ std::unique_ptr<collision::TrackCollision> twoTileCollision(std::map<std::uint32
 
 } // namespace
 
-TEST(unpacksVertexNormals)
+TEST_CASE("unpacksVertexNormals", "[collision]")
 {
     const glm::vec3 up = collision::unpackFizNormal(packNormal(glm::vec3(0.0F, 1.0F, 0.0F)));
-    CHECK_NEAR(up.x, 0.0, 1e-6);
-    CHECK_NEAR(up.y, 1.0, 1e-6);
-    CHECK_NEAR(up.z, 0.0, 1e-6);
+    CHECK_THAT(up.x, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(up.y, WithinAbs(1.0, 1e-6));
+    CHECK_THAT(up.z, WithinAbs(0.0, 1e-6));
     // Word from Colorado's tile 100: a wall vertex facing mostly +z.
     const glm::vec3 wall = collision::unpackFizNormal(0x7DBFA74C);
-    CHECK_NEAR(wall.x, -0.18, 0.01);
-    CHECK_NEAR(wall.y, -0.01, 0.01);
-    CHECK_NEAR(wall.z, 0.98, 0.01);
+    CHECK_THAT(wall.x, WithinAbs(-0.18, 0.01));
+    CHECK_THAT(wall.y, WithinAbs(-0.01, 0.01));
+    CHECK_THAT(wall.z, WithinAbs(0.98, 0.01));
 }
 
-TEST(parsesSyntheticTile)
+TEST_CASE("parsesSyntheticTile", "[collision]")
 {
     const std::map<std::uint32_t, Bytes> world = twoTileWorld();
     const collision::FizTile tile = collision::parseFizTile(world.at(0), "0.fiz");
-    CHECK_EQ(tile.version, 1U);
-    CHECK_EQ(tile.headerId, 0U);
-    CHECK_EQ(tile.triangles.size(), std::size_t{7});
-    CHECK_EQ(tile.positions.size(), std::size_t{21});
-    CHECK_EQ(tile.cellsX, kCells);
-    CHECK_NEAR(tile.cellSize.x, 10.0, 1e-6);
-    CHECK_NEAR(tile.boundsMin.x, -8.0, 1e-6);
-    CHECK_NEAR(tile.boundsMax.y, 108.0, 1e-6);
-    CHECK_EQ(tile.routes.size(), std::size_t{2});
-    CHECK_EQ(tile.routes[1], std::uint16_t{42});
+    CHECK(tile.version == 1U);
+    CHECK(tile.headerId == 0U);
+    CHECK(tile.triangles.size() == std::size_t{7});
+    CHECK(tile.positions.size() == std::size_t{21});
+    CHECK(tile.cellsX == kCells);
+    CHECK_THAT(tile.cellSize.x, WithinAbs(10.0, 1e-6));
+    CHECK_THAT(tile.boundsMin.x, WithinAbs(-8.0, 1e-6));
+    CHECK_THAT(tile.boundsMax.y, WithinAbs(108.0, 1e-6));
+    CHECK(tile.routes.size() == std::size_t{2});
+    CHECK(tile.routes[1] == std::uint16_t{42});
     CHECK(!tile.owbb.has_value());
 
     const collision::FizTriangle& rail = tile.triangles[4];
-    CHECK_EQ(rail.surface, std::uint8_t{3});
-    CHECK_EQ(rail.flags, Flags::kSolid);
-    CHECK_NEAR(rail.normal.x, -1.0, 1e-6);
-    CHECK_EQ(rail.edgeCosines[0], std::uint8_t{255});
+    CHECK(rail.surface == std::uint8_t{3});
+    CHECK(rail.flags == Flags::kSolid);
+    CHECK_THAT(rail.normal.x, WithinAbs(-1.0, 1e-6));
+    CHECK(rail.edgeCosines[0] == std::uint8_t{255});
     const glm::vec3 n = glm::normalize(glm::cross(tile.positions[rail.vertices[1]] - tile.positions[rail.vertices[0]],
         tile.positions[rail.vertices[2]] - tile.positions[rail.vertices[0]]));
-    CHECK_NEAR(glm::dot(n, rail.normal), 1.0, 1e-5);
-    CHECK_NEAR(tile.vertexNormals[rail.vertices[0]].x, -1.0, 1e-3);
+    CHECK_THAT(glm::dot(n, rail.normal), WithinAbs(1.0, 1e-5));
+    CHECK_THAT(tile.vertexNormals[rail.vertices[0]].x, WithinAbs(-1.0, 1e-3));
 
     const collision::FizTriangle& barrier = tile.triangles[6];
     CHECK(barrier.belongsToRoutes());
@@ -410,56 +415,56 @@ TEST(parsesSyntheticTile)
 
     const collision::FizTile second = collision::parseFizTile(world.at(1), "1.fiz");
     CHECK(second.owbb.has_value());
-    CHECK_EQ(second.owbb->hash, 0x87D73394U);
-    CHECK_EQ(second.owbb->id, 1U);
-    CHECK_EQ(second.owbb->cell, 1U);
-    CHECK_EQ(second.owbb->payload.size(), std::size_t{16});
+    CHECK(second.owbb->hash == 0x87D73394U);
+    CHECK(second.owbb->id == 1U);
+    CHECK(second.owbb->cell == 1U);
+    CHECK(second.owbb->payload.size() == std::size_t{16});
 }
 
-TEST(rejectsDamagedTiles)
+TEST_CASE("rejectsDamagedTiles", "[collision]")
 {
     const Bytes good = twoTileWorld().at(0);
-    CHECK_THROWS(collision::parseFizTile(Bytes(good.begin(), good.begin() + 100), "short.fiz"));
+    CHECK_THROWS_AS(collision::parseFizTile(Bytes(good.begin(), good.begin() + 100), "short.fiz"), std::exception);
 
     Bytes magic = good;
     magic[0] = 'x';
-    CHECK_THROWS(collision::parseFizTile(magic, "magic.fiz"));
+    CHECK_THROWS_AS(collision::parseFizTile(magic, "magic.fiz"), std::exception);
 
     Bytes version = good;
     version[7] = 2;
-    CHECK_THROWS(collision::parseFizTile(version, "version.fiz"));
+    CHECK_THROWS_AS(collision::parseFizTile(version, "version.fiz"), std::exception);
 
     // The first triangle's first vertex offset, moved off a vertex.
     const std::size_t triangles = 0x20 + fh::loadBe32(good.data() + 0x20 + 0x0C);
     Bytes vertex = good;
     vertex[triangles + 7] = static_cast<std::uint8_t>(vertex[triangles + 7] + 4);
-    CHECK_THROWS(collision::parseFizTile(vertex, "vertex.fiz"));
+    CHECK_THROWS_AS(collision::parseFizTile(vertex, "vertex.fiz"), std::exception);
 
     // A cell list naming a triangle past the end.
     const std::size_t grid = 0x20 + fh::loadBe32(good.data() + 0x20 + 0x38);
     const std::size_t list = 0x20 + fh::loadBe32(good.data() + grid);
     Bytes cell = good;
     cell[list + 2] = 0x7F;
-    CHECK_THROWS(collision::parseFizTile(cell, "cell.fiz"));
+    CHECK_THROWS_AS(collision::parseFizTile(cell, "cell.fiz"), std::exception);
 
     Bytes routes = good;
     routes[0x20 + 0x78 + 3] = 16;
-    CHECK_THROWS(collision::parseFizTile(routes, "routes.fiz"));
+    CHECK_THROWS_AS(collision::parseFizTile(routes, "routes.fiz"), std::exception);
 
     Bytes size = good;
     size[0x0A] = 0x7F;
-    CHECK_THROWS(collision::parseFizTile(size, "size.fiz"));
+    CHECK_THROWS_AS(collision::parseFizTile(size, "size.fiz"), std::exception);
 }
 
-TEST(parsesCollisionIndex)
+TEST_CASE("parsesCollisionIndex", "[collision]")
 {
     const Bytes data = buildCol(3, 2, glm::vec2(-150.0F, -100.0F), {{0, 0}, {1, 4}, {2, 5}});
     const collision::CollisionIndex index = collision::CollisionIndex::parse(data, "test.col");
-    CHECK_EQ(index.columns(), 3U);
-    CHECK_EQ(index.rows(), 2U);
-    CHECK_NEAR(index.margin(), 8.0, 1e-6);
-    CHECK_NEAR(index.cellSize().x, 100.0, 1e-6);
-    CHECK_EQ(index.tiles().size(), std::size_t{3});
+    CHECK(index.columns() == 3U);
+    CHECK(index.rows() == 2U);
+    CHECK_THAT(index.margin(), WithinAbs(8.0, 1e-6));
+    CHECK_THAT(index.cellSize().x, WithinAbs(100.0, 1e-6));
+    CHECK(index.tiles().size() == std::size_t{3});
 
     CHECK(index.tileAt(-100.0F, -50.0F) == std::optional<std::size_t>(0));
     CHECK(index.tileAt(0.0F, 50.0F) == std::optional<std::size_t>(1));
@@ -468,34 +473,37 @@ TEST(parsesCollisionIndex)
     CHECK(!index.cellAt(-151.0F, 0.0F).has_value());
 
     const auto [min, max] = index.tileBounds(index.tiles()[1]);
-    CHECK_NEAR(min.x, -58.0, 1e-4);
-    CHECK_NEAR(max.y, 108.0, 1e-4);
+    CHECK_THAT(min.x, WithinAbs(-58.0, 1e-4));
+    CHECK_THAT(max.y, WithinAbs(108.0, 1e-4));
 
     // Near the corner of cells 4 and 5 both tiles' margins cover the point.
     const std::vector<std::size_t> both = index.tilesOverlapping(glm::vec2(49.0F, 10.0F), glm::vec2(49.0F, 10.0F));
-    CHECK_EQ(both.size(), std::size_t{2});
+    CHECK(both.size() == std::size_t{2});
     const std::vector<std::size_t> one = index.tilesOverlapping(glm::vec2(20.0F, 10.0F), glm::vec2(20.0F, 10.0F));
-    CHECK_EQ(one.size(), std::size_t{1});
+    CHECK(one.size() == std::size_t{1});
     CHECK(index.tilesOverlapping(glm::vec2(500.0F), glm::vec2(600.0F)).empty());
 
-    CHECK_EQ(collision::CollisionIndex::pathOf("colorado"),
-        std::string("media/tracks/colorado/Ribbon_00/colorado_track_00.col"));
+    CHECK(collision::CollisionIndex::pathOf("colorado")
+        == std::string("media/tracks/colorado/Ribbon_00/colorado_track_00.col"));
 
-    CHECK_THROWS(collision::CollisionIndex::parse(buildCol(2, 1, glm::vec2(0.0F), {{0, 0}, {1, 0}}), "dup.col"));
-    CHECK_THROWS(collision::CollisionIndex::parse(buildCol(2, 1, glm::vec2(0.0F), {{0, 2}}), "outside.col"));
+    CHECK_THROWS_AS(
+        collision::CollisionIndex::parse(buildCol(2, 1, glm::vec2(0.0F), {{0, 0}, {1, 0}}), "dup.col"), std::exception);
+    CHECK_THROWS_AS(
+        collision::CollisionIndex::parse(buildCol(2, 1, glm::vec2(0.0F), {{0, 2}}), "outside.col"), std::exception);
     Bytes magic = data;
     magic[0x30] = 0;
-    CHECK_THROWS(collision::CollisionIndex::parse(magic, "magic.col"));
-    CHECK_THROWS(collision::CollisionIndex::parse(Bytes(data.begin(), data.begin() + 0x60), "short.col"));
+    CHECK_THROWS_AS(collision::CollisionIndex::parse(magic, "magic.col"), std::exception);
+    CHECK_THROWS_AS(
+        collision::CollisionIndex::parse(Bytes(data.begin(), data.begin() + 0x60), "short.col"), std::exception);
 }
 
-TEST(parsesSurfaceTable)
+TEST_CASE("parsesSurfaceTable", "[collision]")
 {
     const collision::SurfaceTable table = collision::SurfaceTable::parse(kSurfaceXml);
-    CHECK_EQ(table.surfaces().size(), std::size_t{4});
-    CHECK_EQ(table.categories().size(), std::size_t{4});
-    CHECK_EQ(table.nameOf(1), std::string("Dirt"));
-    CHECK_EQ(table.nameOf(9), std::string("surface9"));
+    CHECK(table.surfaces().size() == std::size_t{4});
+    CHECK(table.categories().size() == std::size_t{4});
+    CHECK(table.nameOf(1) == std::string("Dirt"));
+    CHECK(table.nameOf(9) == std::string("surface9"));
     CHECK(table.categoryOf(0) == "HardWorld");
     CHECK(table.categoryOf(2).empty());
     CHECK(table.idOf("guardrail") == std::optional<std::size_t>(3));
@@ -503,34 +511,34 @@ TEST(parsesSurfaceTable)
     const collision::SurfaceType& asphalt = *table.find(0);
     CHECK(asphalt.hasParameters);
     CHECK(asphalt.penalty);
-    CHECK_EQ(asphalt.bumpiness.noiseType, std::string("Simplex"));
-    CHECK_NEAR(asphalt.bumpiness.scale, -0.009, 1e-6);
-    CHECK_EQ(asphalt.debugColour[1], std::uint8_t{81});
+    CHECK(asphalt.bumpiness.noiseType == std::string("Simplex"));
+    CHECK_THAT(asphalt.bumpiness.scale, WithinAbs(-0.009, 1e-6));
+    CHECK(asphalt.debugColour[1] == std::uint8_t{81});
 
     const collision::SurfaceType& dirt = *table.find(1);
-    CHECK_NEAR(dirt.frictionScale, 0.95, 1e-6);
-    CHECK_NEAR(dirt.offRoadness, 1.0, 1e-6);
-    CHECK_NEAR(dirt.velocityFriction.lateralCoeff, 0.35, 1e-6);
-    CHECK_NEAR(dirt.velocityFriction.longitudinalCoeff, 0.1, 1e-6);
+    CHECK_THAT(dirt.frictionScale, WithinAbs(0.95, 1e-6));
+    CHECK_THAT(dirt.offRoadness, WithinAbs(1.0, 1e-6));
+    CHECK_THAT(dirt.velocityFriction.lateralCoeff, WithinAbs(0.35, 1e-6));
+    CHECK_THAT(dirt.velocityFriction.longitudinalCoeff, WithinAbs(0.1, 1e-6));
     CHECK(dirt.springiness.springy);
     CHECK(!dirt.penalty);
 
     CHECK(!table.find(2)->hasParameters);
-    CHECK_EQ(table.find(2)->category, collision::SurfaceTable::kNoCategory);
+    CHECK(table.find(2)->category == collision::SurfaceTable::kNoCategory);
     CHECK(!table.find(3)->hasParameters);
     CHECK(table.find(4) == nullptr);
 
     const collision::CategoryPair* pair = table.pair("HardWorld", "Car");
-    CHECK(pair != nullptr && pair->lowSpeedFriction.has_value());
-    CHECK(pair != nullptr && std::abs(pair->elasticity + 0.9F) < 1e-6F);
+    CHECK((pair != nullptr && pair->lowSpeedFriction.has_value()));
+    CHECK((pair != nullptr && std::abs(pair->elasticity + 0.9F) < 1e-6F));
     const collision::CategoryPair* fallback = table.pair("SoftWorld", "Car");
-    CHECK(fallback != nullptr && fallback->category0 == "Default");
+    CHECK((fallback != nullptr && fallback->category0 == "Default"));
 
-    CHECK_THROWS(collision::SurfaceTable::parse("<Root/>"));
-    CHECK_THROWS(collision::SurfaceTable::parse("not xml <"));
+    CHECK_THROWS_AS(collision::SurfaceTable::parse("<Root/>"), std::exception);
+    CHECK_THROWS_AS(collision::SurfaceTable::parse("not xml <"), std::exception);
 }
 
-TEST(raycastsFindGroundWallsAndSurfaces)
+TEST_CASE("raycastsFindGroundWallsAndSurfaces", "[collision]")
 {
     const auto world = twoTileCollision(twoTileWorld());
     const glm::vec3 down(0.0F, -1.0F, 0.0F);
@@ -538,15 +546,15 @@ TEST(raycastsFindGroundWallsAndSurfaces)
     const auto asphalt = world->raycast(glm::vec3(30.0F, 10.0F, 20.0F), down, 100.0F);
     CHECK(asphalt.has_value());
     if (asphalt) {
-        CHECK_NEAR(asphalt->distance, 10.0, 1e-4);
-        CHECK_NEAR(asphalt->point.y, 0.0, 1e-4);
-        CHECK_NEAR(asphalt->normal.y, 1.0, 1e-5);
+        CHECK_THAT(asphalt->distance, WithinAbs(10.0, 1e-4));
+        CHECK_THAT(asphalt->point.y, WithinAbs(0.0, 1e-4));
+        CHECK_THAT(asphalt->normal.y, WithinAbs(1.0, 1e-5));
         CHECK(asphalt->frontFace);
-        CHECK_EQ(asphalt->surface, std::uint8_t{0});
-        CHECK_EQ(asphalt->tile, std::size_t{0});
+        CHECK(asphalt->surface == std::uint8_t{0});
+        CHECK(asphalt->tile == std::size_t{0});
     }
     const auto dirt = world->raycast(glm::vec3(150.0F, 10.0F, 20.0F), down * 3.0F, 100.0F);
-    CHECK(dirt.has_value() && std::abs(dirt->point.y - 1.0F) < 1e-4F && dirt->surface == 1);
+    CHECK((dirt.has_value() && std::abs(dirt->point.y - 1.0F) < 1e-4F && dirt->surface == 1));
     CHECK(!world->raycast(glm::vec3(150.0F, 10.0F, 20.0F), down, 5.0F).has_value());
     CHECK(!world->raycast(glm::vec3(30.0F, 10.0F, 20.0F), glm::vec3(0.0F), 100.0F).has_value());
     CHECK(!world->raycast(glm::vec3(30.0F, 10.0F, 20.0F), down, 0.0F).has_value());
@@ -556,13 +564,13 @@ TEST(raycastsFindGroundWallsAndSurfaces)
     const auto rail = world->raycast(glm::vec3(0.0F, 1.0F, 10.0F), glm::vec3(1.0F, 0.0F, 0.0F), 200.0F);
     CHECK(rail.has_value());
     if (rail) {
-        CHECK_NEAR(rail->distance, 50.0, 1e-3);
-        CHECK_EQ(rail->surface, std::uint8_t{3});
+        CHECK_THAT(rail->distance, WithinAbs(50.0, 1e-3));
+        CHECK(rail->surface == std::uint8_t{3});
         CHECK(rail->frontFace);
-        CHECK_NEAR(rail->normal.x, -1.0, 1e-5);
+        CHECK_THAT(rail->normal.x, WithinAbs(-1.0, 1e-5));
     }
     const auto behind = world->raycast(glm::vec3(60.0F, 1.0F, 10.0F), glm::vec3(-1.0F, 0.0F, 0.0F), 200.0F);
-    CHECK(behind.has_value() && !behind->frontFace && std::abs(behind->normal.x - 1.0F) < 1e-5F);
+    CHECK((behind.has_value() && !behind->frontFace && std::abs(behind->normal.x - 1.0F) < 1e-5F));
 
     // A long ray across both tiles, starting in the second, finds the rail
     // in the first.
@@ -570,17 +578,17 @@ TEST(raycastsFindGroundWallsAndSurfaces)
     CHECK(across.has_value());
     if (across) {
         // The dirt step at x = 104 rises to y = 1, below the ray.
-        CHECK_NEAR(across->distance, 130.0, 1e-3);
-        CHECK_EQ(across->surface, std::uint8_t{3});
+        CHECK_THAT(across->distance, WithinAbs(130.0, 1e-3));
+        CHECK(across->surface == std::uint8_t{3});
     }
 
     // Camera-only geometry is skipped unless asked for.
     const auto underRoof = world->raycast(glm::vec3(12.0F, 10.0F, 62.0F), down, 100.0F);
-    CHECK(underRoof.has_value() && std::abs(underRoof->point.y) < 1e-4F);
+    CHECK((underRoof.has_value() && std::abs(underRoof->point.y) < 1e-4F));
     collision::QueryFilter everything;
     everything.requiredFlags = 0;
     const auto roof = world->raycast(glm::vec3(12.0F, 10.0F, 62.0F), down, 100.0F, everything);
-    CHECK(roof.has_value() && std::abs(roof->point.y - 5.0F) < 1e-4F && roof->surface == 49);
+    CHECK((roof.has_value() && std::abs(roof->point.y - 5.0F) < 1e-4F && roof->surface == 49));
 
     // Route barriers stand only while their route is raced.
     const glm::vec3 north(0.0F, 0.0F, 1.0F);
@@ -588,42 +596,42 @@ TEST(raycastsFindGroundWallsAndSurfaces)
     collision::QueryFilter race;
     race.activeRoute = 42;
     const auto barrier = world->raycast(glm::vec3(30.0F, 1.0F, 70.0F), north, 30.0F, race);
-    CHECK(barrier.has_value() && std::abs(barrier->distance - 10.0F) < 1e-3F);
+    CHECK((barrier.has_value() && std::abs(barrier->distance - 10.0F) < 1e-3F));
     race.activeRoute = 7;
     CHECK(!world->raycast(glm::vec3(30.0F, 1.0F, 70.0F), north, 30.0F, race).has_value());
 
     const auto below = world->groundBelow(glm::vec3(150.0F, 3.0F, 50.0F));
-    CHECK(below.has_value() && std::abs(below->point.y - 1.0F) < 1e-4F);
+    CHECK((below.has_value() && std::abs(below->point.y - 1.0F) < 1e-4F));
 }
 
-TEST(sphereContactsAreReportedOnce)
+TEST_CASE("sphereContactsAreReportedOnce", "[collision]")
 {
     const auto world = twoTileCollision(twoTileWorld());
     // On the asphalt just inside the second tile's cell, where both tiles
     // hold the same ground triangle.
     const std::vector<collision::SphereContact> contacts = world->sphereContacts(glm::vec3(100.0F, 0.5F, 20.0F), 1.0F);
-    CHECK_EQ(contacts.size(), std::size_t{1});
+    CHECK(contacts.size() == std::size_t{1});
     if (!contacts.empty()) {
-        CHECK_NEAR(contacts[0].depth, 0.5, 1e-4);
-        CHECK_NEAR(contacts[0].normal.y, 1.0, 1e-5);
-        CHECK_NEAR(contacts[0].point.y, 0.0, 1e-5);
-        CHECK_EQ(contacts[0].surface, std::uint8_t{0});
+        CHECK_THAT(contacts[0].depth, WithinAbs(0.5, 1e-4));
+        CHECK_THAT(contacts[0].normal.y, WithinAbs(1.0, 1e-5));
+        CHECK_THAT(contacts[0].point.y, WithinAbs(0.0, 1e-5));
+        CHECK(contacts[0].surface == std::uint8_t{0});
     }
     CHECK(world->sphereContacts(glm::vec3(100.0F, 2.0F, 20.0F), 1.0F).empty());
 
     // Against the rail and the ground at once, deepest first.
     const auto corner = world->sphereContacts(glm::vec3(49.5F, 0.8F, 20.0F), 1.0F);
-    CHECK_EQ(corner.size(), std::size_t{2});
+    CHECK(corner.size() == std::size_t{2});
     if (corner.size() == 2) {
-        CHECK_NEAR(corner[0].depth, 0.5, 1e-4);
-        CHECK_NEAR(corner[0].normal.x, -1.0, 1e-5);
-        CHECK_EQ(corner[0].surface, std::uint8_t{3});
-        CHECK_NEAR(corner[1].depth, 0.2, 1e-4);
+        CHECK_THAT(corner[0].depth, WithinAbs(0.5, 1e-4));
+        CHECK_THAT(corner[0].normal.x, WithinAbs(-1.0, 1e-5));
+        CHECK(corner[0].surface == std::uint8_t{3});
+        CHECK_THAT(corner[1].depth, WithinAbs(0.2, 1e-4));
     }
 
     // Sunk below the ground over its face: pushed back up.
     const auto sunk = world->sphereContacts(glm::vec3(30.0F, -0.5F, 20.0F), 1.0F);
-    CHECK(!sunk.empty() && std::abs(sunk[0].depth - 1.5F) < 1e-4F && sunk[0].normal.y > 0.99F);
+    CHECK((!sunk.empty() && std::abs(sunk[0].depth - 1.5F) < 1e-4F && sunk[0].normal.y > 0.99F));
     CHECK(world->sphereContacts(glm::vec3(30.0F, -2.0F, 20.0F), 1.0F).empty());
 
     // At the dirt step's edge: the step's top edge from beside it.
@@ -635,28 +643,28 @@ TEST(sphereContactsAreReportedOnce)
     CHECK(touchesEdge);
 }
 
-TEST(verticalHitsAndTriangleWalksSkipDuplicates)
+TEST_CASE("verticalHitsAndTriangleWalksSkipDuplicates", "[collision]")
 {
     const auto world = twoTileCollision(twoTileWorld());
     collision::QueryFilter everything;
     everything.requiredFlags = 0;
     const auto hits = world->verticalHits(12.0F, 62.0F, everything);
-    CHECK_EQ(hits.size(), std::size_t{2});
+    CHECK(hits.size() == std::size_t{2});
     if (hits.size() == 2) {
-        CHECK_NEAR(hits[0].point.y, 5.0, 1e-4);
-        CHECK_NEAR(hits[1].point.y, 0.0, 1e-4);
+        CHECK_THAT(hits[0].point.y, WithinAbs(5.0, 1e-4));
+        CHECK_THAT(hits[1].point.y, WithinAbs(0.0, 1e-4));
     }
-    CHECK_EQ(world->verticalHits(12.0F, 62.0F).size(), std::size_t{1});
+    CHECK(world->verticalHits(12.0F, 62.0F).size() == std::size_t{1});
 
     everything.activeRoute = collision::kAllRoutes;
     std::size_t count = 0;
     world->forEachTriangle(glm::vec2(-50.0F), glm::vec2(300.0F), everything,
         [&](std::size_t, const collision::FizTile&, std::uint16_t) { ++count; });
     // Four shared ground triangles, the rail, the roof and the barrier.
-    CHECK_EQ(count, std::size_t{7});
+    CHECK(count == std::size_t{7});
 }
 
-TEST(cachesTilesAndSurvivesBadOnes)
+TEST_CASE("cachesTilesAndSurvivesBadOnes", "[collision]")
 {
     std::map<std::uint32_t, Bytes> tiles = twoTileWorld();
     tiles[1] = Bytes{'j', 'u', 'n', 'k'};
@@ -665,20 +673,20 @@ TEST(cachesTilesAndSurvivesBadOnes)
     CHECK(world->tryTile(1) == nullptr);
     CHECK(world->tileError(1).has_value());
     CHECK(!world->tileError(0).has_value());
-    CHECK_THROWS(world->tile(1));
-    CHECK_THROWS(world->tile(5));
+    CHECK_THROWS_AS(world->tile(1), std::exception);
+    CHECK_THROWS_AS(world->tile(5), std::exception);
     CHECK(!world->raycast(glm::vec3(150.0F, 10.0F, 20.0F), glm::vec3(0.0F, -1.0F, 0.0F), 100.0F).has_value());
-    CHECK_EQ(world->residentCount(), std::size_t{1});
+    CHECK(world->residentCount() == std::size_t{1});
     world->evictOutside(glm::vec2(500.0F), 10.0F);
-    CHECK_EQ(world->residentCount(), std::size_t{0});
+    CHECK(world->residentCount() == std::size_t{0});
 
     const auto good = twoTileCollision(twoTileWorld());
-    CHECK_EQ(good->loadAround(glm::vec2(100.0F, 50.0F), 20.0F), std::size_t{2});
-    CHECK_EQ(good->residentCount(), std::size_t{2});
+    CHECK(good->loadAround(glm::vec2(100.0F, 50.0F), 20.0F) == std::size_t{2});
+    CHECK(good->residentCount() == std::size_t{2});
     good->evictOutside(glm::vec2(20.0F, 50.0F), 5.0F);
-    CHECK_EQ(good->residentCount(), std::size_t{1});
+    CHECK(good->residentCount() == std::size_t{1});
     good->evictAll();
-    CHECK_EQ(good->loadAroundAsync(glm::vec2(20.0F, 50.0F), 5.0F).get(), std::size_t{1});
+    CHECK(good->loadAroundAsync(glm::vec2(20.0F, 50.0F), 5.0F).get() == std::size_t{1});
 
     // Many threads asking for the same tile decode it once and agree.
     const auto shared = twoTileCollision(twoTileWorld());
@@ -689,33 +697,29 @@ TEST(cachesTilesAndSurvivesBadOnes)
             same.fetch_add(1);
         }
     });
-    CHECK_EQ(same.load(), 64);
+    CHECK(same.load() == 64);
 }
 
-TEST(coloradoCollision)
+TEST_CASE("coloradoCollision", "[collision]")
 {
-    const char* gameDir = std::getenv("FH1_GAME_DIR");
-    if (gameDir == nullptr || *gameDir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return;
-    }
+    const char* gameDir = fh::test::gameDir();
     fh::Vfs vfs;
     vfs.mountDisc(gameDir);
     const auto world = collision::TrackCollision::open(vfs, "colorado");
     const collision::CollisionIndex& index = world->index();
-    CHECK_EQ(index.columns(), 133U);
-    CHECK_EQ(index.rows(), 100U);
-    CHECK_EQ(index.tiles().size(), std::size_t{3201});
+    CHECK(index.columns() == 133U);
+    CHECK(index.rows() == 100U);
+    CHECK(index.tiles().size() == std::size_t{3201});
 
     const collision::SurfaceTable& surfaces = world->surfaces();
-    CHECK_EQ(surfaces.surfaces().size(), std::size_t{68});
-    CHECK_EQ(surfaces.categories().size(), std::size_t{13});
-    CHECK_EQ(surfaces.nameOf(9), std::string("Invisible"));
+    CHECK(surfaces.surfaces().size() == std::size_t{68});
+    CHECK(surfaces.categories().size() == std::size_t{13});
+    CHECK(surfaces.nameOf(9) == std::string("Invisible"));
     CHECK(surfaces.categoryOf(9) == "HardWorld");
     CHECK(surfaces.categoryOf(1) == "SoftWorld");
-    CHECK_NEAR(surfaces.find(2)->frictionScale, 0.85, 1e-6);
-    CHECK_NEAR(surfaces.find(0)->chaseCamSpringMultiplier, 1.0, 1e-6);
-    CHECK_NEAR(surfaces.find(1)->chaseCamSpringMultiplier, 0.8, 1e-6);
+    CHECK_THAT(surfaces.find(2)->frictionScale, WithinAbs(0.85, 1e-6));
+    CHECK_THAT(surfaces.find(0)->chaseCamSpringMultiplier, WithinAbs(1.0, 1e-6));
+    CHECK_THAT(surfaces.find(1)->chaseCamSpringMultiplier, WithinAbs(0.8, 1e-6));
 
     std::atomic<std::size_t> failures{0};
     std::atomic<std::size_t> triangles{0};
@@ -733,9 +737,9 @@ TEST(coloradoCollision)
             }
         }
     });
-    CHECK_EQ(failures.load(), std::size_t{0});
-    CHECK_EQ(triangles.load(), std::size_t{2007595});
-    CHECK_EQ(outOfTable.load(), std::size_t{0});
+    CHECK(failures.load() == std::size_t{0});
+    CHECK(triangles.load() == std::size_t{2007595});
+    CHECK(outOfTable.load() == std::size_t{0});
     world->evictAll();
 
     // A road node of colorado.nav in the festival's town: asphalt at the
@@ -743,22 +747,17 @@ TEST(coloradoCollision)
     const auto road = world->groundBelow(glm::vec3(-2063.6F, 100.0F, -45.0F), 200.0F);
     CHECK(road.has_value());
     if (road) {
-        CHECK_NEAR(road->point.y, -10.58, 0.01);
-        CHECK_EQ(surfaces.nameOf(road->surface), std::string("Asphalt"));
+        CHECK_THAT(road->point.y, WithinAbs(-10.58, 0.01));
+        CHECK(surfaces.nameOf(road->surface) == std::string("Asphalt"));
         CHECK(road->normal.y > 0.99F);
     }
     const auto resting = world->sphereContacts(glm::vec3(-2063.6F, -10.58F + 0.3F, -45.0F), 0.5F);
     CHECK(!resting.empty());
     if (!resting.empty()) {
-        CHECK_NEAR(resting[0].depth, 0.2, 0.02);
+        CHECK_THAT(resting[0].depth, WithinAbs(0.2, 0.02));
         CHECK(resting[0].normal.y > 0.99F);
     }
     // A dirt road node north-east of the town.
     const auto dirt = world->groundBelow(glm::vec3(825.0F, 200.0F, -2752.5F), 100.0F);
-    CHECK(dirt.has_value() && std::abs(dirt->point.y - 169.6F) < 0.01F && surfaces.nameOf(dirt->surface) == "Dirt");
-}
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
+    CHECK((dirt.has_value() && std::abs(dirt->point.y - 169.6F) < 0.01F && surfaces.nameOf(dirt->surface) == "Dirt"));
 }

@@ -4,7 +4,9 @@
 // ended. The child's reporter is this executable too, which writes down
 // its arguments instead of opening a message box.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "base/Crash.h"
 #include "base/Error.h"
@@ -146,10 +148,10 @@ std::pair<ChildEnd, std::string> crash(std::string_view kind, bool withReporter 
 void checkEndedWithSignal(const ChildEnd& end, [[maybe_unused]] int signal, [[maybe_unused]] unsigned long windowsCode)
 {
 #ifdef _WIN32
-    CHECK_EQ(end.exitCode, windowsCode);
+    CHECK(end.exitCode == windowsCode);
 #else
     CHECK(end.signaled);
-    CHECK_EQ(end.signal, signal);
+    CHECK(end.signal == signal);
 #endif
 }
 
@@ -157,23 +159,20 @@ void checkEndedWithSignal(const ChildEnd& end, [[maybe_unused]] int signal, [[ma
 /// and a stack of at least one frame after it.
 void checkReport(const std::string& log, std::string_view headline)
 {
-    const int failuresBefore = fh::test::failureCount();
+    INFO("the child's log:\n" << log);
     CHECK(log.find(std::string("[    crash] fatal   ") + std::string(headline)) != std::string::npos);
 #ifdef _WIN32
-    CHECK_EQ(countOf(log, "fatal   stack:"), std::size_t{1});
+    CHECK(countOf(log, "fatal   stack:") == std::size_t{1});
     CHECK(lineAfter(log, "fatal   stack:").starts_with("  #0"));
 #else
-    CHECK_EQ(countOf(log, "fatal   backtrace:"), std::size_t{1});
+    CHECK(countOf(log, "fatal   backtrace:") == std::size_t{1});
     CHECK(lineAfter(log, "fatal   backtrace:").find("[0x") != std::string::npos);
 #endif
-    if (fh::test::failureCount() != failuresBefore) {
-        std::fprintf(stderr, "the child's log:\n%s\n", log.c_str());
-    }
 }
 
 } // namespace
 
-TEST(null_write_logs_the_signal_and_a_backtrace)
+TEST_CASE("null_write_logs_the_signal_and_a_backtrace", "[crash]")
 {
     const auto [end, log] = crash("null");
 #ifdef _WIN32
@@ -184,13 +183,13 @@ TEST(null_write_logs_the_signal_and_a_backtrace)
 #else
     checkEndedWithSignal(end, SIGSEGV, 0);
     checkReport(log, "signal 11 (SIGSEGV), code 1, address 0x0");
-    CHECK_EQ(countOf(log, "fatal   signal"), std::size_t{1});
+    CHECK(countOf(log, "fatal   signal") == std::size_t{1});
 #endif
     // The lines logged before the crash are all there.
     CHECK(log.find("crash test child ready") != std::string::npos);
 }
 
-TEST(abort_logs_and_ends_as_abort)
+TEST_CASE("abort_logs_and_ends_as_abort", "[crash]")
 {
     const auto [end, log] = crash("abort");
 #ifdef _WIN32
@@ -202,25 +201,25 @@ TEST(abort_logs_and_ends_as_abort)
 #endif
 }
 
-TEST(uncaught_exception_logs_its_type_and_message)
+TEST_CASE("uncaught_exception_logs_its_type_and_message", "[crash]")
 {
     const auto [end, log] = crash("exception");
     checkEndedWithSignal(end, SIGABRT, 3);
     checkReport(log, "uncaught exception std::runtime_error: boom from tst_crash");
     // The terminate handler ends the process itself: no second report from
     // the abort signal.
-    CHECK_EQ(countOf(log, "[    crash] fatal   uncaught exception"), std::size_t{1});
-    CHECK_EQ(countOf(log, "SIGABRT"), std::size_t{0});
+    CHECK(countOf(log, "[    crash] fatal   uncaught exception") == std::size_t{1});
+    CHECK(countOf(log, "SIGABRT") == std::size_t{0});
 }
 
-TEST(uncaught_data_error_logs_its_type_and_message)
+TEST_CASE("uncaught_data_error_logs_its_type_and_message", "[crash]")
 {
     const auto [end, log] = crash("dataerror");
     checkEndedWithSignal(end, SIGABRT, 3);
     checkReport(log, "uncaught exception fh::DataError: media/missing.xml: cannot open");
 }
 
-TEST(crash_starts_the_reporter_with_the_log_and_the_message)
+TEST_CASE("crash_starts_the_reporter_with_the_log_and_the_message", "[crash]")
 {
     const std::filesystem::path out = scratchFolder() / "reporter.txt";
     std::filesystem::create_directories(scratchFolder());
@@ -240,55 +239,55 @@ TEST(crash_starts_the_reporter_with_the_log_and_the_message)
         }
     }
     const std::string logPath = fh::pathToUtf8(scratchFolder() / "exception" / "fh1.log");
-    CHECK_EQ(arguments, "--crash-report=" + logPath + "\n--crash-detail=boom from tst_crash\n");
+    CHECK(arguments == "--crash-report=" + logPath + "\n--crash-detail=boom from tst_crash\n");
 }
 
-TEST(crash_dialog_text_names_the_log)
+TEST_CASE("crash_dialog_text_names_the_log", "[crash]")
 {
     const std::filesystem::path folder = scratchFolder() / "text";
     std::filesystem::create_directories(folder);
     const std::filesystem::path log = folder / "fh1.log";
     const std::string logName = fh::pathToUtf8(log);
-    CHECK_EQ(fh::crashDialogText({log, ""}),
-        "Forza Horizon has stopped unexpectedly.\n\n"
-        "It ran into a problem it could not recover from.\n\n"
-        "The log file records what happened:\n"
+    CHECK(fh::crashDialogText({log, ""})
+        == "Forza Horizon has stopped unexpectedly.\n\n"
+           "It ran into a problem it could not recover from.\n\n"
+           "The log file records what happened:\n"
             + logName + "\n\nPlease attach it to your bug report.");
-    CHECK_EQ(fh::crashDialogText({log, "media/x.xml: cannot open"}),
-        "Forza Horizon has stopped unexpectedly.\n\n"
-        "media/x.xml: cannot open\n\n"
-        "The log file records what happened:\n"
+    CHECK(fh::crashDialogText({log, "media/x.xml: cannot open"})
+        == "Forza Horizon has stopped unexpectedly.\n\n"
+           "media/x.xml: cannot open\n\n"
+           "The log file records what happened:\n"
             + logName + "\n\nPlease attach it to your bug report.");
 
     // A dump is named only when there is one.
     const std::filesystem::path dump = fh::crashDumpPath(log);
-    CHECK_EQ(dump, folder / "fh1.dmp");
+    CHECK(dump == folder / "fh1.dmp");
     std::filesystem::remove(dump);
     CHECK(fh::crashDialogText({log, ""}, dump).find("dump") == std::string::npos);
     std::ofstream(dump) << "MDMP";
-    CHECK_EQ(fh::crashDialogText({log, ""}, dump),
-        "Forza Horizon has stopped unexpectedly.\n\n"
-        "It ran into a problem it could not recover from.\n\n"
-        "The log file records what happened:\n"
+    CHECK(fh::crashDialogText({log, ""}, dump)
+        == "Forza Horizon has stopped unexpectedly.\n\n"
+           "It ran into a problem it could not recover from.\n\n"
+           "The log file records what happened:\n"
             + logName + "\n\nA crash dump was saved next to it:\n" + fh::pathToUtf8(dump)
             + "\n\nPlease attach both files to your bug report.");
 
-    CHECK_EQ(fh::crashDialogText({{}, ""}),
-        "Forza Horizon has stopped unexpectedly.\n\n"
-        "It ran into a problem it could not recover from.\n\n"
-        "No log file could be written for this run.");
+    CHECK(fh::crashDialogText({{}, ""})
+        == "Forza Horizon has stopped unexpectedly.\n\n"
+           "It ran into a problem it could not recover from.\n\n"
+           "No log file could be written for this run.");
 }
 
-TEST(startup_and_data_error_texts)
+TEST_CASE("startup_and_data_error_texts", "[crash]")
 {
-    CHECK_EQ(fh::startupErrorText("No game folder is set.", "Start the game with --game."),
-        "Forza Horizon could not start.\n\nNo game folder is set.\n\nStart the game with --game.");
+    CHECK(fh::startupErrorText("No game folder is set.", "Start the game with --game.")
+        == "Forza Horizon could not start.\n\nNo game folder is set.\n\nStart the game with --game.");
     const std::filesystem::path log = fh::pathFromUtf8("/home/player/fh1.log");
-    CHECK_EQ(fh::gameDataErrorText("media/db/gamedb.slt: cannot open", log),
-        "Forza Horizon has stopped because it could not read one of the game's files.\n\n"
-        "media/db/gamedb.slt: cannot open\n\n"
-        "Check that the game folder holds a complete copy of the disc.\n\n"
-        "The log file records what happened:\n"
+    CHECK(fh::gameDataErrorText("media/db/gamedb.slt: cannot open", log)
+        == "Forza Horizon has stopped because it could not read one of the game's files.\n\n"
+           "media/db/gamedb.slt: cannot open\n\n"
+           "Check that the game folder holds a complete copy of the disc.\n\n"
+           "The log file records what happened:\n"
             + fh::pathToUtf8(log));
     // User-visible text avoids em dashes.
     for (const std::string& text : {fh::crashDialogText({log, ""}), fh::gameDataErrorText("x", log)}) {
@@ -296,14 +295,14 @@ TEST(startup_and_data_error_texts)
     }
 }
 
-TEST(crash_report_arguments)
+TEST_CASE("crash_report_arguments", "[crash]")
 {
     const std::vector<std::string> report = {"fh1", "--crash-report=/tmp/fh1.log", "--crash-detail=a \"quoted\" line"};
     const std::optional<fh::CrashReport> parsed = fh::parseCrashReportArguments(report);
     CHECK(parsed.has_value());
     if (parsed) {
-        CHECK_EQ(parsed->logPath, fh::pathFromUtf8("/tmp/fh1.log"));
-        CHECK_EQ(parsed->detail, "a \"quoted\" line");
+        CHECK(parsed->logPath == fh::pathFromUtf8("/tmp/fh1.log"));
+        CHECK(parsed->detail == "a \"quoted\" line");
     }
     const std::vector<std::string> plain = {"fh1", "--crash-report="};
     CHECK(fh::parseCrashReportArguments(plain).has_value());
@@ -313,32 +312,32 @@ TEST(crash_report_arguments)
     CHECK(!fh::parseCrashReportArguments(none).has_value());
 }
 
-TEST(windows_command_line_quoting)
+TEST_CASE("windows_command_line_quoting", "[crash]")
 {
-    CHECK_EQ(fh::windowsCommandLineArgument("plain"), "\"plain\"");
-    CHECK_EQ(fh::windowsCommandLineArgument("two words"), "\"two words\"");
-    CHECK_EQ(fh::windowsCommandLineArgument("say \"hi\""), "\"say \\\"hi\\\"\"");
-    CHECK_EQ(fh::windowsCommandLineArgument("C:\\dir\\"), "\"C:\\dir\\\\\"");
-    CHECK_EQ(fh::windowsCommandLineArgument("a\\\"b"), "\"a\\\\\\\"b\"");
-    CHECK_EQ(fh::windowsCommandLineArgument(""), "\"\"");
+    CHECK(fh::windowsCommandLineArgument("plain") == "\"plain\"");
+    CHECK(fh::windowsCommandLineArgument("two words") == "\"two words\"");
+    CHECK(fh::windowsCommandLineArgument("say \"hi\"") == "\"say \\\"hi\\\"\"");
+    CHECK(fh::windowsCommandLineArgument("C:\\dir\\") == "\"C:\\dir\\\\\"");
+    CHECK(fh::windowsCommandLineArgument("a\\\"b") == "\"a\\\\\\\"b\"");
+    CHECK(fh::windowsCommandLineArgument("") == "\"\"");
 }
 
-TEST(exception_descriptions)
+TEST_CASE("exception_descriptions", "[crash]")
 {
     CHECK(fh::describeException(nullptr).type.empty());
     const fh::ExceptionDescription runtime
         = fh::describeException(std::make_exception_ptr(std::runtime_error("went wrong")));
-    CHECK_EQ(runtime.type, "std::runtime_error");
-    CHECK_EQ(runtime.message, "went wrong");
+    CHECK(runtime.type == "std::runtime_error");
+    CHECK(runtime.message == "went wrong");
     const fh::ExceptionDescription data = fh::describeException(std::make_exception_ptr(fh::DataError("bad file")));
-    CHECK_EQ(data.type, "fh::DataError");
-    CHECK_EQ(data.message, "bad file");
+    CHECK(data.type == "fh::DataError");
+    CHECK(data.message == "bad file");
     const fh::ExceptionDescription number = fh::describeException(std::make_exception_ptr(42));
     CHECK(!number.type.empty());
     CHECK(number.message.empty());
 }
 
-TEST(error_dialogs_stay_closed_under_tests_and_without_a_display)
+TEST_CASE("error_dialogs_stay_closed_under_tests_and_without_a_display", "[crash]")
 {
     const std::optional<std::string> savedDriver = fh::environmentVariable("SDL_VIDEO_DRIVER");
     const std::optional<std::string> savedDisplay = fh::environmentVariable("DISPLAY");
@@ -376,7 +375,7 @@ TEST(error_dialogs_stay_closed_under_tests_and_without_a_display)
     restore("WAYLAND_DISPLAY", savedWayland);
 }
 
-TEST(executable_path_is_this_test)
+TEST_CASE("executable_path_is_this_test", "[crash]")
 {
     const std::filesystem::path self = fh::currentExecutablePath();
     CHECK(std::filesystem::is_regular_file(self));
@@ -455,7 +454,7 @@ int main(int argc, char** argv)
     if (fh::parseCrashReportArguments(arguments)) {
         return recordReport(arguments);
     }
-    const int result = fh::test::runAllTests(argc > 1 ? argv[1] : "");
+    const int result = fh::test::runTests(argc, argv);
     std::error_code ignored;
     std::filesystem::remove_all(scratchFolder(), ignored);
     return result;

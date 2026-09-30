@@ -2,7 +2,10 @@
 // in the layouts the headers document, a small world written to a real
 // archive, and, when FH1_GAME_DIR names an extracted disc, Colorado itself.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "vfs/Vfs.h"
 #include "world/Archive.h"
@@ -37,6 +40,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+using Catch::Matchers::WithinAbs;
 
 namespace {
 
@@ -634,49 +639,49 @@ bool nearVec(const glm::vec3& a, const glm::vec3& b, float tolerance = 1e-3F)
 
 } // namespace
 
-TEST(lodNamesAndGroups)
+TEST_CASE("lodNamesAndGroups", "[world]")
 {
     using world::rendermesh::lodGroupKey;
     using world::rendermesh::lodLevel;
-    CHECK_EQ(lodLevel("Redstone_Area02_Road_LOD02_01"), 2);
-    CHECK_EQ(lodLevel("LOD00_Thing"), 0);
-    CHECK_EQ(lodLevel("thing_lod13"), 13);
-    CHECK_EQ(lodLevel("cables_NOLOD_3"), -1);
-    CHECK_EQ(lodLevel("UberLOD23_CAGE"), -1);
-    CHECK_EQ(lodLevel("Plain"), -1);
-    CHECK_EQ(lodGroupKey("Redstone_Area02_Road_LOD01_02"), std::string("redstone_area02_road"));
-    CHECK_EQ(lodGroupKey("Redstone_Area02_Road_LOD02_11"), std::string("redstone_area02_road"));
-    CHECK_EQ(lodGroupKey("GrandstandStraight_LOD02_"), std::string("grandstandstraight"));
-    CHECK_EQ(lodGroupKey("TERR_UberLOD_Patch07_LOD00"), std::string("terr_uberlod_patch07"));
-    CHECK_EQ(lodGroupKey("Area12_4_7"), std::string("area12"));
-    CHECK_EQ(lodGroupKey("Rock"), std::string("rock"));
+    CHECK(lodLevel("Redstone_Area02_Road_LOD02_01") == 2);
+    CHECK(lodLevel("LOD00_Thing") == 0);
+    CHECK(lodLevel("thing_lod13") == 13);
+    CHECK(lodLevel("cables_NOLOD_3") == -1);
+    CHECK(lodLevel("UberLOD23_CAGE") == -1);
+    CHECK(lodLevel("Plain") == -1);
+    CHECK(lodGroupKey("Redstone_Area02_Road_LOD01_02") == std::string("redstone_area02_road"));
+    CHECK(lodGroupKey("Redstone_Area02_Road_LOD02_11") == std::string("redstone_area02_road"));
+    CHECK(lodGroupKey("GrandstandStraight_LOD02_") == std::string("grandstandstraight"));
+    CHECK(lodGroupKey("TERR_UberLOD_Patch07_LOD00") == std::string("terr_uberlod_patch07"));
+    CHECK(lodGroupKey("Area12_4_7") == std::string("area12"));
+    CHECK(lodGroupKey("Rock") == std::string("rock"));
 }
 
-TEST(stripsBecomeTriangleLists)
+TEST_CASE("stripsBecomeTriangleLists", "[world]")
 {
     std::vector<std::uint32_t> out;
     // A strip flips every other triangle back to the first one's winding.
     world::rendermesh::appendTriangles(std::vector<std::uint32_t>{0, 1, 2, 3}, 0xFFFF, out);
-    CHECK_EQ(out, (std::vector<std::uint32_t>{0, 1, 2, 2, 1, 3}));
+    CHECK(out == (std::vector<std::uint32_t>{0, 1, 2, 2, 1, 3}));
     // A restart starts a new strip; degenerate triangles are dropped.
     out.clear();
     world::rendermesh::appendTriangles(std::vector<std::uint32_t>{0, 1, 2, 2, 3, 0xFFFF, 4, 5, 6}, 0xFFFF, out);
-    CHECK_EQ(out, (std::vector<std::uint32_t>{0, 1, 2, 4, 5, 6}));
+    CHECK(out == (std::vector<std::uint32_t>{0, 1, 2, 4, 5, 6}));
     // Without restarts, a multiple of three is a list.
     out.clear();
     world::rendermesh::appendTriangles(std::vector<std::uint32_t>{0, 1, 2, 1, 3, 2}, 0xFFFF, out);
-    CHECK_EQ(out, (std::vector<std::uint32_t>{0, 1, 2, 1, 3, 2}));
+    CHECK(out == (std::vector<std::uint32_t>{0, 1, 2, 1, 3, 2}));
     // ... and any other length a strip.
     out.clear();
     world::rendermesh::appendTriangles(std::vector<std::uint32_t>{5, 6, 7, 8, 9}, 0xFFFFFFFF, out);
-    CHECK_EQ(out, (std::vector<std::uint32_t>{5, 6, 7, 7, 6, 8, 7, 8, 9}));
+    CHECK(out == (std::vector<std::uint32_t>{5, 6, 7, 7, 6, 8, 7, 8, 9}));
     // A list's degenerate triangles are dropped too.
     out.clear();
     world::rendermesh::appendTriangles(std::vector<std::uint32_t>{0, 0, 1, 1, 2, 3}, 0xFFFF, out);
-    CHECK_EQ(out, (std::vector<std::uint32_t>{1, 2, 3}));
+    CHECK(out == (std::vector<std::uint32_t>{1, 2, 3}));
 }
 
-TEST(parsesRenderModels)
+TEST_CASE("parsesRenderModels", "[world]")
 {
     TestPart strip = quad("Road_LOD01_02", 100.0F, 200.0F, 5.0F, 10.0F);
     strip.materials[0].indices = {0, 1, 2, 3, 0xFFFF, 0, 1, 2};
@@ -693,27 +698,27 @@ TEST(parsesRenderModels)
     const Bytes data = renderModel({strip, list});
 
     const world::RenderMesh mesh = world::rendermesh::parse(data, "test");
-    CHECK_EQ(mesh.parts.size(), std::size_t{2});
+    CHECK(mesh.parts.size() == std::size_t{2});
     // Strip: 0-1-2, 2-1-3 (winding flipped back), restart, 0-1-2 again.
-    CHECK_EQ(mesh.parts[0].materials[0].triangles.size(), std::size_t{9});
-    CHECK_EQ(mesh.parts[0].materials[0].triangles[3], 2U);
-    CHECK_EQ(mesh.parts[0].materials[0].triangles[4], 1U);
-    CHECK_EQ(mesh.parts[1].stride, 36U);
-    CHECK_EQ(mesh.parts[1].materials.size(), std::size_t{2});
-    CHECK_EQ(mesh.parts[1].materials[0].triangles.size(), std::size_t{6});
-    CHECK_EQ(mesh.parts[1].vertexData.size(), std::size_t{6 * 36});
-    CHECK_EQ(mesh.triangleCount(), std::size_t{7});
+    CHECK(mesh.parts[0].materials[0].triangles.size() == std::size_t{9});
+    CHECK(mesh.parts[0].materials[0].triangles[3] == 2U);
+    CHECK(mesh.parts[0].materials[0].triangles[4] == 1U);
+    CHECK(mesh.parts[1].stride == 36U);
+    CHECK(mesh.parts[1].materials.size() == std::size_t{2});
+    CHECK(mesh.parts[1].materials[0].triangles.size() == std::size_t{6});
+    CHECK(mesh.parts[1].vertexData.size() == std::size_t{6 * 36});
+    CHECK(mesh.triangleCount() == std::size_t{7});
     // Z is flipped into world coordinates.
     CHECK(nearVec(mesh.parts[0].positions[0], glm::vec3(90.0F, 5.0F, 190.0F)));
-    CHECK(mesh.boundsMin.z <= 190.0F && mesh.boundsMax.z >= 210.0F);
+    CHECK((mesh.boundsMin.z <= 190.0F && mesh.boundsMax.z >= 210.0F));
     CHECK(mesh.boundsMin.z <= mesh.boundsMax.z);
 
     const std::optional<world::RenderMeshHeader> header = world::rendermesh::readHeader(
         fh::ByteView(data).first(std::min(data.size(), world::rendermesh::kHeaderBytes)));
     CHECK(header.has_value());
     if (header) {
-        CHECK_EQ(header->partCount, 2U);
-        CHECK_EQ(header->firstPartName, std::string("Road_LOD01_02"));
+        CHECK(header->partCount == 2U);
+        CHECK(header->firstPartName == std::string("Road_LOD01_02"));
         CHECK(nearVec(header->boundsMin, mesh.boundsMin));
         CHECK(nearVec(header->boundsMax, mesh.boundsMax));
     }
@@ -722,7 +727,7 @@ TEST(parsesRenderModels)
     CHECK(mesh.shaders.empty());
 }
 
-TEST(parsesMaterialTablesAndTexcoords)
+TEST_CASE("parsesMaterialTablesAndTexcoords", "[world]")
 {
     TestPart part = quad("Sign_LOD00", 0, 0, 0, 1);
     part.stride = 24;
@@ -743,82 +748,82 @@ TEST(parsesMaterialTablesAndTexcoords)
     tail.shaders = {"shaders\\track\\add_diff_opac_rgba.fx", "shaders\\track\\h_diff_1.fx"};
     const world::RenderMesh mesh = world::rendermesh::parse(renderModel({part}, tail), "test");
 
-    CHECK_EQ(mesh.materialTable.size(), std::size_t{2});
-    CHECK_EQ(mesh.materialTable[1].shader, 1U);
-    CHECK_EQ(mesh.materialTable[1].textureSlots, (std::vector<int>{3, -1, -1, -1, -1, 0}));
+    CHECK(mesh.materialTable.size() == std::size_t{2});
+    CHECK(mesh.materialTable[1].shader == 1U);
+    CHECK(mesh.materialTable[1].textureSlots == (std::vector<int>{3, -1, -1, -1, -1, 0}));
     CHECK(mesh.materialTable[1].constants == (std::vector<glm::vec4>{glm::vec4(4, 4, 6, 6), glm::vec4(3, 3, 1, 1)}));
     CHECK(mesh.materialTable[1].vertexConstants == (std::vector<glm::vec4>{glm::vec4(0.05F, 1, 0, 0)}));
     CHECK(mesh.materialTable[0].vertexConstants.empty());
-    CHECK_EQ(mesh.shaders.size(), std::size_t{2});
-    CHECK_EQ(mesh.shaders[1], std::string("shaders\\track\\h_diff_1.fx"));
+    CHECK(mesh.shaders.size() == std::size_t{2});
+    CHECK(mesh.shaders[1] == std::string("shaders\\track\\h_diff_1.fx"));
 
     const world::RenderMesh::Part& parsed = mesh.parts[0];
     const world::RenderMesh::Material& material = parsed.materials[0];
-    CHECK_EQ(material.tableIndex, 1U);
+    CHECK(material.tableIndex == 1U);
     CHECK(material.positionOffset == glm::vec3(1.0F, 2.0F, 3.0F));
     CHECK(material.positionScale == glm::vec3(0.5F, 0.25F, 2.0F));
-    CHECK_EQ(parsed.vertexData.size(), std::size_t{96});
+    CHECK(parsed.vertexData.size() == std::size_t{96});
     CHECK(world::RenderMesh::texcoord(parsed, material, 0, 16) == glm::vec2(0.5F, -0.25F));
     CHECK(world::RenderMesh::texcoord(parsed, material, 1, 16) == glm::vec2(2.5F, -0.25F));
     CHECK(world::RenderMesh::texcoord(parsed, material, 2, 16) == glm::vec2(0.5F, 3.75F));
     const glm::vec2 mid = world::RenderMesh::texcoord(parsed, material, 3, 16);
-    CHECK_NEAR(mid.x, 1.5, 1e-3);
-    CHECK_NEAR(mid.y, 0.75, 1e-3);
+    CHECK_THAT(mid.x, WithinAbs(1.5, 1e-3));
+    CHECK_THAT(mid.y, WithinAbs(0.75, 1e-3));
     // A pair that would reach past the vertex is not read.
     CHECK(world::RenderMesh::texcoord(parsed, material, 0, 22) == glm::vec2(0.0F));
-    CHECK_EQ(world::RenderMesh::colour(parsed, 0, 20), 0x7F7F7F7FU);
-    CHECK_EQ(world::RenderMesh::colour(parsed, 4, 20), 0U);
+    CHECK(world::RenderMesh::colour(parsed, 0, 20) == 0x7F7F7F7FU);
+    CHECK(world::RenderMesh::colour(parsed, 4, 20) == 0U);
 }
 
-TEST(rejectsMalformedModels)
+TEST_CASE("rejectsMalformedModels", "[world]")
 {
     const Bytes good = renderModel({quad("Road_LOD01", 0, 0, 0, 1)});
     Bytes badVersion = good;
     badVersion[3] = 7;
-    CHECK_THROWS(world::rendermesh::parse(badVersion, "test"));
+    CHECK_THROWS_AS(world::rendermesh::parse(badVersion, "test"), std::exception);
     CHECK(!world::rendermesh::readHeader(badVersion).has_value());
-    CHECK_THROWS(world::rendermesh::parse(fh::ByteView(good).first(good.size() / 2), "test"));
+    CHECK_THROWS_AS(world::rendermesh::parse(fh::ByteView(good).first(good.size() / 2), "test"), std::exception);
     TestPart pastEnd = quad("Road_LOD01", 0, 0, 0, 1);
     pastEnd.materials[0].indices = {0, 1, 2, 4};
-    CHECK_THROWS(world::rendermesh::parse(renderModel({pastEnd}), "test"));
+    CHECK_THROWS_AS(world::rendermesh::parse(renderModel({pastEnd}), "test"), std::exception);
     TestPart badStride = quad("Road_LOD01", 0, 0, 0, 1);
     badStride.stride = 68;
-    CHECK_THROWS(world::rendermesh::parse(renderModel({badStride}), "test"));
+    CHECK_THROWS_AS(world::rendermesh::parse(renderModel({badStride}), "test"), std::exception);
     CHECK(!world::rendermesh::readHeader(Bytes(0x40, 0)).has_value());
 }
 
-TEST(looksUpZonesInTheHexGrid)
+TEST_CASE("looksUpZonesInTheHexGrid", "[world]")
 {
     // Three columns and two rows; the middle cell of the second row has no
     // zone. Odd columns sit half a row further along Z.
     constexpr std::uint32_t kNone = 0xFFFFFFFF;
     const world::ZoneGrid grid = world::ZoneGrid::read(hexFile(5, 3, 2, {0, 1, 2, 3, kNone, 4}));
-    CHECK_EQ(grid.zoneCount(), 5);
-    CHECK_EQ(grid.columns(), 3);
-    CHECK_EQ(grid.rows(), 2);
+    CHECK(grid.zoneCount() == 5);
+    CHECK(grid.columns() == 3);
+    CHECK(grid.rows() == 2);
     const float rowPitch = std::sqrt(3.0F) * 100.0F;
-    CHECK_EQ(grid.zoneAt(100.0F, rowPitch / 2), 0);
-    CHECK_EQ(grid.zoneAt(250.0F, rowPitch), 1);
-    CHECK_EQ(grid.zoneAt(400.0F, rowPitch / 2), 2);
-    CHECK_EQ(grid.zoneAt(100.0F, rowPitch * 1.5F), 3);
-    CHECK_EQ(grid.zoneAt(250.0F, rowPitch * 2), -1);
-    CHECK_EQ(grid.zoneAt(400.0F, rowPitch * 1.5F), 4);
+    CHECK(grid.zoneAt(100.0F, rowPitch / 2) == 0);
+    CHECK(grid.zoneAt(250.0F, rowPitch) == 1);
+    CHECK(grid.zoneAt(400.0F, rowPitch / 2) == 2);
+    CHECK(grid.zoneAt(100.0F, rowPitch * 1.5F) == 3);
+    CHECK(grid.zoneAt(250.0F, rowPitch * 2) == -1);
+    CHECK(grid.zoneAt(400.0F, rowPitch * 1.5F) == 4);
     // Near the edge between cells 0 and 1, on cell 0's side.
-    CHECK_EQ(grid.zoneAt(170.0F, 120.0F), 0);
+    CHECK(grid.zoneAt(170.0F, 120.0F) == 0);
     // Below the odd column's first cell is outside the grid.
-    CHECK_EQ(grid.zoneAt(250.0F, 60.0F), -1);
-    CHECK_EQ(grid.zoneAt(-500.0F, 0.0F), -1);
-    CHECK_EQ(world::ZoneGrid().zoneAt(0.0F, 0.0F), -1);
+    CHECK(grid.zoneAt(250.0F, 60.0F) == -1);
+    CHECK(grid.zoneAt(-500.0F, 0.0F) == -1);
+    CHECK(world::ZoneGrid().zoneAt(0.0F, 0.0F) == -1);
 
     Bytes wrongMagic = hexFile(1, 1, 1, {0});
     wrongMagic[0] = 'X';
-    CHECK_THROWS(world::ZoneGrid::read(wrongMagic));
-    CHECK_THROWS(world::ZoneGrid::read(hexFile(1, 1, 1, {3})));
+    CHECK_THROWS_AS(world::ZoneGrid::read(wrongMagic), std::exception);
+    CHECK_THROWS_AS(world::ZoneGrid::read(hexFile(1, 1, 1, {3})), std::exception);
     const Bytes truncated = hexFile(1, 2, 2, {0});
-    CHECK_THROWS(world::ZoneGrid::read(fh::ByteView(truncated).first(40)));
+    CHECK_THROWS_AS(world::ZoneGrid::read(fh::ByteView(truncated).first(40)), std::exception);
 }
 
-TEST(readsZonePlacements)
+TEST_CASE("readsZonePlacements", "[world]")
 {
     TestPlacement first;
     first.draw = 3;
@@ -837,9 +842,9 @@ TEST(readsZonePlacements)
     flyer.blockName = "flyer_007";
     flyer.blockBytes = {0x00, 0x15};
     const auto placements = world::TrackPlacements::readZone(zoneFile({first, second, flyer}));
-    CHECK_EQ(placements.size(), std::size_t{3});
-    CHECK_EQ(placements[0].first, 3U);
-    CHECK_EQ(placements[1].first, 7U);
+    CHECK(placements.size() == std::size_t{3});
+    CHECK(placements[0].first == 3U);
+    CHECK(placements[1].first == 7U);
     const world::Placement& p = placements[0].second;
     CHECK(p.position == first.position);
     CHECK(p.rows == first.rows);
@@ -849,7 +854,7 @@ TEST(readsZonePlacements)
     const world::Placement& event = placements[1].second;
     CHECK(event.ranges == (std::array<float, 3>{-1, -1, -1}));
     CHECK(event.eventProp);
-    CHECK_EQ(event.eventTag, std::string("FR04_NODE"));
+    CHECK(event.eventTag == std::string("FR04_NODE"));
     CHECK(event.eventRoutes == (std::vector<std::uint8_t>{147, 206}));
     CHECK(event.belongsToEvent("fr04"));
     CHECK(!event.belongsToEvent("FR0"));
@@ -861,17 +866,17 @@ TEST(readsZonePlacements)
     CHECK(!gameplay.eventProp);
     CHECK(gameplay.eventTag.empty());
     CHECK(gameplay.eventRoutes.empty());
-    CHECK_EQ(gameplay.gameplayId, std::string("flyer_007"));
+    CHECK(gameplay.gameplayId == std::string("flyer_007"));
 
     Bytes truncated = zoneFile({first, second});
     truncated.resize(truncated.size() - 10);
-    CHECK_THROWS(world::TrackPlacements::readZone(truncated));
+    CHECK_THROWS_AS(world::TrackPlacements::readZone(truncated), std::exception);
     Bytes mismatch = zoneFile({first});
     mismatch[3] = 2;
-    CHECK_THROWS(world::TrackPlacements::readZone(mismatch));
+    CHECK_THROWS_AS(world::TrackPlacements::readZone(mismatch), std::exception);
 }
 
-TEST(appliesPlacements)
+TEST_CASE("appliesPlacements", "[world]")
 {
     // World-space models are placed by an identity with Z mirrored, which
     // reproduces the parser's own coordinates.
@@ -891,7 +896,7 @@ TEST(appliesPlacements)
     CHECK(nearVec(pole.apply(glm::vec3(0, 2, 0)), pole.position + glm::vec3(0, 2, 0)));
 }
 
-TEST(readsScatterSets)
+TEST_CASE("readsScatterSets", "[world]")
 {
     // A tree at two levels, whose copies take different blocks, a mesh named
     // by a path of odd length, and a bush at one level whose block ends
@@ -926,16 +931,16 @@ TEST(readsScatterSets)
     const Bytes data = scatterFile("Models_Ungrouped_1706", {tree, pathNamed, bush}, {trees, paths, bushes});
 
     const world::ScatterSet set = world::readScatterSet(data);
-    CHECK_EQ(set.name, std::string("Models_Ungrouped_1706"));
-    CHECK_EQ(set.meshDraws.size(), std::size_t{3});
+    CHECK(set.name == std::string("Models_Ungrouped_1706"));
+    CHECK(set.meshDraws.size() == std::size_t{3});
     CHECK(set.meshDraws[0] == (std::vector<std::uint32_t>{61908, 61909}));
     CHECK(set.meshDraws[1].empty());
     CHECK(set.meshDraws[2] == (std::vector<std::uint32_t>{61915}));
     // The path-named mesh's instance is left out.
-    CHECK_EQ(set.instances.size(), std::size_t{3});
+    CHECK(set.instances.size() == std::size_t{3});
     if (set.instances.size() == 3) {
         const world::ScatterSet::Instance& first = set.instances[0];
-        CHECK_EQ(first.mesh, 0U);
+        CHECK(first.mesh == 0U);
         CHECK(first.placement.position == turned.position);
         // The stored Z axis, negated, maps the model's stored Z.
         CHECK(first.placement.rows == (std::array<float, 9>{0, 0, -0.5F, 0, 0.5F, 0, -0.5F, 0, 0}));
@@ -945,27 +950,28 @@ TEST(readsScatterSets)
         CHECK(set.instances[1].placement.position == upright.position);
         CHECK(set.instances[1].placement.ranges == (std::array<float, 3>{30.0F, 60.0F, -1.0F}));
         // One level, drawn to the group's distance, which comes before E2.
-        CHECK_EQ(set.instances[2].mesh, 2U);
+        CHECK(set.instances[2].mesh == 2U);
         CHECK(set.instances[2].placement.ranges == (std::array<float, 3>{100.0F, -1.0F, -1.0F}));
     }
 
     Bytes wrongSize = data;
     ++wrongSize[0x4B];
-    CHECK_THROWS(world::readScatterSet(wrongSize));
+    CHECK_THROWS_AS(world::readScatterSet(wrongSize), std::exception);
     TestScatterGroup pastBlocks = bushes;
     pastBlocks.instances.front().block = 1;
-    CHECK_THROWS(world::readScatterSet(
-        scatterFile("Models_Ungrouped_1706", {tree, pathNamed, bush}, {trees, paths, pastBlocks})));
+    CHECK_THROWS_AS(world::readScatterSet(
+                        scatterFile("Models_Ungrouped_1706", {tree, pathNamed, bush}, {trees, paths, pastBlocks})),
+        std::exception);
     Bytes empty(0x104, 0);
     std::copy_n("OEGP", 4, empty.begin());
-    CHECK_THROWS(world::readScatterSet(empty));
+    CHECK_THROWS_AS(world::readScatterSet(empty), std::exception);
     Bytes truncated(data.begin(), data.end() - 200);
     Writer patch{truncated};
     patch.patch32(0x48, static_cast<std::uint32_t>(truncated.size()));
-    CHECK_THROWS(world::readScatterSet(patch.data));
+    CHECK_THROWS_AS(world::readScatterSet(patch.data), std::exception);
 }
 
-TEST(readsEventGatedScatterSets)
+TEST_CASE("readsEventGatedScatterSets", "[world]")
 {
     TestScatterInstance upright;
     upright.position = glm::vec3(10, 20, 30);
@@ -1000,16 +1006,16 @@ TEST(readsEventGatedScatterSets)
     w.patch32(0x48, static_cast<std::uint32_t>(w.data.size()));
     w.patch32(0x58, 0x0C92BCB0);
     const world::ScatterSet set = world::readScatterSet(w.data);
-    CHECK_EQ(set.name, name);
+    CHECK(set.name == name);
     CHECK(set.eventProp);
-    CHECK_EQ(set.eventTag, std::string("FR04"));
+    CHECK(set.eventTag == std::string("FR04"));
     CHECK(set.eventRoutes == (std::vector<std::uint8_t>{0, 21}));
     CHECK(set.meshDraws == (std::vector<std::vector<std::uint32_t>>{{61908, 61909}}));
-    CHECK_EQ(set.instances.size(), std::size_t{2});
+    CHECK(set.instances.size() == std::size_t{2});
     for (const world::ScatterSet::Instance& instance : set.instances) {
         CHECK(instance.placement.position == upright.position);
         CHECK(instance.placement.eventProp);
-        CHECK_EQ(instance.placement.eventTag, std::string("FR04"));
+        CHECK(instance.placement.eventTag == std::string("FR04"));
         CHECK(instance.placement.onRoute(0));
         CHECK(instance.placement.onRoute(21));
         CHECK(!instance.placement.onRoute(3));
@@ -1017,13 +1023,13 @@ TEST(readsEventGatedScatterSets)
 
     Writer notABlock{w.data};
     notABlock.patch32(0x60, 0x000000A2);
-    CHECK_THROWS(world::readScatterSet(notABlock.data));
+    CHECK_THROWS_AS(world::readScatterSet(notABlock.data), std::exception);
     Writer headerEntries{w.data};
     headerEntries.patch32(0x44, 1);
-    CHECK_THROWS(world::readScatterSet(headerEntries.data));
+    CHECK_THROWS_AS(world::readScatterSet(headerEntries.data), std::exception);
 }
 
-TEST(eventPropsFollowTheLoadedRoute)
+TEST_CASE("eventPropsFollowTheLoadedRoute", "[world]")
 {
     world::WorldChunk plain;
     plain.placed = true;
@@ -1053,21 +1059,21 @@ TEST(eventPropsFollowTheLoadedRoute)
     CHECK(world::EventPropFilter::all().includes(named));
 }
 
-TEST(readsShaderLayoutsAndPvsTables)
+TEST_CASE("readsShaderLayoutsAndPvsTables", "[world]")
 {
     // Normal, TEXCOORD0, TEXCOORD1 (flagged), as in h_diff_spec_ao_2.
     const std::optional<world::ShaderLayout> diffuse
         = world::readShaderLayout(shaderObject({0x3007, 0x5008, 0x215009}));
     CHECK(diffuse.has_value());
     if (diffuse) {
-        CHECK_EQ(diffuse->texcoord0Offset, 16);
-        CHECK_EQ(diffuse->vertexBytes, 24);
+        CHECK(diffuse->texcoord0Offset == 16);
+        CHECK(diffuse->vertexBytes == 24);
     }
     const std::optional<world::ShaderLayout> none = world::readShaderLayout(shaderObject({0x3007, 0xA008}));
     CHECK(none.has_value());
     if (none) {
-        CHECK_EQ(none->texcoord0Offset, -1);
-        CHECK_EQ(none->colourOffset, 16);
+        CHECK(none->texcoord0Offset == -1);
+        CHECK(none->colourOffset == 16);
         CHECK(none->samplers.empty());
     }
     // Vertex-blended ground: three coordinate pairs and a colour, with its
@@ -1076,14 +1082,14 @@ TEST(readsShaderLayoutsAndPvsTables)
         {0x3007, 0x5008, 0x15009, 0x2500A, 0xA00B}, {{0, "Blend_ASampler"}, {1, "Blend_BSampler"}, {5, "AO_Sampler"}}));
     CHECK(blend.has_value());
     if (blend) {
-        CHECK_EQ(blend->texcoord0Offset, 16);
-        CHECK_EQ(blend->texcoord1Offset, 20);
-        CHECK_EQ(blend->texcoord2Offset, 24);
-        CHECK_EQ(blend->colourOffset, 28);
-        CHECK_EQ(blend->samplers.size(), std::size_t{6});
-        CHECK_EQ(blend->samplerRegister("AO_Sampler"), 5);
-        CHECK_EQ(blend->samplerRegister("Blend_BSampler"), 1);
-        CHECK_EQ(blend->samplerRegister("Splat_Sampler"), -1);
+        CHECK(blend->texcoord0Offset == 16);
+        CHECK(blend->texcoord1Offset == 20);
+        CHECK(blend->texcoord2Offset == 24);
+        CHECK(blend->colourOffset == 28);
+        CHECK(blend->samplers.size() == std::size_t{6});
+        CHECK(blend->samplerRegister("AO_Sampler") == 5);
+        CHECK(blend->samplerRegister("Blend_BSampler") == 1);
+        CHECK(blend->samplerRegister("Splat_Sampler") == -1);
     }
     const std::string_view noShader = "no shader here";
     const fh::ByteView noShaderBytes(reinterpret_cast<const std::uint8_t*>(noShader.data()), noShader.size());
@@ -1091,14 +1097,15 @@ TEST(readsShaderLayoutsAndPvsTables)
 
     const world::PvsTables tables = world::readPvs(pvsFile({0x10, 0x20, 0x2B40}, {{2, 0}, {}, {1}}, {4, 2}));
     CHECK(tables.textureIds == (std::vector<std::uint32_t>{0x10, 0x20, 0x2B40}));
-    CHECK_EQ(tables.objectTextures.size(), std::size_t{3});
+    CHECK(tables.objectTextures.size() == std::size_t{3});
     CHECK(tables.objectTextures[0] == (std::vector<std::uint32_t>{0x2B40, 0x10}));
     CHECK(tables.objectTextures[1].empty());
     CHECK(tables.objectTextures[2] == (std::vector<std::uint32_t>{0x20}));
     CHECK(tables.drawObjects == (std::vector<std::uint16_t>{4, 2}));
-    CHECK_THROWS(world::readPvs(pvsFile({0x10}, {{5}})));
+    CHECK_THROWS_AS(world::readPvs(pvsFile({0x10}, {{5}})), std::exception);
     const std::string_view notPvs = "FPVS but nothing else";
-    CHECK_THROWS(world::readPvs(fh::ByteView(reinterpret_cast<const std::uint8_t*>(notPvs.data()), notPvs.size())));
+    CHECK_THROWS_AS(world::readPvs(fh::ByteView(reinterpret_cast<const std::uint8_t*>(notPvs.data()), notPvs.size())),
+        std::exception);
 
     CHECK(world::TrackTextures::objectNumber("coloradoout.06454.rmb.bin") == std::optional<std::uint32_t>(6454));
     CHECK(world::TrackTextures::objectNumber("COLORADO.7.RMB.BIN") == std::optional<std::uint32_t>(7));
@@ -1106,7 +1113,7 @@ TEST(readsShaderLayoutsAndPvsTables)
     CHECK(!world::TrackTextures::objectNumber("colorado.rmb.bin").has_value());
     CHECK(!world::TrackTextures::objectNumber("colorado.99999999999.rmb.bin").has_value());
     CHECK(world::numberBefore("__R00Z01434.pvsz", 'z', ".pvsz") == std::optional<std::uint32_t>(1434));
-    CHECK_EQ(world::TrackTextures::textureName(0x2B40), std::string("_0x00002B40"));
+    CHECK(world::TrackTextures::textureName(0x2B40) == std::string("_0x00002B40"));
 
     Writer pack;
     pack.u32(1);
@@ -1119,20 +1126,20 @@ TEST(readsShaderLayoutsAndPvsTables)
     pack.u32(8);
     pack.fill(8, 0xAB);
     const std::vector<world::TrackTextures::BundleEntry> entries = world::TrackTextures::readBundle(pack.data);
-    CHECK_EQ(entries.size(), std::size_t{1});
+    CHECK(entries.size() == std::size_t{1});
     if (!entries.empty()) {
-        CHECK_EQ(entries[0].record, 7U);
-        CHECK_EQ(entries[0].offset, std::size_t{32});
-        CHECK_EQ(entries[0].size, std::size_t{8});
-        CHECK_EQ(entries[0].formatWord, 0x52U);
+        CHECK(entries[0].record == 7U);
+        CHECK(entries[0].offset == std::size_t{32});
+        CHECK(entries[0].size == std::size_t{8});
+        CHECK(entries[0].formatWord == 0x52U);
     }
     Bytes badSeparator = pack.data;
     badSeparator[4 + 20] = 0;
-    CHECK_THROWS(world::TrackTextures::readBundle(badSeparator));
-    CHECK_THROWS(world::TrackTextures::readBundle(Bytes{0, 0, 0, 1}));
+    CHECK_THROWS_AS(world::TrackTextures::readBundle(badSeparator), std::exception);
+    CHECK_THROWS_AS(world::TrackTextures::readBundle(Bytes{0, 0, 0, 1}), std::exception);
 }
 
-TEST(decodesAndEncodesTextures)
+TEST_CASE("decodesAndEncodesTextures", "[world]")
 {
     // A 128x128 DXT1 texture of solid red, tiled as the GPU stores it with
     // 16-bit words swapped; every block is the same, so the tiling does not
@@ -1147,24 +1154,24 @@ TEST(decodesAndEncodesTextures)
     }
     const world::TextureSurface surface = world::untileXboxSurface(tiled, kDxt1Swapped, 128, 128);
     CHECK(surface.format == world::TextureSurface::Format::Dxt1);
-    CHECK_EQ(surface.data.size(), std::size_t{32 * 32 * 8});
+    CHECK(surface.data.size() == std::size_t{32 * 32 * 8});
     const world::RgbaImage image = world::decodeSurface(surface);
-    CHECK_EQ(image.width, 128);
-    CHECK_EQ(image.rgba.size(), std::size_t{128 * 128 * 4});
-    CHECK_EQ(image.rgba[0], 255);
-    CHECK_EQ(image.rgba[1], 0);
-    CHECK_EQ(image.rgba[3], 255);
-    CHECK_THROWS(world::untileXboxSurface(fh::ByteView(tiled).first(100), kDxt1Swapped, 128, 128));
-    CHECK_THROWS(world::untileXboxSurface(tiled, 17, 128, 128));
+    CHECK(image.width == 128);
+    CHECK(image.rgba.size() == std::size_t{128 * 128 * 4});
+    CHECK(image.rgba[0] == 255);
+    CHECK(image.rgba[1] == 0);
+    CHECK(image.rgba[3] == 255);
+    CHECK_THROWS_AS(world::untileXboxSurface(fh::ByteView(tiled).first(100), kDxt1Swapped, 128, 128), std::exception);
+    CHECK_THROWS_AS(world::untileXboxSurface(tiled, 17, 128, 128), std::exception);
 
     const world::TextureMipChain chain = world::buildMipChain(surface);
     CHECK(chain.format == world::TextureSurface::Format::Dxt1);
-    CHECK_EQ(chain.levels.size(), std::size_t{8});
+    CHECK(chain.levels.size() == std::size_t{8});
     CHECK(chain.levels[0] == surface.data);
-    CHECK_EQ(chain.levels.back().size(), std::size_t{8});
+    CHECK(chain.levels.back().size() == std::size_t{8});
     const world::RgbaImage smallest = world::decodeSurface(chain.level(7));
-    CHECK_EQ(smallest.rgba[0], 255);
-    CHECK_EQ(smallest.rgba[1], 0);
+    CHECK(smallest.rgba[0] == 255);
+    CHECK(smallest.rgba[1] == 0);
 
     // RGBA levels are filtered, weighting colour by alpha.
     world::TextureSurface rgba;
@@ -1172,7 +1179,7 @@ TEST(decodesAndEncodesTextures)
     rgba.height = 1;
     rgba.data = {200, 100, 50, 255, 0, 0, 0, 0};
     const world::TextureMipChain rgbaChain = world::buildMipChain(rgba);
-    CHECK_EQ(rgbaChain.levels.size(), std::size_t{2});
+    CHECK(rgbaChain.levels.size() == std::size_t{2});
     CHECK(rgbaChain.levels[1] == (Bytes{200, 100, 50, 127}));
 
     // BC5 keeps two channels, red first.
@@ -1188,13 +1195,13 @@ TEST(decodesAndEncodesTextures)
     world::dxt::encodeBc5(texels.data(), normals.data.data());
     const world::RgbaImage decoded = world::decodeSurface(normals);
     for (std::size_t i = 0; i < 16; ++i) {
-        CHECK_NEAR(decoded.rgba[i * 4], texels[i].r, 20);
-        CHECK_NEAR(decoded.rgba[i * 4 + 1], texels[i].g, 20);
+        CHECK_THAT(decoded.rgba[i * 4], WithinAbs(texels[i].r, 20));
+        CHECK_THAT(decoded.rgba[i * 4 + 1], WithinAbs(texels[i].g, 20));
     }
     const world::TextureMipChain normalChain = world::buildMipChain(normals);
     CHECK(normalChain.format == world::TextureSurface::Format::Bc5);
-    CHECK_EQ(normalChain.levels.size(), std::size_t{3});
-    CHECK_EQ(normalChain.levels[2].size(), std::size_t{16});
+    CHECK(normalChain.levels.size() == std::size_t{3});
+    CHECK(normalChain.levels[2].size() == std::size_t{16});
 
     // DXT3 is converted to DXT5.
     world::TextureSurface dxt3;
@@ -1205,7 +1212,7 @@ TEST(decodesAndEncodesTextures)
     CHECK(world::buildMipChain(dxt3).format == world::TextureSurface::Format::Dxt5);
 }
 
-TEST(convertsTrackVertexDeclarations)
+TEST_CASE("convertsTrackVertexDeclarations", "[world]")
 {
     namespace dt = world::decltype360;
     fh::xenos::VertexDeclaration file;
@@ -1224,17 +1231,17 @@ TEST(convertsTrackVertexDeclarations)
     const std::optional<fh::xenos::VertexDeclaration> render = world::TrackShaders::renderDeclaration(file);
     CHECK(render.has_value());
     if (render) {
-        CHECK_EQ(render->elements.size(), std::size_t{4});
-        CHECK_EQ(render->elements[1].offset, std::uint16_t{12});
-        CHECK_EQ(render->elements[1].type, dt::kFloat3Native);
-        CHECK_EQ(render->elements[2].offset, std::uint16_t{24});
-        CHECK_EQ(render->elements[2].type, dt::kFloat2Native);
-        CHECK_EQ(render->elements[3].offset, std::uint16_t{32});
-        CHECK_EQ(render->elements[3].type, dt::kColor);
-        CHECK_EQ(render->stride(0), 36U);
+        CHECK(render->elements.size() == std::size_t{4});
+        CHECK(render->elements[1].offset == std::uint16_t{12});
+        CHECK(render->elements[1].type == dt::kFloat3Native);
+        CHECK(render->elements[2].offset == std::uint16_t{24});
+        CHECK(render->elements[2].type == dt::kFloat2Native);
+        CHECK(render->elements[3].offset == std::uint16_t{32});
+        CHECK(render->elements[3].type == dt::kColor);
+        CHECK(render->stride(0) == 36U);
         // Same formats, no byte swap.
         CHECK(render->elements[0].format() == file.elements[0].format());
-        CHECK_EQ(render->elements[0].endian(), 0U);
+        CHECK(render->elements[0].endian() == 0U);
         CHECK(render->elements[2].format() == fh::xenos::VertexFormat::F32_32_Float);
     }
     fh::xenos::VertexDeclaration unknown;
@@ -1242,7 +1249,7 @@ TEST(convertsTrackVertexDeclarations)
     CHECK(!world::TrackShaders::renderDeclaration(unknown).has_value());
 }
 
-TEST(buildsAWorldFromAnArchive)
+TEST_CASE("buildsAWorldFromAnArchive", "[world]")
 {
     // Two levels of a world-space road, and a sign modelled at the origin
     // that two draw records place, one of them mirrored.
@@ -1284,13 +1291,13 @@ TEST(buildsAWorldFromAnArchive)
     if (!placements) {
         return;
     }
-    CHECK_EQ(placements->drawCount(), std::size_t{2});
-    CHECK_EQ(placements->zoneCount(), 1);
-    CHECK_EQ(placements->failedZones(), 0);
+    CHECK(placements->drawCount() == std::size_t{2});
+    CHECK(placements->zoneCount() == 1);
+    CHECK(placements->failedZones() == 0);
     CHECK(placements->placement(0) != nullptr);
     CHECK(placements->zonesListing(1) == (std::vector<std::uint16_t>{0}));
     const world::TrackTextures textures = world::TrackTextures::load(pvs, archive);
-    CHECK_EQ(textures.shaderCount(), std::size_t{1});
+    CHECK(textures.shaderCount() == std::size_t{1});
     CHECK(textures.shader("shaders\\track\\H_DIFF_1.fx") != nullptr);
 
     std::size_t lastProgress = 0;
@@ -1300,25 +1307,25 @@ TEST(buildsAWorldFromAnArchive)
     if (!index) {
         return;
     }
-    CHECK_EQ(lastProgress, std::size_t{5});
-    CHECK_EQ(index->chunks().size(), std::size_t{4});
-    CHECK_EQ(index->placedCount(), std::size_t{2});
-    CHECK_EQ(index->localModelCount(), 1);
+    CHECK(lastProgress == std::size_t{5});
+    CHECK(index->chunks().size() == std::size_t{4});
+    CHECK(index->placedCount() == std::size_t{2});
+    CHECK(index->localModelCount() == 1);
     for (const world::WorldChunk& chunk : index->chunks()) {
         if (!chunk.placed && chunk.lod == 1) {
-            CHECK_EQ(chunk.bandStart, 0.0F);
-            CHECK_EQ(chunk.bandEnd, world::WorldIndex::kLodStart[2]);
+            CHECK(chunk.bandStart == 0.0F);
+            CHECK(chunk.bandEnd == world::WorldIndex::kLodStart[2]);
         } else if (!chunk.placed) {
-            CHECK_EQ(chunk.lod, 2);
-            CHECK_EQ(chunk.bandStart, world::WorldIndex::kLodStart[2]);
+            CHECK(chunk.lod == 2);
+            CHECK(chunk.bandStart == world::WorldIndex::kLodStart[2]);
             CHECK(std::isinf(chunk.bandEnd));
         } else {
-            CHECK_EQ(chunk.bandStart, 0.0F);
-            CHECK_EQ(chunk.bandEnd, 50.0F);
+            CHECK(chunk.bandStart == 0.0F);
+            CHECK(chunk.bandEnd == 50.0F);
         }
     }
     const world::Footprint footprint = index->footprint();
-    CHECK(footprint.min.x <= 989.0F && footprint.max.x >= 1010.0F);
+    CHECK((footprint.min.x <= 989.0F && footprint.max.x >= 1010.0F));
     // With the zone grid, the props take the zones whose files list their
     // draws, and the world-space models, which no draw record places here,
     // are drawn from everywhere.
@@ -1341,20 +1348,20 @@ TEST(buildsAWorldFromAnArchive)
         return;
     }
     const std::vector<std::uint32_t> near = grid.chunksAt(grid.tiles()[*tile], 0.0F);
-    CHECK_EQ(near.size(), std::size_t{3});
-    CHECK_EQ(grid.chunksAt(grid.tiles()[*tile], 2000.0F).size(), std::size_t{1});
+    CHECK(near.size() == std::size_t{3});
+    CHECK(grid.chunksAt(grid.tiles()[*tile], 2000.0F).size() == std::size_t{1});
     // Near the tile every chunk may be drawn; past 50 m the prop's band has
     // ended, and past the first level's end so has that level's.
-    CHECK_EQ(grid.chunksBeyond(grid.tiles()[*tile], 0.0F).size(), grid.tiles()[*tile].chunks.size());
-    CHECK_EQ(grid.chunksBeyond(grid.tiles()[*tile], 60.0F).size(), std::size_t{2});
-    CHECK_EQ(grid.chunksBeyond(grid.tiles()[*tile], 2000.0F).size(), std::size_t{1});
+    CHECK(grid.chunksBeyond(grid.tiles()[*tile], 0.0F).size() == grid.tiles()[*tile].chunks.size());
+    CHECK(grid.chunksBeyond(grid.tiles()[*tile], 60.0F).size() == std::size_t{2});
+    CHECK(grid.chunksBeyond(grid.tiles()[*tile], 2000.0F).size() == std::size_t{1});
 
     const world::TileMesh mesh = world::buildTileMesh(archive, *index, near, &textures);
-    CHECK_EQ(mesh.failedChunks, 0);
-    CHECK_EQ(mesh.triangleCount(), std::size_t{6});
-    CHECK_EQ(mesh.vertexCount(), std::size_t{12});
+    CHECK(mesh.failedChunks == 0);
+    CHECK(mesh.triangleCount() == std::size_t{6});
+    CHECK(mesh.vertexCount() == std::size_t{12});
     CHECK(mesh.textures() == (std::vector<std::uint32_t>{0x2B40}));
-    CHECK_EQ(mesh.batches.size(), std::size_t{2});
+    CHECK(mesh.batches.size() == std::size_t{2});
     CHECK(runsCoverBatches(mesh.batches));
     // Every triangle, the mirrored sign's included, winds clockwise seen
     // from the side its normals point to.
@@ -1379,28 +1386,24 @@ TEST(buildsAWorldFromAnArchive)
         const float* f = mesh.vertices.data() + v * world::TileMesh::kFloatsPerVertex;
         if (nearVec(glm::vec3(f[0], f[1], f[2]), glm::vec3(1006, 2, 1004))) {
             foundCorner = true;
-            CHECK_NEAR(f[world::TileMesh::kTexcoord], 1.0, 1e-4);
-            CHECK_NEAR(f[world::TileMesh::kTexcoord + 1], 1.0, 1e-4);
+            CHECK_THAT(f[world::TileMesh::kTexcoord], WithinAbs(1.0, 1e-4));
+            CHECK_THAT(f[world::TileMesh::kTexcoord + 1], WithinAbs(1.0, 1e-4));
         }
     }
     CHECK(foundCorner);
 
     const world::TileMesh broken = world::buildTileMesh(archive, *index, {99}, nullptr);
-    CHECK_EQ(broken.failedChunks, 1);
-    CHECK_EQ(broken.errors.size(), std::size_t{1});
+    CHECK(broken.failedChunks == 1);
+    CHECK(broken.errors.size() == std::size_t{1});
 
     const Bytes prefix = world::readEntryPrefix(archive, *archive.find("tracks.00000.rmb.bin"), 16);
-    CHECK_EQ(prefix.size(), std::size_t{16});
-    CHECK_EQ(prefix[3], 6);
+    CHECK(prefix.size() == std::size_t{16});
+    CHECK(prefix[3] == 6);
 }
 
-TEST(loadsColorado)
+TEST_CASE("loadsColorado", "[world]")
 {
-    const char* gameDir = std::getenv("FH1_GAME_DIR");
-    if (gameDir == nullptr || *gameDir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return;
-    }
+    const char* gameDir = fh::test::gameDir();
     fh::Vfs vfs;
     vfs.mountDisc(gameDir);
     const std::optional<world::TrackWorld> loaded = world::TrackWorld::load(vfs, "colorado");
@@ -1416,14 +1419,14 @@ TEST(loadsColorado)
     if (!colorado.zones || !colorado.placements || !colorado.textures) {
         return;
     }
-    CHECK_EQ(colorado.zones->zoneCount(), 1434);
-    CHECK_EQ(colorado.placements->zoneCount(), 1434);
-    CHECK_EQ(colorado.placements->failedZones(), 0);
-    CHECK_EQ(colorado.placements->drawCount(), std::size_t{62173});
+    CHECK(colorado.zones->zoneCount() == 1434);
+    CHECK(colorado.placements->zoneCount() == 1434);
+    CHECK(colorado.placements->failedZones() == 0);
+    CHECK(colorado.placements->drawCount() == std::size_t{62173});
     // Every model set: 1562 ungated and 469 behind an event block.
-    CHECK_EQ(colorado.placements->scatterSets().size(), std::size_t{2031});
-    CHECK_EQ(colorado.placements->failedScatterSets(), 0);
-    CHECK_EQ(colorado.placements->scatterInstanceCount(), std::size_t{174802});
+    CHECK(colorado.placements->scatterSets().size() == std::size_t{2031});
+    CHECK(colorado.placements->failedScatterSets() == 0);
+    CHECK(colorado.placements->scatterInstanceCount() == std::size_t{174802});
     // The map manager's counts: about 48,000 zone-placed props and 128,600
     // procedural copies outside event blocks.
     std::size_t ungatedCopies = 0;
@@ -1442,9 +1445,9 @@ TEST(loadsColorado)
             freeRoamCopies += set.instances.size();
         }
     }
-    CHECK_NEAR(static_cast<double>(ungatedCopies), 128600.0, 500.0);
-    CHECK_EQ(freeRoamSets, std::size_t{56});
-    CHECK_EQ(freeRoamCopies, std::size_t{385});
+    CHECK_THAT(static_cast<double>(ungatedCopies), WithinAbs(128600.0, 500.0));
+    CHECK(freeRoamSets == std::size_t{56});
+    CHECK(freeRoamCopies == std::size_t{385});
     // "They're spawning when I am next to them": the festival's metal
     // barriers around the free-roam start are copies of an ungated set, so
     // free roam shows them, and their own blocks end them at 60 m (290 of
@@ -1467,18 +1470,18 @@ TEST(loadsColorado)
             toSixty += instance.placement.ranges == std::array<float, 3>{20.0F, 40.0F, 60.0F} ? 1 : 0;
             toHundred += instance.placement.ranges == std::array<float, 3>{50.0F, 70.0F, 100.0F} ? 1 : 0;
         }
-        CHECK_EQ(toSixty, std::size_t{290});
-        CHECK_EQ(toHundred, std::size_t{18});
+        CHECK(toSixty == std::size_t{290});
+        CHECK(toHundred == std::size_t{18});
     }
-    CHECK_EQ(barrierSets, std::size_t{1});
+    CHECK(barrierSets == std::size_t{1});
     const world::WorldIndex& index = colorado.index;
-    CHECK_NEAR(static_cast<double>(index.placedCount() - index.scatteredCount()), 48000.0, 1000.0);
+    CHECK_THAT(static_cast<double>(index.placedCount() - index.scatteredCount()), WithinAbs(48000.0, 1000.0));
     // The 100 discount signs, one placed chunk each.
     std::size_t flyers = 0;
     for (const world::WorldChunk& chunk : index.chunks()) {
         flyers += chunk.placed && chunk.placement.gameplayId.starts_with("flyer_") ? 1 : 0;
     }
-    CHECK_EQ(flyers, std::size_t{100});
+    CHECK(flyers == std::size_t{100});
     std::size_t backdrop = 0;
     for (const world::WorldChunk& chunk : index.chunks()) {
         if (chunk.backdrop) {
@@ -1489,23 +1492,23 @@ TEST(loadsColorado)
     CHECK(backdrop > 0);
 
     // Every effect the models name parses, with its Default pass's states.
-    CHECK_EQ(colorado.shaders.size(), std::size_t{173});
-    CHECK_EQ(colorado.shaders.failed(), 0);
+    CHECK(colorado.shaders.size() == std::size_t{173});
+    CHECK(colorado.shaders.failed() == 0);
     const auto stateOf = [&colorado](std::string_view name) {
         const std::optional<std::uint32_t> effect
             = colorado.shaders.find(std::string("shaders\\track\\") + std::string(name) + ".fx");
         CHECK(effect.has_value());
         return effect ? colorado.shaders.at(*effect).state : world::TrackShaders::RenderState{};
     };
-    CHECK_EQ(stateOf("h_diff_1").cull, 2U);
+    CHECK(stateOf("h_diff_1").cull == 2U);
     CHECK(!stateOf("h_diff_1").blend);
-    CHECK_EQ(stateOf("tree_diff_opac_dirlight_2_2sd_noanim").cull, 0U);
+    CHECK(stateOf("tree_diff_opac_dirlight_2_2sd_noanim").cull == 0U);
     CHECK(stateOf("tree_diff_opac_dirlight_2_2sd_noanim").alphaToMask);
-    CHECK_EQ(stateOf("tree_diff_opac_dirlight_2_2sd_noanim").alphaToMaskOffsets, 0xAAU);
+    CHECK(stateOf("tree_diff_opac_dirlight_2_2sd_noanim").alphaToMaskOffsets == 0xAAU);
     const world::TrackShaders::RenderState lake = stateOf("lake_anim_norm_opac_refl_3");
     CHECK(lake.blend);
-    CHECK_EQ(lake.sourceBlend, 6U);
-    CHECK_EQ(lake.destinationBlend, 7U);
+    CHECK(lake.sourceBlend == 6U);
+    CHECK(lake.destinationBlend == 7U);
 
     // The river under the interstate west of the festival (Shape012) waves
     // by its vertex constant vc360_3, (0.05, 1, 0, 0): 5 cm at 1 rad/s. Its
@@ -1520,7 +1523,7 @@ TEST(loadsColorado)
         }
     }
     CHECK(lakeEffect.has_value());
-    CHECK_EQ(riverChunks.size(), std::size_t{1});
+    CHECK(riverChunks.size() == std::size_t{1});
     const world::ShadedMesh river
         = world::buildShadedMesh(*colorado.archive, index, riverChunks, colorado.shaders, &*colorado.textures);
     std::size_t riverBatches = 0;
@@ -1529,13 +1532,13 @@ TEST(loadsColorado)
             continue;
         }
         ++riverBatches;
-        CHECK_EQ(batch.constants.size(), world::ShadedMesh::kFirstVertexConstant + 1);
+        CHECK(batch.constants.size() == world::ShadedMesh::kFirstVertexConstant + 1);
         if (batch.constants.size() == world::ShadedMesh::kFirstVertexConstant + 1) {
             CHECK(batch.constants[3] == glm::vec4(65.0F, 0.2F, 50.0F, 0.03F));
             CHECK(batch.constants[world::ShadedMesh::kFirstVertexConstant] == glm::vec4(0.05F, 1.0F, 0.0F, 0.0F));
         }
     }
-    CHECK_EQ(riverBatches, std::size_t{1});
+    CHECK(riverBatches == std::size_t{1});
 
     // The effects that read vertex material constants draw placed props in
     // the model's own space. The festival's feather flag at -716.6, -474.8
@@ -1546,7 +1549,7 @@ TEST(loadsColorado)
     for (std::uint32_t e = 0; e < colorado.shaders.size(); ++e) {
         readingVertexMaterial += colorado.shaders.at(e).readsVertexMaterial ? 1 : 0;
     }
-    CHECK_EQ(readingVertexMaterial, std::size_t{18});
+    CHECK(readingVertexMaterial == std::size_t{18});
     const std::optional<std::uint32_t> flagEffect
         = colorado.shaders.find("shaders\\track\\anim_flag_diff_spec_norm_3_lm.fx");
     std::vector<std::uint32_t> flagChunks;
@@ -1561,7 +1564,7 @@ TEST(loadsColorado)
         }
     }
     CHECK(flagEffect.has_value());
-    CHECK_EQ(flagChunks.size(), std::size_t{1});
+    CHECK(flagChunks.size() == std::size_t{1});
     if (flagEffect && flagChunks.size() == 1) {
         const world::WorldChunk& flag = index.chunks()[flagChunks.front()];
         const world::ShadedMesh flagMesh
@@ -1595,9 +1598,9 @@ TEST(loadsColorado)
                 low = glm::min(low, p);
                 high = glm::max(high, p);
             }
-            CHECK(low.x > 0.0F && high.x < 1.5F);
-            CHECK(low.y > 1.2F && high.y < 9.0F);
-            CHECK(std::abs(low.z) < 0.1F && std::abs(high.z) < 0.1F);
+            CHECK((low.x > 0.0F && high.x < 1.5F));
+            CHECK((low.y > 1.2F && high.y < 9.0F));
+            CHECK((std::abs(low.z) < 0.1F && std::abs(high.z) < 0.1F));
         }
         CHECK(flagBatches > 0);
     }
@@ -1614,20 +1617,20 @@ TEST(loadsColorado)
     if (tile) {
         const std::vector<std::uint32_t> chunks = grid.chunksAt(grid.tiles()[*tile], 0.0F);
         const world::TileMesh mesh = world::buildTileMesh(*colorado.archive, index, chunks, &*colorado.textures);
-        CHECK_EQ(mesh.failedChunks, 0);
+        CHECK(mesh.failedChunks == 0);
         CHECK(mesh.triangleCount() > 10000);
         // The effects' declarations fit every material's vertices, so the
         // shaded build keeps every triangle.
         const world::ShadedMesh shaded
             = world::buildShadedMesh(*colorado.archive, index, chunks, colorado.shaders, &*colorado.textures);
-        CHECK_EQ(shaded.failedChunks, 0);
-        CHECK_EQ(shaded.skippedMaterials, 0);
-        CHECK_EQ(shaded.triangleCount(), mesh.triangleCount());
+        CHECK(shaded.failedChunks == 0);
+        CHECK(shaded.skippedMaterials == 0);
+        CHECK(shaded.triangleCount() == mesh.triangleCount());
         CHECK(runsCoverBatches(mesh.batches));
         CHECK(runsCoverBatches(shaded.batches));
         for (const world::ShadedMesh::Batch& batch : shaded.batches) {
-            CHECK_EQ(batch.vertexOffset % world::ShadedMesh::kVertexAlignment, std::size_t{0});
-            CHECK_EQ(batch.stride, colorado.shaders.at(batch.shader).renderDeclaration.stride(0));
+            CHECK(batch.vertexOffset % world::ShadedMesh::kVertexAlignment == std::size_t{0});
+            CHECK(batch.stride == colorado.shaders.at(batch.shader).renderDeclaration.stride(0));
             CHECK(batch.vertexOffset + std::size_t{batch.vertexCount} * batch.stride <= shaded.vertices.size());
         }
         const std::vector<std::uint32_t> ids = mesh.textures();
@@ -1635,13 +1638,9 @@ TEST(loadsColorado)
         for (std::size_t i = 0; i < std::min<std::size_t>(ids.size(), 8); ++i) {
             const world::TextureMipChain chain = colorado.textures->loadTexture(*colorado.archive, ids[i]);
             CHECK(!chain.levels.empty());
-            CHECK_EQ(chain.levels.size(),
-                static_cast<std::size_t>(std::bit_width(static_cast<unsigned>(std::max(chain.width, chain.height)))));
+            CHECK(chain.levels.size()
+                == static_cast<std::size_t>(
+                    std::bit_width(static_cast<unsigned>(std::max(chain.width, chain.height)))));
         }
     }
-}
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
 }

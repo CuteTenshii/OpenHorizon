@@ -4,7 +4,10 @@
 // windmills, wind turbines and ferris wheel and the media/animatedobjects
 // pack.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "animated/AnimatedObjects.h"
 #include "animated/AnimatedSets.h"
@@ -28,6 +31,10 @@
 #include <numbers>
 #include <string>
 #include <vector>
+
+using Catch::Matchers::WithinAbs;
+
+using fh::test::gameDir;
 
 namespace {
 
@@ -141,31 +148,31 @@ Bytes placementSet()
     return w.data;
 }
 
-TEST(readsPlacementSets)
+TEST_CASE("readsPlacementSets", "[animated]")
 {
     const animated::AnimatedPlacementSet set = animated::readPlacementSet(placementSet(), "test");
-    CHECK_EQ(set.name, std::string("anim_proc_test"));
+    CHECK(set.name == std::string("anim_proc_test"));
     CHECK(!set.eventProp);
-    CHECK_EQ(set.placements.size(), std::size_t{2});
+    CHECK(set.placements.size() == std::size_t{2});
     if (set.placements.size() != 2) {
         return;
     }
     const animated::AnimatedPlacement& first = set.placements[0];
-    CHECK_EQ(first.objectSet, 7U);
-    CHECK_NEAR(first.position.z, 30.0F, 1e-6F);
-    CHECK_NEAR(first.axes[0].z, -1.0F, 1e-6F);
-    CHECK_NEAR(first.axes[2].x, 1.0F, 1e-6F);
-    CHECK_NEAR(first.lodDistances[1], 1800.0F, 1e-3F);
-    CHECK_NEAR(first.cullDistance, 3000.0F, 1e-3F);
+    CHECK(first.objectSet == 7U);
+    CHECK_THAT(first.position.z, WithinAbs(30.0F, 1e-6F));
+    CHECK_THAT(first.axes[0].z, WithinAbs(-1.0F, 1e-6F));
+    CHECK_THAT(first.axes[2].x, WithinAbs(1.0F, 1e-6F));
+    CHECK_THAT(first.lodDistances[1], WithinAbs(1800.0F, 1e-3F));
+    CHECK_THAT(first.cullDistance, WithinAbs(3000.0F, 1e-3F));
     CHECK(first.ownInstance);
     CHECK(first.triggerDistance < 0.0F);
     const animated::AnimatedPlacement& second = set.placements[1];
-    CHECK_EQ(second.objectSet, 32U);
-    CHECK_NEAR(second.nightThreshold, 0.2F, 1e-6F);
+    CHECK(second.objectSet == 32U);
+    CHECK_THAT(second.nightThreshold, WithinAbs(0.2F, 1e-6F));
 
     Bytes truncated = placementSet();
     truncated.resize(truncated.size() - 4);
-    CHECK_THROWS(animated::readPlacementSet(truncated, "test"));
+    CHECK_THROWS_AS(animated::readPlacementSet(truncated, "test"), std::exception);
 }
 
 /// A kind-4 set of one entry with one rigid batch of one triangle, with a
@@ -243,45 +250,45 @@ Bytes objectSet(std::uint32_t grannyBytes)
     return w.data;
 }
 
-TEST(readsObjectSets)
+TEST_CASE("readsObjectSets", "[animated]")
 {
     const animated::AnimatedObjectSet set = animated::readObjectSet(objectSet(8), "test");
-    CHECK_EQ(set.name, std::string("Anim_Test"));
-    CHECK_EQ(set.textureIds.size(), std::size_t{1});
-    CHECK_EQ(set.textureNames.size(), std::size_t{1});
+    CHECK(set.name == std::string("Anim_Test"));
+    CHECK(set.textureIds.size() == std::size_t{1});
+    CHECK(set.textureNames.size() == std::size_t{1});
     if (set.textureNames.size() == 1) {
-        CHECK_EQ(set.textureNames[0], std::string("tex_d"));
+        CHECK(set.textureNames[0] == std::string("tex_d"));
     }
-    CHECK_NEAR(set.boundsMax.y, 3.0F, 1e-6F);
-    CHECK_EQ(set.entries.size(), std::size_t{1});
+    CHECK_THAT(set.boundsMax.y, WithinAbs(3.0F, 1e-6F));
+    CHECK(set.entries.size() == std::size_t{1});
     if (set.entries.size() != 1 || set.entries[0].lods[0].size() != 1) {
         CHECK(false);
         return;
     }
-    CHECK_EQ(set.entries[0].boneCount, 4U);
+    CHECK(set.entries[0].boneCount == 4U);
     CHECK(set.entries[0].lods[1].empty());
     const animated::AnimatedObjectBatch& batch = set.entries[0].lods[0][0];
-    CHECK_EQ(batch.bone, 2);
-    CHECK_EQ(batch.vertexType, 5U);
-    CHECK_EQ(animated::AnimatedObjectSet::vertexStride(batch.vertexType), 12U);
-    CHECK_EQ(batch.opaque.size(), std::size_t{1});
+    CHECK(batch.bone == 2);
+    CHECK(batch.vertexType == 5U);
+    CHECK(animated::AnimatedObjectSet::vertexStride(batch.vertexType) == 12U);
+    CHECK(batch.opaque.size() == std::size_t{1});
     if (batch.opaque.size() == 1) {
-        CHECK_EQ(batch.opaque[0].textures[0], 0);
-        CHECK_EQ(batch.opaque[0].textures[1], -1);
-        CHECK_EQ(batch.opaque[0].triangleCount, 1U);
-        CHECK_EQ(batch.opaque[0].flags[1], 1U);
-        CHECK_NEAR(batch.opaque[0].specularPower, 75.0F, 1e-6F);
+        CHECK(batch.opaque[0].textures[0] == 0);
+        CHECK(batch.opaque[0].textures[1] == -1);
+        CHECK(batch.opaque[0].triangleCount == 1U);
+        CHECK(batch.opaque[0].flags[1] == 1U);
+        CHECK_THAT(batch.opaque[0].specularPower, WithinAbs(75.0F, 1e-6F));
     }
-    CHECK_EQ(set.grannySize, std::size_t{8});
+    CHECK(set.grannySize == std::size_t{8});
     // Indices first in the GPU block, the vertices 4-byte aligned after.
-    CHECK_EQ(batch.indexOffset, set.grannyOffset + 8);
-    CHECK_EQ(batch.vertexOffset, batch.indexOffset + 8);
-    CHECK_EQ(fh::loadBe16(set.data.data() + batch.indexOffset + 4), 2);
+    CHECK(batch.indexOffset == set.grannyOffset + 8);
+    CHECK(batch.vertexOffset == batch.indexOffset + 8);
+    CHECK(fh::loadBe16(set.data.data() + batch.indexOffset + 4) == 2);
 
     // A Granny block that does not leave the GPU block its size.
     Bytes wrong = objectSet(8);
     wrong[0x80 + 36 + 3] = 12;
-    CHECK_THROWS(animated::readObjectSet(wrong, "test"));
+    CHECK_THROWS_AS(animated::readObjectSet(wrong, "test"), std::exception);
 }
 
 granny::Curve spline(int degree, std::vector<float> knots, std::vector<float> controls, int dimension)
@@ -295,25 +302,25 @@ granny::Curve spline(int degree, std::vector<float> knots, std::vector<float> co
     return curve;
 }
 
-TEST(samplesCurves)
+TEST_CASE("samplesCurves", "[animated]")
 {
     float out[4] = {};
     // Degree 1: straight lines between the controls.
     const granny::Curve line = spline(1, {0.0F, 1.0F, 3.0F}, {0.0F, 10.0F, 30.0F}, 1);
     CHECK(line.sample(0.5F, 3.0F, false, out));
-    CHECK_NEAR(out[0], 5.0F, 1e-5F);
+    CHECK_THAT(out[0], WithinAbs(5.0F, 1e-5F));
     CHECK(line.sample(2.0F, 3.0F, false, out));
-    CHECK_NEAR(out[0], 20.0F, 1e-5F);
+    CHECK_THAT(out[0], WithinAbs(20.0F, 1e-5F));
     // At the last knot, its control.
     CHECK(line.sample(3.0F, 3.0F, false, out));
-    CHECK_NEAR(out[0], 30.0F, 1e-5F);
+    CHECK_THAT(out[0], WithinAbs(30.0F, 1e-5F));
 
     // Degree 2: the weights sum to one, so equal controls give their value
     // wherever the curve is sampled, looping or not.
     const granny::Curve flat = spline(2, {0.0F, 0.5F, 1.0F, 2.0F}, {3.0F, 3.0F, 3.0F, 3.0F}, 1);
     for (float t : {0.0F, 0.25F, 0.75F, 1.5F, 1.999F}) {
         CHECK(flat.sample(t, 2.0F, true, out));
-        CHECK_NEAR(out[0], 3.0F, 1e-5F);
+        CHECK_THAT(out[0], WithinAbs(3.0F, 1e-5F));
     }
     // Between knots 1 and 2 the quadratic weights of 0x82A84018: with
     // knots 0, 1, 2, 3 at t = 1.5, a = 0.75, b = 0.5, c = 0.25.
@@ -322,35 +329,36 @@ TEST(samplesCurves)
     const float a = 0.75F;
     const float b = 0.5F;
     const float c = 0.25F;
-    CHECK_NEAR(out[0], (1.0F - a) * (1.0F - b) * 0.0F + (a + b - a * b - b * c) * 1.0F + b * c * 2.0F, 1e-5F);
+    CHECK_THAT(
+        out[0], WithinAbs((1.0F - a) * (1.0F - b) * 0.0F + (a + b - a * b - b * c) * 1.0F + b * c * 2.0F, 1e-5F));
 
     // A looping curve's last knot is its first a duration later: just
     // before the end it approaches the start's value.
     const granny::Curve cycle = spline(1, {0.0F, 1.0F, 2.0F}, {0.0F, 10.0F, 0.0F}, 1);
     CHECK(cycle.sample(1.999F, 2.0F, true, out));
-    CHECK_NEAR(out[0], 0.01F, 1e-3F);
+    CHECK_THAT(out[0], WithinAbs(0.01F, 1e-3F));
 
     // Identity and keyframe curves leave the value to the caller.
     granny::Curve identity;
     out[0] = 42.0F;
     CHECK(!identity.sample(0.5F, 1.0F, true, out));
-    CHECK_NEAR(out[0], 42.0F, 0.0F);
+    CHECK_THAT(out[0], WithinAbs(42.0F, 0.0F));
 }
 
-TEST(composesGrannyTransforms)
+TEST_CASE("composesGrannyTransforms", "[animated]")
 {
     granny::Transform t;
     t.flags = granny::Transform::kHasPosition | granny::Transform::kHasOrientation;
     t.position = {1.0F, 2.0F, 3.0F};
     t.orientation = glm::angleAxis(std::numbers::pi_v<float> / 2.0F, glm::vec3(0.0F, 1.0F, 0.0F));
     const glm::vec4 p = t.matrix() * glm::vec4(1.0F, 0.0F, 0.0F, 1.0F);
-    CHECK_NEAR(p.x, 1.0F, 1e-5F);
-    CHECK_NEAR(p.z, 2.0F, 1e-5F);
+    CHECK_THAT(p.x, WithinAbs(1.0F, 1e-5F));
+    CHECK_THAT(p.z, WithinAbs(2.0F, 1e-5F));
     // Without the flags the stored parts are ignored.
     t.flags = 0;
     const glm::vec4 q = t.matrix() * glm::vec4(1.0F, 0.0F, 0.0F, 1.0F);
-    CHECK_NEAR(q.x, 1.0F, 1e-6F);
-    CHECK_NEAR(q.z, 0.0F, 1e-6F);
+    CHECK_THAT(q.x, WithinAbs(1.0F, 1e-6F));
+    CHECK_THAT(q.z, WithinAbs(0.0F, 1e-6F));
 
     granny::Model model;
     model.initialPlacement.flags = granny::Transform::kHasPosition;
@@ -363,18 +371,8 @@ TEST(composesGrannyTransforms)
     model.bones = {root, child};
     std::vector<glm::mat4> world;
     granny::worldPose(model, {}, world);
-    CHECK_NEAR(world[1][3].y, 10.0F, 1e-6F);
-    CHECK_NEAR(world[1][3].z, 1.0F, 1e-6F);
-}
-
-const char* gameDir()
-{
-    const char* dir = std::getenv("FH1_GAME_DIR");
-    if (dir == nullptr || *dir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return nullptr;
-    }
-    return dir;
+    CHECK_THAT(world[1][3].y, WithinAbs(10.0F, 1e-6F));
+    CHECK_THAT(world[1][3].z, WithinAbs(1.0F, 1e-6F));
 }
 
 /// Colorado's animated objects, loaded once for the disc tests.
@@ -419,42 +417,42 @@ float degreesBetween(const glm::quat& a, const glm::quat& b)
     return 2.0F * std::acos(d) * 180.0F / std::numbers::pi_v<float>;
 }
 
-TEST(loadsColoradosAnimatedObjects)
+TEST_CASE("loadsColoradosAnimatedObjects", "[animated]")
 {
     const animated::AnimatedObjects* objects = colorado();
     if (objects == nullptr) {
         return;
     }
     // 33 kind-4 sets, placed 455 times by 202 kind-5 sets.
-    CHECK_EQ(objects->objects().size(), std::size_t{33});
-    CHECK_EQ(objects->failedSets(), 0);
-    CHECK_EQ(objects->instances().size(), std::size_t{455});
-    CHECK_EQ(objects->missingObjects(), 0);
+    CHECK(objects->objects().size() == std::size_t{33});
+    CHECK(objects->failedSets() == 0);
+    CHECK(objects->instances().size() == std::size_t{455});
+    CHECK(objects->missingObjects() == 0);
     std::map<std::uint32_t, int> perSet;
     for (const animated::AnimatedObjects::Instance& instance : objects->instances()) {
         ++perSet[objects->objects()[instance.object].setNumber];
     }
     // The metal and wooden windmills, the wind turbines and the ferris wheel.
-    CHECK_EQ(perSet[7], 8);
-    CHECK_EQ(perSet[8], 11);
-    CHECK_EQ(perSet[32], 8);
-    CHECK_EQ(perSet[14], 1);
+    CHECK(perSet[7] == 8);
+    CHECK(perSet[8] == 11);
+    CHECK(perSet[32] == 8);
+    CHECK(perSet[14] == 1);
 
     const animated::AnimatedObject* windmill = objectOfSet(*objects, 7);
     CHECK(windmill != nullptr);
     if (windmill == nullptr) {
         return;
     }
-    CHECK_EQ(windmill->set.name, std::string("Anim_ANIM_FARM_WindmillMetal31"));
-    CHECK_EQ(windmill->set.textureIds, std::vector<std::uint32_t>{11101});
-    CHECK_EQ(windmill->set.entries.size(), std::size_t{3});
-    CHECK_EQ(windmill->granny.animations.size(), std::size_t{1});
+    CHECK(windmill->set.name == std::string("Anim_ANIM_FARM_WindmillMetal31"));
+    CHECK(windmill->set.textureIds == std::vector<std::uint32_t>{11101});
+    CHECK(windmill->set.entries.size() == std::size_t{3});
+    CHECK(windmill->granny.animations.size() == std::size_t{1});
     // The head: three rigid batches on the flap, the body and the fan.
     const auto& head = windmill->set.entries[0].lods[0];
-    CHECK_EQ(head.size(), std::size_t{3});
+    CHECK(head.size() == std::size_t{3});
     if (head.size() == 3) {
-        CHECK_EQ(windmill->granny.models[0].bones[static_cast<std::size_t>(head[2].bone)].name, std::string("Fan"));
-        CHECK_EQ(head[2].vertexCount, 350U);
+        CHECK(windmill->granny.models[0].bones[static_cast<std::size_t>(head[2].bone)].name == std::string("Fan"));
+        CHECK(head[2].vertexCount == 350U);
     }
     // The fan turns about its hub at 225 degrees a second.
     const int fan = windmill->granny.models[0].findBone("Fan");
@@ -465,9 +463,9 @@ TEST(loadsColoradosAnimatedObjects)
         animated::AnimatedObjects::sampleLocals(*windmill, 0, 0, 2.0F, early);
         animated::AnimatedObjects::sampleLocals(*windmill, 0, 0, 2.4F, late);
         const auto bone = static_cast<std::size_t>(fan);
-        CHECK_NEAR(degreesBetween(early[bone].orientation, late[bone].orientation), 90.0F, 1.5F);
+        CHECK_THAT(degreesBetween(early[bone].orientation, late[bone].orientation), WithinAbs(90.0F, 1.5F));
         // The hub stays where it is.
-        CHECK_NEAR(glm::length(early[bone].position - late[bone].position), 0.0F, 1e-5F);
+        CHECK_THAT(glm::length(early[bone].position - late[bone].position), WithinAbs(0.0F, 1e-5F));
     }
 
     // A windmill of the plains, placed where the set says.
@@ -476,8 +474,8 @@ TEST(loadsColoradosAnimatedObjects)
         if (instance.object == static_cast<std::uint32_t>(windmill - objects->objects().data())
             && glm::length(instance.placement.position - glm::vec3(-670.54F, 87.36F, -2972.59F)) < 0.05F) {
             found = true;
-            CHECK_NEAR(instance.placement.cullDistance, 3000.0F, 1e-3F);
-            CHECK_NEAR(instance.placement.lodDistances[0], 500.0F, 1e-3F);
+            CHECK_THAT(instance.placement.cullDistance, WithinAbs(3000.0F, 1e-3F));
+            CHECK_THAT(instance.placement.lodDistances[0], WithinAbs(500.0F, 1e-3F));
         }
     }
     CHECK(found);
@@ -494,7 +492,7 @@ TEST(loadsColoradosAnimatedObjects)
             animated::AnimatedObjects::sampleLocals(*turbine, 0, 0, 3.0F, a);
             animated::AnimatedObjects::sampleLocals(*turbine, 0, 0, 4.0F, b);
             const auto bone = static_cast<std::size_t>(hub);
-            CHECK_NEAR(degreesBetween(a[bone].orientation, b[bone].orientation), 36.0F, 1.0F);
+            CHECK_THAT(degreesBetween(a[bone].orientation, b[bone].orientation), WithinAbs(36.0F, 1.0F));
         }
     }
 
@@ -502,19 +500,19 @@ TEST(loadsColoradosAnimatedObjects)
     const animated::AnimatedObject* ferris = objectOfSet(*objects, 14);
     CHECK(ferris != nullptr);
     if (ferris != nullptr) {
-        CHECK_EQ(ferris->set.entries.size(), std::size_t{2});
+        CHECK(ferris->set.entries.size() == std::size_t{2});
         if (ferris->set.entries.size() == 2) {
-            CHECK_EQ(ferris->set.entries[1].boneCount, 36U);
+            CHECK(ferris->set.entries[1].boneCount == 36U);
             CHECK(!ferris->set.entries[1].lods[0].empty());
             if (!ferris->set.entries[1].lods[0].empty()) {
-                CHECK_EQ(ferris->set.entries[1].lods[0][0].bone, -1);
-                CHECK_EQ(ferris->set.entries[1].lods[0][0].vertexCount, 13156U);
+                CHECK(ferris->set.entries[1].lods[0][0].bone == -1);
+                CHECK(ferris->set.entries[1].lods[0][0].vertexCount == 13156U);
             }
         }
     }
 }
 
-TEST(playsOnThePresentationClock)
+TEST_CASE("playsOnThePresentationClock", "[animated]")
 {
     const animated::AnimatedObjects* loaded = colorado();
     if (loaded == nullptr) {
@@ -532,7 +530,7 @@ TEST(playsOnThePresentationClock)
     for (const animated::AnimatedObjects::Visible& visible : objects.visible()) {
         if (glm::length(objects.instances()[visible.instance].placement.position - wheel) < 0.05F) {
             ferris = visible.instance;
-            CHECK_EQ(visible.lod, 1);
+            CHECK(visible.lod == 1);
         }
     }
     CHECK(ferris < objects.instances().size());
@@ -542,20 +540,20 @@ TEST(playsOnThePresentationClock)
     CHECK(objects.clip(ferris) >= 0);
     const float start = objects.clipTime(ferris);
     objects.update(0.5F, view);
-    CHECK_NEAR(objects.clipTime(ferris) - start, 0.5F, 1e-4F);
+    CHECK_THAT(objects.clipTime(ferris) - start, WithinAbs(0.5F, 1e-4F));
     // Paused: the presentation's step is 0 and nothing moves.
     const std::vector<glm::mat4> before = objects.pose();
     objects.update(0.0F, view);
-    CHECK_NEAR(objects.clipTime(ferris) - start, 0.5F, 1e-4F);
+    CHECK_THAT(objects.clipTime(ferris) - start, WithinAbs(0.5F, 1e-4F));
     CHECK(objects.pose() == before);
     // Out of view it keeps its clock.
     animated::AnimatedView away = view;
     away.viewProjection = glm::perspective(1.0F, 16.0F / 9.0F, 0.5F, 5000.0F)
         * glm::lookAt(view.camera, view.camera + glm::vec3(0.0F, 0.0F, -1.0F), glm::vec3(0.0F, 1.0F, 0.0F));
     objects.update(3.0F, away);
-    CHECK_NEAR(objects.clipTime(ferris) - start, 0.5F, 1e-4F);
+    CHECK_THAT(objects.clipTime(ferris) - start, WithinAbs(0.5F, 1e-4F));
     objects.update(0.25F, view);
-    CHECK_NEAR(objects.clipTime(ferris) - start, 0.75F, 1e-4F);
+    CHECK_THAT(objects.clipTime(ferris) - start, WithinAbs(0.75F, 1e-4F));
     // And the wheel's bones move as it plays.
     CHECK(objects.pose() != before);
 }
@@ -567,12 +565,9 @@ std::optional<animated::AnimatedObject> packObject(const fh::Vfs& vfs, const std
     return animated::AnimatedObject::make(0, animated::readObjectSet(std::move(data), path), path);
 }
 
-TEST(readsTheAnimatedObjectPack)
+TEST_CASE("readsTheAnimatedObjectPack", "[animated]")
 {
     const char* dir = gameDir();
-    if (dir == nullptr) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     // A rigid vehicle, a skinned animal and a gameplay laser with its own
@@ -590,12 +585,9 @@ TEST(readsTheAnimatedObjectPack)
     }
 }
 
-SLOW_TEST(readsEveryAnimatedObject)
+TEST_CASE("readsEveryAnimatedObject", "[animated][slow][.]")
 {
     const char* dir = gameDir();
-    if (dir == nullptr) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     int files = 0;
@@ -607,15 +599,10 @@ SLOW_TEST(readsEveryAnimatedObject)
         try {
             (void)packObject(vfs, path);
         } catch (const std::exception& e) {
-            fh::test::fail(__FILE__, __LINE__, e.what());
+            FAIL_CHECK(e.what());
         }
     }
-    CHECK_EQ(files, 290);
+    CHECK(files == 290);
 }
 
 } // namespace
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}

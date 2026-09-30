@@ -1,7 +1,7 @@
 # Checks that find bugs rather than enforce a style. The ones switched off
 # below only produced false positives on this codebase:
-# - throwing-static-initialization: the test harness registers tests from
-#   static constructors.
+# - throwing-static-initialization: Catch2 registers test cases from static
+#   constructors.
 # - unchecked-optional-access: members such as the time of day are optionals
 #   that are always set once the world has loaded, which the check cannot see.
 # - narrowing-conversions, implicit-widening-of-multiplication-result,

@@ -6,7 +6,13 @@
 // for a person to look at (scripts/capture.sh).
 
 #include "RoadFollower.h"
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_case_info.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/reporters/catch_reporter_event_listener.hpp>
+#include <catch2/reporters/catch_reporter_registrars.hpp>
 
 #include "audio/MixSnapshots.h"
 #include "base/Host.h"
@@ -51,24 +57,22 @@
 #include <utility>
 #include <vector>
 
+using Catch::Matchers::WithinAbs;
+
 namespace {
 
 /// The game runs at a fixed 60 Hz so every run of a scenario is the same.
 constexpr float kStep = 1.0F / 60.0F;
 
-bool haveOpenGl();
+void requireOpenGl();
 
-/// The disc, or null (and the scenario skips) when FH1_GAME_DIR is not set
-/// or the machine has no OpenGL context for the game, as on a CI runner
-/// without a GPU.
+/// The disc. The scenario skips when FH1_GAME_DIR is not set or the machine
+/// has no OpenGL context for the game, as on a CI runner without a GPU.
 const char* gameDir()
 {
-    const char* dir = std::getenv("FH1_GAME_DIR");
-    if (dir == nullptr || *dir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return nullptr;
-    }
-    return haveOpenGl() ? dir : nullptr;
+    const char* dir = fh::test::gameDir();
+    requireOpenGl();
+    return dir;
 }
 
 /// An empty profile folder under the temporary directory.
@@ -94,18 +98,19 @@ fh::Window& window()
     return instance;
 }
 
-bool haveOpenGl()
+void requireOpenGl()
 {
-    static const bool available = [] {
+    static const std::string error = [] {
         try {
             window();
-            return true;
+            return std::string();
         } catch (const std::exception& e) {
-            std::fprintf(stderr, "skipped: no OpenGL context (%s)\n", e.what());
-            return false;
+            return std::string(e.what());
         }
     }();
-    return available;
+    if (!error.empty()) {
+        SKIP("no OpenGL context (" << error << ")");
+    }
 }
 
 /// What the player holds during a stretch of a scenario.
@@ -244,12 +249,9 @@ bool titleFrames(fh::Title& title, float seconds, std::optional<fh::Button> butt
     return started;
 }
 
-TEST(titleScreenWaitsForStart)
+TEST_CASE("titleScreenWaitsForStart", "[scenarios]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Title title(window(), dir);
     CHECK(!titleFrames(title, 3.0F));
     CHECK(title.screen().hasMovie());
@@ -274,11 +276,9 @@ TEST(titleScreenWaitsForStart)
 // stops the world: the car, the cameras and the clocks. The pause screen
 // takes the HUD's place, the Paused mixer snapshot silences the cars and
 // turns the radio down, and the pause screen plays its sounds.
-TEST(pauseMenuStopsTheGame)
+TEST_CASE("pauseMenuStopsTheGame", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     using fh::audio::MixCategory;
     using fh::audio::MixSnapshotId;
     Session session({});
@@ -288,7 +288,7 @@ TEST(pauseMenuStopsTheGame)
     session.run(3.0F, {.throttle = 1.0F});
     fh::Game& game = session.game();
     CHECK(gameplayMix(game) == MixSnapshotId::FreeRoam);
-    CHECK_NEAR(game.audioCategoryVolume(MixCategory::FocusCar), 0.35, 1e-4);
+    CHECK_THAT(game.audioCategoryVolume(MixCategory::FocusCar), WithinAbs(0.35, 1e-4));
     CHECK(game.playerEngineGain() > 0.0F);
     CHECK(game.hudDrawn());
     const glm::vec3 position = game.playerCar().position();
@@ -304,19 +304,19 @@ TEST(pauseMenuStopsTheGame)
     session.run(3.0F, {.throttle = 1.0F});
     session.capture("pause");
     CHECK(game.pauseShown());
-    CHECK_NEAR(glm::length(game.playerCar().position() - position), 0.0, 1e-3);
-    CHECK_NEAR(game.playerCar().speed(), speed, 1e-3);
-    CHECK_NEAR(game.timeOfDaySeconds(), clock, 1e-3);
-    CHECK_NEAR(game.animationTime(), animation, 1e-6);
-    CHECK_NEAR(glm::length(game.camera().position - eye), 0.0, 1e-5);
-    CHECK_NEAR(glm::length(game.camera().target - target), 0.0, 1e-5);
+    CHECK_THAT(glm::length(game.playerCar().position() - position), WithinAbs(0.0, 1e-3));
+    CHECK_THAT(game.playerCar().speed(), WithinAbs(speed, 1e-3));
+    CHECK_THAT(game.timeOfDaySeconds(), WithinAbs(clock, 1e-3));
+    CHECK_THAT(game.animationTime(), WithinAbs(animation, 1e-6));
+    CHECK_THAT(glm::length(game.camera().position - eye), WithinAbs(0.0, 1e-5));
+    CHECK_THAT(glm::length(game.camera().target - target), WithinAbs(0.0, 1e-5));
     CHECK(!game.hudDrawn());
     CHECK(gameplayMix(game) == MixSnapshotId::Paused);
-    CHECK_NEAR(game.audioCategoryVolume(MixCategory::FocusCar), 0.0, 1e-6);
-    CHECK_NEAR(game.audioCategoryVolume(MixCategory::Tire), 0.0, 1e-6);
-    CHECK_NEAR(game.audioCategoryVolume(MixCategory::GameMusic), 0.25, 1e-6);
-    CHECK_NEAR(game.audioCategoryVolume(MixCategory::GameUI), 1.0, 1e-6);
-    CHECK_NEAR(game.playerEngineGain(), 0.0, 1e-6);
+    CHECK_THAT(game.audioCategoryVolume(MixCategory::FocusCar), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(game.audioCategoryVolume(MixCategory::Tire), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(game.audioCategoryVolume(MixCategory::GameMusic), WithinAbs(0.25, 1e-6));
+    CHECK_THAT(game.audioCategoryVolume(MixCategory::GameUI), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(game.playerEngineGain(), WithinAbs(0.0, 1e-6));
     CHECK(playedSince(game, sounds) == std::vector<std::string>{"Pause"});
 
     // B is the help bar's RESUME: the menu's back sound, then the pause
@@ -328,17 +328,15 @@ TEST(pauseMenuStopsTheGame)
     CHECK(game.hudDrawn());
     CHECK(game.animationTime() > animation);
     CHECK(gameplayMix(game) == MixSnapshotId::FreeRoam);
-    CHECK_NEAR(game.audioCategoryVolume(MixCategory::FocusCar), 0.35, 1e-4);
+    CHECK_THAT(game.audioCategoryVolume(MixCategory::FocusCar), WithinAbs(0.35, 1e-4));
     CHECK(game.playerEngineGain() > 0.0F);
 }
 
 // MAP in the pause menu goes to the map without unpausing (map_flow_pause),
 // and B on the map comes back to the pause screen (enterBack).
-TEST(pauseMenuMapKeepsTheGamePaused)
+TEST_CASE("pauseMenuMapKeepsTheGamePaused", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     using fh::audio::MixSnapshotId;
     Session session({});
     CHECK(session.waitForCar());
@@ -383,7 +381,7 @@ void checkPauseEntriesFit(const fh::Game& game)
         return;
     }
     const std::vector<fh::ui::PauseEntryExtent> extents = menu->entryExtents();
-    CHECK_EQ(extents.size(), menu->entries().size());
+    CHECK(extents.size() == menu->entries().size());
     for (std::size_t i = 0; i < extents.size() && i < menu->entries().size(); ++i) {
         if (extents[i].textRight > extents[i].strokeRight) {
             std::fprintf(stderr, "  %s: text reaches %.1f, its stroke %.1f\n", menu->entries()[i].text.c_str(),
@@ -396,11 +394,9 @@ void checkPauseEntriesFit(const fh::Game& game)
 // A player's pause menu at a desktop size showed MULTIPLAYER running off
 // its bar. The window sizes are the common desktop ones; the menu is laid
 // out in the scene's design units, so it must fit at every one.
-TEST(pauseMenuEntriesFitTheirBars)
+TEST_CASE("pauseMenuEntriesFitTheirBars", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     Session session({});
     CHECK(session.waitForCar());
     session.run(1.0F, {});
@@ -415,17 +411,15 @@ TEST(pauseMenuEntriesFitTheirBars)
     // The focused entry plays its own slide (FOCUSBELOW) with the pink bar.
     session.press(fh::Button::DpadDown);
     session.run(1.0F, {});
-    CHECK_EQ(session.game().pauseMenu()->focus(), 1);
+    CHECK(session.game().pauseMenu()->focus() == 1);
     checkPauseEntriesFit(session.game());
     session.capture("pause_multiplayer_2560x1440");
     window().setSize(640, 360);
 }
 
-TEST(mapReplacesTheWorld)
+TEST_CASE("mapReplacesTheWorld", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     Session session({});
     CHECK(session.waitForCar());
     session.run(0.5F, {});
@@ -459,11 +453,9 @@ TEST(mapReplacesTheWorld)
 // to their road type's secondary colour where the player has driven
 // (CMapCoverage's visit counts through CMapEntityWay's colour source), so
 // driving a stretch of road colours it.
-TEST(drivenRoadsColourTheMap)
+TEST_CASE("drivenRoadsColourTheMap", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     // On colorado's way 33, the b road "road_094", at its first node and
     // facing its second, 20 m to the south.
     fh::GameOptions options;
@@ -520,11 +512,9 @@ float expectedCursorWidth(const fh::ui::WorldMapTuning& tuning, float distance)
 // "The map cursor is too big." The game scales the cursor with the map
 // camera's distance every frame; drawn at its authored size it covered
 // about a tenth of the screen.
-TEST(mapCursorKeepsTheGameSize)
+TEST_CASE("mapCursorKeepsTheGameSize", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::Vfs vfs;
     vfs.mountDisc(gameDir());
     const fh::ui::WorldMapTuning tuning = fh::ui::WorldMapTuning::load(vfs);
@@ -537,11 +527,11 @@ TEST(mapCursorKeepsTheGameSize)
     if (map == nullptr) {
         return;
     }
-    CHECK_NEAR(map->cursorExtent().x, expectedCursorWidth(tuning, map->camera().distance()), 0.5);
+    CHECK_THAT(map->cursorExtent().x, WithinAbs(expectedCursorWidth(tuning, map->camera().distance()), 0.5));
     session.capture("map_cursor");
     // Zoomed in, the camera is nearer and the cursor grows.
     session.run(2.0F, {.zoom = 1.0F});
-    CHECK_NEAR(map->cursorExtent().x, expectedCursorWidth(tuning, map->camera().distance()), 0.5);
+    CHECK_THAT(map->cursorExtent().x, WithinAbs(expectedCursorWidth(tuning, map->camera().distance()), 0.5));
     session.capture("map_cursor_zoomed");
 }
 
@@ -549,11 +539,9 @@ TEST(mapCursorKeepsTheGameSize)
 // a marker gives the sat-nav the waypoint, which searches the roads from
 // the car's node to the node nearest the waypoint; the map draws that
 // route, and it stays while the car drives.
-TEST(setRouteShowsTheItinerary)
+TEST_CASE("setRouteShowsTheItinerary", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     // On colorado's way 33, the b road "road_094", facing along it.
     fh::GameOptions options;
     options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
@@ -563,7 +551,7 @@ TEST(setRouteShowsTheItinerary)
     session.run(0.5F, {});
     const fh::ui::Navigation* navigation = session.game().navigation();
     const fh::ui::WorldMap* map = session.game().worldMap();
-    CHECK(navigation != nullptr && map != nullptr);
+    CHECK((navigation != nullptr && map != nullptr));
     if (navigation == nullptr || map == nullptr) {
         return;
     }
@@ -596,7 +584,7 @@ TEST(setRouteShowsTheItinerary)
     // ...to the node nearest the waypoint.
     const std::optional<std::uint32_t> goal
         = navigation->locator().nearestOnGround(*map->waypoint(), fh::ui::NavFilter::NoShortcutOrNone);
-    CHECK(goal.has_value() && navigation->destination() == goal);
+    CHECK((goal.has_value() && navigation->destination() == goal));
     if (goal) {
         const glm::vec3 end = navigation->network().nodes[*goal].position;
         CHECK(glm::length(route.back() - glm::vec2(end.x, end.z)) < 1e-3F);
@@ -605,7 +593,7 @@ TEST(setRouteShowsTheItinerary)
     CHECK(session.game().currentMapState().route.size() == route.size());
     CHECK(map->routeReveal() < 1.0F);
     session.run(2.0F, {});
-    CHECK_NEAR(map->routeReveal(), 1.0, 1e-6);
+    CHECK_THAT(map->routeReveal(), WithinAbs(1.0, 1e-6));
     session.capture("route_map");
 
     // Driving on, the route stays and the car's place moves along it.
@@ -618,11 +606,9 @@ TEST(setRouteShowsTheItinerary)
 
 // A race drives under the Race mix (exterior_race before start_race in the
 // race flows) and goes back to FreeRoam when it is left.
-TEST(raceUsesTheRaceMix)
+TEST_CASE("raceUsesTheRaceMix", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.race = "FR02";
     Session session(options);
@@ -631,11 +617,9 @@ TEST(raceUsesTheRaceMix)
     CHECK(gameplayMix(session.game()) == fh::audio::MixSnapshotId::Race);
 }
 
-TEST(gentleLeftTurnFromStandstillDoesNotSpin)
+TEST_CASE("gentleLeftTurnFromStandstillDoesNotSpin", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     // A player on a keyboard pulls away at full throttle and eases left: the
     // car must turn, not spin, with the assists on (the default).
     fh::GameOptions options;
@@ -658,11 +642,9 @@ TEST(gentleLeftTurnFromStandstillDoesNotSpin)
     CHECK(bodySlip < 0.5F);
 }
 
-TEST(chaseCameraStaysBehindInATurn)
+TEST_CASE("chaseCameraStaysBehindInATurn", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.race = "FR02";
     Session session(options);
@@ -683,11 +665,9 @@ TEST(chaseCameraStaysBehindInATurn)
 
 // Free roam draws the game's HUD scene, and nothing of the plain overlay's
 // own HUD (speed panel, gear, rev bar) stands in for it.
-TEST(freeRoamDrawsTheGamesHud)
+TEST_CASE("freeRoamDrawsTheGamesHud", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     Session session({});
     CHECK(session.waitForCar());
     session.run(3.0F, {.throttle = 1.0F});
@@ -700,11 +680,9 @@ TEST(freeRoamDrawsTheGamesHud)
 // red driving line) in a system font. Everything on screen in a race comes
 // from the game's HUD scene and the game's own driving line (chevrons of
 // raceline.xds); the plain overlay is left to the debug view.
-TEST(raceDrawsOnlyTheGamesHud)
+TEST_CASE("raceDrawsOnlyTheGamesHud", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.race = "FR02";
     Session session(options);
@@ -743,11 +721,9 @@ bool hasMarker(const fh::ui::WorldMapState& state, std::string_view value, std::
 // start shows the set dressing the game puts out for its zone (the world's
 // FR04 props), and inside the zone's 25 m the HUD's activation prompt names
 // the event with the zone's call to action, ENTER NOW.
-TEST(eventStartShowsTheGamesZone)
+TEST_CASE("eventStartShowsTheGamesZone", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.spawnObject = "FR04";
     Session session(options);
@@ -759,7 +735,7 @@ TEST(eventStartShowsTheGamesZone)
     CHECK(game.activityPropChunksDrawn() > 0);
     const fh::ui::HudState hud = game.currentHudState();
     CHECK(!hud.prompt.empty());
-    CHECK_EQ(hud.promptDetail, std::string("ENTER NOW"));
+    CHECK(hud.promptDetail == std::string("ENTER NOW"));
     CHECK(hud.promptTitle.empty());
     // X is the zone's activation.
     session.press(fh::Button::X);
@@ -790,11 +766,9 @@ std::pair<bool, std::size_t> zoneFlare(const fh::Game& game, std::string_view ob
 // An event start burns the flare the game places by its zone
 // (ParticleEmitters.xml's FR04_flare, a _Composite_Flare_6) while the car is
 // within 500 m; a start farther away does not.
-TEST(eventStartBurnsItsFlare)
+TEST_CASE("eventStartBurnsItsFlare", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     // 60 m north of the FR04 zone, outside its 25 m prompt, facing it.
     options.spawnAt = glm::vec2(-1958.7F, 52.7F);
@@ -812,11 +786,9 @@ TEST(eventStartBurnsItsFlare)
 }
 
 // In a race the free-roam zones are disabled, and their flares are out.
-TEST(raceNoZoneFlareBurns)
+TEST_CASE("raceNoZoneFlareBurns", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.race = "FR02";
     Session session(options);
@@ -833,11 +805,9 @@ TEST(raceNoZoneFlareBurns)
 // Driving through a speed trap (speed_camera_01) above its 30 mph measures
 // the car, discovers the trap for the map and hands the HUD's speed trap
 // panel the reading.
-TEST(speedTrapMeasuresAPass)
+TEST_CASE("speedTrapMeasuresAPass", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     // The trap's posts stand either side of a road running north.
     const glm::vec2 gate{2274.2F, 319.6F};
     const glm::vec2 north = glm::normalize(glm::vec2(0.1167F, 0.9932F));
@@ -861,19 +831,19 @@ TEST(speedTrapMeasuresAPass)
     // "Drive past a speed camera" made no sound: the pass plays the
     // camera's shutter and applies the SpeedCam mix.
     const fh::GameplaySounds* sounds = game.gameplaySounds();
-    CHECK(sounds && sounds->speedTrapFlashes() == 1);
-    CHECK(sounds && sounds->speedTrapFlashPlaying());
+    CHECK((sounds && sounds->speedTrapFlashes() == 1));
+    CHECK((sounds && sounds->speedTrapFlashPlaying()));
     const fh::audio::SnapshotMixer* mix = game.mixSnapshots();
-    CHECK(mix && mix->current(fh::audio::MixGroup::SpeedZones) == fh::audio::MixSnapshotId::SpeedCam);
+    CHECK((mix && mix->current(fh::audio::MixGroup::SpeedZones) == fh::audio::MixSnapshotId::SpeedCam));
     session.run(0.3F, {.throttle = 1.0F});
     session.capture("speed_trap_speed");
     session.run(2.2F, {});
     session.capture("speed_trap_best");
-    CHECK(trap && trap->discovered);
-    CHECK(trap && trap->best.value_or(0.0F) >= 30.0F * 0.44704F);
+    CHECK((trap && trap->discovered));
+    CHECK((trap && trap->best.value_or(0.0F) >= 30.0F * 0.44704F));
     const fh::ui::HudState hud = game.currentHudState();
     CHECK(hud.speedCamera.has_value());
-    CHECK(hud.speedCamera && !hud.speedCamera->zone);
+    CHECK((hud.speedCamera && !hud.speedCamera->zone));
     const auto markers = hud.mapMarkers;
     CHECK(std::any_of(markers.begin(), markers.end(),
         [](const fh::ui::HudMapMarker& m) { return m.value == "speed_camera_discovered"; }));
@@ -888,11 +858,9 @@ TEST(speedTrapMeasuresAPass)
 // personal best, which makes the game save its profile ("Activity Speed
 // Camera: New PB", 0x8296f76c), roads driven included; the next game loads
 // it back.
-TEST(progressIsKeptAcrossRestarts)
+TEST_CASE("progressIsKeptAcrossRestarts", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     const glm::vec2 gate{2274.2F, 319.6F};
     const glm::vec2 north = glm::normalize(glm::vec2(0.1167F, 0.9932F));
     fh::GameOptions options;
@@ -914,7 +882,7 @@ TEST(progressIsKeptAcrossRestarts)
             session.run(kStep, {.throttle = 1.0F});
         }
         CHECK(trap->discovered);
-        CHECK_EQ(session.game().profileSaves(), std::size_t{1});
+        CHECK(session.game().profileSaves() == std::size_t{1});
         best = trap->best.value_or(0.0F);
         CHECK(best >= 30.0F * 0.44704F);
         // The save came at the end of that frame, with the roads driven up to
@@ -933,8 +901,8 @@ TEST(progressIsKeptAcrossRestarts)
     fh::Game& game = session.game();
     const fh::SpeedTrap* trap = game.speedTraps() ? game.speedTraps()->find("speed_camera_01") : nullptr;
     CHECK(trap != nullptr);
-    CHECK(trap && trap->discovered);
-    CHECK(trap && trap->best.value_or(0.0F) == best);
+    CHECK((trap && trap->discovered));
+    CHECK((trap && trap->best.value_or(0.0F) == best));
     CHECK(hasMarker(game.currentMapState(), "speed_camera_discovered"));
     const fh::ui::Navigation* navigation = game.navigation();
     CHECK(navigation != nullptr);
@@ -944,18 +912,16 @@ TEST(progressIsKeptAcrossRestarts)
         for (std::size_t node = 0; node < driven.size() && node < now.size(); ++node) {
             kept += driven[node] && now[node] ? 1 : 0;
         }
-        CHECK_EQ(kept, static_cast<std::size_t>(std::count(driven.begin(), driven.end(), true)));
+        CHECK(kept == static_cast<std::size_t>(std::count(driven.begin(), driven.end(), true)));
     }
 }
 
 // The player chose that leaving the game keeps the roads driven since the
 // last save, which the console game has no moment for: QUIT in the pause
 // menu saves, and so does ending the game any other way.
-TEST(quittingKeepsTheRoadsDriven)
+TEST_CASE("quittingKeepsTheRoadsDriven", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     // Colorado's road_094, as in drivenRoadsColourTheMap, far from any
     // speed trap, outpost or discount sign.
     fh::GameOptions options;
@@ -983,7 +949,7 @@ TEST(quittingKeepsTheRoadsDriven)
         CHECK(session.waitForCar());
         session.run(4.0F, {.throttle = 0.7F});
         session.run(3.0F, {.brake = 1.0F});
-        CHECK_EQ(session.game().profileSaves(), std::size_t{0});
+        CHECK(session.game().profileSaves() == std::size_t{0});
         beforeQuit = visited(session);
         CHECK(drivenCount(beforeQuit) > 1);
         session.press(fh::Button::Start);
@@ -1002,7 +968,7 @@ TEST(quittingKeepsTheRoadsDriven)
         CHECK(menu->confirming());
         // EXIT SINGLE PLAYER, confirmed: the game quits, saving once.
         CHECK(!session.pressMayQuit(fh::Button::A));
-        CHECK_EQ(session.game().profileSaves(), std::size_t{1});
+        CHECK(session.game().profileSaves() == std::size_t{1});
     }
     std::vector<bool> beforeClose;
     {
@@ -1012,7 +978,7 @@ TEST(quittingKeepsTheRoadsDriven)
         // Then further down the road, and the game simply ends (the window
         // closed).
         session.run(12.0F, {.throttle = 0.7F});
-        CHECK_EQ(session.game().profileSaves(), std::size_t{0});
+        CHECK(session.game().profileSaves() == std::size_t{0});
         beforeClose = visited(session);
         CHECK(drivenCount(beforeClose) > drivenCount(beforeQuit));
     }
@@ -1024,11 +990,9 @@ TEST(quittingKeepsTheRoadsDriven)
 // A Horizon outpost (GasStation_01, the GASSTATION_001 zone) is discovered
 // within its discovery zone, then shows on the map, and its zone offers the
 // outpost with the game's prompt: HORIZON OUTPOST, its name, ENTER NOW.
-TEST(outpostIsDiscoveredAndOffersItsZone)
+TEST_CASE("outpostIsDiscoveredAndOffersItsZone", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.spawnObject = "GASSTATION_001";
     Session session(options);
@@ -1040,12 +1004,12 @@ TEST(outpostIsDiscoveredAndOffersItsZone)
     if (outposts == nullptr) {
         return;
     }
-    CHECK_EQ(outposts->discoveredCount(), std::size_t{1});
+    CHECK(outposts->discoveredCount() == std::size_t{1});
     session.capture("outpost_prompt");
     const fh::ui::HudState hud = game.currentHudState();
-    CHECK_EQ(hud.promptTitle, std::string("HORIZON OUTPOST"));
-    CHECK_EQ(hud.prompt, std::string("SOUTH BEAUMONT"));
-    CHECK_EQ(hud.promptDetail, std::string("ENTER NOW"));
+    CHECK(hud.promptTitle == std::string("HORIZON OUTPOST"));
+    CHECK(hud.prompt == std::string("SOUTH BEAUMONT"));
+    CHECK(hud.promptDetail == std::string("ENTER NOW"));
     CHECK(hasMarker(game.currentMapState(), "gas_station", "SOUTH BEAUMONT"));
     session.press(fh::Button::Back);
     session.run(1.0F, {});
@@ -1059,11 +1023,9 @@ TEST(outpostIsDiscoveredAndOffersItsZone)
 // its loading screen until streaming around the camera and every car are
 // loaded (CWaitForStreaming, CWaitForAllCarsToLoad in prepare_free_roam),
 // with the radio and the first traffic started behind it.
-TEST(loadingScreenStaysUntilTheStartIsReady)
+TEST_CASE("loadingScreenStaysUntilTheStartIsReady", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     Session session({});
     fh::Game& game = session.game();
     // Up from the first frame, before any has run.
@@ -1082,12 +1044,12 @@ TEST(loadingScreenStaysUntilTheStartIsReady)
     CHECK(compilingShown);
     const fh::Game::LoadingStatus status = game.loadingStatus();
     CHECK(!status.screenShown);
-    CHECK_EQ(status.pendingJobs, std::size_t{0});
+    CHECK(status.pendingJobs == std::size_t{0});
     CHECK(status.nearbyWorldReady);
-    CHECK_EQ(status.programsPending, std::size_t{0});
+    CHECK(status.programsPending == std::size_t{0});
     CHECK(status.playerCarReady);
     CHECK(status.radioReady);
-    CHECK_EQ(status.trafficPending, std::size_t{0});
+    CHECK(status.trafficPending == std::size_t{0});
     session.capture("loading_done");
     // Then the fade from black, and only after it the player drives.
     CHECK(status.fading);
@@ -1113,11 +1075,9 @@ double worldPassMs(Session& session)
 // Free roam draws its own forests: the procedural tree sets behind an event
 // block for route 0 (models_proc_clrd_trees_mountains_area4a[freeroam]_*
 // stand around here), which were never loaded.
-TEST(freeRoamDrawsItsForests)
+TEST_CASE("freeRoamDrawsItsForests", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.spawnAt = glm::vec2(4330.0F, -250.0F);
     options.spawnHeading = 0.0F;
@@ -1130,7 +1090,7 @@ TEST(freeRoamDrawsItsForests)
     if (world == nullptr) {
         return;
     }
-    CHECK_EQ(world->eventRoute(), 0);
+    CHECK(world->eventRoute() == 0);
     CHECK(world->eventChunksIncluded() > 0);
     std::fprintf(stderr, "forest: world pass GPU %.3f ms\n", worldPassMs(session));
     session.capture("forest_area4a");
@@ -1138,11 +1098,9 @@ TEST(freeRoamDrawsItsForests)
 
 // A race puts out its route's props (barriers, chevrons, gantries) and
 // leaving it takes them away again, back to free roam's.
-TEST(raceShowsItsRoutePropsUntilItEnds)
+TEST_CASE("raceShowsItsRoutePropsUntilItEnds", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.race = "FR02";
     Session session(options);
@@ -1150,13 +1108,13 @@ TEST(raceShowsItsRoutePropsUntilItEnds)
     session.run(2.0F, {});
     fh::Game& game = session.game();
     const fh::render::WorldRenderer* world = game.worldRenderer();
-    CHECK(world != nullptr && game.race() != nullptr);
+    CHECK((world != nullptr && game.race() != nullptr));
     if (world == nullptr || game.race() == nullptr) {
         return;
     }
     // FR02 runs on route 96 (FESTIVAL_PLNS_006).
-    CHECK_EQ(world->eventRoute(), game.race()->event().routeId);
-    CHECK_EQ(world->eventRoute(), 96);
+    CHECK(world->eventRoute() == game.race()->event().routeId);
+    CHECK(world->eventRoute() == 96);
     const std::size_t raceChunks = world->eventChunksIncluded();
     CHECK(raceChunks > 0);
     std::fprintf(stderr, "race grid: %zu event chunks, world pass GPU %.3f ms\n", raceChunks, worldPassMs(session));
@@ -1179,7 +1137,7 @@ TEST(raceShowsItsRoutePropsUntilItEnds)
     session.press(fh::Button::A);
     session.run(2.0F, {});
     CHECK(game.race() == nullptr);
-    CHECK_EQ(world->eventRoute(), 0);
+    CHECK(world->eventRoute() == 0);
     CHECK(world->eventChunksIncluded() != raceChunks);
     session.capture("race_props_after");
 }
@@ -1187,11 +1145,9 @@ TEST(raceShowsItsRoutePropsUntilItEnds)
 // Flags, water, waterfalls, flipbook screens and swaying trees animate on
 // TimeGain, the presentation's clock: it runs with the game and stops while
 // the game is paused.
-TEST(trackAnimationClockStopsWhilePaused)
+TEST_CASE("trackAnimationClockStopsWhilePaused", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     Session session({});
     CHECK(session.waitForCar());
     session.run(2.0F, {});
@@ -1203,32 +1159,30 @@ TEST(trackAnimationClockStopsWhilePaused)
     }
     const float running = world->timeGain().x;
     CHECK(running > 1.0F);
-    CHECK_NEAR(running, fh::render::TrackFrameConstants::timeGain(game.animationTime()).x, 0.05);
-    CHECK_NEAR(world->timeGain().w, 1.0, 1e-6);
+    CHECK_THAT(running, WithinAbs(fh::render::TrackFrameConstants::timeGain(game.animationTime()).x, 0.05));
+    CHECK_THAT(world->timeGain().w, WithinAbs(1.0, 1e-6));
 
     session.press(fh::Button::Start);
     CHECK(game.pauseShown());
     session.run(0.1F, {});
     const float paused = world->timeGain().x;
     session.run(2.0F, {});
-    CHECK_NEAR(world->timeGain().x, paused, 1e-6);
+    CHECK_THAT(world->timeGain().x, WithinAbs(paused, 1e-6));
 
     session.press(fh::Button::B);
     CHECK(!game.pauseShown());
     session.run(1.0F, {});
     CHECK(world->timeGain().x > paused + 0.9F);
-    CHECK_NEAR(fh::render::TrackFrameConstants::timeGain(28800.0F + 5.0F).x, 5.0, 0.01);
+    CHECK_THAT(fh::render::TrackFrameConstants::timeGain(28800.0F + 5.0F).x, WithinAbs(5.0, 0.01));
 }
 
 // "The world still feels horrible": the track effects read scene
 // constants that were never set. Night lights the emissive maps (signs,
 // windows) and day leaves them off, as SwitchOnLights says, and the
 // festival's reflective materials sample the track's own cube maps.
-TEST(trackShadingSwitchesLightsAndReflects)
+TEST_CASE("trackShadingSwitchesLightsAndReflects", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     struct Shot {
         const char* name;
         float seconds;
@@ -1250,11 +1204,11 @@ TEST(trackShadingSwitchesLightsAndReflects)
             return;
         }
         const glm::vec4 emissive = world->emissiveSwitchOn();
-        CHECK_EQ(emissive.z, 1.0F);
+        CHECK(emissive.z == 1.0F);
         if (shot.lit) {
             CHECK(emissive.x >= fh::render::TrackFrameConstants::kSwitchOnLightsFloor);
         } else {
-            CHECK_EQ(emissive.x, -1.0F);
+            CHECK(emissive.x == -1.0F);
         }
         CHECK(world->cubeMapsLoaded() > 0);
         std::fprintf(stderr, "%s: world pass GPU %.3f ms\n", shot.name, worldPassMs(session));
@@ -1266,11 +1220,9 @@ TEST(trackShadingSwitchesLightsAndReflects)
 // events." With the cursor on no marker, A hands the sat-nav the point of
 // the roads nearest the cursor (the map overlay's update, 0x828b6998), and
 // the route goes to that point's node; A again on it clears the route.
-TEST(setRouteOnARoadAwayFromMarkers)
+TEST_CASE("setRouteOnARoadAwayFromMarkers", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
     options.spawnHeading = 3.14159265F;
@@ -1279,7 +1231,7 @@ TEST(setRouteOnARoadAwayFromMarkers)
     session.run(0.5F, {});
     const fh::ui::Navigation* navigation = session.game().navigation();
     const fh::ui::WorldMap* map = session.game().worldMap();
-    CHECK(navigation != nullptr && map != nullptr);
+    CHECK((navigation != nullptr && map != nullptr));
     if (navigation == nullptr || map == nullptr) {
         return;
     }
@@ -1343,7 +1295,7 @@ TEST(setRouteOnARoadAwayFromMarkers)
     CHECK(navigation->destination().has_value());
     const std::optional<std::uint32_t> goal
         = navigation->locator().nearestOnGround(*target, fh::ui::NavFilter::NoShortcutOrNone);
-    CHECK(goal.has_value() && navigation->destination() == goal);
+    CHECK((goal.has_value() && navigation->destination() == goal));
     CHECK(map->targetNode() == goal);
     const std::vector<glm::vec2> route = navigation->route();
     CHECK(route.size() > 2);
@@ -1351,7 +1303,7 @@ TEST(setRouteOnARoadAwayFromMarkers)
         const glm::vec3 end = nav.nodes[*goal].position;
         CHECK(glm::length(route.back() - glm::vec2(end.x, end.z)) < 1e-3F);
     }
-    CHECK_EQ(session.game().currentMapState().route.size(), route.size());
+    CHECK(session.game().currentMapState().route.size() == route.size());
     session.run(2.0F, {});
     session.capture("route_road_map");
 
@@ -1374,11 +1326,9 @@ bool drawsText(const fh::ui::Presentation& scene, std::string_view text)
 // "The map doesn't have the profile elements such as wristband, credits."
 // h_map's PLAYER_BAR shows the profile's Main/Credits, the points from
 // Main/XP to the band after Main/WristbandLevel, and the car.
-TEST(mapShowsTheProfilesPlayerBar)
+TEST_CASE("mapShowsTheProfilesPlayerBar", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.profileDir = freshProfileDir("playerbar");
     {
@@ -1396,7 +1346,7 @@ TEST(mapShowsTheProfilesPlayerBar)
     session.press(fh::Button::Back);
     session.run(1.0F, {});
     const fh::ui::WorldMap* map = session.game().worldMap();
-    CHECK(map != nullptr && session.game().mapShown());
+    CHECK((map != nullptr && session.game().mapShown()));
     if (map == nullptr) {
         return;
     }
@@ -1404,11 +1354,11 @@ TEST(mapShowsTheProfilesPlayerBar)
     const fh::ui::PlayerBar& bar = map->playerBar();
     const auto textOf = [&](int element) { return element >= 0 ? scene.text(element) : std::string(); };
     CHECK(bar.bound());
-    CHECK_EQ(textOf(bar.creditsText()), std::string("1,234,567 Cr"));
+    CHECK(textOf(bar.creditsText()) == std::string("1,234,567 Cr"));
     // The band after the green one (Id 1) needs 750 XP.
-    CHECK_EQ(textOf(bar.wristbandText()), std::string("250 PTS"));
-    CHECK_EQ(textOf(bar.nextLevelText()), std::string("Nxt Lvl"));
-    CHECK_EQ(textOf(bar.carText()), std::string("Alfa Romeo 8C Competizione"));
+    CHECK(textOf(bar.wristbandText()) == std::string("250 PTS"));
+    CHECK(textOf(bar.nextLevelText()) == std::string("Nxt Lvl"));
+    CHECK(textOf(bar.carText()) == std::string("Alfa Romeo 8C Competizione"));
     CHECK(drawsText(scene, "1,234,567 Cr"));
     CHECK(drawsText(scene, "250 PTS"));
     session.capture("map_player_bar");
@@ -1418,11 +1368,9 @@ TEST(mapShowsTheProfilesPlayerBar)
 // shown." The HUD's sat-nav readout shows the planner's distance left
 // (0x8266cf20 reads its +624) in kilometres with one decimal, and it goes
 // down as the car drives along the route.
-TEST(satNavShowsTheDistanceLeft)
+TEST_CASE("satNavShowsTheDistanceLeft", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
     options.spawnHeading = 3.14159265F;
@@ -1433,7 +1381,7 @@ TEST(satNavShowsTheDistanceLeft)
     const fh::ui::Navigation* navigation = session.game().navigation();
     const fh::ui::WorldMap* map = session.game().worldMap();
     const fh::ui::Hud* hud = session.game().hud();
-    CHECK(navigation != nullptr && map != nullptr && hud != nullptr);
+    CHECK((navigation != nullptr && map != nullptr && hud != nullptr));
     if (navigation == nullptr || map == nullptr || hud == nullptr) {
         return;
     }
@@ -1476,8 +1424,8 @@ TEST(satNavShowsTheDistanceLeft)
     if (!first) {
         return;
     }
-    CHECK_NEAR(*first, left(), 1.0);
-    CHECK_EQ(hud->satNavDistanceText(), shown());
+    CHECK_THAT(*first, WithinAbs(left(), 1.0));
+    CHECK(hud->satNavDistanceText() == shown());
     session.capture("satnav_distance");
 
     // Driving on along the route until the car's place moves along it,
@@ -1492,9 +1440,9 @@ TEST(satNavShowsTheDistanceLeft)
     CHECK(later.has_value());
     if (later) {
         CHECK(*later < *first - 20.0F);
-        CHECK_NEAR(*later, left(), 1.0);
+        CHECK_THAT(*later, WithinAbs(left(), 1.0));
     }
-    CHECK_EQ(hud->satNavDistanceText(), shown());
+    CHECK(hud->satNavDistanceText() == shown());
     session.capture("satnav_distance_driven");
 }
 
@@ -1571,11 +1519,9 @@ ShadowReading readShadows(Session& session)
 // shadows darken the ground under the car and the trees and props around
 // it (ShadowIntensity is 1 on Colorado from 07:50 to 19:09), and by night
 // the mask stays white.
-TEST(sunShadowsFallByDayOnly)
+TEST_CASE("sunShadowsFallByDayOnly", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     struct Shot {
         const char* name;
         float hours;
@@ -1619,11 +1565,9 @@ TEST(sunShadowsFallByDayOnly)
 // Redrock post-processing zone (the centroid of its first triangle in
 // PostProcessingZones_safe.xml), each after 5 s standing still so the
 // exposure has settled.
-TEST(postProcessingAtTimesAndInAZone)
+TEST_CASE("postProcessingAtTimesAndInAZone", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     struct Shot {
         const char* name;
         float seconds;
@@ -1661,22 +1605,20 @@ TEST(postProcessingAtTimesAndInAZone)
         }
         std::fprintf(stderr, "%s: post-processing GPU %.3f ms\n", shot.name, tonemapSeconds * 1000.0 / frames);
         session.capture(shot.name);
-        CHECK_EQ(std::string(session.game().postProcessingZone()), std::string(shot.zone));
+        CHECK(std::string(session.game().postProcessingZone()) == std::string(shot.zone));
         const fh::PostSettings* settings = session.game().postSettings();
         CHECK(settings != nullptr);
         if (settings != nullptr) {
-            CHECK(settings->filmic.white >= shot.whiteMin - 1e-4F && settings->filmic.white <= shot.whiteMax + 1e-4F);
+            CHECK((settings->filmic.white >= shot.whiteMin - 1e-4F && settings->filmic.white <= shot.whiteMax + 1e-4F));
         }
     }
 }
 
 // The sky had no clouds: CRealtimeSky draws its far and close cloud layers
 // over the dome.
-TEST(skyDrawsItsClouds)
+TEST_CASE("skyDrawsItsClouds", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.spawnAt = glm::vec2(4330.0F, -250.0F);
     options.spawnHeading = 0.0F;
@@ -1694,7 +1636,7 @@ TEST(skyDrawsItsClouds)
 /// the text before it.
 void checkHelpBarFits(const std::vector<fh::ui::HelpButtonExtent>& extents, std::size_t shown)
 {
-    CHECK_EQ(extents.size(), shown);
+    CHECK(extents.size() == shown);
     for (std::size_t i = 0; i < extents.size(); ++i) {
         const fh::ui::HelpButtonExtent& button = extents[i];
         const float margin = button.pillRight - button.textRight;
@@ -1722,11 +1664,9 @@ void checkHelpBarFits(const std::vector<fh::ui::HelpButtonExtent>& extents, std:
 // "BUTTON TEXT" whatever the text, and the buttons their authored slots,
 // because nothing ran the stackers of the help buttons nor the bar's own
 // layout. Checked on the map and the pause menu at the desktop sizes.
-TEST(helpBarsFitTheirTexts)
+TEST_CASE("helpBarsFitTheirTexts", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     Session session({});
     CHECK(session.waitForCar());
     session.run(0.5F, {});
@@ -1735,7 +1675,7 @@ TEST(helpBarsFitTheirTexts)
         window().setSize(width, height);
         session.run(1.0F, {});
         const fh::ui::WorldMap* map = session.game().worldMap();
-        CHECK(map != nullptr && session.game().mapShown());
+        CHECK((map != nullptr && session.game().mapShown()));
         if (map != nullptr) {
             checkHelpBarFits(map->helpExtents(), 4);
         }
@@ -1762,11 +1702,9 @@ TEST(helpBarsFitTheirTexts)
 // so its title and name are the game's; the icon was not. An outpost's
 // discovery sets its zone's prompt icon to 33 (0x82972dcc), which the
 // prompt shows as SET_EVENTICON_PRHUB (0x8289acf8).
-TEST(mediaCenterOutpostPromptShowsThePrHubIcon)
+TEST_CASE("mediaCenterOutpostPromptShowsThePrHubIcon", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.spawnObject = "GASSTATION_005";
     Session session(options);
@@ -1780,23 +1718,20 @@ TEST(mediaCenterOutpostPromptShowsThePrHubIcon)
     }
     session.capture("outpost_media_center_prompt");
     const fh::ui::HudState state = game.currentHudState();
-    CHECK_EQ(state.promptTitle, std::string("HORIZON OUTPOST"));
-    CHECK_EQ(state.prompt, std::string("MEDIA CENTER"));
-    CHECK_EQ(state.promptDetail, std::string("ENTER NOW"));
-    CHECK_EQ(state.promptIcon, std::string("PRHUB"));
-    CHECK_EQ(hud->promptIconSlide(), std::string("PRHUB"));
+    CHECK(state.promptTitle == std::string("HORIZON OUTPOST"));
+    CHECK(state.prompt == std::string("MEDIA CENTER"));
+    CHECK(state.promptDetail == std::string("ENTER NOW"));
+    CHECK(state.promptIcon == std::string("PRHUB"));
+    CHECK(hud->promptIconSlide() == std::string("PRHUB"));
 }
 
 // The prompt control sets the icon from every status it shows (0x828a25f0
 // passes the status's icon to 0x8289acf8), and a status without one shows
 // SET_EVENTICON_DEFAULT. A prompt without an icon after an outpost's must
 // not keep the outpost's.
-TEST(promptWithoutAnIconShowsTheDefaultIcon)
+TEST_CASE("promptWithoutAnIconShowsTheDefaultIcon", "[scenarios]")
 {
     const char* dir = gameDir();
-    if (dir == nullptr) {
-        return;
-    }
     // The session provides the OpenGL context the HUD draws with.
     Session session({});
     CHECK(session.waitForCar());
@@ -1810,14 +1745,14 @@ TEST(promptWithoutAnIconShowsTheDefaultIcon)
     state.promptDetail = "ENTER NOW";
     state.promptIcon = "PRHUB";
     hud.draw(state, 1280, 720);
-    CHECK_EQ(hud.promptIconSlide(), std::string("PRHUB"));
+    CHECK(hud.promptIconSlide() == std::string("PRHUB"));
     state.prompt.clear();
     hud.draw(state, 1280, 720);
     state.prompt = "COLORADO SPRINT";
     state.promptTitle.clear();
     state.promptIcon.clear();
     hud.draw(state, 1280, 720);
-    CHECK_EQ(hud.promptIconSlide(), std::string("DEFAULT"));
+    CHECK(hud.promptIconSlide() == std::string("DEFAULT"));
 }
 
 // Chrome, glass and paint reflected nothing: the car effect's
@@ -1827,11 +1762,9 @@ TEST(promptWithoutAnIconShowsTheDefaultIcon)
 // reflectionScaler to 1 for every car draw. Captured where
 // sunShadowsFallByDayOnly captures, at noon and in the low evening sun, so
 // the two sets of pictures compare.
-TEST(carsReflectTheEnvironmentCube)
+TEST_CASE("carsReflectTheEnvironmentCube", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     struct Shot {
         const char* name;
         float hours;
@@ -1852,7 +1785,7 @@ TEST(carsReflectTheEnvironmentCube)
         if (cube == nullptr || car == nullptr) {
             continue;
         }
-        CHECK_EQ(cube->facesDrawn(), 6);
+        CHECK(cube->facesDrawn() == 6);
         CHECK(cube->schedule().complete());
         CHECK(cube->mipBuilds() > 0);
         CHECK(car->boundTexture("envSampler") == cube->texture());
@@ -1947,7 +1880,7 @@ void checkAnimatedObject(const glm::vec3& object, const glm::vec2& from, float d
     session.capture(name + "_b");
     const auto second = animatedPose(game, object);
     CHECK(second.has_value());
-    CHECK(second && second->second != first->second);
+    CHECK((second && second->second != first->second));
     const fh::animated::AnimatedObjects& objects = *game.animatedObjects();
     const float played = objects.clipTime(first->first);
 
@@ -1956,16 +1889,16 @@ void checkAnimatedObject(const glm::vec3& object, const glm::vec2& from, float d
     const auto paused = animatedPose(game, object);
     const float pausedAt = objects.clipTime(first->first);
     session.run(1.0F, {});
-    CHECK_NEAR(objects.clipTime(first->first), pausedAt, 1e-6);
+    CHECK_THAT(objects.clipTime(first->first), WithinAbs(pausedAt, 1e-6));
     const auto still = animatedPose(game, object);
-    CHECK(paused && still && paused->second == still->second);
+    CHECK((paused && still && paused->second == still->second));
 
     session.press(fh::Button::B);
     CHECK(!game.pauseShown());
     session.run(1.0F, {});
     CHECK(objects.clipTime(first->first) > played + 0.9F);
     const auto after = animatedPose(game, object);
-    CHECK(after && still && after->second != still->second);
+    CHECK((after && still && after->second != still->second));
 }
 
 // The wind turbines and fairground rides of Colorado play their Granny
@@ -1973,20 +1906,16 @@ void checkAnimatedObject(const glm::vec3& object, const glm::vec2& from, float d
 // wind turbine's rotor turns (a rigid part), and the ferris wheel turns (a
 // skinned model), both stopping while paused. The windmills are not drawn:
 // the textures their sets name (11101, 11170) are not on the disc.
-TEST(windTurbineTurnsAndStopsWhilePaused)
+TEST_CASE("windTurbineTurnsAndStopsWhilePaused", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     // The first wind turbine of the row placed by set __R00G00211.
     checkAnimatedObject({-2240.8F, 17.0F, -1876.3F}, {0.0F, 1.0F}, 400.0F, "animated_turbine");
 }
 
-TEST(ferrisWheelTurnsAndStopsWhilePaused)
+TEST_CASE("ferrisWheelTurnsAndStopsWhilePaused", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     // The festival's ferris wheel (set __R00G00076), seen across its Z axis
     // (0.990, 0, -0.139), about which it turns.
     checkAnimatedObject({-1084.47F, -1.51F, -614.58F}, {-0.990F, 0.139F}, 150.0F, "animated_ferris");
@@ -1995,11 +1924,9 @@ TEST(ferrisWheelTurnsAndStopsWhilePaused)
 // Free roam starts at the festival, among its crowds: the people near the
 // camera are drawn as models, the rest as sprites, and their clips move on
 // with the game's clock and stop while it is paused.
-TEST(festivalCrowdIsDrawnAndAnimated)
+TEST_CASE("festivalCrowdIsDrawnAndAnimated", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     Session session({});
     CHECK(session.waitForCar());
     session.run(1.0F, {});
@@ -2017,7 +1944,7 @@ TEST(festivalCrowdIsDrawnAndAnimated)
     CHECK(stats.modelTotal() > 0);
     // The level bands cap the finer levels (5 and 10 people) and the queue
     // holds 500.
-    CHECK(stats.models[0] <= 5 && stats.models[1] <= 10);
+    CHECK((stats.models[0] <= 5 && stats.models[1] <= 10));
     CHECK(stats.modelTotal() <= 500);
     CHECK(stats.spriteInstances > 1000);
     session.capture("crowd_festival_near");
@@ -2026,13 +1953,13 @@ TEST(festivalCrowdIsDrawnAndAnimated)
     // take one where the second's ends fall.
     std::uint64_t before = crowd->ticksApplied();
     session.run(1.0F, {});
-    CHECK(crowd->ticksApplied() - before >= 29 && crowd->ticksApplied() - before <= 31);
+    CHECK((crowd->ticksApplied() - before >= 29 && crowd->ticksApplied() - before <= 31));
     session.press(fh::Button::Start);
     CHECK(game.pauseShown());
     session.run(0.1F, {});
     before = crowd->ticksApplied();
     session.run(1.0F, {});
-    CHECK_EQ(crowd->ticksApplied(), before);
+    CHECK(crowd->ticksApplied() == before);
     session.press(fh::Button::B);
     session.run(1.0F, {});
     CHECK(crowd->ticksApplied() > before + 25);
@@ -2040,11 +1967,9 @@ TEST(festivalCrowdIsDrawnAndAnimated)
 
 // From 300 m behind free roam's start, looking the same way, the
 // festival's crowd shows as sprites.
-TEST(festivalCrowdFromAfarIsSprites)
+TEST_CASE("festivalCrowdFromAfarIsSprites", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     // Free roam starts at (-836.6, -250.6) heading -63 degrees.
     const float heading = -63.0F * std::numbers::pi_v<float> / 180.0F;
     fh::GameOptions options;
@@ -2067,11 +1992,9 @@ TEST(festivalCrowdFromAfarIsSprites)
 
 // A race brings out its own crowds: FR04's grid is lined with the sets
 // tagged FR04 or listing its route, 108.
-TEST(raceCrowdShowsAtTheStart)
+TEST_CASE("raceCrowdShowsAtTheStart", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.race = "FR04";
     Session session(options);
@@ -2079,14 +2002,14 @@ TEST(raceCrowdShowsAtTheStart)
     session.run(1.0F, {});
     fh::Game& game = session.game();
     const fh::render::CrowdRenderer* crowd = game.crowdRenderer();
-    CHECK(crowd != nullptr && game.race() != nullptr);
+    CHECK((crowd != nullptr && game.race() != nullptr));
     if (crowd == nullptr || game.race() == nullptr) {
         return;
     }
     const fh::render::CrowdRenderer::Stats& stats = crowd->stats();
     std::fprintf(stderr, "FR04 start: %zu event sets in view of %zu, %zu models, %zu sprites\n", stats.visibleEventSets,
         stats.visibleSets, stats.modelTotal(), stats.spriteInstances);
-    CHECK_EQ(game.race()->event().routeId, 108);
+    CHECK(game.race()->event().routeId == 108);
     CHECK(stats.visibleEventSets > 0);
     CHECK(stats.modelTotal() > 0);
     session.capture("crowd_race_start_near");
@@ -2230,11 +2153,9 @@ constexpr float kStreamingBandSlack = 25.0F;
 // "I see models spawning from nowhere in the map": driving free roam along
 // the roads, every chunk has to be on screen soon after the camera comes
 // within its level-of-detail band.
-TEST(drivingStreamsTheWorldInTime)
+TEST_CASE("drivingStreamsTheWorldInTime", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     Session session({});
     CHECK(session.waitForCar());
     fh::Game& game = session.game();
@@ -2296,12 +2217,12 @@ TEST(drivingStreamsTheWorldInTime)
         static_cast<double>(median(builds)), static_cast<double>(worst(builds)), static_cast<double>(median(textures)),
         static_cast<double>(worst(textures)));
     CHECK(driven > 300.0F);
-    CHECK_EQ(probe.missingAtStart, std::size_t{0});
-    CHECK_EQ(probe.neverShown, 0);
-    CHECK_EQ(probe.waiting(), std::size_t{0});
+    CHECK(probe.missingAtStart == std::size_t{0});
+    CHECK(probe.neverShown == 0);
+    CHECK(probe.waiting() == std::size_t{0});
     CHECK(percentileOf(probe.delays, 1.0) <= kStreamingMaxDelayFrames);
-    CHECK_EQ(appearedBeyond, std::size_t{0});
-    CHECK_EQ(probe.drawnUnwanted, std::size_t{0});
+    CHECK(appearedBeyond == std::size_t{0});
+    CHECK(probe.drawnUnwanted == std::size_t{0});
     session.capture("streaming_end");
 }
 
@@ -2372,11 +2293,9 @@ WallHit driveIntoWall(glm::vec2 start, glm::vec2 target, float speed, float seco
 // z 1022 to 1070) stands at the end of a flat parking lot; the default car
 // drives across the lot into it head-on and at 40 degrees, at the speeds
 // the lot's length allows.
-TEST(wallImpactDoesNotSpinTheCar)
+TEST_CASE("wallImpactDoesNotSpinTheCar", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     struct Approach {
         const char* name;
         glm::vec2 target;
@@ -2428,11 +2347,9 @@ float boxPenetration(const fh::CarPhysics& car, const fh::CarPhysics& other)
 // it, or sent it flying upside down. On the flat parking lot in front of
 // the building above, the default car drives at a truck standing still,
 // into its tail and into its side, at 30 and 60 km/h.
-TEST(carDoesNotSinkIntoOrLaunchATruck)
+TEST_CASE("carDoesNotSinkIntoOrLaunchATruck", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     const glm::vec2 truckAt(-3920.0F, 1046.0F);
     const float halfPi = std::numbers::pi_v<float> * 0.5F;
     struct Approach {
@@ -2520,11 +2437,9 @@ void printCollisions(const char* name, const std::vector<fh::audio::CollisionSou
 // collision table's impact, its low thump and its scrape for the car's
 // body against the wall's surface, at the speed of the hit; losing that
 // much speed at once takes the mix to the Crash snapshot.
-TEST(wallImpactPlaysTheCollisionSounds)
+TEST_CASE("wallImpactPlaysTheCollisionSounds", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     using Slot = fh::audio::CollisionSoundTable::Slot;
     const glm::vec2 target(-3898.0F, 1046.0F);
     fh::GameOptions options;
@@ -2552,7 +2467,7 @@ TEST(wallImpactPlaysTheCollisionSounds)
     }
     CHECK(speedAtImpact > 0.0F);
     const fh::audio::SnapshotMixer* mix = game.mixSnapshots();
-    CHECK(mix && mix->current(fh::audio::MixGroup::Impact) == fh::audio::MixSnapshotId::Crash);
+    CHECK((mix && mix->current(fh::audio::MixGroup::Impact) == fh::audio::MixSnapshotId::Crash));
     session.run(0.2F, {});
     session.capture("wall_impact_sounds");
     const auto started = collisionsSince(*sounds, before);
@@ -2573,11 +2488,9 @@ TEST(wallImpactPlaysTheCollisionSounds)
 
 // Driving into the traffic truck of the scenario above plays the impact of
 // the two cars' body materials.
-TEST(carImpactPlaysTheCollisionSounds)
+TEST_CASE("carImpactPlaysTheCollisionSounds", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     using Slot = fh::audio::CollisionSoundTable::Slot;
     const glm::vec2 truckAt(-3920.0F, 1046.0F);
     const float halfPi = std::numbers::pi_v<float> * 0.5F;
@@ -2593,7 +2506,7 @@ TEST(carImpactPlaysTheCollisionSounds)
     session.run(1.0F, {});
     fh::Game& game = session.game();
     const fh::GameplaySounds* sounds = game.gameplaySounds();
-    CHECK(sounds != nullptr && game.parkedCar() != nullptr);
+    CHECK((sounds != nullptr && game.parkedCar() != nullptr));
     if (!sounds || !game.parkedCar()) {
         return;
     }
@@ -2673,11 +2586,9 @@ SceneReadback readScene(Session& session)
 // (65 there, a value of the pixel shader's), which sank the whole surface
 // tens of metres. The water must be what the camera sees where the lake
 // lies, at the height its model gives.
-TEST(redstoneLakeShowsItsWater)
+TEST_CASE("redstoneLakeShowsItsWater", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     // The lake's model; the name is the disc's, whose one part is
     // Redstone_Lake_01_NOLOD.
     fh::Vfs vfs;
@@ -2761,11 +2672,9 @@ TEST(redstoneLakeShowsItsWater)
 // read in place of the model's vertex constant. The sky above the mesa
 // across the river stays sky over a whole wave period of the river's
 // material (vc360_3.y = 0.2 rad/s: 31.4 s).
-TEST(riverWavesStayOnTheRiverAtTheInterstate)
+TEST_CASE("riverWavesStayOnTheRiverAtTheInterstate", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.spawnAt = glm::vec2(-3033.0F, -3517.0F);
     options.spawnHeading = -2.51F;
@@ -2810,7 +2719,7 @@ TEST(riverWavesStayOnTheRiverAtTheInterstate)
     session.capture("river_waves_interstate");
     std::fprintf(stderr, "river waves: %zu of %zu sky samples covered, worst %zu at %.1f s\n", covered, samples, worst,
         static_cast<double>(worstAt));
-    CHECK_EQ(covered, std::size_t{0});
+    CHECK(covered == std::size_t{0});
 }
 
 // A player at the festival saw the red "HORIZON Colorado" feather flags
@@ -2822,11 +2731,9 @@ TEST(riverWavesStayOnTheRiverAtTheInterstate)
 // north-west, past a tree and a floodlight mast, the sky above the four
 // flags (coloradoout.06265 at -716.6, -474.8; -695.7, -490.8; -724.1,
 // -489.3; -721.2, -535.1) stays sky while they sway.
-TEST(festivalFlagsKeepTheirSize)
+TEST_CASE("festivalFlagsKeepTheirSize", "[scenarios]")
 {
-    if (!gameDir()) {
-        return;
-    }
+    gameDir();
     fh::GameOptions options;
     options.spawnAt = glm::vec2(-735.0F, -455.0F);
     options.spawnHeading = 2.48F;
@@ -2874,24 +2781,37 @@ TEST(festivalFlagsKeepTheirSize)
     session.capture("festival_flags");
     std::fprintf(stderr, "festival flags: %zu of %zu sky samples covered, worst %zu at %.1f s\n", covered, samples,
         worst, static_cast<double>(worstAt));
-    CHECK_EQ(covered, std::size_t{0});
+    CHECK(covered == std::size_t{0});
 }
+
+/// Keeps the scenarios off the player's own folders and gives each case a
+/// log of its own.
+class ScenarioFolders : public Catch::EventListenerBase {
+public:
+    using Catch::EventListenerBase::EventListenerBase;
+
+    void testRunStarting(const Catch::TestRunInfo& /*info*/) override
+    {
+        const std::filesystem::path temp = std::filesystem::temp_directory_path();
+        // Not the player's shader cache; this folder persists between runs,
+        // so later runs also exercise the cached path.
+        fh::setEnvironmentVariable(
+            fh::userFolderVariable(fh::UserFolder::Cache), fh::pathToUtf8(temp / "fh1-scenarios-cache"));
+        // Nor the player's own profile: every Session names its own folder,
+        // and this catches any game made without one.
+        fh::setEnvironmentVariable(
+            fh::userFolderVariable(fh::UserFolder::Data), fh::pathToUtf8(temp / "fh1-scenarios-data"));
+    }
+
+    void testCaseStarting(const Catch::TestCaseInfo& info) override
+    {
+        std::string name = info.name;
+        std::replace_if(
+            name.begin(), name.end(), [](char c) { return c == '/' || c == '\\' || c == ':' || c == ' '; }, '_');
+        fh::openLogFile(std::filesystem::temp_directory_path() / "fh1-scenarios-logs" / (name + ".log"));
+    }
+};
 
 } // namespace
 
-int main(int argc, char** argv)
-{
-    // Never open a window on the desktop or play through the speakers.
-    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen", false);
-    fh::setEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy", false);
-    // Nor write to the player's own shader cache; this folder persists
-    // between runs, so later runs also exercise the cached path.
-    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache),
-        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-scenarios-cache"));
-    // Nor the player's own profile: every Session names its own folder, and
-    // this catches any game made without one.
-    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Data),
-        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-scenarios-data"));
-    fh::openLogFile(std::filesystem::temp_directory_path() / "fh1-scenarios.log");
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}
+CATCH_REGISTER_LISTENER(ScenarioFolders)

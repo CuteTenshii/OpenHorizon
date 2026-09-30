@@ -2,7 +2,10 @@
 // follows, the face cameras against OpenGL's cube map addressing, and the
 // centre above the focus car.
 
-#include "TestHarness.h"
+#include "support/GlContext.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
 
 #include "base/Error.h"
 #include "game/RenderScenario.h"
@@ -73,69 +76,69 @@ glm::vec3 fromGame(const glm::vec3& v)
     return {v.x, v.y, -v.z};
 }
 
-TEST(faces_per_frame_follow_env_map_frequency_scale)
+TEST_CASE("faces_per_frame_follow_env_map_frequency_scale", "[envcube]")
 {
     // 6 x scale, truncated, within 1..6; no update at all at 0 or below.
-    CHECK_EQ(envcube::facesPerFrame(1.0F), 6);
-    CHECK_EQ(envcube::facesPerFrame(0.99F), 5);
-    CHECK_EQ(envcube::facesPerFrame(0.5F), 3);
-    CHECK_EQ(envcube::facesPerFrame(0.1F), 1);
-    CHECK_EQ(envcube::facesPerFrame(3.0F), 6);
-    CHECK_EQ(envcube::facesPerFrame(0.0F), 0);
-    CHECK_EQ(envcube::facesPerFrame(-1.0F), 0);
+    CHECK(envcube::facesPerFrame(1.0F) == 6);
+    CHECK(envcube::facesPerFrame(0.99F) == 5);
+    CHECK(envcube::facesPerFrame(0.5F) == 3);
+    CHECK(envcube::facesPerFrame(0.1F) == 1);
+    CHECK(envcube::facesPerFrame(3.0F) == 6);
+    CHECK(envcube::facesPerFrame(0.0F) == 0);
+    CHECK(envcube::facesPerFrame(-1.0F) == 0);
 }
 
-TEST(schedule_walks_the_face_table_and_builds_mips_once_complete)
+TEST_CASE("schedule_walks_the_face_table_and_builds_mips_once_complete", "[envcube]")
 {
     envcube::FaceSchedule schedule;
     CHECK(!schedule.complete());
     // Half rate: three faces a frame from the table at 0x82253E38.
     envcube::FaceSchedule::Frame frame = schedule.next(0.5F);
-    CHECK_EQ(frame.count, 3);
-    CHECK_EQ(frame.faces[0], 0);
-    CHECK_EQ(frame.faces[1], 4);
-    CHECK_EQ(frame.faces[2], 2);
+    CHECK(frame.count == 3);
+    CHECK(frame.faces[0] == 0);
+    CHECK(frame.faces[1] == 4);
+    CHECK(frame.faces[2] == 2);
     CHECK(!schedule.complete());
     CHECK(!schedule.mipsDue());
     frame = schedule.next(0.5F);
-    CHECK_EQ(frame.count, 3);
-    CHECK_EQ(frame.faces[0], 1);
-    CHECK_EQ(frame.faces[1], 3);
-    CHECK_EQ(frame.faces[2], 5);
+    CHECK(frame.count == 3);
+    CHECK(frame.faces[0] == 1);
+    CHECK(frame.faces[1] == 3);
+    CHECK(frame.faces[2] == 5);
     CHECK(schedule.complete());
     CHECK(schedule.mipsDue());
     schedule.markMipsBuilt();
     CHECK(!schedule.mipsDue());
     // A face drawn since the mips were built makes them due again.
     frame = schedule.next(0.1F);
-    CHECK_EQ(frame.count, 1);
-    CHECK_EQ(frame.faces[0], 0);
+    CHECK(frame.count == 1);
+    CHECK(frame.faces[0] == 0);
     CHECK(schedule.mipsDue());
-    CHECK_EQ(schedule.cursor(), 1);
+    CHECK(schedule.cursor() == 1);
     // Full rate from there: all six, starting where the cursor stands.
     frame = schedule.next(1.0F);
-    CHECK_EQ(frame.count, 6);
-    CHECK_EQ(frame.faces[0], 4);
-    CHECK_EQ(frame.faces[5], 0);
-    CHECK_EQ(schedule.cursor(), 1);
+    CHECK(frame.count == 6);
+    CHECK(frame.faces[0] == 4);
+    CHECK(frame.faces[5] == 0);
+    CHECK(schedule.cursor() == 1);
     // Nothing is drawn, nor any bit changed, at a scale of 0.
     schedule.markMipsBuilt();
     frame = schedule.next(0.0F);
-    CHECK_EQ(frame.count, 0);
+    CHECK(frame.count == 0);
     CHECK(!schedule.mipsDue());
     schedule.reset();
     CHECK(!schedule.complete());
 }
 
-TEST(centre_is_half_a_metre_above_the_car_origin)
+TEST_CASE("centre_is_half_a_metre_above_the_car_origin", "[envcube]")
 {
     const glm::mat4 body = glm::rotate(
         glm::translate(glm::mat4(1.0F), glm::vec3(10.0F, 2.0F, -30.0F)), 0.7F, glm::vec3(0.0F, 0.0F, 1.0F));
     const glm::vec3 c = envcube::centre(body);
-    CHECK(near(c.x, 10.0F) && near(c.y, 2.5F) && near(c.z, -30.0F));
+    CHECK((near(c.x, 10.0F) && near(c.y, 2.5F) && near(c.z, -30.0F)));
 }
 
-TEST(face_cameras_put_each_direction_where_gl_addresses_it)
+TEST_CASE("face_cameras_put_each_direction_where_gl_addresses_it", "[envcube]")
 {
     const glm::vec3 centre(123.0F, 45.0F, -678.0F);
     const glm::mat4 projection = envcube::faceProjection();
@@ -154,17 +157,17 @@ TEST(face_cameras_put_each_direction_where_gl_addresses_it)
             const glm::vec3 ndc = glm::vec3(clip) / clip.w;
             CHECK(near(ndc.x, 2.0F * a.s - 1.0F, 1e-3F));
             CHECK(near(ndc.y, 2.0F * a.t - 1.0F, 1e-3F));
-            CHECK(ndc.z > 0.0F && ndc.z < 1.0F);
+            CHECK((ndc.z > 0.0F && ndc.z < 1.0F));
             // faceDirection() is the inverse of the addressing.
             const glm::vec3 back = envcube::faceDirection(a.face, a.s, a.t);
             CHECK(near(glm::dot(back, glm::normalize(game)), 1.0F, 1e-4F));
             ++checked;
         }
     }
-    CHECK_EQ(checked, 24 * 11);
+    CHECK(checked == 24 * 11);
 }
 
-TEST(face_transforms_are_the_face_cameras_about_the_centre)
+TEST_CASE("face_transforms_are_the_face_cameras_about_the_centre", "[envcube]")
 {
     const glm::vec3 centre(-40.0F, 12.0F, 3000.0F);
     const glm::mat4 toCentre = glm::translate(glm::mat4(1.0F), -centre);
@@ -179,7 +182,7 @@ TEST(face_transforms_are_the_face_cameras_about_the_centre)
     }
 }
 
-TEST(face_depth_runs_from_near_to_far_reversed)
+TEST_CASE("face_depth_runs_from_near_to_far_reversed", "[envcube]")
 {
     const glm::vec3 centre(0.0F);
     const glm::mat4 viewProjection = envcube::faceProjection() * envcube::faceView(0, centre);
@@ -189,7 +192,7 @@ TEST(face_depth_runs_from_near_to_far_reversed)
     CHECK(near(atFar.z / atFar.w, 0.0F, 1e-5F));
 }
 
-TEST(face_cameras_keep_the_scene_winding)
+TEST_CASE("face_cameras_keep_the_scene_winding", "[envcube]")
 {
     // A triangle seen by the scene's camera and by the cube face looking the
     // same way winds the same way on screen, so the scene's culling state
@@ -226,7 +229,7 @@ TEST(face_cameras_keep_the_scene_winding)
     }
 }
 
-TEST(sphere_map_round_trips_through_the_face_blit)
+TEST_CASE("sphere_map_round_trips_through_the_face_blit", "[envcube]")
 {
     // The lat-long map's texel directions read back at the same place, with
     // the shader's polynomial atan2 and acos, away from the poles and the
@@ -250,7 +253,7 @@ TEST(sphere_map_round_trips_through_the_face_blit)
     CHECK(near(seam.x, -1.0F, 1e-5F));
 }
 
-TEST(polynomial_atan2_and_acos_stay_within_their_error)
+TEST_CASE("polynomial_atan2_and_acos_stay_within_their_error", "[envcube]")
 {
     // The HLSL expansions are good to about 1e-5 (atan) and 7e-5 (acos)
     // radians.
@@ -264,14 +267,14 @@ TEST(polynomial_atan2_and_acos_stay_within_their_error)
     }
 }
 
-TEST(sphere_levels_halve_down_to_six_by_three)
+TEST_CASE("sphere_levels_halve_down_to_six_by_three", "[envcube]")
 {
-    CHECK_EQ(envcube::kSphereWidth >> (envcube::kSphereLevels - 1), 6);
-    CHECK_EQ(envcube::kSphereHeight >> (envcube::kSphereLevels - 1), 3);
-    CHECK_EQ(envcube::kSize >> (envcube::kLevels - 1), 1);
+    CHECK(envcube::kSphereWidth >> (envcube::kSphereLevels - 1) == 6);
+    CHECK(envcube::kSphereHeight >> (envcube::kSphereLevels - 1) == 3);
+    CHECK(envcube::kSize >> (envcube::kLevels - 1) == 1);
 }
 
-TEST(render_scenario_reads_env_map_frequency_scale)
+TEST_CASE("render_scenario_reads_env_map_frequency_scale", "[envcube]")
 {
     const fh::RenderScenario set = fh::RenderScenario::parse(R"(<DynamicRenderSettings>
   <FrameRate value="30"/>
@@ -291,38 +294,14 @@ TEST(render_scenario_reads_env_map_frequency_scale)
     CHECK(threw);
 }
 
-TEST(disc_in_game_scenario_draws_every_face_each_frame)
+TEST_CASE("disc_in_game_scenario_draws_every_face_each_frame", "[envcube]")
 {
-    const char* disc = std::getenv("FH1_GAME_DIR");
-    if (disc == nullptr) {
-        std::printf("skipped: FH1_GAME_DIR is not set\n");
-        return;
-    }
+    const char* disc = fh::test::gameDir();
     fh::Vfs vfs;
     vfs.mountDisc(disc);
     const fh::RenderScenario scenario = fh::RenderScenario::stacked(vfs, fh::RenderScenario::kInGame);
     CHECK(scenario.envMapFrequencyScale.has_value());
-    CHECK_EQ(envcube::facesPerFrame(scenario.envMapFrequencyScale.value_or(0.0F)), 6);
-}
-
-/// One hidden offscreen context for the GL test, or null when this machine
-/// has none (the test then skips).
-fh::Window* window()
-{
-    static std::unique_ptr<fh::Window> instance = [] {
-        fh::WindowOptions options;
-        options.width = 64;
-        options.height = 64;
-        options.hidden = true;
-        options.vsync = false;
-        try {
-            return std::make_unique<fh::Window>(options);
-        } catch (const std::exception& e) {
-            std::fprintf(stderr, "skipped: no OpenGL context (%s)\n", e.what());
-            return std::unique_ptr<fh::Window>();
-        }
-    }();
-    return instance.get();
+    CHECK(envcube::facesPerFrame(scenario.envMapFrequencyScale.value_or(0.0F)) == 6);
 }
 
 /// Clears colour attachment 0 of the framebuffer bound for drawing.
@@ -333,11 +312,9 @@ void clearBound(const std::array<float, 4>& colour)
     glClearNamedFramebufferfv(static_cast<GLuint>(framebuffer), GL_COLOR, 0, colour.data());
 }
 
-TEST(mip_chain_keeps_each_face_where_it_was_drawn)
+TEST_CASE("mip_chain_keeps_each_face_where_it_was_drawn", "[envcube]")
 {
-    if (window() == nullptr) {
-        return;
-    }
+    fh::test::requireGlContext();
     // Each face drawn a colour of its own (as stored: square roots). The
     // chain goes through the lat-long map and back, so a level below the
     // top must show each face's colour near its centre, and a uniform cube
@@ -366,8 +343,8 @@ TEST(mip_chain_keeps_each_face_where_it_was_drawn)
         clearBound(colour);
         ++facesSeen;
     });
-    CHECK_EQ(facesSeen, 6);
-    CHECK_EQ(cube.mipBuilds(), 1);
+    CHECK(facesSeen == 6);
+    CHECK(cube.mipBuilds() == 1);
     // Level 2 (64 texels): the centre texel of each face.
     constexpr int kLevel = 2;
     constexpr int kSize = envcube::kSize >> kLevel;
@@ -381,15 +358,15 @@ TEST(mip_chain_keeps_each_face_where_it_was_drawn)
         std::fprintf(stderr, "face %d centre %.3f %.3f %.3f\n", face, got.r, got.g, got.b);
         // The nearest of the six colours is the face's own.
         for (int other = 0; other < 6; ++other) {
-            CHECK(other == face
-                || glm::length(got - want) < glm::length(got - kColours[static_cast<std::size_t>(other)]));
+            CHECK((other == face
+                || glm::length(got - want) < glm::length(got - kColours[static_cast<std::size_t>(other)])));
         }
         // Away from the poles the face keeps its colour. At a pole the
         // map's u turns round within a texel, so the fetch's footprint, and
         // with it the level, grows and mixes in the faces around it, as the
         // game's shader does.
         if (face != 2 && face != 3) {
-            CHECK(near(got.r, want.r, 0.02F) && near(got.g, want.g, 0.02F) && near(got.b, want.b, 0.02F));
+            CHECK((near(got.r, want.r, 0.02F) && near(got.g, want.g, 0.02F) && near(got.b, want.b, 0.02F)));
         }
     }
     // A second frame: all faces again, so the mips are rebuilt.
@@ -397,7 +374,7 @@ TEST(mip_chain_keeps_each_face_where_it_was_drawn)
         const std::array<float, 4> grey{0.5F, 0.5F, 0.5F, 1.0F};
         clearBound(grey);
     });
-    CHECK_EQ(cube.mipBuilds(), 2);
+    CHECK(cube.mipBuilds() == 2);
     for (int level = 1; level < envcube::kLevels; ++level) {
         const int size = envcube::kSize >> level;
         std::vector<float> all(static_cast<std::size_t>(size * size * 6 * 4));
@@ -412,8 +389,3 @@ TEST(mip_chain_keeps_each_face_where_it_was_drawn)
 }
 
 } // namespace
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}

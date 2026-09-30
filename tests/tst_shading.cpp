@@ -4,7 +4,10 @@
 // time of day. Synthetic data always; the disc's files when FH1_GAME_DIR
 // names an extracted disc.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "base/Bytes.h"
 #include "base/Error.h"
@@ -31,6 +34,8 @@
 #include <string>
 #include <vector>
 
+using Catch::Matchers::WithinAbs;
+
 namespace {
 
 using namespace fh;
@@ -40,16 +45,11 @@ constexpr std::uint32_t kDxt5 = 0x14;
 /// Byte order 1 (8 in 16) in the format word, as the disc's cubes have it.
 constexpr std::uint32_t kSwap8In16 = 1U << 6;
 
-/// The disc, or nothing (with a note) when FH1_GAME_DIR is not set.
+/// The disc; the case skips when FH1_GAME_DIR is not set.
 std::unique_ptr<Vfs> disc()
 {
-    const std::optional<std::string> dir = environmentVariable("FH1_GAME_DIR");
-    if (!dir || dir->empty()) {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return nullptr;
-    }
     auto vfs = std::make_unique<Vfs>();
-    vfs->mountDisc(pathFromUtf8(*dir));
+    vfs->mountDisc(pathFromUtf8(fh::test::gameDir()));
     return vfs;
 }
 
@@ -84,7 +84,7 @@ bool levelsHalve(const world::CubeTexture& cube, int size, int levels)
 
 } // namespace
 
-TEST(cubeFacesFollowEachOtherInTheirTail)
+TEST_CASE("cubeFacesFollowEachOtherInTheirTail", "[shading]")
 {
     // A 4-texel DXT1 cube is all packed tail: one 32x32-block (8 KiB)
     // surface per face, the level 16 texels along X as in 2D textures.
@@ -100,19 +100,19 @@ TEST(cubeFacesFollowEachOtherInTheirTail)
     layout.formatWord = kDxt1;
     layout.size = 4;
     const world::CubeTexture cube = world::untileXboxCube(memory, layout);
-    CHECK_EQ(cube.levelCount(), 1);
+    CHECK(cube.levelCount() == 1);
     CHECK(cube.format == world::TextureSurface::Format::Dxt1);
     for (std::size_t face = 0; face < world::CubeTexture::kFaces; ++face) {
         const Bytes& data = cube.faces[face][0].data;
-        CHECK_EQ(data.size(), std::size_t{8});
+        CHECK(data.size() == std::size_t{8});
         if (data.size() == 8) {
-            CHECK_EQ(static_cast<int>(data[0]), static_cast<int>(face * 16));
-            CHECK_EQ(static_cast<int>(data[7]), static_cast<int>(face * 16 + 7));
+            CHECK(static_cast<int>(data[0]) == static_cast<int>(face * 16));
+            CHECK(static_cast<int>(data[7]) == static_cast<int>(face * 16 + 7));
         }
     }
 }
 
-TEST(cubeLayoutsTheDataCannotHoldAreRejected)
+TEST_CASE("cubeLayoutsTheDataCannotHoldAreRejected", "[shading]")
 {
     const std::vector<std::uint8_t> memory(1024, 0);
     world::XboxCubeLayout layout;
@@ -136,32 +136,32 @@ TEST(cubeLayoutsTheDataCannotHoldAreRejected)
     CHECK(!world::isCaffCube(memory));
 }
 
-TEST(emissiveSwitchOnFollowsTheSampler)
+TEST_CASE("emissiveSwitchOnFollowsTheSampler", "[shading]")
 {
     using render::TrackFrameConstants;
     // By day the curve is 0 and the presentation keeps -1: no emissive map
     // passes its ModelData.x test (0 by default).
     const glm::vec4 day = TrackFrameConstants::emissiveSwitchOn(0.0F, 1.0F, 12.0F);
-    CHECK_EQ(day.x, -1.0F);
-    CHECK_EQ(day.y, 0.0F);
-    CHECK_EQ(day.z, 1.0F);
-    CHECK_EQ(day.w, 12.0F);
+    CHECK(day.x == -1.0F);
+    CHECK(day.y == 0.0F);
+    CHECK(day.z == 1.0F);
+    CHECK(day.w == 12.0F);
     // Below the floor the curve counts as 0.
-    CHECK_EQ(TrackFrameConstants::emissiveSwitchOn(0.049F, 1.0F, 0.0F).x, -1.0F);
-    CHECK_EQ(TrackFrameConstants::emissiveSwitchOn(0.05F, 1.0F, 0.0F).x, 0.05F);
+    CHECK(TrackFrameConstants::emissiveSwitchOn(0.049F, 1.0F, 0.0F).x == -1.0F);
+    CHECK(TrackFrameConstants::emissiveSwitchOn(0.05F, 1.0F, 0.0F).x == 0.05F);
     // The lightmap ramp: min(max(x - 0.5, 0) * 4, 1) times the lane.
-    CHECK_NEAR(TrackFrameConstants::emissiveSwitchOn(0.6F, 1.0F, 0.0F).y, 0.4, 1e-6);
-    CHECK_NEAR(TrackFrameConstants::emissiveSwitchOn(0.6F, 0.5F, 0.0F).y, 0.2, 1e-6);
-    CHECK_EQ(TrackFrameConstants::emissiveSwitchOn(1.0F, 0.75F, 0.0F).y, 0.75F);
-    CHECK_EQ(TrackFrameConstants::emissiveSwitchOn(1.0F, 0.0F, 0.0F).y, 0.0F);
+    CHECK_THAT(TrackFrameConstants::emissiveSwitchOn(0.6F, 1.0F, 0.0F).y, WithinAbs(0.4, 1e-6));
+    CHECK_THAT(TrackFrameConstants::emissiveSwitchOn(0.6F, 0.5F, 0.0F).y, WithinAbs(0.2, 1e-6));
+    CHECK(TrackFrameConstants::emissiveSwitchOn(1.0F, 0.75F, 0.0F).y == 0.75F);
+    CHECK(TrackFrameConstants::emissiveSwitchOn(1.0F, 0.0F, 0.0F).y == 0.0F);
     // w is the presentation clock, wrapped as TimeGain's.
-    CHECK_NEAR(TrackFrameConstants::emissiveSwitchOn(1.0F, 0.0F, 28810.0F).w, 10.0, 1e-3);
+    CHECK_THAT(TrackFrameConstants::emissiveSwitchOn(1.0F, 0.0F, 28810.0F).w, WithinAbs(10.0, 1e-3));
 }
 
 // A model's material table holds the vertex shader's constants apart from
 // the pixel shader's: vc360_3 reads the first of the vertex group, never the
 // pixel constant c360_3 of the same material.
-TEST(materialConstantsReadTheirStagesGroup)
+TEST_CASE("materialConstantsReadTheirStagesGroup", "[shading]")
 {
     using render::materialSlot;
     using xenos::ShaderStage;
@@ -179,7 +179,7 @@ TEST(materialConstantsReadTheirStagesGroup)
     CHECK(!materialSlot("FogColor", ShaderStage::Vertex).has_value());
 }
 
-TEST(sceneConstantsTakeTheTrackSettings)
+TEST_CASE("sceneConstantsTakeTheTrackSettings", "[shading]")
 {
     constexpr std::string_view kXml = R"(<TrackSettings Version="64">
   <DarkColor r="0.1" g="0.2" b="0.3" a="1.0"/>
@@ -197,25 +197,25 @@ TEST(sceneConstantsTakeTheTrackSettings)
   <imageBasedLighting Version="3" Enable="0" LogLuvEncode="0" iblAmbientScale="1.6" iblAmbientSaturation="0.65" iblDirectScale="1.3" iblSunColorR="1.0" iblSunColorG="0.98" iblSunColorB="0.94"/>
 </TrackSettings>)";
     const world::TrackSettings settings = world::TrackSettings::parse(kXml);
-    CHECK_EQ(settings.cubemapFarDistance, 200.0F);
+    CHECK(settings.cubemapFarDistance == 200.0F);
     CHECK(settings.lightHemiTop == glm::vec3(0.3F, 0.4F, 0.5F));
     CHECK(settings.lightHemiBottom == glm::vec3(0.1F, 0.2F, 0.3F));
-    CHECK_NEAR(settings.iblDirectScale, 1.3, 1e-6);
+    CHECK_THAT(settings.iblDirectScale, WithinAbs(1.3, 1e-6));
     CHECK(settings.iblSunColour == glm::vec3(1.0F, 0.98F, 0.94F));
     // The cube faces' clear: 0.2 min(sun 1.3 clamp(-y) + 0.7 top + 0.3
     // bottom, 1). A sun straight down saturates red and green.
     const glm::vec4 noon = settings.cubeClearColour(glm::vec3(0.0F, -1.0F, 0.0F));
-    CHECK_NEAR(noon.x, 0.2, 1e-5);
-    CHECK_NEAR(noon.y, 0.2, 1e-5);
-    CHECK_NEAR(noon.z, 0.2, 1e-5);
-    CHECK_EQ(noon.w, 0.0F);
+    CHECK_THAT(noon.x, WithinAbs(0.2, 1e-5));
+    CHECK_THAT(noon.y, WithinAbs(0.2, 1e-5));
+    CHECK_THAT(noon.z, WithinAbs(0.2, 1e-5));
+    CHECK(noon.w == 0.0F);
     // Below the horizon only the hemisphere: 0.7 * 0.3 + 0.3 * 0.1 = 0.24.
     const glm::vec4 night = settings.cubeClearColour(glm::vec3(0.0F, 1.0F, 0.0F));
-    CHECK_NEAR(night.x, 0.2 * 0.24, 1e-5);
-    CHECK_NEAR(night.y, 0.2 * (0.7 * 0.4 + 0.3 * 0.2), 1e-5);
+    CHECK_THAT(night.x, WithinAbs(0.2 * 0.24, 1e-5));
+    CHECK_THAT(night.y, WithinAbs(0.2 * (0.7 * 0.4 + 0.3 * 0.2), 1e-5));
     // A low sun: blue gets 1.3 * 0.94 * 0.25 + 0.7 * 0.5 + 0.3 * 0.3.
     const glm::vec4 low = settings.cubeClearColour(glm::vec3(0.968F, -0.25F, 0.0F));
-    CHECK_NEAR(low.z, 0.2 * (1.3 * 0.94 * 0.25 + 0.7 * 0.5 + 0.3 * 0.3), 1e-5);
+    CHECK_THAT(low.z, WithinAbs(0.2 * (1.3 * 0.94 * 0.25 + 0.7 * 0.5 + 0.3 * 0.3), 1e-5));
     CHECK(settings.skyScale == glm::vec4(1.0F, 0.6F, -0.5F, 2.0F));
     CHECK(settings.roadSpecular2 == glm::vec4(24.0F, 23.0F, 0.49F, 0.93F));
     CHECK(settings.darkColor == glm::vec4(0.1F, 0.2F, 0.3F, 1.0F));
@@ -246,19 +246,16 @@ TEST(sceneConstantsTakeTheTrackSettings)
     CHECK(threw);
 }
 
-TEST(discCubeMaps)
+TEST_CASE("discCubeMaps", "[shading]")
 {
     const std::unique_ptr<Vfs> vfs = disc();
-    if (!vfs) {
-        return;
-    }
     // The track's static car cube map: 256 texels, DXT5, every level down to
     // 1x1 in a packed tail.
     const std::optional<Bytes> track = vfs->read("media/tracks/colorado/staticCarCubemap.xpr");
     CHECK(track.has_value());
     if (track) {
         const world::CubeTexture cube = world::readXprCube(*track);
-        CHECK_EQ(cube.name, std::string("StaticCarCubemap_HDR_1"));
+        CHECK(cube.name == std::string("StaticCarCubemap_HDR_1"));
         CHECK(cube.format == world::TextureSurface::Format::Dxt5);
         CHECK(levelsHalve(cube, 256, 9));
         // The sky lies above the ground: +Y (face 2) is brighter than -Y.
@@ -293,18 +290,15 @@ TEST(discCubeMaps)
             CHECK(cube.levelCount() >= 1);
             ++cubes;
         } catch (const DataError& e) {
-            test::fail(__FILE__, __LINE__, std::format("{}: {}", path, e.what()));
+            FAIL_CHECK(std::format("{}: {}", path, e.what()));
         }
     }
     CHECK(cubes >= 6);
 }
 
-TEST(discTrackCubeTextures)
+TEST_CASE("discTrackCubeTextures", "[shading]")
 {
     const std::unique_ptr<Vfs> vfs = disc();
-    if (!vfs) {
-        return;
-    }
     const std::shared_ptr<const lzx::ZipArchive> archive = vfs->archiveAt(world::TrackPaths::of("colorado").archive);
     CHECK(archive != nullptr);
     if (!archive) {
@@ -323,17 +317,14 @@ TEST(discTrackCubeTextures)
     }
 }
 
-TEST(discTrackSettingsAndSwitchOnLights)
+TEST_CASE("discTrackSettingsAndSwitchOnLights", "[shading]")
 {
     const std::unique_ptr<Vfs> vfs = disc();
-    if (!vfs) {
-        return;
-    }
     const world::TrackSettings settings = world::TrackSettings::load(*vfs, "colorado");
     CHECK(settings.skyScale == glm::vec4(1.0F, 0.6F, -0.0F, 1.0F));
     CHECK(settings.roadSpecular2 == glm::vec4(24.0F, 24.0F, 0.49F, 0.93F));
     CHECK(settings.darkColor == glm::vec4(-0.0F, -0.0F, -0.0F, 1.0F));
-    CHECK_NEAR(settings.lightColor.x, 1.0, 1e-5);
+    CHECK_THAT(settings.lightColor.x, WithinAbs(1.0, 1e-5));
     CHECK(settings.trackLightMap == glm::vec4(0.3F, 1.0F, 0.0F, 0.0F));
     CHECK(settings.dynamicCubemap);
 
@@ -341,12 +332,7 @@ TEST(discTrackSettingsAndSwitchOnLights)
     // at noon and on at midnight.
     TimeOfDay time(TimeOfDayCurves::load(*vfs, "colorado"));
     time.setSeconds(12.0F * 3600.0F);
-    CHECK_EQ(render::TrackFrameConstants::emissiveSwitchOn(time.lighting().switchOnLights, 0.0F, 0.0F).x, -1.0F);
+    CHECK(render::TrackFrameConstants::emissiveSwitchOn(time.lighting().switchOnLights, 0.0F, 0.0F).x == -1.0F);
     time.setSeconds(0.0F);
     CHECK(render::TrackFrameConstants::emissiveSwitchOn(time.lighting().switchOnLights, 0.0F, 0.0F).x > 0.0F);
-}
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
 }

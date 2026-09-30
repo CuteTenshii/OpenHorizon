@@ -5,7 +5,11 @@
 // goes to a folder under the temporary directory; XDG_DATA_HOME points
 // there too, so the player's own profile is never touched.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/reporters/catch_reporter_event_listener.hpp>
+#include <catch2/reporters/catch_reporter_registrars.hpp>
 
 #include "base/Host.h"
 #include "profile/Profile.h"
@@ -28,6 +32,8 @@
 #include <string_view>
 #include <vector>
 
+using fh::test::gameDir;
+
 namespace {
 
 using fh::profile::FlyerState;
@@ -41,16 +47,6 @@ using fh::profile::PropertyValue;
 using fh::profile::RoadDiscoveryState;
 using fh::profile::SpeedCameraState;
 using namespace std::string_literals;
-
-const char* gameDir()
-{
-    const char* dir = std::getenv("FH1_GAME_DIR");
-    if (dir == nullptr || *dir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return nullptr;
-    }
-    return dir;
-}
 
 /// A fresh, empty folder for one test.
 std::filesystem::path scratch(std::string_view name)
@@ -102,7 +98,7 @@ ProfileSchema schema()
     return ProfileSchema::parse(kSchema);
 }
 
-TEST(typeNamesAreTheGames)
+TEST_CASE("typeNamesAreTheGames", "[profile]")
 {
     // The table at 0x82154ee8: names, aliases and ids.
     CHECK(fh::profile::propertyTypeFromName("Bool") == PropertyType::Bool);
@@ -114,22 +110,22 @@ TEST(typeNamesAreTheGames)
     CHECK(fh::profile::propertyTypeFromName("PropertyBag") == PropertyType::PropertyBag);
     CHECK(!fh::profile::propertyTypeFromName("bool").has_value());
     CHECK(!fh::profile::propertyTypeFromName("Double").has_value());
-    CHECK_EQ(static_cast<int>(PropertyType::UInt64), 4);
-    CHECK_EQ(static_cast<int>(PropertyType::Float64), 10);
-    CHECK_EQ(static_cast<int>(PropertyType::PropertyBag), 15);
-    CHECK_EQ(fh::profile::propertyTypeName(PropertyType::UInt8), std::string_view("UInt8"));
+    CHECK(static_cast<int>(PropertyType::UInt64) == 4);
+    CHECK(static_cast<int>(PropertyType::Float64) == 10);
+    CHECK(static_cast<int>(PropertyType::PropertyBag) == 15);
+    CHECK(fh::profile::propertyTypeName(PropertyType::UInt8) == std::string_view("UInt8"));
 }
 
-TEST(schemaReadsBagsTypesAndDefaults)
+TEST_CASE("schemaReadsBagsTypesAndDefaults", "[profile]")
 {
     const ProfileSchema s = schema();
-    CHECK_EQ(s.bags().size(), std::size_t{3});
-    CHECK_EQ(s.valueCount(), std::size_t{14});
+    CHECK(s.bags().size() == std::size_t{3});
+    CHECK(s.valueCount() == std::size_t{14});
     const fh::profile::Property* credits = s.find("Main/Credits");
     CHECK(credits != nullptr);
-    CHECK(credits && credits->type == PropertyType::UInt32);
-    CHECK(credits && credits->value == PropertyValue(std::uint64_t{500}));
-    CHECK(s.find("Main/IsVip") && s.find("Main/IsVip")->value == PropertyValue(false));
+    CHECK((credits && credits->type == PropertyType::UInt32));
+    CHECK((credits && credits->value == PropertyValue(std::uint64_t{500})));
+    CHECK((s.find("Main/IsVip") && s.find("Main/IsVip")->value == PropertyValue(false)));
     CHECK(s.find("Main/Flags")->value == PropertyValue(std::numeric_limits<std::uint64_t>::max()));
     CHECK(s.find("Main/Small")->value == PropertyValue(std::int64_t{-128}));
     CHECK(s.find("Main/Big")->value == PropertyValue(std::numeric_limits<std::int64_t>::min()));
@@ -138,57 +134,61 @@ TEST(schemaReadsBagsTypesAndDefaults)
     CHECK(s.find("Main/Name")->type == PropertyType::StringWide);
     CHECK(s.find("Main/Name")->value == PropertyValue(std::string("Player")));
     CHECK(s.find("Options/Units") != nullptr);
-    CHECK(s.find("HeadTracking") && s.find("HeadTracking")->children.empty());
-    CHECK(s.find("Main") && s.find("Main")->type == PropertyType::PropertyBag);
+    CHECK((s.find("HeadTracking") && s.find("HeadTracking")->children.empty()));
+    CHECK((s.find("Main") && s.find("Main")->type == PropertyType::PropertyBag));
     CHECK(s.find("Main/Missing") == nullptr);
     CHECK(s.find("Options/Units/Deeper") == nullptr);
     CHECK(s.find("Nothing") == nullptr);
     // File order is kept.
-    CHECK_EQ(s.bags()[0].children[0].name, std::string("IsVip"));
-    CHECK_EQ(s.bags()[2].name, std::string("HeadTracking"));
+    CHECK(s.bags()[0].children[0].name == std::string("IsVip"));
+    CHECK(s.bags()[2].name == std::string("HeadTracking"));
 }
 
-TEST(schemaRejectsMalformedProperties)
+TEST_CASE("schemaRejectsMalformedProperties", "[profile]")
 {
     const auto bag = [](std::string_view inner) {
         return std::string("<Profile><Property name=\"Main\" type=\"PropertyBag\">") + std::string(inner)
             + "</Property></Profile>";
     };
-    CHECK_THROWS(ProfileSchema::parse("not xml <"));
-    CHECK_THROWS(ProfileSchema::parse("<Other/>"));
-    CHECK_THROWS(ProfileSchema::parse(bag(R"(<Property type="Int32" value="0"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(bag(R"(<Property name="A" type="Int33" value="0"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(bag(R"(<Property name="A" type="Int32"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(bag(R"(<Property name="A" type="Int32" value="x"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(bag(R"(<Property name="A" type="Bool" value="2"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(bag(R"(<Property name="A" type="UInt8" value="256"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(bag(R"(<Property name="A" type="UInt32" value="-1"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(bag(R"(<Property name="A" type="Int8" value="128"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(bag(R"(<Property name="A" type="Float32" value="1.0f"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(bag(R"(<Property name="A" type="PropertyBag" value="1"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(
-        bag(R"(<Property name="A" type="Int32" value="0"><Property name="B" type="Int32" value="0"/></Property>)")));
-    CHECK_THROWS(ProfileSchema::parse(
-        bag(R"(<Property name="A" type="Int32" value="0"/><Property name="A" type="Int32" value="1"/>)")));
-    CHECK_THROWS(ProfileSchema::parse(R"(<Profile><Property name="A" type="Int32" value="0"/></Profile>)"));
+    CHECK_THROWS_AS(ProfileSchema::parse("not xml <"), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse("<Other/>"), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(R"(<Property type="Int32" value="0"/>)")), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(R"(<Property name="A" type="Int33" value="0"/>)")), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(R"(<Property name="A" type="Int32"/>)")), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(R"(<Property name="A" type="Int32" value="x"/>)")), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(R"(<Property name="A" type="Bool" value="2"/>)")), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(R"(<Property name="A" type="UInt8" value="256"/>)")), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(R"(<Property name="A" type="UInt32" value="-1"/>)")), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(R"(<Property name="A" type="Int8" value="128"/>)")), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(R"(<Property name="A" type="Float32" value="1.0f"/>)")), std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(R"(<Property name="A" type="PropertyBag" value="1"/>)")), std::exception);
+    CHECK_THROWS_AS(
+        ProfileSchema::parse(
+            bag(R"(<Property name="A" type="Int32" value="0"><Property name="B" type="Int32" value="0"/></Property>)")),
+        std::exception);
+    CHECK_THROWS_AS(ProfileSchema::parse(bag(
+                        R"(<Property name="A" type="Int32" value="0"/><Property name="A" type="Int32" value="1"/>)")),
+        std::exception);
+    CHECK_THROWS_AS(
+        ProfileSchema::parse(R"(<Profile><Property name="A" type="Int32" value="0"/></Profile>)"), std::exception);
 }
 
-TEST(valuesReadBackExactly)
+TEST_CASE("valuesReadBackExactly", "[profile]")
 {
     for (const float number : {0.24F, 0.6F, 1.0F, 1e-7F, 123456.789F, -0.0F}) {
         const PropertyValue value = number;
         const auto parsed = fh::profile::parseValue(PropertyType::Float32, fh::profile::formatValue(value));
-        CHECK(parsed && *parsed == value);
+        CHECK((parsed && *parsed == value));
     }
     const PropertyValue big = std::numeric_limits<std::uint64_t>::max();
     CHECK(fh::profile::parseValue(PropertyType::UInt64, fh::profile::formatValue(big)) == big);
-    CHECK_EQ(fh::profile::formatValue(PropertyValue(true)), std::string("1"));
+    CHECK(fh::profile::formatValue(PropertyValue(true)) == std::string("1"));
     CHECK(!fh::profile::valueFits(PropertyType::UInt8, PropertyValue(std::uint64_t{300})));
     CHECK(!fh::profile::valueFits(PropertyType::Int32, PropertyValue(std::uint64_t{3})));
     CHECK(fh::profile::valueFits(PropertyType::Int16, PropertyValue(std::int64_t{-32768})));
 }
 
-TEST(profileStartsFromTheDefaultsAndChecksTypes)
+TEST_CASE("profileStartsFromTheDefaultsAndChecksTypes", "[profile]")
 {
     const ProfileSchema s = schema();
     Profile profile(s);
@@ -325,14 +325,14 @@ std::string sealed(std::string_view body)
     return resealed(bytes);
 }
 
-TEST(checksumIsCrc32)
+TEST_CASE("checksumIsCrc32", "[profile]")
 {
     // The CRC-32 check value.
-    CHECK_EQ(fh::profile::crc32("123456789"), std::uint32_t{0xCBF43926});
-    CHECK_EQ(fh::profile::crc32(""), std::uint32_t{0});
+    CHECK(fh::profile::crc32("123456789") == std::uint32_t{0xCBF43926});
+    CHECK(fh::profile::crc32("") == std::uint32_t{0});
 }
 
-TEST(binaryLayoutIsTheDocumentedOne)
+TEST_CASE("binaryLayoutIsTheDocumentedOne", "[profile]")
 {
     const ProfileSchema s = ProfileSchema::parse(R"(<Profile><Property name="Main" type="PropertyBag">
       <Property name="Credits" type="UInt32" value="300"/>
@@ -352,10 +352,10 @@ TEST(binaryLayoutIsTheDocumentedOne)
         // (zigzag 2), one state of 4 bytes: "f1" and both flags.
         "\x02\x09\x01\x03\x02\x01\x04\x02"
         "f1\x03"s);
-    CHECK_EQ(ProfileStore::serialize(profile), expected);
+    CHECK(ProfileStore::serialize(profile) == expected);
 }
 
-TEST(storeRoundTripsEveryField)
+TEST_CASE("storeRoundTripsEveryField", "[profile]")
 {
     const std::filesystem::path dir = scratch("roundtrip");
     const ProfileSchema s = schema();
@@ -377,34 +377,34 @@ TEST(storeRoundTripsEveryField)
     CHECK(loaded.value("Main/Name") == PropertyValue(std::string("A <quoted> \"name\" & more, \xc3\xa9t\xc3\xa9")));
     CHECK(loaded.value("Main/Narrow") == PropertyValue(std::string("x")));
     // Every state kind.
-    CHECK(loaded.state.roads && loaded.state.roads->visited == saved.state.roads->visited);
-    CHECK_EQ(loaded.state.speedCameras.size(), std::size_t{3});
+    CHECK((loaded.state.roads && loaded.state.roads->visited == saved.state.roads->visited));
+    CHECK(loaded.state.speedCameras.size() == std::size_t{3});
     const SpeedCameraState& camera = loaded.state.speedCameras.at("speed_camera_01");
-    CHECK(camera.activityDiscovered && camera.discovered);
+    CHECK((camera.activityDiscovered && camera.discovered));
     CHECK(camera.personalBest == 36.123456F);
     CHECK(!loaded.state.speedCameras.at("speed_camera_02").discovered);
     CHECK(loaded.state.speedCameras.at("speed_camera_03").activityDiscovered);
     CHECK(!loaded.state.speedCameras.at("speed_camera_03").discovered);
-    CHECK(loaded.state.flyers.at("flyer_001").collected && !loaded.state.flyers.at("flyer_001").activityDiscovered);
-    CHECK(!loaded.state.flyers.at("flyer_002").collected && loaded.state.flyers.at("flyer_002").activityDiscovered);
+    CHECK((loaded.state.flyers.at("flyer_001").collected && !loaded.state.flyers.at("flyer_001").activityDiscovered));
+    CHECK((!loaded.state.flyers.at("flyer_002").collected && loaded.state.flyers.at("flyer_002").activityDiscovered));
     CHECK(loaded.state.gasStations.at("GasStation_01").discovered);
     CHECK(!loaded.state.gasStations.at("GasStation_02").discovered);
-    CHECK_EQ(loaded.state.otherStates.size(), std::size_t{2});
+    CHECK(loaded.state.otherStates.size() == std::size_t{2});
     if (loaded.state.otherStates.size() == 2) {
         const OtherState& player = loaded.state.otherStates[0];
-        CHECK_EQ(player.name, std::string("Player0"));
-        CHECK_EQ(player.type, std::string("CPlayerState"));
-        CHECK_EQ(player.version, 1);
+        CHECK(player.name == std::string("Player0"));
+        CHECK(player.type == std::string("CPlayerState"));
+        CHECK(player.version == 1);
         CHECK(sameProperties(player.fields, playerState().fields));
-        CHECK_EQ(loaded.state.otherStates[1].type, std::string("CMissionState"));
-        CHECK_EQ(loaded.state.otherStates[1].version, 3);
+        CHECK(loaded.state.otherStates[1].type == std::string("CMissionState"));
+        CHECK(loaded.state.otherStates[1].version == 3);
     }
     // Saving what was loaded writes the same file again.
-    CHECK_EQ(ProfileStore::serialize(loaded), ProfileStore::serialize(saved));
-    CHECK_EQ(readAll(store.file()), ProfileStore::serialize(saved));
+    CHECK(ProfileStore::serialize(loaded) == ProfileStore::serialize(saved));
+    CHECK(readAll(store.file()) == ProfileStore::serialize(saved));
 }
 
-TEST(storeKeepsWhatTheSchemaDoesNotHave)
+TEST_CASE("storeKeepsWhatTheSchemaDoesNotHave", "[profile]")
 {
     // Written by a build whose schema differs: Credits of another type, a
     // value out of its type's range, properties and a bag this schema does
@@ -439,15 +439,15 @@ TEST(storeKeepsWhatTheSchemaDoesNotHave)
     CHECK(result.profile.value("Rally/Stage") == PropertyValue(std::uint64_t{3}));
     // A version the game's serializer refuses: dropped. Other types: kept.
     CHECK(result.profile.state.speedCameras.empty());
-    CHECK_EQ(result.profile.state.otherStates.size(), std::size_t{1});
-    CHECK(!result.profile.state.otherStates.empty()
-        && sameProperties(result.profile.state.otherStates[0].fields, playerState().fields));
+    CHECK(result.profile.state.otherStates.size() == std::size_t{1});
+    CHECK((!result.profile.state.otherStates.empty()
+        && sameProperties(result.profile.state.otherStates[0].fields, playerState().fields)));
     CHECK(result.profile.state.flyers.at("flyer_002").collected);
     CHECK(store.save(result.profile));
     const ProfileStore::LoadResult again = ProfileStore(dir).load(schema());
     CHECK(again.profile.value("Main/RallyXP") == PropertyValue(std::int64_t{77}));
     CHECK(again.profile.value("Rally/Stage") == PropertyValue(std::uint64_t{3}));
-    CHECK_EQ(again.profile.state.otherStates.size(), std::size_t{1});
+    CHECK(again.profile.state.otherStates.size() == std::size_t{1});
 
     // Bits past the road node count: that state is dropped, the rest read.
     const std::filesystem::path roads = scratch("roads");
@@ -465,7 +465,7 @@ TEST(storeKeepsWhatTheSchemaDoesNotHave)
     CHECK(!tooMany.profile.state.roads.has_value());
 }
 
-TEST(storeReplacesTheFileAtomically)
+TEST_CASE("storeReplacesTheFileAtomically", "[profile]")
 {
     const std::filesystem::path dir = scratch("atomic");
     const ProfileSchema s = schema();
@@ -482,7 +482,7 @@ TEST(storeReplacesTheFileAtomically)
     Profile second(s);
     second.set("Main/Credits", std::uint64_t{2});
     CHECK(!store.save(second));
-    CHECK_EQ(readAll(store.file()), before);
+    CHECK(readAll(store.file()) == before);
     std::filesystem::remove(dir / "ForzaProfile.bin.tmp");
 
     CHECK(store.save(second));
@@ -490,7 +490,7 @@ TEST(storeReplacesTheFileAtomically)
     CHECK(ProfileStore(dir).load(s).profile.value("Main/Credits") == PropertyValue(std::uint64_t{2}));
 }
 
-TEST(storeRefusesAnotherFormatVersion)
+TEST_CASE("storeRefusesAnotherFormatVersion", "[profile]")
 {
     const std::filesystem::path dir = scratch("version");
     Profile rich(schema());
@@ -504,9 +504,9 @@ TEST(storeRefusesAnotherFormatVersion)
     CHECK(result.status == ProfileStore::LoadStatus::VersionMismatch);
     CHECK(result.profile.value("Main/Credits") == PropertyValue(std::uint64_t{500}));
     // Untouched until a save, which keeps it aside.
-    CHECK_EQ(readAll(dir / "ForzaProfile.bin"), future);
+    CHECK(readAll(dir / "ForzaProfile.bin") == future);
     CHECK(store.save(result.profile));
-    CHECK_EQ(readAll(dir / "ForzaProfile.bin.unreadable"), future);
+    CHECK(readAll(dir / "ForzaProfile.bin.unreadable") == future);
     CHECK(ProfileStore(dir).load(schema()).status == ProfileStore::LoadStatus::Loaded);
 
     writeAll(dir / "ForzaProfile.bin", "\x01\x02 not a profile");
@@ -515,7 +515,7 @@ TEST(storeRefusesAnotherFormatVersion)
     CHECK(ProfileStore(dir).load(schema()).status == ProfileStore::LoadStatus::Missing);
 }
 
-TEST(storeIgnoresTheXmlProfile)
+TEST_CASE("storeIgnoresTheXmlProfile", "[profile]")
 {
     // Format version 1's XML file is neither read nor touched: the folder
     // holds a new profile, saved next to it.
@@ -530,12 +530,12 @@ TEST(storeIgnoresTheXmlProfile)
     CHECK(result.profile.value("Main/Credits") == PropertyValue(std::uint64_t{500}));
     CHECK(store.save(result.profile));
     CHECK(std::filesystem::exists(dir / "ForzaProfile.bin"));
-    CHECK_EQ(readAll(dir / "ForzaProfile.xml"), xml);
-    CHECK_EQ(std::distance(std::filesystem::directory_iterator(dir), std::filesystem::directory_iterator()),
-        std::ptrdiff_t{2});
+    CHECK(readAll(dir / "ForzaProfile.xml") == xml);
+    CHECK(std::distance(std::filesystem::directory_iterator(dir), std::filesystem::directory_iterator())
+        == std::ptrdiff_t{2});
 }
 
-TEST(storeRefusesDamagedFiles)
+TEST_CASE("storeRefusesDamagedFiles", "[profile]")
 {
     const std::filesystem::path dir = scratch("damaged");
     const std::string good = ProfileStore::serialize(sampleProfile(schema()));
@@ -562,12 +562,12 @@ TEST(storeRefusesDamagedFiles)
         CHECK(result.profile.value("Main/Credits") == PropertyValue(std::uint64_t{500}));
         CHECK(result.profile.state.flyers.empty());
         CHECK(store.save(result.profile));
-        CHECK_EQ(readAll(dir / "ForzaProfile.bin.unreadable"), bytes);
+        CHECK(readAll(dir / "ForzaProfile.bin.unreadable") == bytes);
         CHECK(ProfileStore(dir).load(schema()).status == ProfileStore::LoadStatus::Loaded);
     }
 }
 
-TEST(defaultDirectoryIsInTheUserDataFolder)
+TEST_CASE("defaultDirectoryIsInTheUserDataFolder", "[profile]")
 {
     // The folder rules themselves are tst_base's; the profile goes in
     // `profile` inside whatever the Data folder is.
@@ -584,12 +584,9 @@ TEST(defaultDirectoryIsInTheUserDataFolder)
     }
 }
 
-TEST(discSchemaIsTheGamesLayout)
+TEST_CASE("discSchemaIsTheGamesLayout", "[profile]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const ProfileSchema s = ProfileSchema::load(vfs);
@@ -604,15 +601,15 @@ TEST(discSchemaIsTheGamesLayout)
     const std::vector<std::string> expected{"Main", "ControllerOptions", "WheelOptions", "BristolOptions",
         "ControllerAdvancedOptions", "WheelAdvancedOptions", "BristolAdvancedOptions", "Options", "HeadTracking"};
     CHECK(names == expected);
-    CHECK(s.find("Main/Credits") && s.find("Main/Credits")->value == PropertyValue(std::uint64_t{500}));
-    CHECK(s.find("Main/ShowroomCar") && s.find("Main/ShowroomCar")->value == PropertyValue(std::int64_t{1131}));
-    CHECK(s.find("Main/UpgradeDiscount") && s.find("Main/UpgradeDiscount")->type == PropertyType::UInt32);
-    CHECK(s.find("Main/Flags") && s.find("Main/Flags")->type == PropertyType::UInt64);
-    CHECK(s.find("Main/Shifting") && s.find("Main/Shifting")->type == PropertyType::UInt8);
-    CHECK(s.find("Options/Units") && s.find("Options/Units")->type == PropertyType::Int32);
+    CHECK((s.find("Main/Credits") && s.find("Main/Credits")->value == PropertyValue(std::uint64_t{500})));
+    CHECK((s.find("Main/ShowroomCar") && s.find("Main/ShowroomCar")->value == PropertyValue(std::int64_t{1131})));
+    CHECK((s.find("Main/UpgradeDiscount") && s.find("Main/UpgradeDiscount")->type == PropertyType::UInt32));
+    CHECK((s.find("Main/Flags") && s.find("Main/Flags")->type == PropertyType::UInt64));
+    CHECK((s.find("Main/Shifting") && s.find("Main/Shifting")->type == PropertyType::UInt8));
+    CHECK((s.find("Options/Units") && s.find("Options/Units")->type == PropertyType::Int32));
     const fh::profile::Property* deadzone = s.find("ControllerAdvancedOptions/SteeringAxisDeadzoneInside");
-    CHECK(deadzone && deadzone->value == PropertyValue(0.24F));
-    CHECK(s.find("HeadTracking") && s.find("HeadTracking")->children.empty());
+    CHECK((deadzone && deadzone->value == PropertyValue(0.24F)));
+    CHECK((s.find("HeadTracking") && s.find("HeadTracking")->children.empty()));
 
     // The disc's defaults survive the store unchanged.
     const std::filesystem::path folder = scratch("disc");
@@ -620,7 +617,7 @@ TEST(discSchemaIsTheGamesLayout)
     CHECK(store.save(Profile(s)));
     const ProfileStore::LoadResult result = ProfileStore(folder).load(s);
     CHECK(result.status == ProfileStore::LoadStatus::Loaded);
-    CHECK_EQ(ProfileStore::serialize(result.profile), ProfileStore::serialize(Profile(s)));
+    CHECK(ProfileStore::serialize(result.profile) == ProfileStore::serialize(Profile(s)));
     std::fprintf(stderr, "schema: %zu bags, %zu values\n", s.bags().size(), s.valueCount());
 
     // A played profile round-trips on the disc's schema too.
@@ -629,17 +626,24 @@ TEST(discSchemaIsTheGamesLayout)
     CHECK(ProfileStore(playedFolder).save(played));
     const ProfileStore::LoadResult reread = ProfileStore(playedFolder).load(s);
     CHECK(reread.status == ProfileStore::LoadStatus::Loaded);
-    CHECK_EQ(ProfileStore::serialize(reread.profile), ProfileStore::serialize(played));
+    CHECK(ProfileStore::serialize(reread.profile) == ProfileStore::serialize(played));
     std::fprintf(stderr, "profile: new %zu bytes, played %zu bytes\n", ProfileStore::serialize(Profile(s)).size(),
         readAll(ProfileStore(playedFolder).file()).size());
 }
 
+/// Points the per-user data folder under the temporary directory before
+/// any case runs: never the player's own profile.
+class DataFolder : public Catch::EventListenerBase {
+public:
+    using Catch::EventListenerBase::EventListenerBase;
+
+    void testRunStarting(const Catch::TestRunInfo& /*info*/) override
+    {
+        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Data),
+            fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-profile" / "data"));
+    }
+};
+
 } // namespace
 
-int main(int argc, char** argv)
-{
-    // Never the player's own profile.
-    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Data),
-        fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-profile" / "data"));
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}
+CATCH_REGISTER_LISTENER(DataFolder)

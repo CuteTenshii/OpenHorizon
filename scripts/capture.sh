@@ -4,7 +4,8 @@
 #
 #   scripts/capture.sh OUT_DIR [SCENARIO_FILTER] [BUILD_DIR]
 #
-# SCENARIO_FILTER selects scenarios whose names contain it (all when empty).
+# SCENARIO_FILTER selects scenarios whose names contain it (all when empty);
+# they run one after another in one process.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,5 +29,9 @@ mkdir -p "$out"
 export FH1_CAPTURE_DIR="$(cd "$out" && pwd)"
 
 cmake --build "$build" --target tst_scenarios
-"$build/tests/tst_scenarios" "$filter"
+if [[ -n "$filter" ]]; then
+    "$build/tests/tst_scenarios" "*${filter}*"
+else
+    "$build/tests/tst_scenarios"
+fi
 echo "Screenshots in $FH1_CAPTURE_DIR"

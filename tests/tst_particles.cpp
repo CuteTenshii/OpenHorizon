@@ -2,7 +2,10 @@
 // particle simulation and the tyre effect rules on synthetic data, and with
 // FH1_GAME_DIR set, every effect of the disc.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "particles/Effect.h"
 #include "particles/GameRandom.h"
@@ -24,6 +27,8 @@
 #include <numbers>
 #include <set>
 #include <string>
+
+using Catch::Matchers::WithinAbs;
 
 namespace particles = fh::particles;
 
@@ -88,62 +93,62 @@ particles::ParticleManager smokeManager(std::string_view xml = kSmokeXml)
 
 } // namespace
 
-TEST(randomMatchesTheGamesGenerator)
+TEST_CASE("randomMatchesTheGamesGenerator", "[particles]")
 {
     // seed * 0x41C64E6D + 12345, bits 16-30.
     particles::GameRandom r(1);
-    CHECK_EQ(r.next15(), 16838U);
-    CHECK_EQ(r.next15(), 5758U);
-    CHECK_EQ(r.next15(), 10113U);
+    CHECK(r.next15() == 16838U);
+    CHECK(r.next15() == 5758U);
+    CHECK(r.next15() == 10113U);
     for (int i = 0; i < 1000; ++i) {
         const float u = r.uniform();
-        CHECK(u >= 0.0F && u <= 1.0F);
+        CHECK((u >= 0.0F && u <= 1.0F));
         const float v = r.range(-2.0F, 3.0F);
-        CHECK(v >= -2.0F && v <= 3.0F);
+        CHECK((v >= -2.0F && v <= 3.0F));
     }
 }
 
-TEST(effectFileIsReadLikeTheGame)
+TEST_CASE("effectFileIsReadLikeTheGame", "[particles]")
 {
     const particles::EffectDefinition e = particles::parseEffect(kSmokeXml, "smoke");
-    CHECK_EQ(e.version, 13);
-    CHECK_EQ(e.budget, 10U);
-    CHECK_EQ(e.lowerBudget, 6U);
-    CHECK_EQ(e.timeOfDay[0], 6);
-    CHECK_EQ(e.timeOfDay[1], 30);
+    CHECK(e.version == 13);
+    CHECK(e.budget == 10U);
+    CHECK(e.lowerBudget == 6U);
+    CHECK(e.timeOfDay[0] == 6);
+    CHECK(e.timeOfDay[1] == 30);
     CHECK(e.shape == particles::EmitterShape::SuperSpray);
-    CHECK_NEAR(e.quantity.value, 30.0, 1e-6);
-    CHECK_NEAR(e.velocity.value, 2.0, 1e-6);
+    CHECK_THAT(e.quantity.value, WithinAbs(30.0, 1e-6));
+    CHECK_THAT(e.velocity.value, WithinAbs(2.0, 1e-6));
     CHECK(e.soft());
     CHECK(!e.animated());
-    CHECK_NEAR(e.density, 0.5, 1e-6);
+    CHECK_THAT(e.density, WithinAbs(0.5, 1e-6));
     // Degrees become radians for the phase value only.
-    CHECK_NEAR(e.spinPhase.value, kPi / 2.0, 1e-6);
+    CHECK_THAT(e.spinPhase.value, WithinAbs(kPi / 2.0, 1e-6));
     CHECK(e.spinAxis == particles::SpinAxis::DirectionOfTravel);
-    CHECK_EQ(e.behaviours.size(), std::size_t{2});
+    CHECK(e.behaviours.size() == std::size_t{2});
     CHECK(e.behaviours[0].kind == particles::Behaviour::Kind::Gravity);
     CHECK(e.behaviours[1].kind == particles::Behaviour::Kind::Friction);
-    CHECK_NEAR(e.behaviours[1].friction.velocityKept, 3.2, 1e-6);
-    CHECK_EQ(e.motionInheritance.influence, 100);
+    CHECK_THAT(e.behaviours[1].friction.velocityKept, WithinAbs(3.2, 1e-6));
+    CHECK(e.motionInheritance.influence == 100);
     CHECK(e.render.type == particles::ParticleType::BillboardedQuad);
     CHECK(e.render.zSort);
     CHECK(e.render.forceEdgeOnFadeOff);
-    CHECK_NEAR(e.render.lightInfluence.x, 0.1, 1e-6);
-    CHECK_NEAR(e.render.headLightPower, 1.25, 1e-6);
+    CHECK_THAT(e.render.lightInfluence.x, WithinAbs(0.1, 1e-6));
+    CHECK_THAT(e.render.headLightPower, WithinAbs(1.25, 1e-6));
     // Colours are squared, alpha kept.
     const particles::Material& m = e.render.material;
-    CHECK_NEAR(m.rgbStart.r, 0.25, 1e-6);
-    CHECK_NEAR(m.rgbStart.b, 0.04, 1e-6);
-    CHECK_NEAR(m.rgbStart.a, 0.6, 1e-6);
-    CHECK_NEAR(m.rgbMid.g, 0.25, 1e-6);
-    CHECK_NEAR(m.rgbEnd.r, 0.01, 1e-6);
-    CHECK_NEAR(m.fadeInTo, 0.15, 1e-6);
-    CHECK_NEAR(m.fadeOutFrom, 0.56, 1e-6);
-    CHECK_EQ(e.render.texture, std::string("GR_Puffy_Smoke_DIFF.xds"));
-    CHECK_NEAR(e.maxLife(), 1.0, 1e-6);
+    CHECK_THAT(m.rgbStart.r, WithinAbs(0.25, 1e-6));
+    CHECK_THAT(m.rgbStart.b, WithinAbs(0.04, 1e-6));
+    CHECK_THAT(m.rgbStart.a, WithinAbs(0.6, 1e-6));
+    CHECK_THAT(m.rgbMid.g, WithinAbs(0.25, 1e-6));
+    CHECK_THAT(m.rgbEnd.r, WithinAbs(0.01, 1e-6));
+    CHECK_THAT(m.fadeInTo, WithinAbs(0.15, 1e-6));
+    CHECK_THAT(m.fadeOutFrom, WithinAbs(0.56, 1e-6));
+    CHECK(e.render.texture == std::string("GR_Puffy_Smoke_DIFF.xds"));
+    CHECK_THAT(e.maxLife(), WithinAbs(1.0, 1e-6));
 }
 
-TEST(olderVersionsFollowTheLoadersRules)
+TEST_CASE("olderVersionsFollowTheLoadersRules", "[particles]")
 {
     // Version 6: no fades (the RGBMid
     // element is not read; mid is the mean of start and end before
@@ -164,44 +169,44 @@ TEST(olderVersionsFollowTheLoadersRules)
         </Material></ParticleType></Render></Effect>)";
     const particles::EffectDefinition e = particles::parseEffect(xml, "old");
     // Version 1 files have no lower budget: half the budget.
-    CHECK_EQ(particles::parseEffect(R"(<Effect Version="1" budget="11"/>)", "v1").lowerBudget, 5U);
+    CHECK(particles::parseEffect(R"(<Effect Version="1" budget="11"/>)", "v1").lowerBudget == 5U);
     CHECK(e.shape == particles::EmitterShape::Plane);
-    CHECK_NEAR(e.size.box.x, 2.0, 1e-6);
-    CHECK_NEAR(e.size.box.z, 3.0, 1e-6);
-    CHECK_NEAR(e.offAxis.value, 0.0, 1e-6);
-    CHECK(e.animated() && e.rowOnly() && !e.soft());
-    CHECK_NEAR(e.density, 0.0, 1e-6);
-    CHECK_EQ(e.framesX, 4);
-    CHECK_EQ(e.framesY, 2);
+    CHECK_THAT(e.size.box.x, WithinAbs(2.0, 1e-6));
+    CHECK_THAT(e.size.box.z, WithinAbs(3.0, 1e-6));
+    CHECK_THAT(e.offAxis.value, WithinAbs(0.0, 1e-6));
+    CHECK((e.animated() && e.rowOnly() && !e.soft()));
+    CHECK_THAT(e.density, WithinAbs(0.0, 1e-6));
+    CHECK(e.framesX == 4);
+    CHECK(e.framesY == 2);
     const particles::Material& m = e.render.material;
     CHECK(m.blend == particles::BlendType::Additive);
-    CHECK_NEAR(m.rgbMid.r, 0.16, 1e-6);
-    CHECK_NEAR(m.rgbMid.g, 0.36, 1e-6);
-    CHECK_NEAR(m.rgbMid.a, 0.5, 1e-6);
-    CHECK_NEAR(m.fadeInTo, 0.5, 1e-6);
+    CHECK_THAT(m.rgbMid.r, WithinAbs(0.16, 1e-6));
+    CHECK_THAT(m.rgbMid.g, WithinAbs(0.36, 1e-6));
+    CHECK_THAT(m.rgbMid.a, WithinAbs(0.5, 1e-6));
+    CHECK_THAT(m.fadeInTo, WithinAbs(0.5, 1e-6));
     // Unlit particles do not blend in any lighting.
-    CHECK_NEAR(e.render.lightInfluence.w, 0.0, 1e-6);
-    CHECK_THROWS(particles::parseEffect("<Track/>", "bad"));
+    CHECK_THAT(e.render.lightInfluence.w, WithinAbs(0.0, 1e-6));
+    CHECK_THROWS_AS(particles::parseEffect("<Track/>", "bad"), std::exception);
 }
 
-TEST(effectListAndComposites)
+TEST_CASE("effectListAndComposites", "[particles]")
 {
     const auto list = particles::parseSystemList(
         R"(<Track><SystemEffect file="Dirt1" system_name="Dirt"/><SystemEffect file="_Composite_Fountain" system_name="_Composite_Fountain"/></Track>)");
-    CHECK_EQ(list.size(), std::size_t{2});
-    CHECK_EQ(list[0].systemName, std::string("Dirt"));
-    CHECK_EQ(particles::effectPath(list[0].file), std::string("media/effects/dirt1.xml"));
+    CHECK(list.size() == std::size_t{2});
+    CHECK(list[0].systemName == std::string("Dirt"));
+    CHECK(particles::effectPath(list[0].file) == std::string("media/effects/dirt1.xml"));
     CHECK(particles::isCompositeName(list[1].file));
     const particles::CompositeDefinition c = particles::parseComposite(
         R"(<Composite Version="2"><RepeatPeriod time="4"/><Effect><EmitterName name="a"/><FileName name="b"/><PosOffset v.x="1" v.y="2" v.z="3" v.w="0"/><StartOffset time="0.5"/><FinishOffset time="1.5"/></Effect></Composite>)",
         "c");
-    CHECK_NEAR(c.repeatPeriod, 4.0, 1e-6);
-    CHECK_EQ(c.members.size(), std::size_t{1});
-    CHECK_NEAR(c.members[0].positionOffset.y, 2.0, 1e-6);
-    CHECK_NEAR(c.members[0].finishOffset, 1.5, 1e-6);
+    CHECK_THAT(c.repeatPeriod, WithinAbs(4.0, 1e-6));
+    CHECK(c.members.size() == std::size_t{1});
+    CHECK_THAT(c.members[0].positionOffset.y, WithinAbs(2.0, 1e-6));
+    CHECK_THAT(c.members[0].finishOffset, WithinAbs(1.5, 1e-6));
 }
 
-TEST(surfaceWeightsComeFromSkidData)
+TEST_CASE("surfaceWeightsComeFromSkidData", "[particles]")
 {
     const auto table = particles::SurfaceEffectTable::parse(R"(<Root>
       <SurfaceTypesList><SurfaceType value="Asphalt"/><SurfaceType value="Gravel"/><SurfaceType value="Kerb"/><SurfaceType value="SmashableWood"/></SurfaceTypesList>
@@ -210,36 +215,36 @@ TEST(surfaceWeightsComeFromSkidData)
         <Gravel><SkidData><MinIntensity value="0.4"/><SmokeType Smoke="0" Dust="0" Grass="0" Dirt="0" GravelBits="1"/></SkidData></Gravel>
         <SmashableWood><SmokeType Smoke="0" Dust="1"/></SmashableWood>
       </SurfaceTypes></Root>)");
-    CHECK_EQ(table.surfaces().size(), std::size_t{4});
-    CHECK_NEAR(table.find(0)->weight(particles::TyreChannel::Smoke), 1.0, 1e-6);
-    CHECK_NEAR(table.find(1)->weight(particles::TyreChannel::GravelBits), 1.0, 1e-6);
-    CHECK_NEAR(table.find(1)->minIntensity, 0.4, 1e-6);
+    CHECK(table.surfaces().size() == std::size_t{4});
+    CHECK_THAT(table.find(0)->weight(particles::TyreChannel::Smoke), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(table.find(1)->weight(particles::TyreChannel::GravelBits), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(table.find(1)->minIntensity, WithinAbs(0.4, 1e-6));
     CHECK(!table.find(2)->hasSkidData);
     // SmokeType outside SkidData is not the tyre table's.
-    CHECK_NEAR(table.find(3)->weight(particles::TyreChannel::Dust), 0.0, 1e-6);
+    CHECK_THAT(table.find(3)->weight(particles::TyreChannel::Dust), WithinAbs(0.0, 1e-6));
     CHECK(table.find(4) == nullptr);
-    CHECK_EQ(table.idOf("Gravel").value_or(99), std::size_t{1});
-    CHECK_EQ(particles::tyreChannelName(particles::TyreChannel::DustBumper3), std::string_view("DustBumper3"));
+    CHECK(table.idOf("Gravel").value_or(99) == std::size_t{1});
+    CHECK(particles::tyreChannelName(particles::TyreChannel::DustBumper3) == std::string_view("DustBumper3"));
 }
 
-TEST(rotationsFollowXnaConventions)
+TEST_CASE("rotationsFollowXnaConventions", "[particles]")
 {
     const glm::mat3 x = particles::rotationX(0.3F);
-    CHECK_NEAR(x[1].y, std::cos(0.3), 1e-6);
-    CHECK_NEAR(x[1].z, std::sin(0.3), 1e-6);
+    CHECK_THAT(x[1].y, WithinAbs(std::cos(0.3), 1e-6));
+    CHECK_THAT(x[1].z, WithinAbs(std::sin(0.3), 1e-6));
     // A roll of 90 degrees takes x to y; a yaw of 90 degrees takes x to -z.
     const glm::vec3 rolled = particles::transformRow(glm::vec3(1, 0, 0), particles::rollPitchYaw(0, 0, kPi / 2));
-    CHECK_NEAR(rolled.y, 1.0, 1e-6);
+    CHECK_THAT(rolled.y, WithinAbs(1.0, 1e-6));
     const glm::vec3 yawed = particles::transformRow(glm::vec3(1, 0, 0), particles::rollPitchYaw(0, kPi / 2, 0));
-    CHECK_NEAR(yawed.z, -1.0, 1e-6);
+    CHECK_THAT(yawed.z, WithinAbs(-1.0, 1e-6));
     const glm::mat3 n = particles::rotationNormal(glm::vec3(1, 0, 0), 0.7F);
     const glm::mat3 r = particles::rotationX(0.7F);
     for (int i = 0; i < 3; ++i) {
-        CHECK_NEAR(glm::length(n[i] - r[i]), 0.0, 1e-6);
+        CHECK_THAT(glm::length(n[i] - r[i]), WithinAbs(0.0, 1e-6));
     }
 }
 
-TEST(emissionRateAndBudget)
+TEST_CASE("emissionRateAndBudget", "[particles]")
 {
     particles::ParticleManager manager = smokeManager();
     particles::ParticleSystem& system = *manager.find("Smoke");
@@ -247,23 +252,23 @@ TEST(emissionRateAndBudget)
     request.direction = glm::vec3(0.0F, 0.0F, 1.0F);
     // No emission before the first update: the rate is per the last step.
     manager.emit(system, request);
-    CHECK_EQ(system.size(), std::size_t{0});
+    CHECK(system.size() == std::size_t{0});
     manager.update(0.1F);
     manager.emit(system, request);
-    CHECK_EQ(system.size(), std::size_t{3});
+    CHECK(system.size() == std::size_t{3});
     for (int i = 0; i < 5; ++i) {
         manager.emit(system, request);
     }
     // The ring holds at most the budget.
-    CHECK_EQ(system.size(), std::size_t{10});
+    CHECK(system.size() == std::size_t{10});
     // Particles free their slots after the longest life.
     for (int i = 0; i < 11; ++i) {
         manager.update(0.1F);
     }
-    CHECK_EQ(system.size(), std::size_t{0});
+    CHECK(system.size() == std::size_t{0});
 }
 
-TEST(sprayDirectionAndSpawnedState)
+TEST_CASE("sprayDirectionAndSpawnedState", "[particles]")
 {
     particles::ParticleManager manager = smokeManager();
     particles::ParticleSystem& system = *manager.find("Smoke");
@@ -277,25 +282,25 @@ TEST(sprayDirectionAndSpawnedState)
         particles::EmitRequest request;
         request.direction = d;
         manager.emit(system, request);
-        CHECK_EQ(system.size(), std::size_t{1});
+        CHECK(system.size() == std::size_t{1});
         const particles::Particle& p = system.at(0);
         // Velocity 2 m/s along the direction; motion inheritance adds
         // nothing without an inherited velocity. The asin polynomial is
         // approximate.
         CHECK(glm::length(p.velocity / 2.0F - d) < 2e-3F);
         CHECK(p.alive);
-        CHECK_NEAR(p.age, 0.0, 1e-6);
-        CHECK_NEAR(p.life, 1.0, 1e-6);
-        CHECK_NEAR(p.maxSize.x, 1.0, 1e-6);
+        CHECK_THAT(p.age, WithinAbs(0.0, 1e-6));
+        CHECK_THAT(p.life, WithinAbs(1.0, 1e-6));
+        CHECK_THAT(p.maxSize.x, WithinAbs(1.0, 1e-6));
         // Grows, so it starts at valueX; does not grow in y.
-        CHECK_NEAR(p.size.x, 0.1, 1e-6);
-        CHECK_NEAR(p.size.y, 2.0, 1e-6);
-        CHECK_NEAR(p.spinRate, kPi / 2.0, 1e-5);
-        CHECK(p.random >= 0.0F && p.random <= 255.0F);
+        CHECK_THAT(p.size.x, WithinAbs(0.1, 1e-6));
+        CHECK_THAT(p.size.y, WithinAbs(2.0, 1e-6));
+        CHECK_THAT(p.spinRate, WithinAbs(kPi / 2.0, 1e-5));
+        CHECK((p.random >= 0.0F && p.random <= 255.0F));
     }
 }
 
-TEST(behavioursAndSizeCurve)
+TEST_CASE("behavioursAndSizeCurve", "[particles]")
 {
     particles::ParticleManager manager = smokeManager();
     particles::ParticleSystem& system = *manager.find("Smoke");
@@ -305,10 +310,10 @@ TEST(behavioursAndSizeCurve)
     request.direction = glm::vec3(0.0F, 0.0F, 1.0F);
     request.inheritVelocity = glm::vec3(10.0F, 0.0F, 0.0F);
     manager.emit(system, request);
-    CHECK_EQ(system.size(), std::size_t{1});
+    CHECK(system.size() == std::size_t{1});
     const glm::vec3 v0 = system.at(0).velocity;
     // Full inheritance chance at half the emitter velocity.
-    CHECK_NEAR(v0.x, 5.0, 1e-4);
+    CHECK_THAT(v0.x, WithinAbs(5.0, 1e-4));
     manager.update(dt);
     const particles::Particle& p = system.at(0);
     // Gravity -0.5 adds 0.5 * dt^2 upwards, then friction scales by
@@ -317,40 +322,40 @@ TEST(behavioursAndSizeCurve)
     expected.y += 0.5F * dt * dt;
     expected *= 1.0F - 0.65F * glm::length(expected) * dt;
     CHECK(glm::length(p.velocity - expected) < 1e-5F);
-    CHECK_NEAR(p.age, dt, 1e-6);
+    CHECK_THAT(p.age, WithinAbs(dt, 1e-6));
     // Half way through the growth window: t = life/maxLife * age.
     for (int i = 0; i < 7; ++i) {
         manager.update(dt);
     }
     const float t = system.at(0).age - dt;
-    CHECK_NEAR(system.at(0).size.x, 0.1 + 0.9 * (t / 0.5), 1e-4);
+    CHECK_THAT(system.at(0).size.x, WithinAbs(0.1 + 0.9 * (t / 0.5), 1e-4));
 }
 
-TEST(skidIntensityFollowsTheFrictionCircle)
+TEST_CASE("skidIntensityFollowsTheFrictionCircle", "[particles]")
 {
     particles::SurfaceEffects surface;
     surface.minIntensity = 0.4F;
     particles::TyreWheelInput wheel;
     wheel.normalisedLoad = 1.3F;
     wheel.frictionCircle = 0.5F;
-    CHECK_NEAR(particles::skidIntensity(wheel, surface), 0.0, 1e-6);
+    CHECK_THAT(particles::skidIntensity(wheel, surface), WithinAbs(0.0, 1e-6));
     wheel.frictionCircle = 2.5F;
-    CHECK_NEAR(particles::skidIntensity(wheel, surface), 1.0, 1e-6);
+    CHECK_THAT(particles::skidIntensity(wheel, surface), WithinAbs(1.0, 1e-6));
     wheel.frictionCircle = (0.95F + 2.0F) * 0.5F;
-    CHECK_NEAR(particles::skidIntensity(wheel, surface), 0.5, 1e-5);
+    CHECK_THAT(particles::skidIntensity(wheel, surface), WithinAbs(0.5, 1e-5));
     // Lighter wheels lower the thresholds and the weight.
     wheel.normalisedLoad = 0.5F;
     wheel.frictionCircle = 1.5F * 2.0F;
-    CHECK_NEAR(particles::skidIntensity(wheel, surface), 0.8 * 0.45, 1e-5);
+    CHECK_THAT(particles::skidIntensity(wheel, surface), WithinAbs(0.8 * 0.45, 1e-5));
     wheel.normalisedLoad = 0.0F;
-    CHECK_NEAR(particles::skidIntensity(wheel, surface), 0.0, 1e-6);
+    CHECK_THAT(particles::skidIntensity(wheel, surface), WithinAbs(0.0, 1e-6));
     // The surface floor applies while the wheel moves and turns.
     wheel.wheelVelocity = glm::vec3(1.0F, 0.0F, 0.0F);
     wheel.wheelRpm = 10.0F;
-    CHECK_NEAR(particles::skidIntensity(wheel, surface), 0.4, 1e-6);
+    CHECK_THAT(particles::skidIntensity(wheel, surface), WithinAbs(0.4, 1e-6));
 }
 
-TEST(tyreSmokeRules)
+TEST_CASE("tyreSmokeRules", "[particles]")
 {
     particles::ParticleManager manager = smokeManager();
     const auto surfaces = particles::SurfaceEffectTable::parse(R"(<Root>
@@ -368,35 +373,31 @@ TEST(tyreSmokeRules)
     // The smoke needs slide above 0.3.
     car.wheels[2].slide = 0.3F;
     tyres.emit(car);
-    CHECK_EQ(smoke.size(), std::size_t{0});
+    CHECK(smoke.size() == std::size_t{0});
     car.wheels[2].slide = 1.0F;
     tyres.emit(car);
-    CHECK_EQ(smoke.size(), std::size_t{3});
+    CHECK(smoke.size() == std::size_t{3});
     // It fades out between 8 and 10 m/s of car speed.
     smoke.clear();
     car.velocity = glm::vec3(0.0F, 0.0F, 10.0F);
     tyres.emit(car);
-    CHECK_EQ(smoke.size(), std::size_t{0});
+    CHECK(smoke.size() == std::size_t{0});
     // Wheels far from the car are ignored.
     car.velocity = glm::vec3(0.0F);
     car.wheels[2].frame.position = glm::vec3(0.0F, 0.0F, 7.0F);
     tyres.emit(car);
-    CHECK_EQ(smoke.size(), std::size_t{0});
+    CHECK(smoke.size() == std::size_t{0});
 }
 
-TEST(discEffects)
+TEST_CASE("discEffects", "[particles]")
 {
-    const char* gameDir = std::getenv("FH1_GAME_DIR");
-    if (gameDir == nullptr || *gameDir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return;
-    }
+    const char* gameDir = fh::test::gameDir();
     fh::Vfs vfs;
     vfs.mountDisc(gameDir);
 
     const particles::ParticleManager manager = particles::ParticleManager::load(vfs);
-    CHECK_EQ(manager.systems().size(), std::size_t{208});
-    CHECK_EQ(manager.skipped().size(), std::size_t{17});
+    CHECK(manager.systems().size() == std::size_t{208});
+    CHECK(manager.skipped().size() == std::size_t{17});
 
     // Every single effect file of the folder reads.
     std::size_t effects = 0;
@@ -413,37 +414,37 @@ TEST(discEffects)
             ++effects;
         }
     }
-    CHECK_EQ(effects, std::size_t{241});
+    CHECK(effects == std::size_t{241});
 
     const particles::ParticleSystem* smoke = manager.find("Smoke");
     CHECK(smoke != nullptr);
     if (smoke != nullptr) {
         const particles::EffectDefinition& d = smoke->definition();
-        CHECK_EQ(d.budget, 180U);
-        CHECK_NEAR(d.quantity.value, 20.0, 1e-5);
-        CHECK_NEAR(d.life.value, 1.600001, 1e-5);
+        CHECK(d.budget == 180U);
+        CHECK_THAT(d.quantity.value, WithinAbs(20.0, 1e-5));
+        CHECK_THAT(d.life.value, WithinAbs(1.600001, 1e-5));
         CHECK(d.soft());
-        CHECK_NEAR(d.size.maxValue.x, 1.0, 1e-6);
-        CHECK_EQ(d.render.texture, std::string("GR_Puffy_Smoke_DIFF.xds"));
+        CHECK_THAT(d.size.maxValue.x, WithinAbs(1.0, 1e-6));
+        CHECK(d.render.texture == std::string("GR_Puffy_Smoke_DIFF.xds"));
     }
     const particles::ParticleSystem* dirt = manager.find("Dirt");
-    CHECK(dirt != nullptr && dirt->definition().animated() && dirt->definition().rowOnly()
-        && dirt->definition().gradient());
+    CHECK((dirt != nullptr && dirt->definition().animated() && dirt->definition().rowOnly()
+        && dirt->definition().gradient()));
 
     const auto table = particles::SurfaceEffectTable::load(vfs);
-    CHECK_EQ(table.surfaces().size(), std::size_t{68});
+    CHECK(table.surfaces().size() == std::size_t{68});
     const particles::SurfaceEffects* asphalt = table.find(table.idOf("Asphalt").value_or(999));
-    CHECK(asphalt != nullptr && asphalt->weight(particles::TyreChannel::Smoke) == 1.0F);
+    CHECK((asphalt != nullptr && asphalt->weight(particles::TyreChannel::Smoke) == 1.0F));
     const particles::SurfaceEffects* dirtSurface = table.find(table.idOf("Dirt").value_or(999));
-    CHECK(dirtSurface != nullptr && dirtSurface->weight(particles::TyreChannel::Dust) == 0.5F
-        && dirtSurface->weight(particles::TyreChannel::Dirt) == 1.0F && dirtSurface->minIntensity == 0.4F);
+    CHECK((dirtSurface != nullptr && dirtSurface->weight(particles::TyreChannel::Dust) == 0.5F
+        && dirtSurface->weight(particles::TyreChannel::Dirt) == 1.0F && dirtSurface->minIntensity == 0.4F));
 
     // The smoke texture decodes.
     const auto texture = vfs.read("media/effects/gr_puffy_smoke_diff.xds");
     CHECK(texture.has_value());
     if (texture) {
         const fh::world::RgbaImage image = fh::world::decodeXboxTexture(*texture);
-        CHECK(image.width > 0 && image.height > 0);
+        CHECK((image.width > 0 && image.height > 0));
     }
 }
 
@@ -487,56 +488,56 @@ constexpr const char* kEmittersXml = R"(<?xml version="1.0" encoding="utf-8"?>
 
 // ParticleEmitters.xml as 0x82dcc748 and 0x82dc4eb8 read it: z of the
 // position negated, the axes kept as angles whose rotation gives them back.
-TEST(placedEmittersAreReadLikeTheGame)
+TEST_CASE("placedEmittersAreReadLikeTheGame", "[particles]")
 {
     const particles::ParticleEmitterSet set = particles::ParticleEmitterSet::parse(kEmittersXml, "test");
-    CHECK_EQ(set.simpleEmitters().size(), std::size_t{1});
-    CHECK_EQ(set.triggerableEmitters().size(), std::size_t{1});
-    CHECK_EQ(set.zones().size(), std::size_t{1});
+    CHECK(set.simpleEmitters().size() == std::size_t{1});
+    CHECK(set.triggerableEmitters().size() == std::size_t{1});
+    CHECK(set.zones().size() == std::size_t{1});
     const particles::PlacedEmitter* flare = set.findSimple("FR17_flare");
     CHECK(flare != nullptr);
     if (flare != nullptr) {
         CHECK(flare->composite());
         CHECK(flare->type == particles::EmitterShape::SuperSpray);
-        CHECK_NEAR(flare->position.z, 643.2515, 1e-4);
-        CHECK_NEAR(flare->spray.x, 90.0, 1e-6);
+        CHECK_THAT(flare->position.z, WithinAbs(643.2515, 1e-4));
+        CHECK_THAT(flare->spray.x, WithinAbs(90.0, 1e-6));
         const glm::mat3 m = particles::rollPitchYaw(flare->angles.x, flare->angles.y, flare->angles.z);
         for (int row = 0; row < 3; ++row) {
-            CHECK_NEAR(glm::distance(m[row], flare->axes[row]), 0.0, 1e-5);
+            CHECK_THAT(glm::distance(m[row], flare->axes[row]), WithinAbs(0.0, 1e-5));
         }
     }
     // No Type is a SuperSpray (the caller's 2), whatever the element.
     CHECK(set.triggerableEmitters()[0].type == particles::EmitterShape::SuperSpray);
     CHECK(set.triggerableEmitters()[0].gameplayId.empty());
-    CHECK_EQ(set.zones()[0].emitters.size(), std::size_t{1});
-    CHECK_NEAR(set.zones()[0].radius, 150.0, 1e-6);
+    CHECK(set.zones()[0].emitters.size() == std::size_t{1});
+    CHECK_THAT(set.zones()[0].radius, WithinAbs(150.0, 1e-6));
     const std::map<std::string, std::size_t> counts = set.countByEffect();
-    CHECK_EQ(counts.at("_Composite_Flare_2"), std::size_t{1});
+    CHECK(counts.at("_Composite_Flare_2") == std::size_t{1});
 }
 
 // A Z axis pointing straight up has its z set to 1e-5 first (0x82dc5114),
 // which gives the speed cameras' flashes a heading.
-TEST(upwardAxisKeepsAHeading)
+TEST_CASE("upwardAxisKeepsAHeading", "[particles]")
 {
     const glm::mat3 axes{
         glm::vec3(0.3980994F, 0.0F, 0.9173423F), glm::vec3(0.9173423F, 0.0F, -0.3980994F), glm::vec3(0.0F, 1.0F, 0.0F)};
     const glm::vec3 angles = particles::placementAngles(axes, particles::EmitterShape::SuperSpray);
-    CHECK_NEAR(angles.x, -kPi / 2.0F, 1e-4);
-    CHECK_NEAR(angles.y, 0.0, 1e-6);
+    CHECK_THAT(angles.x, WithinAbs(-kPi / 2.0F, 1e-4));
+    CHECK_THAT(angles.y, WithinAbs(0.0, 1e-6));
     const glm::mat3 m = particles::rollPitchYaw(angles.x, angles.y, angles.z);
-    CHECK_NEAR(glm::distance(m[0], axes[0]), 0.0, 1e-3);
+    CHECK_THAT(glm::distance(m[0], axes[0]), WithinAbs(0.0, 1e-3));
 }
 
 // Kept emitters (0x82414440): an infinite one emits at its rate until it is
 // stopped; a timed one waits for its start and goes at its end.
-TEST(keptEmittersRunAndStop)
+TEST_CASE("keptEmittersRunAndStop", "[particles]")
 {
     particles::ParticleManager manager = smokeManager();
     particles::ParticleSystem& smoke = *manager.find("Smoke");
     particles::GameRandom crt(1);
     smoke.addEmitter(smoke.makeEmitter(7, glm::vec3(1.0F, 2.0F, 3.0F), glm::vec3(0.0F)));
     CHECK(smoke.hasEmitter(7));
-    CHECK_NEAR(smoke.emitters()[0].rate, 30.0, 1e-6);
+    CHECK_THAT(smoke.emitters()[0].rate, WithinAbs(30.0, 1e-6));
     for (int i = 0; i < 3; ++i) {
         smoke.update(0.1F, 1.0F);
         smoke.updateEmitters(0.1F, crt);
@@ -545,12 +546,12 @@ TEST(keptEmittersRunAndStop)
     // budget sustains (0.9 per 0.1 s) was spawned, so the budget scale
     // falls by 0.95 each update: 2.85 (2, 0.85 carried), then 2.71 + 0.85
     // (3).
-    CHECK_EQ(smoke.size(), std::size_t{8});
-    CHECK_NEAR(smoke.at(0).position.x, 1.0 + 2.0 * 0.2, 0.05);
+    CHECK(smoke.size() == std::size_t{8});
+    CHECK_THAT(smoke.at(0).position.x, WithinAbs(1.0 + 2.0 * 0.2, 0.05));
     smoke.stopEmitters(7, std::nullopt);
     smoke.updateEmitters(0.1F, crt);
     CHECK(!smoke.hasEmitter(7));
-    CHECK_EQ(smoke.size(), std::size_t{8});
+    CHECK(smoke.size() == std::size_t{8});
 
     std::string timedXml = kSmokeXml;
     timedXml.replace(timedXml.find(R"(start="0.000000" end="0.000000" infinite="1")"),
@@ -562,7 +563,7 @@ TEST(keptEmittersRunAndStop)
     for (int i = 0; i < 2; ++i) {
         timed.updateEmitters(0.1F, crt);
     }
-    CHECK_EQ(timed.size(), std::size_t{0});
+    CHECK(timed.size() == std::size_t{0});
     timed.updateEmitters(0.1F, crt);
     CHECK(timed.size() > 0);
     for (int i = 0; i < 3; ++i) {
@@ -571,25 +572,21 @@ TEST(keptEmittersRunAndStop)
     CHECK(!timed.hasEmitter(1));
 }
 
-TEST(discParticleEmitters)
+TEST_CASE("discParticleEmitters", "[particles]")
 {
-    const char* gameDir = std::getenv("FH1_GAME_DIR");
-    if (gameDir == nullptr || *gameDir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return;
-    }
+    const char* gameDir = fh::test::gameDir();
     fh::Vfs vfs;
     vfs.mountDisc(gameDir);
     const particles::ParticleEmitterSet set = particles::ParticleEmitterSet::load(vfs, "colorado");
-    CHECK_EQ(set.simpleEmitters().size(), std::size_t{132});
-    CHECK_EQ(set.triggerableEmitters().size(), std::size_t{1305});
-    CHECK_EQ(set.zones().size(), std::size_t{930});
+    CHECK(set.simpleEmitters().size() == std::size_t{132});
+    CHECK(set.triggerableEmitters().size() == std::size_t{1305});
+    CHECK(set.zones().size() == std::size_t{930});
     const std::map<std::string, std::size_t> counts = set.countByEffect();
-    CHECK_EQ(counts.at("AMB_HouseSmokeVent_Var_2"), std::size_t{597});
-    CHECK_EQ(counts.at("AMB_Chimney_Smoke_White"), std::size_t{299});
-    CHECK_EQ(counts.at("AMB_Birds_Flocking_NoOrient"), std::size_t{98});
-    CHECK_EQ(counts.at("AMB_Camera_Flash"), std::size_t{44});
-    CHECK_EQ(counts.at("_Composite_CampFire"), std::size_t{27});
+    CHECK(counts.at("AMB_HouseSmokeVent_Var_2") == std::size_t{597});
+    CHECK(counts.at("AMB_Chimney_Smoke_White") == std::size_t{299});
+    CHECK(counts.at("AMB_Birds_Flocking_NoOrient") == std::size_t{98});
+    CHECK(counts.at("AMB_Camera_Flash") == std::size_t{44});
+    CHECK(counts.at("_Composite_CampFire") == std::size_t{27});
     std::size_t flares = 0;
     std::size_t flareComposites = 0;
     for (const particles::PlacedEmitter& e : set.simpleEmitters()) {
@@ -598,10 +595,10 @@ TEST(discParticleEmitters)
             flareComposites += e.effect.starts_with("_Composite_Flare") ? 1 : 0;
         }
         const glm::mat3 m = particles::rollPitchYaw(e.angles.x, e.angles.y, e.angles.z);
-        CHECK_NEAR(glm::distance(m[0], e.axes[0]), 0.0, 1e-3);
+        CHECK_THAT(glm::distance(m[0], e.axes[0]), WithinAbs(0.0, 1e-3));
     }
-    CHECK_EQ(flares, std::size_t{88});
-    CHECK_EQ(flareComposites, std::size_t{88});
+    CHECK(flares == std::size_t{88});
+    CHECK(flareComposites == std::size_t{88});
     // Every triggerable emitter is named by a zone.
     std::set<std::string> named;
     for (const particles::EmitterTriggerZone& z : set.zones()) {
@@ -614,14 +611,14 @@ TEST(discParticleEmitters)
     // load by name; switching one on runs its four members.
     particles::ParticleManager manager = particles::ParticleManager::load(vfs);
     manager.placeSimpleEmitters(vfs, set);
-    CHECK_EQ(manager.simpleEmitters().size(), std::size_t{132});
+    CHECK(manager.simpleEmitters().size() == std::size_t{132});
     CHECK(manager.find("AMB_Ground_Flare_2") != nullptr);
     const particles::SimpleEmitterState* flare = manager.simpleEmitter("FR04_flare");
     CHECK(flare != nullptr);
     if (flare == nullptr) {
         return;
     }
-    CHECK(flare->composite != nullptr && flare->composite->members.size() == 4);
+    CHECK((flare->composite != nullptr && flare->composite->members.size() == 4));
     CHECK(manager.activateSimpleEmitter("FR04_flare"));
     CHECK(flare->running);
     for (int i = 0; i < 30; ++i) {
@@ -639,9 +636,4 @@ TEST(discParticleEmitters)
     for (const particles::ParticleSystem* system : manager.systemsOf(*flare)) {
         CHECK(!system->hasEmitter(flare->id));
     }
-}
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
 }

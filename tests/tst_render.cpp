@@ -2,7 +2,11 @@
 // an offscreen context the round trip through the cache and the fallback to
 // compiling when a cached binary is refused.
 
-#include "TestHarness.h"
+#include "support/GlContext.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/reporters/catch_reporter_event_listener.hpp>
+#include <catch2/reporters/catch_reporter_registrars.hpp>
 
 #include "base/Host.h"
 #include "platform/Window.h"
@@ -36,39 +40,19 @@ void main()
 )";
 
 /// The folder the tests point the user cache folder's variable at,
-/// emptied by main().
+/// emptied by CacheFolder.
 std::filesystem::path& cacheHome()
 {
     static std::filesystem::path path;
     return path;
 }
 
-/// One offscreen context for the GL tests, or null when this machine has
-/// none (the tests then skip).
-fh::Window* window()
-{
-    static std::unique_ptr<fh::Window> instance = [] {
-        fh::WindowOptions options;
-        options.width = 64;
-        options.height = 64;
-        options.hidden = true;
-        options.vsync = false;
-        try {
-            return std::make_unique<fh::Window>(options);
-        } catch (const std::exception& e) {
-            std::fprintf(stderr, "skipped: no OpenGL context (%s)\n", e.what());
-            return std::unique_ptr<fh::Window>();
-        }
-    }();
-    return instance.get();
-}
-
-TEST(cacheKeyIsStableAndCoversEveryInput)
+TEST_CASE("cacheKeyIsStableAndCoversEveryInput", "[render]")
 {
     const std::string key = fh::render::programCacheKey("vendor\nrenderer\n4.5", "vertex", "fragment");
-    CHECK_EQ(key.size(), std::size_t{32});
+    CHECK(key.size() == std::size_t{32});
     CHECK(key.find_first_not_of("0123456789abcdef") == std::string::npos);
-    CHECK_EQ(fh::render::programCacheKey("vendor\nrenderer\n4.5", "vertex", "fragment"), key);
+    CHECK(fh::render::programCacheKey("vendor\nrenderer\n4.5", "vertex", "fragment") == key);
     // A driver update, or either source changing, gives another key.
     CHECK(fh::render::programCacheKey("vendor\nrenderer\n4.6", "vertex", "fragment") != key);
     CHECK(fh::render::programCacheKey("vendor\nrenderer\n4.5", "vertex ", "fragment") != key);
@@ -79,23 +63,20 @@ TEST(cacheKeyIsStableAndCoversEveryInput)
         != fh::render::programCacheKey("d", "fragment", "vertex"));
 }
 
-TEST(cacheFolderIsInTheUserCacheFolder)
+TEST_CASE("cacheFolderIsInTheUserCacheFolder", "[render]")
 {
-    // main() points the cache's variable at cacheHome(); the folder rules
+    // CacheFolder points the cache's variable at cacheHome(); the folder rules
     // themselves are tst_base's.
     CHECK(fh::render::programCacheDirectory().native().starts_with(cacheHome().native()));
-    CHECK_EQ(fh::render::programCacheDirectory().filename(), std::filesystem::path("shaders"));
+    CHECK(fh::render::programCacheDirectory().filename() == std::filesystem::path("shaders"));
 }
 
-TEST(programsRoundTripThroughTheCache)
+TEST_CASE("programsRoundTripThroughTheCache", "[render]")
 {
-    if (!window()) {
-        return;
-    }
+    fh::test::requireGlContext();
     const std::filesystem::path file = fh::render::programCacheFile(kVertex, kFragment);
     if (file.empty()) {
-        std::fprintf(stderr, "skipped: the driver has no program binary formats\n");
-        return;
+        SKIP("the driver has no program binary formats");
     }
     CHECK(file.native().starts_with(cacheHome().native()));
     const fh::render::ProgramCacheStats before = fh::render::programCacheStats();
@@ -104,8 +85,8 @@ TEST(programsRoundTripThroughTheCache)
     CHECK(cold != 0);
     glDeleteProgram(cold);
     const fh::render::ProgramCacheStats afterCold = fh::render::programCacheStats();
-    CHECK_EQ(afterCold.compiled, before.compiled + 1);
-    CHECK_EQ(afterCold.stored, before.stored + 1);
+    CHECK(afterCold.compiled == before.compiled + 1);
+    CHECK(afterCold.stored == before.stored + 1);
     CHECK(std::filesystem::exists(file));
 
     fh::render::ProgramBuild warm("warm", kVertex, kFragment);
@@ -118,21 +99,18 @@ TEST(programsRoundTripThroughTheCache)
     CHECK(linked != 0);
     glDeleteProgram(restored);
     const fh::render::ProgramCacheStats afterWarm = fh::render::programCacheStats();
-    CHECK_EQ(afterWarm.fromCache, afterCold.fromCache + 1);
-    CHECK_EQ(afterWarm.compiled, afterCold.compiled);
+    CHECK(afterWarm.fromCache == afterCold.fromCache + 1);
+    CHECK(afterWarm.compiled == afterCold.compiled);
 }
 
-TEST(refusedBinariesFallBackToCompiling)
+TEST_CASE("refusedBinariesFallBackToCompiling", "[render]")
 {
-    if (!window()) {
-        return;
-    }
+    fh::test::requireGlContext();
     // Sources of their own, so this test's entry is not the other test's.
     const std::string vertex = std::string(kVertex) + "// refused\n";
     const std::filesystem::path file = fh::render::programCacheFile(vertex, kFragment);
     if (file.empty()) {
-        std::fprintf(stderr, "skipped: the driver has no program binary formats\n");
-        return;
+        SKIP("the driver has no program binary formats");
     }
     glDeleteProgram(fh::render::linkProgram("first", vertex, kFragment));
     CHECK(std::filesystem::exists(file));
@@ -161,9 +139,9 @@ TEST(refusedBinariesFallBackToCompiling)
     CHECK(linked != 0);
     glDeleteProgram(program);
     const fh::render::ProgramCacheStats after = fh::render::programCacheStats();
-    CHECK_EQ(after.rejected, before.rejected + 1);
-    CHECK_EQ(after.compiled, before.compiled + 1);
-    CHECK_EQ(after.stored, before.stored + 1);
+    CHECK(after.rejected == before.rejected + 1);
+    CHECK(after.compiled == before.compiled + 1);
+    CHECK(after.stored == before.stored + 1);
 
     // The rewritten entry loads again.
     fh::render::ProgramBuild again("again", vertex, kFragment);
@@ -175,14 +153,12 @@ TEST(refusedBinariesFallBackToCompiling)
     fh::render::ProgramBuild truncated("truncated", vertex, kFragment);
     CHECK(!truncated.fromCache());
     glDeleteProgram(truncated.finish());
-    CHECK_EQ(fh::render::programCacheStats().rejected, after.rejected + 1);
+    CHECK(fh::render::programCacheStats().rejected == after.rejected + 1);
 }
 
-TEST(brokenSourcesThrowWithTheirName)
+TEST_CASE("brokenSourcesThrowWithTheirName", "[render]")
 {
-    if (!window()) {
-        return;
-    }
+    fh::test::requireGlContext();
     const std::string broken = "#version 450 core\nvoid main() { this is not glsl }\n";
     bool threw = false;
     try {
@@ -193,7 +169,7 @@ TEST(brokenSourcesThrowWithTheirName)
     }
     CHECK(threw);
     const std::filesystem::path file = fh::render::programCacheFile(kVertex, broken);
-    CHECK(file.empty() || !std::filesystem::exists(file));
+    CHECK((file.empty() || !std::filesystem::exists(file)));
 }
 
 } // namespace
@@ -201,7 +177,7 @@ TEST(brokenSourcesThrowWithTheirName)
 // The world draws a chunk's triangles only while the camera is within its
 // band: the batches' runs of chunks become index ranges, adjacent ones
 // merged, and a batch none of whose chunks is drawn gets no range.
-TEST(selectedChunksBecomeMergedIndexRanges)
+TEST_CASE("selectedChunksBecomeMergedIndexRanges", "[render]")
 {
     struct Batch {
         std::uint32_t firstIndex = 0;
@@ -221,42 +197,51 @@ TEST(selectedChunksBecomeMergedIndexRanges)
     std::vector<std::uint32_t> start;
     fh::render::selectRanges(batches, drawn, ranges, start);
     CHECK(start == (std::vector<std::uint32_t>{0, 1, 1, 2}));
-    CHECK_EQ(ranges.size(), std::size_t{2});
-    CHECK_EQ(ranges[0].first, 0U);
-    CHECK_EQ(ranges[0].count, 30U);
-    CHECK_EQ(ranges[1].first, 39U);
-    CHECK_EQ(ranges[1].count, 12U);
+    CHECK(ranges.size() == std::size_t{2});
+    CHECK(ranges[0].first == 0U);
+    CHECK(ranges[0].count == 30U);
+    CHECK(ranges[1].first == 39U);
+    CHECK(ranges[1].count == 12U);
 
     drawn[5] = 0;
     fh::render::selectRanges(batches, drawn, ranges, start);
     CHECK(start == (std::vector<std::uint32_t>{0, 2, 2, 3}));
-    CHECK_EQ(ranges[0].count, 6U);
-    CHECK_EQ(ranges[1].first, 18U);
+    CHECK(ranges[0].count == 6U);
+    CHECK(ranges[1].first == 18U);
 
     fh::render::wholeRanges(batches, ranges, start);
     CHECK(start == (std::vector<std::uint32_t>{0, 1, 2, 3}));
-    CHECK_EQ(ranges[1].first, 30U);
-    CHECK_EQ(ranges[1].count, 9U);
+    CHECK(ranges[1].first == 30U);
+    CHECK(ranges[1].count == 9U);
 
     std::vector<fh::world::ChunkRun> runs;
     fh::world::appendChunkRun(runs, 3, 0, 6);
     fh::world::appendChunkRun(runs, 3, 6, 3);
     fh::world::appendChunkRun(runs, 4, 9, 0);
     fh::world::appendChunkRun(runs, 4, 9, 3);
-    CHECK_EQ(runs.size(), std::size_t{2});
-    CHECK_EQ(runs[0].indexCount, 9U);
-    CHECK_EQ(runs[1].chunk, 4U);
+    CHECK(runs.size() == std::size_t{2});
+    CHECK(runs[0].indexCount == 9U);
+    CHECK(runs[1].chunk == 4U);
 }
 
-int main(int argc, char** argv)
-{
-    // Never open a window on the desktop, and never touch the real cache.
-    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen", false);
-    fh::setEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy", false);
-    cacheHome() = std::filesystem::temp_directory_path() / "fh1-tst-render-cache";
-    std::filesystem::remove_all(cacheHome());
-    fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache), fh::pathToUtf8(cacheHome()));
-    const int result = fh::test::runAllTests(argc > 1 ? argv[1] : "");
-    std::filesystem::remove_all(cacheHome());
-    return result;
-}
+namespace {
+
+/// Points the user cache folder at an empty cacheHome() before the cases
+/// run, never the real cache, and empties it after them.
+class CacheFolder : public Catch::EventListenerBase {
+public:
+    using Catch::EventListenerBase::EventListenerBase;
+
+    void testRunStarting(const Catch::TestRunInfo& /*info*/) override
+    {
+        cacheHome() = std::filesystem::temp_directory_path() / "fh1-tst-render-cache";
+        std::filesystem::remove_all(cacheHome());
+        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache), fh::pathToUtf8(cacheHome()));
+    }
+
+    void testRunEnded(const Catch::TestRunStats& /*stats*/) override { std::filesystem::remove_all(cacheHome()); }
+};
+
+} // namespace
+
+CATCH_REGISTER_LISTENER(CacheFolder)

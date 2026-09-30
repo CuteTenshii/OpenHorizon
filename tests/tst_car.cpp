@@ -4,7 +4,10 @@
 // They need the disc and skip without FH1_GAME_DIR; fh1cartest covers the
 // performance figures.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "car/CarPhysics.h"
 #include "car/CarSpec.h"
@@ -23,19 +26,13 @@
 #include <optional>
 #include <vector>
 
+using Catch::Matchers::WithinAbs;
+
+using fh::test::gameDir;
+
 namespace {
 
 constexpr int kStepsPerSecond = 360;
-
-const char* gameDir()
-{
-    const char* dir = std::getenv("FH1_GAME_DIR");
-    if (dir == nullptr || *dir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return nullptr;
-    }
-    return dir;
-}
 
 /// The disc's database, loaded once for all tests.
 struct Disc {
@@ -112,27 +109,21 @@ float bodySlip(const fh::CarPhysics& car)
     return std::atan2(glm::dot(v, car.right()), glm::dot(v, car.forward()));
 }
 
-TEST(carLeftAloneOnFlatGroundStaysStill)
+TEST_CASE("carLeftAloneOnFlatGroundStaysStill", "[car]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::FlatGround ground;
     fh::CarPhysics car(Disc::get(dir).car("ALF_8C_08"));
     car.reset({0, 0, 0}, 0, ground);
     drive(car, ground, {}, 2.0F);
     const glm::vec3 start = car.position();
     drive(car, ground, {}, 30.0F);
-    CHECK_NEAR(glm::length(car.position() - start), 0.0, 0.01);
+    CHECK_THAT(glm::length(car.position() - start), WithinAbs(0.0, 0.01));
 }
 
-TEST(handbrakeHoldsACarOnASlope)
+TEST_CASE("handbrakeHoldsACarOnASlope", "[car]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     // The game holds a stopped car on its handbrake. The tyre model has no
     // static friction at walking speed, so it still creeps a little on a
     // steep slope; this bounds that creep.
@@ -150,12 +141,9 @@ TEST(handbrakeHoldsACarOnASlope)
     }
 }
 
-TEST(assistsRecoverFromPowerOversteer)
+TEST_CASE("assistsRecoverFromPowerOversteer", "[car]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     // A second of full lock at full throttle, then the wheel straight: with
     // the default assists the car must come back in line, not keep turning.
     fh::FlatGround ground;
@@ -172,12 +160,9 @@ TEST(assistsRecoverFromPowerOversteer)
     CHECK(std::abs(bodySlip(car)) < 0.2F);
 }
 
-TEST(steeringLockIsTheSameBothWays)
+TEST_CASE("steeringLockIsTheSameBothWays", "[car]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::FlatGround ground;
     const fh::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
     const auto lockAt = [&](float steer) {
@@ -191,8 +176,8 @@ TEST(steeringLockIsTheSameBothWays)
     const auto [leftFl, leftFr] = lockAt(-1.0F);
     const auto [rightFl, rightFr] = lockAt(1.0F);
     // The inner wheel turns more (Ackermann), and the sides mirror.
-    CHECK_NEAR(leftFl, -rightFr, 1e-4);
-    CHECK_NEAR(leftFr, -rightFl, 1e-4);
+    CHECK_THAT(leftFl, WithinAbs(-rightFr, 1e-4));
+    CHECK_THAT(leftFr, WithinAbs(-rightFl, 1e-4));
     CHECK(std::abs(leftFl) > std::abs(leftFr));
 }
 
@@ -226,47 +211,38 @@ float steadySteerAngle(const fh::CarSpec& spec, float kmh, float input)
     return centreSteerAngle(car) * kRadToDeg;
 }
 
-TEST(fullSteerAtRestReachesFullLock)
+TEST_CASE("fullSteerAtRestReachesFullLock", "[car]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     // Below 2 m/s (0x82000CE0) CCarDynamics' pad steering (0x82DF9620)
     // asks for the stick's share of the full lock, SteerMaxAngle.
     for (const char* media : {"ALF_8C_08", "HON_CivicR_04", "FOR_GT40_66"}) {
         const fh::CarSpec spec = Disc::get(dir).car(media);
-        CHECK_NEAR(steadySteerAngle(spec, 0.0F, 1.0F), spec.steerMaxAngleDeg, 1e-3);
-        CHECK_NEAR(steadySteerAngle(spec, 0.0F, -1.0F), -spec.steerMaxAngleDeg, 1e-3);
-        CHECK_NEAR(steadySteerAngle(spec, 0.0F, 0.5F), 0.5F * spec.steerMaxAngleDeg, 1e-3);
+        CHECK_THAT(steadySteerAngle(spec, 0.0F, 1.0F), WithinAbs(spec.steerMaxAngleDeg, 1e-3));
+        CHECK_THAT(steadySteerAngle(spec, 0.0F, -1.0F), WithinAbs(-spec.steerMaxAngleDeg, 1e-3));
+        CHECK_THAT(steadySteerAngle(spec, 0.0F, 0.5F), WithinAbs(0.5F * spec.steerMaxAngleDeg, 1e-3));
     }
 }
 
-TEST(fullSteerLockFallsWithSpeed)
+TEST_CASE("fullSteerLockFallsWithSpeed", "[car]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     // The speed-sensitive lock (0x82DE7E70) narrows towards
     // SteerSpeedSensitiveMinMaxAngle as speed rises, the same both ways.
     const fh::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
     float previous = spec.steerMaxAngleDeg;
     for (const float kmh : {20.0F, 40.0F, 60.0F, 100.0F, 150.0F}) {
         const float right = steadySteerAngle(spec, kmh, 1.0F);
-        CHECK_NEAR(steadySteerAngle(spec, kmh, -1.0F), -right, 1e-3);
+        CHECK_THAT(steadySteerAngle(spec, kmh, -1.0F), WithinAbs(-right, 1e-3));
         CHECK(right < previous);
         CHECK(right >= spec.steerSpeedSensitiveMinAngleDeg - 1e-3F);
         previous = right;
     }
 }
 
-TEST(nearlyFullSteerAtSpeedGetsTheFindPeakLock)
+TEST_CASE("nearlyFullSteerAtSpeedGetsTheFindPeakLock", "[car]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     // With the stick at 0.976 of full input or more (0x8224ACA0) and the
     // wheels within one step's turn of the lock, the pad steering
     // (0x82DF9620) adds lock while the front tyres are short of their
@@ -351,12 +327,9 @@ WallHit driveIntoWall(const fh::CarSpec& spec, float kmh, float angle, float sec
     return result;
 }
 
-TEST(wallImpactDoesNotSpinTheCar)
+TEST_CASE("wallImpactDoesNotSpinTheCar", "[car]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     // A player drove into a wall and the car spun round about eight times.
     // Head-on and at 40 degrees, at town and open-road speeds, a car
     // glances off or stops against the wall; it does not turn round, and it
@@ -395,12 +368,9 @@ float boxPenetration(const fh::CarPhysics& car, const fh::CarPhysics& other)
     return deepest;
 }
 
-TEST(carDoesNotSinkIntoOrLaunchATruck)
+TEST_CASE("carDoesNotSinkIntoOrLaunchATruck", "[car]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     // Players drove into a traffic box truck (KEN_T440_12) and ended up
     // inside it, or sent it flying upside down. The default car drives at a
     // truck standing still, into its tail, its nose and its side, at 30 and
@@ -475,8 +445,3 @@ TEST(carDoesNotSinkIntoOrLaunchATruck)
 }
 
 } // namespace
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}

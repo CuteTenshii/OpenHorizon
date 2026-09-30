@@ -4,7 +4,10 @@
 // banks of every kind (every bank as a slow test), every project and every
 // engine tuning on it.
 
-#include "TestHarness.h"
+#include "support/TestSupport.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "audio/AudioDevice.h"
 #include "audio/AudioLibrary.h"
@@ -47,6 +50,10 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+using Catch::Matchers::WithinAbs;
+
+using fh::test::gameDir;
 
 namespace {
 
@@ -199,46 +206,46 @@ std::vector<TestSample> testSamples()
     return {tone, stereo, xma};
 }
 
-TEST(fsbParsesHeadersAndLaysOutData)
+TEST_CASE("fsbParsesHeadersAndLaysOutData", "[audio]")
 {
     const std::vector<TestSample> source = testSamples();
     const FsbBank bank = FsbBank::parse(buildFsb(source, 0x40), "test.fsb");
-    CHECK_EQ(bank.size(), std::size_t{3});
-    CHECK_EQ(bank.version(), 0x00040000U);
-    CHECK_EQ(bank.hash(), kTestHash);
+    CHECK(bank.size() == std::size_t{3});
+    CHECK(bank.version() == 0x00040000U);
+    CHECK(bank.hash() == kTestHash);
 
     const FsbSample& tone = bank.sample(0);
-    CHECK_EQ(tone.name, std::string("Tone.wav"));
-    CHECK_EQ(tone.sampleCount, 4U);
-    CHECK_EQ(tone.frequency, 22050);
+    CHECK(tone.name == std::string("Tone.wav"));
+    CHECK(tone.sampleCount == 4U);
+    CHECK(tone.frequency == 22050);
     CHECK(tone.codec == SampleCodec::Pcm16);
     CHECK(tone.loops());
-    CHECK_EQ(tone.loopStart, 1U);
-    CHECK_EQ(tone.loopEnd, 3U);
+    CHECK(tone.loopStart == 1U);
+    CHECK(tone.loopEnd == 3U);
 
     const FsbSample& stereo = bank.sample(1);
     CHECK(stereo.codec == SampleCodec::Pcm8);
     CHECK(stereo.pcmUnsigned());
-    CHECK_EQ(stereo.channels, 2);
+    CHECK(stereo.channels == 2);
 
     const FsbSample& xma = bank.sample(2);
     CHECK(xma.codec == SampleCodec::Xma);
-    CHECK_EQ(xma.name.size(), std::size_t{29});
-    CHECK_EQ(xma.xmaSeekTable.size(), std::size_t{2});
+    CHECK(xma.name.size() == std::size_t{29});
+    CHECK(xma.xmaSeekTable.size() == std::size_t{2});
     if (xma.xmaSeekTable.size() == 2) {
-        CHECK_EQ(xma.xmaSeekTable[1], 0x9E00U);
+        CHECK(xma.xmaSeekTable[1] == 0x9E00U);
     }
 
     // Data starts after the headers and each sample on a 32-byte boundary.
     const std::size_t dataStart = 0x30 + 0x50 * 2 + 0x70;
-    CHECK_EQ(tone.dataOffset, dataStart);
-    CHECK_EQ(stereo.dataOffset, dataStart + 32);
-    CHECK_EQ(xma.dataOffset, dataStart + 64);
-    CHECK_EQ(bank.sampleData(1).size(), std::size_t{6});
-    CHECK_EQ(bank.sampleData(1)[1], 255);
+    CHECK(tone.dataOffset == dataStart);
+    CHECK(stereo.dataOffset == dataStart + 32);
+    CHECK(xma.dataOffset == dataStart + 64);
+    CHECK(bank.sampleData(1).size() == std::size_t{6});
+    CHECK(bank.sampleData(1)[1] == 255);
 }
 
-TEST(fsbFindsSamplesByWaveformName)
+TEST_CASE("fsbFindsSamplesByWaveformName", "[audio]")
 {
     const FsbBank bank = FsbBank::parse(buildFsb(testSamples(), 0), "test.fsb");
     CHECK(bank.findSample("Tone") == std::optional<std::size_t>(0));
@@ -250,7 +257,7 @@ TEST(fsbFindsSamplesByWaveformName)
     CHECK(!bank.sampleHasName(0, "stereo8"));
 }
 
-TEST(fsbBasicHeadersRepeatTheFirstSample)
+TEST_CASE("fsbBasicHeadersRepeatTheFirstSample", "[audio]")
 {
     std::vector<TestSample> samples(3);
     for (std::size_t i = 0; i < samples.size(); ++i) {
@@ -261,52 +268,52 @@ TEST(fsbBasicHeadersRepeatTheFirstSample)
         samples[i].data = Bytes((2 + i) * 2, static_cast<std::uint8_t>(i));
     }
     const FsbBank bank = FsbBank::parse(buildFsb(samples, 0x2), "basic.fsb");
-    CHECK_EQ(bank.size(), std::size_t{3});
-    CHECK_EQ(bank.sample(2).sampleCount, 4U);
-    CHECK_EQ(bank.sample(2).frequency, 32000);
-    CHECK_EQ(bank.sample(2).compressedSize, 8U);
-    CHECK_EQ(bank.sampleData(2)[0], 2);
+    CHECK(bank.size() == std::size_t{3});
+    CHECK(bank.sample(2).sampleCount == 4U);
+    CHECK(bank.sample(2).frequency == 32000);
+    CHECK(bank.sample(2).compressedSize == 8U);
+    CHECK(bank.sampleData(2)[0] == 2);
 }
 
-TEST(fsbRejectsDamagedBanks)
+TEST_CASE("fsbRejectsDamagedBanks", "[audio]")
 {
     const Bytes good = buildFsb(testSamples(), 0);
     Bytes badMagic = good;
     badMagic[3] = '3';
-    CHECK_THROWS(FsbBank::parse(badMagic, "magic.fsb"));
-    CHECK_THROWS(FsbBank::parse(Bytes(good.begin(), good.begin() + 0x40), "short.fsb"));
+    CHECK_THROWS_AS(FsbBank::parse(badMagic, "magic.fsb"), std::exception);
+    CHECK_THROWS_AS(FsbBank::parse(Bytes(good.begin(), good.begin() + 0x40), "short.fsb"), std::exception);
     Bytes truncatedData(good.begin(), good.end() - 100);
-    CHECK_THROWS(FsbBank::parse(truncatedData, "data.fsb"));
+    CHECK_THROWS_AS(FsbBank::parse(truncatedData, "data.fsb"), std::exception);
     Bytes oversize = good;
     oversize[0x30 + 0x24] = 0xFF;
-    CHECK_THROWS(FsbBank::parse(oversize, "oversize.fsb"));
+    CHECK_THROWS_AS(FsbBank::parse(oversize, "oversize.fsb"), std::exception);
     const FsbBank bank = FsbBank::parse(good, "ok.fsb");
-    CHECK_THROWS(bank.sample(3));
+    CHECK_THROWS_AS(bank.sample(3), std::exception);
 }
 
-TEST(pcmDecodesExactly)
+TEST_CASE("pcmDecodesExactly", "[audio]")
 {
     const FsbBank bank = FsbBank::parse(buildFsb(testSamples(), 0), "test.fsb");
     const PcmBuffer tone = decodeSample(bank, 0);
-    CHECK_EQ(tone.channels, 1);
-    CHECK_EQ(tone.sampleRate, 22050);
-    CHECK_EQ(tone.frames(), std::size_t{4});
-    CHECK_NEAR(tone.samples[1], 0.5, 1e-6);
-    CHECK_NEAR(tone.samples[2], -0.5, 1e-6);
-    CHECK_NEAR(tone.samples[3], 32767.0 / 32768.0, 1e-6);
-    CHECK_EQ(tone.loopStart, std::size_t{1});
-    CHECK_EQ(tone.loopEnd, std::size_t{4});
+    CHECK(tone.channels == 1);
+    CHECK(tone.sampleRate == 22050);
+    CHECK(tone.frames() == std::size_t{4});
+    CHECK_THAT(tone.samples[1], WithinAbs(0.5, 1e-6));
+    CHECK_THAT(tone.samples[2], WithinAbs(-0.5, 1e-6));
+    CHECK_THAT(tone.samples[3], WithinAbs(32767.0 / 32768.0, 1e-6));
+    CHECK(tone.loopStart == std::size_t{1});
+    CHECK(tone.loopEnd == std::size_t{4});
 
     const PcmBuffer stereo = decodeSample(bank, 1);
-    CHECK_EQ(stereo.frames(), std::size_t{3});
-    CHECK_NEAR(stereo.samples[0], 0.0, 1e-6);
-    CHECK_NEAR(stereo.samples[1], 127.0 / 128.0, 1e-6);
-    CHECK_NEAR(stereo.samples[2], -1.0, 1e-6);
-    CHECK_NEAR(stereo.samples[4], 0.5, 1e-6);
-    CHECK_NEAR(stereo.samples[5], -0.5, 1e-6);
+    CHECK(stereo.frames() == std::size_t{3});
+    CHECK_THAT(stereo.samples[0], WithinAbs(0.0, 1e-6));
+    CHECK_THAT(stereo.samples[1], WithinAbs(127.0 / 128.0, 1e-6));
+    CHECK_THAT(stereo.samples[2], WithinAbs(-1.0, 1e-6));
+    CHECK_THAT(stereo.samples[4], WithinAbs(0.5, 1e-6));
+    CHECK_THAT(stereo.samples[5], WithinAbs(-0.5, 1e-6));
 
     // Two kilobytes of zeros are no XMA stream.
-    CHECK_THROWS(decodeSample(bank, 2));
+    CHECK_THROWS_AS(decodeSample(bank, 2), std::exception);
 }
 
 /// A small FEV1 project with a complex and a simple event, in version 0x40
@@ -480,56 +487,56 @@ Bytes buildFev(bool old, int soundDefinitionOfClick = 0)
     return w.data;
 }
 
-TEST(fevParsesEventsAndSoundDefinitions)
+TEST_CASE("fevParsesEventsAndSoundDefinitions", "[audio]")
 {
     for (const bool old : {false, true}) {
         const Bytes data = buildFev(old);
         const FevProject project = FevProject::parse(data, "test.fev");
-        CHECK_EQ(project.name(), std::string("Proj"));
-        CHECK_EQ(project.version(), old ? 0x00370000U : 0x00400000U);
-        CHECK_EQ(project.banks().size(), std::size_t{1});
-        CHECK_EQ(project.banks()[0].name, std::string("Bank"));
-        CHECK_EQ(project.banks()[0].hash, old ? 0ULL : kTestHash);
-        CHECK_EQ(project.categories().children.size(), std::size_t{1});
-        CHECK_NEAR(project.categories().children[0].volume, 0.5, 1e-6);
+        CHECK(project.name() == std::string("Proj"));
+        CHECK(project.version() == (old ? 0x00370000U : 0x00400000U));
+        CHECK(project.banks().size() == std::size_t{1});
+        CHECK(project.banks()[0].name == std::string("Bank"));
+        CHECK(project.banks()[0].hash == (old ? 0ULL : kTestHash));
+        CHECK(project.categories().children.size() == std::size_t{1});
+        CHECK_THAT(project.categories().children[0].volume, WithinAbs(0.5, 1e-6));
 
-        CHECK_EQ(project.events().size(), std::size_t{2});
+        CHECK(project.events().size() == std::size_t{2});
         const FevEvent* engine = project.findEvent("Group/Sub/Engine");
         CHECK(engine != nullptr);
         if (engine) {
             CHECK(!engine->simple);
             CHECK(engine->is3d());
-            CHECK_NEAR(engine->volume, 0.5, 1e-6);
-            CHECK_EQ(engine->maxPlaybacks, 2U);
-            CHECK_NEAR(engine->maxDistance, 50.0, 1e-6);
-            CHECK_EQ(engine->guid[15], old ? 0 : 15);
-            CHECK_EQ(engine->layers.size(), std::size_t{1});
-            CHECK_EQ(engine->layers[0].sounds.size(), std::size_t{2});
-            CHECK_EQ(engine->layers[0].sounds[0].soundDefinition, 1);
+            CHECK_THAT(engine->volume, WithinAbs(0.5, 1e-6));
+            CHECK(engine->maxPlaybacks == 2U);
+            CHECK_THAT(engine->maxDistance, WithinAbs(50.0, 1e-6));
+            CHECK(engine->guid[15] == (old ? 0 : 15));
+            CHECK(engine->layers.size() == std::size_t{1});
+            CHECK(engine->layers[0].sounds.size() == std::size_t{2});
+            CHECK(engine->layers[0].sounds[0].soundDefinition == 1);
             CHECK(!engine->layers[0].sounds[0].oneShot);
             CHECK(engine->layers[0].sounds[1].oneShot);
-            CHECK_EQ(engine->layers[0].envelopes.size(), std::size_t{1});
+            CHECK(engine->layers[0].envelopes.size() == std::size_t{1});
             const FevEnvelope& envelope = engine->layers[0].envelopes[0];
             CHECK(envelope.isVolume());
-            CHECK_EQ(envelope.parameter, 1U);
-            CHECK_NEAR(envelope.valueAt(0.25F), 0.25, 1e-6);
-            CHECK_NEAR(envelope.valueAt(2.0F), 1.0, 1e-6);
-            CHECK_EQ(engine->parameters.size(), std::size_t{2});
-            CHECK_NEAR(engine->parameters[0].maximum, 8000.0, 1e-3);
-            CHECK_EQ(engine->parameters[0].sustainPoints.size(), std::size_t{1});
+            CHECK(envelope.parameter == 1U);
+            CHECK_THAT(envelope.valueAt(0.25F), WithinAbs(0.25, 1e-6));
+            CHECK_THAT(envelope.valueAt(2.0F), WithinAbs(1.0, 1e-6));
+            CHECK(engine->parameters.size() == std::size_t{2});
+            CHECK_THAT(engine->parameters[0].maximum, WithinAbs(8000.0, 1e-3));
+            CHECK(engine->parameters[0].sustainPoints.size() == std::size_t{1});
             CHECK(engine->findParameter("load") == &engine->parameters[1]);
-            CHECK_EQ(engine->categories.size(), std::size_t{1});
+            CHECK(engine->categories.size() == std::size_t{1});
         }
         const FevEvent* click = project.findEvent("proj/group/click");
         CHECK(click != nullptr);
         if (click) {
             CHECK(click->simple);
             CHECK(!click->is3d());
-            CHECK_EQ(click->path, std::string("Group/Click"));
+            CHECK(click->path == std::string("Group/Click"));
         }
         CHECK(project.findEvent("Group/Missing") == nullptr);
 
-        CHECK_EQ(project.groups().size(), std::size_t{2});
+        CHECK(project.groups().size() == std::size_t{2});
         const FevGroup* group = project.findGroup("proj/group");
         CHECK(group != nullptr);
         if (group) {
@@ -537,42 +544,43 @@ TEST(fevParsesEventsAndSoundDefinitions)
             CHECK(placeable != nullptr);
             if (placeable) {
                 CHECK(std::holds_alternative<std::int32_t>(placeable->value));
-                CHECK_EQ(std::get<std::int32_t>(placeable->value), 7);
+                CHECK(std::get<std::int32_t>(placeable->value) == 7);
             }
             CHECK(group->findUserProperty("Missing") == nullptr);
         }
         const FevGroup* sub = project.findGroup("Group/Sub");
         CHECK(sub != nullptr);
-        CHECK(sub && sub->userProperties.empty());
+        CHECK((sub && sub->userProperties.empty()));
         CHECK(project.findGroup("Sub") == nullptr);
 
-        CHECK_EQ(project.soundDefinitions().size(), std::size_t{2});
+        CHECK(project.soundDefinitions().size() == std::size_t{2});
         const FevSoundDefinition& definition = project.soundDefinition(0);
-        CHECK_EQ(definition.name, std::string("/Click"));
-        CHECK_EQ(definition.waveforms.size(), std::size_t{2});
+        CHECK(definition.name == std::string("/Click"));
+        CHECK(definition.waveforms.size() == std::size_t{2});
         CHECK(definition.waveforms[0].type == FevWaveform::Type::Wavetable);
-        CHECK_EQ(definition.waveforms[0].sampleIndex, 1U);
-        CHECK_EQ(definition.waveforms[0].lengthMs, 250U);
+        CHECK(definition.waveforms[0].sampleIndex == 1U);
+        CHECK(definition.waveforms[0].lengthMs == 250U);
         CHECK(definition.waveforms[1].type == FevWaveform::Type::DontPlay);
-        CHECK_THROWS(project.soundDefinition(2));
+        CHECK_THROWS_AS(project.soundDefinition(2), std::exception);
     }
 }
 
-TEST(fevRejectsMisreadProjects)
+TEST_CASE("fevRejectsMisreadProjects", "[audio]")
 {
     const Bytes good = buildFev(false);
-    CHECK_THROWS(FevProject::parse(Bytes(good.begin(), good.begin() + static_cast<std::ptrdiff_t>(good.size() / 2)),
-        "half.fev"));
+    CHECK_THROWS_AS(
+        FevProject::parse(Bytes(good.begin(), good.begin() + static_cast<std::ptrdiff_t>(good.size() / 2)), "half.fev"),
+        std::exception);
     Bytes trailing = good;
     trailing.push_back(0);
-    CHECK_THROWS(FevProject::parse(trailing, "trailing.fev"));
-    CHECK_THROWS(FevProject::parse(buildFev(false, 5), "badref.fev"));
+    CHECK_THROWS_AS(FevProject::parse(trailing, "trailing.fev"), std::exception);
+    CHECK_THROWS_AS(FevProject::parse(buildFev(false, 5), "badref.fev"), std::exception);
     Bytes version = good;
     version[6] = 0x41;
-    CHECK_THROWS(FevProject::parse(version, "version.fev"));
+    CHECK_THROWS_AS(FevProject::parse(version, "version.fev"), std::exception);
 }
 
-TEST(tyreSurfaceMapParses)
+TEST_CASE("tyreSurfaceMapParses", "[audio]")
 {
     const TyreSurfaceMap map = TyreSurfaceMap::parse(
         "<Tires>\n"
@@ -582,53 +590,53 @@ TEST(tyreSurfaceMapParses)
         "Lod2EventGroup=\"Tires/Tires/LOD2/OffRoad\" SurfaceIndex=\"12\"/>\n"
         "<SurfaceMap Lod1EventGroup=\"Tires/Tires/LOD1/OnRoad\"/>\n"
         "</Tires>\n");
-    CHECK_EQ(map.surfaces.size(), std::size_t{2});
+    CHECK(map.surfaces.size() == std::size_t{2});
     CHECK(map.find("gravel") == std::optional<std::size_t>(1));
     CHECK(!map.find("Kerb"));
-    CHECK_EQ(map.surfaces[1].lod1EventGroup, std::string("Tires/Tires/LOD1/OffRoad"));
-    CHECK_EQ(map.surfaces[1].lod2EventGroup, std::string("Tires/Tires/LOD2/OffRoad"));
-    CHECK_EQ(map.surfaces[1].surfaceIndex, 12);
-    CHECK_THROWS(TyreSurfaceMap::parse("<Other/>"));
-    CHECK_THROWS(TyreSurfaceMap::parse("not xml <"));
+    CHECK(map.surfaces[1].lod1EventGroup == std::string("Tires/Tires/LOD1/OffRoad"));
+    CHECK(map.surfaces[1].lod2EventGroup == std::string("Tires/Tires/LOD2/OffRoad"));
+    CHECK(map.surfaces[1].surfaceIndex == 12);
+    CHECK_THROWS_AS(TyreSurfaceMap::parse("<Other/>"), std::exception);
+    CHECK_THROWS_AS(TyreSurfaceMap::parse("not xml <"), std::exception);
 }
 
-TEST(wavHeaderDescribesTheData)
+TEST_CASE("wavHeaderDescribesTheData", "[audio]")
 {
     PcmBuffer pcm;
     pcm.sampleRate = 44100;
     pcm.channels = 2;
     pcm.samples = {0.0F, 1.0F, -1.0F, 2.0F};
     const Bytes pcmWav = encodeWav(pcm, WavFormat::Pcm16);
-    CHECK_EQ(pcmWav.size(), std::size_t{44 + 8});
-    CHECK_EQ(fh::loadLe32(pcmWav.data() + 24), 44100U);
-    CHECK_EQ(fh::loadLe16(pcmWav.data() + 20), 1);
-    CHECK_EQ(fh::loadLe16(pcmWav.data() + 22), 2);
-    CHECK_EQ(static_cast<std::int16_t>(fh::loadLe16(pcmWav.data() + 46)), 32767);
-    CHECK_EQ(static_cast<std::int16_t>(fh::loadLe16(pcmWav.data() + 50)), 32767);
+    CHECK(pcmWav.size() == std::size_t{44 + 8});
+    CHECK(fh::loadLe32(pcmWav.data() + 24) == 44100U);
+    CHECK(fh::loadLe16(pcmWav.data() + 20) == 1);
+    CHECK(fh::loadLe16(pcmWav.data() + 22) == 2);
+    CHECK(static_cast<std::int16_t>(fh::loadLe16(pcmWav.data() + 46)) == 32767);
+    CHECK(static_cast<std::int16_t>(fh::loadLe16(pcmWav.data() + 50)) == 32767);
 
     const Bytes floatWav = encodeWav(pcm, WavFormat::Float32);
-    CHECK_EQ(floatWav.size(), std::size_t{44 + 16});
-    CHECK_EQ(fh::loadLe16(floatWav.data() + 20), 3);
-    CHECK_EQ(fh::loadLe32(floatWav.data() + 40), 16U);
-    CHECK_NEAR(std::bit_cast<float>(fh::loadLe32(floatWav.data() + 56)), 2.0, 0.0);
+    CHECK(floatWav.size() == std::size_t{44 + 16});
+    CHECK(fh::loadLe16(floatWav.data() + 20) == 3);
+    CHECK(fh::loadLe32(floatWav.data() + 40) == 16U);
+    CHECK_THAT(std::bit_cast<float>(fh::loadLe32(floatWav.data() + 56)), WithinAbs(2.0, 0.0));
 }
 
-TEST(biquadResponses)
+TEST_CASE("biquadResponses", "[audio]")
 {
     const float rate = 48000.0F;
     FilterSpec lowpass;
     lowpass.type = FilterSpec::Type::Lowpass;
     lowpass.frequency = 1000.0F;
     const BiquadCoefficients lp = BiquadCoefficients::design(lowpass, rate);
-    CHECK_NEAR(lp.magnitudeAt(50.0F, rate), 1.0, 0.01);
-    CHECK_NEAR(lp.magnitudeAt(1000.0F, rate), std::numbers::sqrt2 / 2.0, 0.01);
+    CHECK_THAT(lp.magnitudeAt(50.0F, rate), WithinAbs(1.0, 0.01));
+    CHECK_THAT(lp.magnitudeAt(1000.0F, rate), WithinAbs(std::numbers::sqrt2 / 2.0, 0.01));
     CHECK(lp.magnitudeAt(10000.0F, rate) < 0.02F);
 
     FilterSpec highpass = lowpass;
     highpass.type = FilterSpec::Type::Highpass;
     const BiquadCoefficients hp = BiquadCoefficients::design(highpass, rate);
     CHECK(hp.magnitudeAt(50.0F, rate) < 0.01F);
-    CHECK_NEAR(hp.magnitudeAt(15000.0F, rate), 1.0, 0.02);
+    CHECK_THAT(hp.magnitudeAt(15000.0F, rate), WithinAbs(1.0, 0.02));
 
     FilterSpec peq;
     peq.type = FilterSpec::Type::Peaking;
@@ -636,9 +644,9 @@ TEST(biquadResponses)
     peq.bandwidth = 1.0F;
     peq.gain = 2.0F;
     const BiquadCoefficients pk = BiquadCoefficients::design(peq, rate);
-    CHECK_NEAR(pk.magnitudeAt(800.0F, rate), 2.0, 0.01);
-    CHECK_NEAR(pk.magnitudeAt(20.0F, rate), 1.0, 0.02);
-    CHECK_NEAR(pk.magnitudeAt(20000.0F, rate), 1.0, 0.02);
+    CHECK_THAT(pk.magnitudeAt(800.0F, rate), WithinAbs(2.0, 0.01));
+    CHECK_THAT(pk.magnitudeAt(20.0F, rate), WithinAbs(1.0, 0.02));
+    CHECK_THAT(pk.magnitudeAt(20000.0F, rate), WithinAbs(1.0, 0.02));
 
     // Filtering a signal agrees with the designed response.
     Biquad filter;
@@ -654,15 +662,15 @@ TEST(biquadResponses)
     CHECK(std::sqrt(energy / 43199.0) < 0.02);
 
     const BiquadCoefficients half = BiquadCoefficients::interpolate(lp, pk, 0.5F);
-    CHECK_NEAR(half.b0, (lp.b0 + pk.b0) / 2.0F, 1e-6);
+    CHECK_THAT(half.b0, WithinAbs((lp.b0 + pk.b0) / 2.0F, 1e-6));
 }
 
-TEST(hermiteInterpolation)
+TEST_CASE("hermiteInterpolation", "[audio]")
 {
-    CHECK_NEAR(hermite(0.0F, 1.0F, 2.0F, 3.0F, 0.0F), 1.0, 1e-6);
-    CHECK_NEAR(hermite(0.0F, 1.0F, 2.0F, 3.0F, 1.0F), 2.0, 1e-6);
-    CHECK_NEAR(hermite(0.0F, 1.0F, 2.0F, 3.0F, 0.25F), 1.25, 1e-6);
-    CHECK_NEAR(hermite(5.0F, 5.0F, 5.0F, 5.0F, 0.7F), 5.0, 1e-6);
+    CHECK_THAT(hermite(0.0F, 1.0F, 2.0F, 3.0F, 0.0F), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(hermite(0.0F, 1.0F, 2.0F, 3.0F, 1.0F), WithinAbs(2.0, 1e-6));
+    CHECK_THAT(hermite(0.0F, 1.0F, 2.0F, 3.0F, 0.25F), WithinAbs(1.25, 1e-6));
+    CHECK_THAT(hermite(5.0F, 5.0F, 5.0F, 5.0F, 0.7F), WithinAbs(5.0, 1e-6));
 }
 
 std::shared_ptr<const PcmBuffer> constant(float value, std::size_t frames, int channels = 1, int rate = 48000)
@@ -710,7 +718,7 @@ int zeroCrossings(const std::vector<float>& stereo, int channel)
     return crossings;
 }
 
-TEST(mixerLevelsAndPan)
+TEST_CASE("mixerLevelsAndPan", "[audio]")
 {
     Mixer mixer(48000);
     VoiceSettings settings;
@@ -718,20 +726,20 @@ TEST(mixerLevelsAndPan)
     const VoiceId centre = mixer.play(constant(0.5F, 4800), settings);
     CHECK(centre != kNoVoice);
     std::vector<float> out = render(mixer, 1024);
-    CHECK_NEAR(out[1000], 0.5 * std::cos(std::numbers::pi / 4.0), 1e-4);
-    CHECK_NEAR(out[1001], 0.5 * std::cos(std::numbers::pi / 4.0), 1e-4);
+    CHECK_THAT(out[1000], WithinAbs(0.5 * std::cos(std::numbers::pi / 4.0), 1e-4));
+    CHECK_THAT(out[1001], WithinAbs(0.5 * std::cos(std::numbers::pi / 4.0), 1e-4));
 
     mixer.setPan(centre, -1.0F);
     render(mixer, 512);
     out = render(mixer, 512);
-    CHECK_NEAR(out[100], 0.5, 1e-4);
-    CHECK_NEAR(out[101], 0.0, 1e-4);
+    CHECK_THAT(out[100], WithinAbs(0.5, 1e-4));
+    CHECK_THAT(out[101], WithinAbs(0.0, 1e-4));
 
     mixer.setVolume(centre, 0.5F);
     mixer.setPan(centre, 0.0F);
     render(mixer, 512);
     out = render(mixer, 512);
-    CHECK_NEAR(out[100], 0.25 * std::cos(std::numbers::pi / 4.0), 1e-4);
+    CHECK_THAT(out[100], WithinAbs(0.25 * std::cos(std::numbers::pi / 4.0), 1e-4));
 
     // A stereo source keeps its channels; pan is a balance.
     Mixer stereoMixer(48000);
@@ -743,11 +751,11 @@ TEST(mixerLevelsAndPan)
     settings.pan = 0.5F;
     stereoMixer.play(stereo, settings);
     out = render(stereoMixer, 256);
-    CHECK_NEAR(out[200], 0.2, 1e-4);
-    CHECK_NEAR(out[201], -0.2, 1e-4);
+    CHECK_THAT(out[200], WithinAbs(0.2, 1e-4));
+    CHECK_THAT(out[201], WithinAbs(-0.2, 1e-4));
 }
 
-TEST(mixerResamplesByRateAndPitch)
+TEST_CASE("mixerResamplesByRateAndPitch", "[audio]")
 {
     Mixer mixer(48000);
     VoiceSettings settings;
@@ -767,7 +775,7 @@ TEST(mixerResamplesByRateAndPitch)
     CHECK(std::abs(zeroCrossings(out, 0) - 1000) <= 4);
 }
 
-TEST(mixerVoicesEndLoopAndStop)
+TEST_CASE("mixerVoicesEndLoopAndStop", "[audio]")
 {
     Mixer mixer(48000);
     const VoiceId once = mixer.play(constant(0.5F, 100), VoiceSettings{});
@@ -775,7 +783,7 @@ TEST(mixerVoicesEndLoopAndStop)
     std::vector<float> out = render(mixer, 256);
     CHECK(!mixer.isPlaying(once));
     CHECK(std::abs(out[2 * 50]) > 0.1F);
-    CHECK_EQ(out[2 * 200], 0.0F);
+    CHECK(out[2 * 200] == 0.0F);
 
     VoiceSettings looping;
     looping.loop = true;
@@ -783,13 +791,13 @@ TEST(mixerVoicesEndLoopAndStop)
     out = render(mixer, 1000);
     CHECK(mixer.isPlaying(loop));
     CHECK(std::abs(out[2 * 999]) > 0.1F);
-    CHECK_EQ(mixer.activeVoiceCount(), std::size_t{1});
+    CHECK(mixer.activeVoiceCount() == std::size_t{1});
 
     mixer.stop(loop, 0.01F);
     out = render(mixer, 1024);
     CHECK(!mixer.isPlaying(loop));
-    CHECK_EQ(out[2 * 1023], 0.0F);
-    CHECK_EQ(mixer.activeVoiceCount(), std::size_t{0});
+    CHECK(out[2 * 1023] == 0.0F);
+    CHECK(mixer.activeVoiceCount() == std::size_t{0});
 
     // A handle stays dead when its slot is reused.
     const VoiceId reused = mixer.play(constant(0.5F, 100), looping);
@@ -797,25 +805,25 @@ TEST(mixerVoicesEndLoopAndStop)
     CHECK(!mixer.isPlaying(loop));
     mixer.setVolume(loop, 1.0F);
     CHECK(mixer.isPlaying(reused));
-    CHECK_EQ(mixer.play(nullptr, looping), kNoVoice);
+    CHECK(mixer.play(nullptr, looping) == kNoVoice);
 }
 
-TEST(rolloffShape)
+TEST_CASE("rolloffShape", "[audio]")
 {
     Rolloff rolloff{10.0F, 30.0F, 70.0F, 100.0F};
-    CHECK_NEAR(rolloff.gain(0.0F), 1.0, 1e-6);
-    CHECK_NEAR(rolloff.gain(10.0F), 1.0, 1e-6);
-    CHECK_NEAR(rolloff.gain(20.0F), 0.5, 1e-6);
-    CHECK_NEAR(rolloff.gain(30.0F), 1.0 / 3.0, 1e-6);
-    CHECK_NEAR(rolloff.gain(50.0F), 1.0 / 3.0, 1e-6);
-    CHECK_NEAR(rolloff.gain(85.0F), 1.0 / 6.0, 1e-6);
-    CHECK_NEAR(rolloff.gain(100.0F), 0.0, 1e-6);
-    CHECK_NEAR(rolloff.gain(500.0F), 0.0, 1e-6);
+    CHECK_THAT(rolloff.gain(0.0F), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(rolloff.gain(10.0F), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(rolloff.gain(20.0F), WithinAbs(0.5, 1e-6));
+    CHECK_THAT(rolloff.gain(30.0F), WithinAbs(1.0 / 3.0, 1e-6));
+    CHECK_THAT(rolloff.gain(50.0F), WithinAbs(1.0 / 3.0, 1e-6));
+    CHECK_THAT(rolloff.gain(85.0F), WithinAbs(1.0 / 6.0, 1e-6));
+    CHECK_THAT(rolloff.gain(100.0F), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(rolloff.gain(500.0F), WithinAbs(0.0, 1e-6));
     const Rolloff inverse{1.0F, 10000.0F};
-    CHECK_NEAR(inverse.gain(4.0F), 0.25, 1e-6);
+    CHECK_THAT(inverse.gain(4.0F), WithinAbs(0.25, 1e-6));
 }
 
-TEST(mixerSpatialVoices)
+TEST_CASE("mixerSpatialVoices", "[audio]")
 {
     Mixer mixer(48000);
     mixer.setListener({0.0F, 0.0F, 0.0F}, {1.0F, 0.0F, 0.0F});
@@ -826,24 +834,24 @@ TEST(mixerSpatialVoices)
     settings.rolloff = Rolloff{1.0F, 100.0F};
     const VoiceId voice = mixer.play(constant(0.5F, 4800), settings);
     std::vector<float> out = render(mixer, 512);
-    CHECK_NEAR(out[400], 0.0, 1e-5);
-    CHECK_NEAR(out[401], 0.05, 1e-4);
+    CHECK_THAT(out[400], WithinAbs(0.0, 1e-5));
+    CHECK_THAT(out[401], WithinAbs(0.05, 1e-4));
 
     // Turning the listener around swaps the sides.
     mixer.setListener({0.0F, 0.0F, 0.0F}, {-1.0F, 0.0F, 0.0F});
     render(mixer, 512);
     out = render(mixer, 512);
-    CHECK_NEAR(out[400], 0.05, 1e-4);
-    CHECK_NEAR(out[401], 0.0, 1e-5);
+    CHECK_THAT(out[400], WithinAbs(0.05, 1e-4));
+    CHECK_THAT(out[401], WithinAbs(0.0, 1e-5));
 
     mixer.setPosition(voice, {0.0F, 0.0F, 2.0F});
     render(mixer, 512);
     out = render(mixer, 512);
-    CHECK_NEAR(out[400], 0.25 * std::cos(std::numbers::pi / 4.0), 1e-4);
-    CHECK_NEAR(out[401], 0.25 * std::cos(std::numbers::pi / 4.0), 1e-4);
+    CHECK_THAT(out[400], WithinAbs(0.25 * std::cos(std::numbers::pi / 4.0), 1e-4));
+    CHECK_THAT(out[401], WithinAbs(0.25 * std::cos(std::numbers::pi / 4.0), 1e-4));
 }
 
-TEST(mixerBusesFilterAndScale)
+TEST_CASE("mixerBusesFilterAndScale", "[audio]")
 {
     Mixer mixer(48000);
     const BusId bus = mixer.createBus();
@@ -854,7 +862,7 @@ TEST(mixerBusesFilterAndScale)
     settings.bus = bus;
     mixer.play(constant(0.5F, 4800), settings);
     std::vector<float> out = render(mixer, 512);
-    CHECK_NEAR(out[100], 0.25 * std::cos(std::numbers::pi / 4.0), 1e-4);
+    CHECK_THAT(out[100], WithinAbs(0.25 * std::cos(std::numbers::pi / 4.0), 1e-4));
 
     Mixer filtered(48000);
     const BusId lowpassBus = filtered.createBus();
@@ -874,10 +882,10 @@ TEST(mixerBusesFilterAndScale)
 
     // Destroying a bus stops its voices.
     filtered.destroyBus(lowpassBus);
-    CHECK_EQ(filtered.activeVoiceCount(), std::size_t{0});
+    CHECK(filtered.activeVoiceCount() == std::size_t{0});
 }
 
-TEST(mixerBusesFeedOtherBuses)
+TEST_CASE("mixerBusesFeedOtherBuses", "[audio]")
 {
     Mixer mixer(48000);
     // A category bus with a car's emitter bus feeding it, created in either
@@ -889,31 +897,31 @@ TEST(mixerBusesFeedOtherBuses)
     CHECK(emitter < category);
     mixer.setBusVolume(category, 0.5F);
     mixer.setBusVolume(emitter, 0.8F);
-    CHECK_NEAR(mixer.busGain(emitter), 0.4, 1e-6);
-    CHECK_NEAR(mixer.busVolume(emitter), 0.8, 1e-6);
+    CHECK_THAT(mixer.busGain(emitter), WithinAbs(0.4, 1e-6));
+    CHECK_THAT(mixer.busVolume(emitter), WithinAbs(0.8, 1e-6));
     VoiceSettings settings;
     settings.loop = true;
     settings.bus = emitter;
     mixer.play(constant(0.5F, 4800), settings);
     std::vector<float> out = render(mixer, 512);
-    CHECK_NEAR(out[100], 0.2 * std::cos(std::numbers::pi / 4.0), 1e-4);
+    CHECK_THAT(out[100], WithinAbs(0.2 * std::cos(std::numbers::pi / 4.0), 1e-4));
 
     mixer.setBusVolume(category, 0.0F);
     render(mixer, 512);
     out = render(mixer, 512);
-    CHECK_NEAR(out[100], 0.0, 1e-6);
-    CHECK_NEAR(mixer.busGain(emitter), 0.0, 1e-6);
+    CHECK_THAT(out[100], WithinAbs(0.0, 1e-6));
+    CHECK_THAT(mixer.busGain(emitter), WithinAbs(0.0, 1e-6));
 
     // Without its output, a bus feeds the master.
     mixer.destroyBus(category);
-    CHECK_NEAR(mixer.busGain(emitter), 0.8, 1e-6);
+    CHECK_THAT(mixer.busGain(emitter), WithinAbs(0.8, 1e-6));
     render(mixer, 512);
     out = render(mixer, 512);
-    CHECK_NEAR(out[100], 0.4 * std::cos(std::numbers::pi / 4.0), 1e-4);
-    CHECK_EQ(mixer.busGain(category), 0.0F);
+    CHECK_THAT(out[100], WithinAbs(0.4 * std::cos(std::numbers::pi / 4.0), 1e-4));
+    CHECK(mixer.busGain(category) == 0.0F);
 }
 
-TEST(mixerLimiterHoldsTheCeiling)
+TEST_CASE("mixerLimiterHoldsTheCeiling", "[audio]")
 {
     Mixer mixer(48000);
     VoiceSettings settings;
@@ -931,7 +939,7 @@ TEST(mixerLimiterHoldsTheCeiling)
     CHECK(peak > 0.9F);
 }
 
-TEST(mixerControlFromAnotherThread)
+TEST_CASE("mixerControlFromAnotherThread", "[audio]")
 {
     Mixer mixer(48000);
     VoiceSettings settings;
@@ -956,7 +964,7 @@ TEST(mixerControlFromAnotherThread)
     CHECK(mixer.isPlaying(voice));
 }
 
-TEST(audioDeviceRendersOfflineAndOpensTheDummyDriver)
+TEST_CASE("audioDeviceRendersOfflineAndOpensTheDummyDriver", "[audio]")
 {
     AudioDevice offline{AudioDevice::Offline{}};
     CHECK(!offline.isLive());
@@ -964,7 +972,7 @@ TEST(audioDeviceRendersOfflineAndOpensTheDummyDriver)
     settings.loop = true;
     offline.mixer().play(constant(0.5F, 480), settings);
     const std::vector<float> out = offline.render(480);
-    CHECK_EQ(out.size(), std::size_t{960});
+    CHECK(out.size() == std::size_t{960});
     CHECK(std::abs(out[500]) > 0.3F);
 
     // The dummy driver exercises the SDL path without making a sound.
@@ -976,10 +984,10 @@ TEST(audioDeviceRendersOfflineAndOpensTheDummyDriver)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     CHECK(!live.mixer().isPlaying(voice));
-    CHECK_THROWS(live.render(16));
+    CHECK_THROWS_AS(live.render(16), std::exception);
 }
 
-TEST(tuningCurvesWeighInputsAndInterpolate)
+TEST_CASE("tuningCurvesWeighInputsAndInterpolate", "[audio]")
 {
     TuningCurve curve;
     curve.rpm = 0.3F;
@@ -988,19 +996,19 @@ TEST(tuningCurvesWeighInputsAndInterpolate)
     EngineInputs in;
     in.rpm = 1.0F;
     in.throttle = 0.0F;
-    CHECK_NEAR(curve.input(in), 0.3, 1e-6);
-    CHECK_NEAR(curve.evaluate(in), 0.2 + 0.4 * 0.6, 1e-6);
+    CHECK_THAT(curve.input(in), WithinAbs(0.3, 1e-6));
+    CHECK_THAT(curve.evaluate(in), WithinAbs(0.2 + 0.4 * 0.6, 1e-6));
     in.throttle = 1.0F;
-    CHECK_NEAR(curve.input(in), 1.0, 1e-6);
-    CHECK_NEAR(curve.evaluate(in), 0.8, 1e-6);
-    CHECK_NEAR(curve.at(-1.0F), 0.2, 1e-6);
-    CHECK_NEAR(curve.at(0.75F), 0.7, 1e-6);
+    CHECK_THAT(curve.input(in), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(curve.evaluate(in), WithinAbs(0.8, 1e-6));
+    CHECK_THAT(curve.at(-1.0F), WithinAbs(0.2, 1e-6));
+    CHECK_THAT(curve.at(0.75F), WithinAbs(0.7, 1e-6));
 
     // All-zero weights and repeated x values select y0, as the disc's
     // constant EQ frequencies need.
     TuningCurve flat;
     flat.points = {glm::vec2{0.0F, 4328.0F}, glm::vec2{0.0F, 20.0F}, glm::vec2{0.0F, 20.0F}};
-    CHECK_NEAR(flat.evaluate(EngineInputs{}), 4328.0, 1e-3);
+    CHECK_THAT(flat.evaluate(EngineInputs{}), WithinAbs(4328.0, 1e-3));
 }
 
 constexpr const char* kHarmonicXml = R"(
@@ -1117,74 +1125,74 @@ constexpr const char* kModelXml = R"(
   </Listener>
 </Car>)";
 
-TEST(engineTuningFilesParse)
+TEST_CASE("engineTuningFilesParse", "[audio]")
 {
     const HarmonicTuning harmonic = HarmonicTuning::parse(kHarmonicXml, "test_ht.xml");
-    CHECK_EQ(harmonic.bank, std::string("8N2_Test_Exh.fsb"));
-    CHECK_EQ(harmonic.loops.size(), std::size_t{2});
+    CHECK(harmonic.bank == std::string("8N2_Test_Exh.fsb"));
+    CHECK(harmonic.loops.size() == std::size_t{2});
     const std::vector<EngineLoop>& left = harmonic.loops.at("ExhaustL");
-    CHECK_EQ(left.size(), std::size_t{2});
-    CHECK_EQ(left[0].sampleIndex, 0U);
-    CHECK_NEAR(left[1].rpmSample, 2000.0, 1e-3);
-    CHECK_NEAR(harmonic.exhaustNoiseVolume, 0.2, 1e-6);
+    CHECK(left.size() == std::size_t{2});
+    CHECK(left[0].sampleIndex == 0U);
+    CHECK_THAT(left[1].rpmSample, WithinAbs(2000.0, 1e-3));
+    CHECK_THAT(harmonic.exhaustNoiseVolume, WithinAbs(0.2, 1e-6));
     CHECK(harmonic.burble.has_value());
     if (harmonic.burble) {
-        CHECK_EQ(harmonic.burble->burbles, 9U);
-        CHECK_EQ(harmonic.burble->backfires, 4U);
-        CHECK_EQ(harmonic.burble->silenceWeighting, 66);
-        CHECK_NEAR(harmonic.burble->maxRpm, 9067.0, 1e-3);
+        CHECK(harmonic.burble->burbles == 9U);
+        CHECK(harmonic.burble->backfires == 4U);
+        CHECK(harmonic.burble->silenceWeighting == 66);
+        CHECK_THAT(harmonic.burble->maxRpm, WithinAbs(9067.0, 1e-3));
     }
     EngineInputs in;
     in.throttle = 1.0F;
     in.posTorque = 1.0F;
     const std::vector<FilterSpec> filters = harmonic.dsp.filters(in);
-    CHECK_EQ(filters.size(), std::size_t{3});
+    CHECK(filters.size() == std::size_t{3});
     if (filters.size() == 3) {
         CHECK(filters[0].type == FilterSpec::Type::Peaking);
-        CHECK_NEAR(filters[0].frequency, 150.0, 1e-3);
-        CHECK_NEAR(filters[0].gain, 1.5, 1e-6);
-        CHECK_NEAR(filters[1].gain, 1.54, 1e-5);
+        CHECK_THAT(filters[0].frequency, WithinAbs(150.0, 1e-3));
+        CHECK_THAT(filters[0].gain, WithinAbs(1.5, 1e-6));
+        CHECK_THAT(filters[1].gain, WithinAbs(1.54, 1e-5));
         CHECK(filters[2].type == FilterSpec::Type::Lowpass);
-        CHECK_NEAR(filters[2].frequency, 19913.0, 1e-2);
+        CHECK_THAT(filters[2].frequency, WithinAbs(19913.0, 1e-2));
     }
-    CHECK_NEAR(harmonic.dsp.volume.evaluate(in), 0.55, 1e-6);
+    CHECK_THAT(harmonic.dsp.volume.evaluate(in), WithinAbs(0.55, 1e-6));
 
     const EngineTuning engine = EngineTuning::parse(kEngineXml, "test_et.xml");
-    CHECK_NEAR(engine.idleRpm, 850.0, 1e-3);
-    CHECK_NEAR(engine.redlineRpm, 7500.0, 1e-3);
-    CHECK_EQ(engine.cylinders, 8);
-    CHECK_NEAR(engine.shiftVolume, 0.4, 1e-6);
-    CHECK_EQ(engine.upgradeFile(EmissionGroup::Intake, 0), std::string("8N3_B_Int_HT.xml"));
-    CHECK_EQ(engine.upgradeFile(EmissionGroup::Intake, 1), std::string("8N3_B_Int_HT.xml"));
-    CHECK_EQ(engine.upgradeFile(EmissionGroup::Intake, 3), std::string("8N3_C_Int_HT.xml"));
-    CHECK_EQ(engine.upgradeFile(EmissionGroup::Ambient, 3), std::string("8N1_A_EngAmb_HT.xml"));
-    CHECK_EQ(engine.upgradeFile(EmissionGroup::Exhaust, 3), std::string("8N2_E_Exh_HT.xml"));
+    CHECK_THAT(engine.idleRpm, WithinAbs(850.0, 1e-3));
+    CHECK_THAT(engine.redlineRpm, WithinAbs(7500.0, 1e-3));
+    CHECK(engine.cylinders == 8);
+    CHECK_THAT(engine.shiftVolume, WithinAbs(0.4, 1e-6));
+    CHECK(engine.upgradeFile(EmissionGroup::Intake, 0) == std::string("8N3_B_Int_HT.xml"));
+    CHECK(engine.upgradeFile(EmissionGroup::Intake, 1) == std::string("8N3_B_Int_HT.xml"));
+    CHECK(engine.upgradeFile(EmissionGroup::Intake, 3) == std::string("8N3_C_Int_HT.xml"));
+    CHECK(engine.upgradeFile(EmissionGroup::Ambient, 3) == std::string("8N1_A_EngAmb_HT.xml"));
+    CHECK(engine.upgradeFile(EmissionGroup::Exhaust, 3) == std::string("8N2_E_Exh_HT.xml"));
     EngineTuning raceCar = engine;
     raceCar.upgrades[0] = {"NA.xml", "NA_Int_HT.xml", "NA.xml", "12N3_Race_Int_HT.xml"};
-    CHECK_EQ(raceCar.upgradeFile(EmissionGroup::Intake, 0), std::string("12N3_Race_Int_HT.xml"));
+    CHECK(raceCar.upgradeFile(EmissionGroup::Intake, 0) == std::string("12N3_Race_Int_HT.xml"));
     raceCar.upgrades[0] = {"NA.xml", "NA.xml", "NA.xml", "NA.xml"};
     CHECK(raceCar.upgradeFile(EmissionGroup::Intake, 2).empty());
     CHECK(!engine.groupDsp[0].has_value());
     CHECK(engine.groupDsp[2].has_value());
-    CHECK_NEAR(engine.shiftBoostDownTime, 0.6, 1e-6);
-    CHECK_THROWS(EngineTuning::parse("<Engine><EngineSettings/></Engine>", "broken_et.xml"));
-    CHECK_THROWS(EngineTuning::parse("<Engine", "bad_et.xml"));
+    CHECK_THAT(engine.shiftBoostDownTime, WithinAbs(0.6, 1e-6));
+    CHECK_THROWS_AS(EngineTuning::parse("<Engine><EngineSettings/></Engine>", "broken_et.xml"), std::exception);
+    CHECK_THROWS_AS(EngineTuning::parse("<Engine", "bad_et.xml"), std::exception);
 
     const CarModelTuning model = CarModelTuning::parse(kModelXml, "test_cmt.xml");
-    CHECK_NEAR(model.emitterPositions.at("ExhaustL").x, -0.415, 1e-6);
+    CHECK_THAT(model.emitterPositions.at("ExhaustL").x, WithinAbs(-0.415, 1e-6));
     const CarModelTuning::View* follow = model.view("Follow");
     CHECK(follow != nullptr);
     if (follow) {
-        CHECK_NEAR(follow->emitterVolumes.at("ExhaustR"), 0.9, 1e-6);
-        CHECK_NEAR(follow->otherVolumes.at("TireVolume"), 0.6, 1e-6);
+        CHECK_THAT(follow->emitterVolumes.at("ExhaustR"), WithinAbs(0.9, 1e-6));
+        CHECK_THAT(follow->otherVolumes.at("TireVolume"), WithinAbs(0.6, 1e-6));
         CHECK(follow->stereoPan("ExhaustL") < -0.3F);
-        CHECK_NEAR(follow->stereoPan("EngineIntake"), 0.0, 1e-6);
-        CHECK_NEAR(follow->stereoPan("Missing"), 0.0, 1e-6);
+        CHECK_THAT(follow->stereoPan("EngineIntake"), WithinAbs(0.0, 1e-6));
+        CHECK_THAT(follow->stereoPan("Missing"), WithinAbs(0.0, 1e-6));
     }
     CHECK(model.view("Cockpit") == nullptr);
 }
 
-TEST(globalRolloffsAndBackfiresParse)
+TEST_CASE("globalRolloffsAndBackfiresParse", "[audio]")
 {
     const auto rolloffs = parseGlobalRolloffs(R"(<GlobalRolloffs>
         <Burble><Gameplay minDist="5" maxDist="7" beginFadeToZeroDist="9" fadeToZeroDist="11"/></Burble>
@@ -1192,9 +1200,9 @@ TEST(globalRolloffsAndBackfiresParse)
         <Replay minDist="1" maxDist="2" beginFadeToZeroDist="3" fadeToZeroDist="4"/></ExhaustL></Chassis>
         </GlobalRolloffs>)",
         "rolloffs.xml");
-    CHECK_EQ(rolloffs.size(), std::size_t{2});
-    CHECK_NEAR(rolloffs.at("ExhaustL").fadeStart, 70.0, 1e-6);
-    CHECK_NEAR(rolloffs.at("Burble").maxDistance, 7.0, 1e-6);
+    CHECK(rolloffs.size() == std::size_t{2});
+    CHECK_THAT(rolloffs.at("ExhaustL").fadeStart, WithinAbs(70.0, 1e-6));
+    CHECK_THAT(rolloffs.at("Burble").maxDistance, WithinAbs(7.0, 1e-6));
 
     const std::vector<BackfireLevel> levels = parseBackfireConfig(R"(<BackfireTimerConfig>
           <Backfire><Timer MinTime="0" MaxTime="0" MinNormRPM="0" MaxNormRPM="0" SilenceWeighting="100"/></Backfire>
@@ -1212,15 +1220,15 @@ TEST(globalRolloffsAndBackfiresParse)
           </Backfire>
         </BackfireVolumeConfig>)",
         "backfire.xml");
-    CHECK_EQ(levels.size(), std::size_t{2});
-    CHECK_NEAR(levels[1].maxTime, 1800.0, 1e-3);
-    CHECK_EQ(levels[1].silenceWeighting, 95);
+    CHECK(levels.size() == std::size_t{2});
+    CHECK_THAT(levels[1].maxTime, WithinAbs(1800.0, 1e-3));
+    CHECK(levels[1].silenceWeighting == 95);
     EngineInputs in;
     in.rpm = 1.0F;
-    CHECK_NEAR(levels[1].volume.evaluate(in), 1.0, 1e-6);
+    CHECK_THAT(levels[1].volume.evaluate(in), WithinAbs(1.0, 1e-6));
 }
 
-TEST(loopCrossfadeWeights)
+TEST_CASE("loopCrossfadeWeights", "[audio]")
 {
     std::vector<EngineLoop> loops(3);
     loops[0] = EngineLoop{0, 500.0F, 1000.0F, 1500.0F, 1.0F, 1.0F};
@@ -1228,9 +1236,9 @@ TEST(loopCrossfadeWeights)
     loops[2] = EngineLoop{2, 2400.0F, 2800.0F, 3000.0F, 1.0F, 1.0F};
     const auto check = [&](float rpm, std::vector<float> expected) {
         const std::vector<float> weights = EngineSound::loopWeights(loops, rpm);
-        CHECK_EQ(weights.size(), expected.size());
+        CHECK(weights.size() == expected.size());
         for (std::size_t i = 0; i < std::min(weights.size(), expected.size()); ++i) {
-            CHECK_NEAR(weights[i], expected[i], 1e-4);
+            CHECK_THAT(weights[i], WithinAbs(expected[i], 1e-4));
         }
     };
     check(800.0F, {1.0F, 0.0F, 0.0F});
@@ -1244,35 +1252,25 @@ TEST(loopCrossfadeWeights)
         for (const float w : EngineSound::loopWeights(loops, rpm)) {
             sum += w * w;
         }
-        CHECK_NEAR(sum, 1.0, 1e-4);
+        CHECK_THAT(sum, WithinAbs(1.0, 1e-4));
     }
     CHECK(EngineSound::loopWeights({}, 1000.0F).empty());
 }
 
-TEST(loopIndicesCountChannels)
+TEST_CASE("loopIndicesCountChannels", "[audio]")
 {
     const std::optional<LoopSource> left = resolveLoopIndex(3, 15, 2);
     const std::optional<LoopSource> right = resolveLoopIndex(18, 15, 2);
     const std::optional<LoopSource> mono = resolveLoopIndex(18, 15, 1);
-    CHECK(left && right && mono);
+    CHECK((left && right && mono));
     if (left && right && mono) {
-        CHECK_EQ(left->sample, std::size_t{3});
-        CHECK_EQ(left->channel, 0);
-        CHECK_EQ(right->sample, std::size_t{3});
-        CHECK_EQ(right->channel, 1);
-        CHECK_EQ(mono->channel, 0);
+        CHECK(left->sample == std::size_t{3});
+        CHECK(left->channel == 0);
+        CHECK(right->sample == std::size_t{3});
+        CHECK(right->channel == 1);
+        CHECK(mono->channel == 0);
     }
     CHECK(!resolveLoopIndex(30, 15, 2).has_value());
-}
-
-const char* gameDir()
-{
-    const char* dir = std::getenv("FH1_GAME_DIR");
-    if (dir == nullptr || *dir == '\0') {
-        std::fprintf(stderr, "skipped: FH1_GAME_DIR is not set\n");
-        return nullptr;
-    }
-    return dir;
 }
 
 std::vector<std::string> filesUnder(const fh::Vfs& vfs, std::string_view suffix)
@@ -1309,12 +1307,9 @@ bool decodesWhole(const FsbBank& bank, std::size_t index, std::string_view path)
 // banks are), XMA at odd rates from a track's bin.zip (the festival's
 // ambience), and MPEG, one sample of each channel count and rate the
 // radio's voice bank holds, sync points among them.
-TEST(discDecodesRepresentativeBanks)
+TEST_CASE("discDecodesRepresentativeBanks", "[audio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     for (const char* path :
@@ -1345,16 +1340,13 @@ TEST(discDecodesRepresentativeBanks)
     CHECK(syncPoints);
 }
 
-SLOW_TEST(discDecodesEverySample)
+TEST_CASE("discDecodesEverySample", "[audio][slow][.]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const std::vector<std::string> banks = filesUnder(vfs, ".fsb");
-    CHECK_EQ(banks.size(), std::size_t{1006});
+    CHECK(banks.size() == std::size_t{1006});
 
     std::mutex mutex;
     std::map<std::string, std::size_t> decoded;
@@ -1401,22 +1393,19 @@ SLOW_TEST(discDecodesEverySample)
         std::fprintf(stderr, "decode error: %s\n", error.c_str());
     }
     CHECK(errors.empty());
-    CHECK_EQ(samples, std::size_t{22393});
-    CHECK_EQ(decoded["xma"], std::size_t{14790});
-    CHECK_EQ(decoded["mpeg"], std::size_t{7603});
+    CHECK(samples == std::size_t{22393});
+    CHECK(decoded["xma"] == std::size_t{14790});
+    CHECK(decoded["mpeg"] == std::size_t{7603});
 }
 
-TEST(discProjectsParseAndResolve)
+TEST_CASE("discProjectsParseAndResolve", "[audio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     AudioLibrary library(vfs);
     const std::vector<std::string> projects = filesUnder(vfs, ".fev");
-    CHECK_EQ(projects.size(), std::size_t{54});
+    CHECK(projects.size() == std::size_t{54});
     std::size_t events = 0;
     std::size_t wavetables = 0;
     std::size_t namedAtIndex = 0;
@@ -1451,14 +1440,14 @@ TEST(discProjectsParseAndResolve)
     }
     std::fprintf(stderr, "%zu events, %zu wavetable waveforms, %zu named at their index\n", events, wavetables,
         namedAtIndex);
-    CHECK_EQ(events, std::size_t{1472});
-    CHECK_EQ(wavetables, std::size_t{6315});
+    CHECK(events == std::size_t{1472});
+    CHECK(wavetables == std::size_t{6315});
     // Two banks were rebuilt smaller than their projects expect: Damage.fsb
     // (2 samples, 2 waveforms point past it) and amb_main_town.fsb (5 night
     // dog waveforms point past its 28 samples). Everything else resolves,
     // and 6251 waveforms find their own file name at their index.
-    CHECK_EQ(unresolved, std::size_t{7});
-    CHECK_EQ(namedAtIndex, std::size_t{6251});
+    CHECK(unresolved == std::size_t{7});
+    CHECK(namedAtIndex == std::size_t{6251});
 
     const std::shared_ptr<const FevProject> horns = library.project("media/audio/cars/horns/horns.fev");
     const FevEvent* horn = horns->findEvent("Horns/HornA_Short");
@@ -1477,12 +1466,9 @@ TEST(discProjectsParseAndResolve)
     }
 }
 
-TEST(discEngineTuningsLoad)
+TEST_CASE("discEngineTuningsLoad", "[audio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     std::size_t loaded = 0;
@@ -1507,8 +1493,8 @@ TEST(discEngineTuningsLoad)
     std::fprintf(stderr, "%zu of %zu engine tunings load\n", loaded, total);
     // The electric Volt, Leaf and Roadster have no harmonic tunings at all;
     // the traffic bus, van and truck have only engine-ambient loops.
-    CHECK_EQ(total, std::size_t{807});
-    CHECK_EQ(loaded, std::size_t{801});
+    CHECK(total == std::size_t{807});
+    CHECK(loaded == std::size_t{801});
 }
 
 /// Four wheels in the same state, for the tyre tests.
@@ -1542,12 +1528,9 @@ double renderRms(AudioDevice& device, const std::function<void()>& update, float
     return std::sqrt(energy / static_cast<double>(std::max<std::size_t>(count, 1)));
 }
 
-TEST(discTyreSoundFollowsTheGame)
+TEST_CASE("discTyreSoundFollowsTheGame", "[audio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const auto library = std::make_shared<AudioLibrary>(vfs);
@@ -1555,13 +1538,13 @@ TEST(discTyreSoundFollowsTheGame)
     TyreSound tyres(device.mixer(), library);
 
     const TyreSmoothing& smoothing = tyres.smoothing();
-    CHECK_NEAR(smoothing.combinedSlipRate, 10.0, 1e-6);
-    CHECK_NEAR(smoothing.slipAngleRate, 10.0, 1e-6);
-    CHECK_NEAR(smoothing.slipRatioRate, 10.0, 1e-6);
-    CHECK_NEAR(smoothing.normLoadRate, 3.0, 1e-6);
-    CHECK_NEAR(smoothing.tireRpmRate, 500000.0, 1e-2);
-    CHECK_NEAR(smoothing.timeUntilLeavesGround, 0.15, 1e-6);
-    CHECK_EQ(tyres.surfaces().surfaces.size(), std::size_t{42});
+    CHECK_THAT(smoothing.combinedSlipRate, WithinAbs(10.0, 1e-6));
+    CHECK_THAT(smoothing.slipAngleRate, WithinAbs(10.0, 1e-6));
+    CHECK_THAT(smoothing.slipRatioRate, WithinAbs(10.0, 1e-6));
+    CHECK_THAT(smoothing.normLoadRate, WithinAbs(3.0, 1e-6));
+    CHECK_THAT(smoothing.tireRpmRate, WithinAbs(500000.0, 1e-2));
+    CHECK_THAT(smoothing.timeUntilLeavesGround, WithinAbs(0.15, 1e-6));
+    CHECK(tyres.surfaces().surfaces.size() == std::size_t{42});
     const std::optional<std::size_t> asphalt = tyres.surfaces().find("Asphalt");
     CHECK(asphalt.has_value());
 
@@ -1574,12 +1557,12 @@ TEST(discTyreSoundFollowsTheGame)
     // Slips move at 10 units per second, load at 3, and rpm at once.
     tyres.update(sameWheels("Asphalt", true, 100.0F, 3.0F, 2.0F, 4.0F, 2.0F * quarterWeight), car, kDt);
     const TyreSound::Parameters& front = tyres.parameters(0);
-    CHECK_NEAR(front.slipAngle, 1.0, 1e-4);
-    CHECK_NEAR(front.slipRatio, 1.0, 1e-4);
-    CHECK_NEAR(front.combinedSlip, 1.0, 1e-4);
-    CHECK_NEAR(front.normLoad, 0.3, 1e-4);
-    CHECK_NEAR(front.tireRpm, 100.0 * 60.0 / (2.0 * std::numbers::pi), 1e-2);
-    CHECK(asphalt && front.surface == static_cast<int>(*asphalt));
+    CHECK_THAT(front.slipAngle, WithinAbs(1.0, 1e-4));
+    CHECK_THAT(front.slipRatio, WithinAbs(1.0, 1e-4));
+    CHECK_THAT(front.combinedSlip, WithinAbs(1.0, 1e-4));
+    CHECK_THAT(front.normLoad, WithinAbs(0.3, 1e-4));
+    CHECK_THAT(front.tireRpm, WithinAbs(100.0 * 60.0 / (2.0 * std::numbers::pi), 1e-2));
+    CHECK((asphalt && front.surface == static_cast<int>(*asphalt)));
     CHECK(front.grounded);
 
     // The game's clamps: slips to 5, load to 3 quarter weights, rpm to
@@ -1588,22 +1571,22 @@ TEST(discTyreSoundFollowsTheGame)
     for (int i = 0; i < 20; ++i) {
         tyres.update(sameWheels("Asphalt", true, 5000.0F, -9.0F, 9.0F, 9.0F, 9.0F * quarterWeight), car, kDt);
     }
-    CHECK_NEAR(front.slipAngle, 5.0, 1e-4);
-    CHECK_NEAR(front.slipRatio, -5.0, 1e-4);
-    CHECK_NEAR(front.combinedSlip, 5.0, 1e-4);
-    CHECK_NEAR(front.normLoad, 3.0, 1e-4);
-    CHECK_NEAR(front.tireRpm, 20000.0, 1e-2);
+    CHECK_THAT(front.slipAngle, WithinAbs(5.0, 1e-4));
+    CHECK_THAT(front.slipRatio, WithinAbs(-5.0, 1e-4));
+    CHECK_THAT(front.combinedSlip, WithinAbs(5.0, 1e-4));
+    CHECK_THAT(front.normLoad, WithinAbs(3.0, 1e-4));
+    CHECK_THAT(front.tireRpm, WithinAbs(20000.0, 1e-2));
     car.reversing = false;
 
     // Briefly airborne, a wheel keeps its values and surface; after
     // TimeUntilTireLeavesGround it takes the raw ones and loses the surface.
     tyres.update(sameWheels("Asphalt", false, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F), car, kDt);
     CHECK(front.grounded);
-    CHECK_NEAR(front.slipAngle, 5.0, 1e-4);
+    CHECK_THAT(front.slipAngle, WithinAbs(5.0, 1e-4));
     tyres.update(sameWheels("Asphalt", false, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F), car, kDt);
     CHECK(!front.grounded);
-    CHECK_EQ(front.surface, -1);
-    CHECK_NEAR(front.slipAngle, 0.0, 1e-6);
+    CHECK(front.surface == -1);
+    CHECK_THAT(front.slipAngle, WithinAbs(0.0, 1e-6));
     device.render(4800);
     CHECK(!tyres.isPlaying());
 
@@ -1623,7 +1606,7 @@ TEST(discTyreSoundFollowsTheGame)
     const auto kerb = sameWheels("Kerb", true, 60.0F, 3.0F, 0.0F, 3.0F, quarterWeight);
     renderRms(device, [&] { tyres.update(kerb, car, 1.0F / 60.0F); }, 0.5F);
     CHECK(!tyres.isPlaying());
-    CHECK_EQ(tyres.parameters(0).surface, -1);
+    CHECK(tyres.parameters(0).surface == -1);
     CHECK(tyres.parameters(0).grounded);
 
     // LOD2 follows the most slipping wheel and needs some slip to sound.
@@ -1637,17 +1620,14 @@ TEST(discTyreSoundFollowsTheGame)
     CHECK(pair.isPlaying());
 }
 
-TEST(discEngineSoundPlays)
+TEST_CASE("discEngineSoundPlays", "[audio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     AudioDevice device{AudioDevice::Offline{}};
     EngineSound engine(device, vfs, "ALF_8C_08");
-    CHECK_NEAR(engine.tuning().engine.redlineRpm, 7500.0, 1e-3);
+    CHECK_THAT(engine.tuning().engine.redlineRpm, WithinAbs(7500.0, 1e-3));
     // Loops take a mixer voice only while their crossfade makes them audible,
     // so a car that is not yet running holds none of the mixer's 256.
     const std::size_t silentVoices = device.mixer().activeVoiceCount();
@@ -1708,9 +1688,9 @@ TEST(discEngineSoundPlays)
     CHECK(effectsRms > 0.03);
     CHECK(effectsPeak < 0.99F);
     CHECK(device.mixer().activeVoiceCount() > loops);
-    CHECK(engine.tyres() && engine.tyres()->isPlaying());
+    CHECK((engine.tyres() && engine.tyres()->isPlaying()));
 
-    CHECK_THROWS(EngineSound(device, vfs, "NOT_A_CAR_00"));
+    CHECK_THROWS_AS(EngineSound(device, vfs, "NOT_A_CAR_00"), std::exception);
 }
 
 /// A few snapshots in the layout of audiomixersnapshots.xml, with the disc's
@@ -1751,7 +1731,7 @@ void advance(SnapshotMixer& mixer, int updates, float seconds)
     }
 }
 
-TEST(mixSnapshotsParse)
+TEST_CASE("mixSnapshotsParse", "[audio]")
 {
     const MixSnapshots snapshots = MixSnapshots::parse(kSnapshotXml, "test");
     const MixSnapshot& paused = snapshots.snapshot(MixSnapshotId::Paused);
@@ -1759,24 +1739,24 @@ TEST(mixSnapshotsParse)
     CHECK(paused.group == MixGroup::Gameplay);
     const MixSetting& focus = paused.settings[static_cast<std::size_t>(MixCategory::FocusCar)];
     CHECK(focus.active);
-    CHECK_NEAR(focus.volume, 0.0, 1e-6);
-    CHECK_NEAR(focus.fadeTime, 0.2, 1e-6);
-    CHECK_NEAR(focus.returnFadeTime, 0.1, 1e-6);
-    CHECK_NEAR(paused.settings[static_cast<std::size_t>(MixCategory::GameMusic)].volume, 0.25, 1e-6);
+    CHECK_THAT(focus.volume, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(focus.fadeTime, WithinAbs(0.2, 1e-6));
+    CHECK_THAT(focus.returnFadeTime, WithinAbs(0.1, 1e-6));
+    CHECK_THAT(paused.settings[static_cast<std::size_t>(MixCategory::GameMusic)].volume, WithinAbs(0.25, 1e-6));
     CHECK(!paused.settings[static_cast<std::size_t>(MixCategory::Tire)].active);
     CHECK(!snapshots.snapshot(MixSnapshotId::Crash).settings[static_cast<std::size_t>(MixCategory::Collision)].active);
     CHECK(!snapshots.snapshot(MixSnapshotId::Race).present);
     CHECK(!snapshots.snapshot(MixSnapshotId::Video).group.has_value());
     CHECK(findMixSnapshot("PausedMultiplayer") == MixSnapshotId::PausedMultiplayer);
     CHECK(!findMixSnapshot("paused").has_value());
-    CHECK_EQ(mixCategoryName(MixCategory::RallyCoDriver), std::string_view("RallyCoDriver"));
-    CHECK_THROWS(MixSnapshots::parse("<NotSnapshots/>", "test"));
+    CHECK(mixCategoryName(MixCategory::RallyCoDriver) == std::string_view("RallyCoDriver"));
+    CHECK_THROWS_AS(MixSnapshots::parse("<NotSnapshots/>", "test"), std::exception);
 }
 
-TEST(snapshotMixerFadesPausesAndRestores)
+TEST_CASE("snapshotMixerFadesPausesAndRestores", "[audio]")
 {
     SnapshotMixer mixer(MixSnapshots::parse(kSnapshotXml, "test"));
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 1.0, 1e-6);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(1.0, 1e-6));
 
     // A new fade covers the distance from the group's volume in fadetime,
     // starting one update after it was applied.
@@ -1784,26 +1764,26 @@ TEST(snapshotMixerFadesPausesAndRestores)
     CHECK(mixer.current(MixGroup::Gameplay) == MixSnapshotId::FreeRoam);
     CHECK(!mixer.saved().has_value());
     mixer.update(0.1F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 1.0, 1e-6);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(1.0, 1e-6));
     mixer.update(0.1F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 1.0 - 0.65 * 0.2, 1e-5);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(1.0 - 0.65 * 0.2, 1e-5));
     advance(mixer, 5, 0.1F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
-    CHECK_EQ(mixer.faderCount(), std::size_t{0});
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.35, 1e-6));
+    CHECK(mixer.faderCount() == std::size_t{0});
 
     // Pausing saves FreeRoam and fades the car out in 0.2 s and the music
     // down to a quarter; the UI stays.
     mixer.apply(MixSnapshotId::Paused);
     CHECK(mixer.saved() == MixSnapshotId::FreeRoam);
     mixer.update(0.05F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.35, 1e-6));
     mixer.update(0.1F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.175, 1e-5);
-    CHECK_NEAR(mixer.volume(MixCategory::GameMusic), 1.0 - 0.75 * 0.5, 1e-5);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.175, 1e-5));
+    CHECK_THAT(mixer.volume(MixCategory::GameMusic), WithinAbs(1.0 - 0.75 * 0.5, 1e-5));
     advance(mixer, 2, 0.1F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.0, 1e-6);
-    CHECK_NEAR(mixer.volume(MixCategory::GameMusic), 0.25, 1e-6);
-    CHECK_NEAR(mixer.volume(MixCategory::GameUI), 1.0, 1e-6);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.0, 1e-6));
+    CHECK_THAT(mixer.volume(MixCategory::GameMusic), WithinAbs(0.25, 1e-6));
+    CHECK_THAT(mixer.volume(MixCategory::GameUI), WithinAbs(1.0, 1e-6));
 
     // Leaving it goes back to FreeRoam over Paused's 0.1 s return fade, and
     // FreeRoam stays the one saved.
@@ -1811,11 +1791,11 @@ TEST(snapshotMixerFadesPausesAndRestores)
     CHECK(mixer.current(MixGroup::Gameplay) == MixSnapshotId::FreeRoam);
     CHECK(mixer.saved() == MixSnapshotId::FreeRoam);
     mixer.update(0.05F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.0, 1e-6);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.0, 1e-6));
     mixer.update(0.05F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.175, 1e-5);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.175, 1e-5));
     advance(mixer, 2, 0.05F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.35, 1e-6));
 
     // Loading is not saved either.
     mixer.apply(MixSnapshotId::Loading);
@@ -1823,24 +1803,24 @@ TEST(snapshotMixerFadesPausesAndRestores)
     CHECK(mixer.saved() == MixSnapshotId::FreeRoam);
 }
 
-TEST(snapshotMixerRestartsRunningFades)
+TEST_CASE("snapshotMixerRestartsRunningFades", "[audio]")
 {
     SnapshotMixer mixer(MixSnapshots::parse(kSnapshotXml, "test"));
     mixer.apply(MixSnapshotId::FreeRoam);
     advance(mixer, 10, 0.1F);
     mixer.apply(MixSnapshotId::Paused);
     advance(mixer, 2, 0.1F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.175, 1e-5);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.175, 1e-5));
     // Still fading: the fader restarts from where the group is with a step
     // of |1 - target| per fade time.
     mixer.restore();
     mixer.update(0.02F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.175 + 0.65 * 0.2, 1e-5);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.175 + 0.65 * 0.2, 1e-5));
     advance(mixer, 2, 0.02F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.35, 1e-6));
 }
 
-TEST(snapshotMixerGroupsMultiplyAndReturn)
+TEST_CASE("snapshotMixerGroupsMultiplyAndReturn", "[audio]")
 {
     SnapshotMixer mixer(MixSnapshots::parse(kSnapshotXml, "test"));
     mixer.apply(MixSnapshotId::FreeRoam);
@@ -1850,39 +1830,36 @@ TEST(snapshotMixerGroupsMultiplyAndReturn)
     // starts, and returns to 1 after 0.2 s over 0.3 s.
     mixer.apply(MixSnapshotId::Crash);
     mixer.update(0.1F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.35, 1e-6));
     mixer.update(0.1F);
-    CHECK_NEAR(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), 0.7, 1e-6);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35 * 0.7, 1e-6);
+    CHECK_THAT(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), WithinAbs(0.7, 1e-6));
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.35 * 0.7, 1e-6));
     mixer.update(0.1F);
-    CHECK_NEAR(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), 0.7, 1e-6);
+    CHECK_THAT(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), WithinAbs(0.7, 1e-6));
     mixer.update(0.1F);
     mixer.update(0.15F);
-    CHECK_NEAR(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), 0.85, 1e-5);
+    CHECK_THAT(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), WithinAbs(0.85, 1e-5));
     advance(mixer, 2, 0.15F);
-    CHECK_NEAR(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), 1.0, 1e-6);
-    CHECK_EQ(mixer.faderCount(), std::size_t{0});
-    CHECK_NEAR(mixer.groupVolume(MixGroup::Impact, MixCategory::Collision), 1.0, 1e-6);
+    CHECK_THAT(mixer.groupVolume(MixGroup::Impact, MixCategory::FocusCar), WithinAbs(1.0, 1e-6));
+    CHECK(mixer.faderCount() == std::size_t{0});
+    CHECK_THAT(mixer.groupVolume(MixGroup::Impact, MixCategory::Collision), WithinAbs(1.0, 1e-6));
 
     // The product is clamped to 1.
     mixer.apply(MixSnapshotId::TopSpeed);
     advance(mixer, 2, 0.1F);
-    CHECK_NEAR(mixer.groupVolume(MixGroup::Speed, MixCategory::GameMusic), 1.15, 1e-6);
-    CHECK_NEAR(mixer.volume(MixCategory::GameMusic), 1.0, 1e-6);
+    CHECK_THAT(mixer.groupVolume(MixGroup::Speed, MixCategory::GameMusic), WithinAbs(1.15, 1e-6));
+    CHECK_THAT(mixer.volume(MixCategory::GameMusic), WithinAbs(1.0, 1e-6));
 
     // A snapshot without a known group changes nothing.
     mixer.apply(MixSnapshotId::Video);
     advance(mixer, 2, 0.1F);
-    CHECK_NEAR(mixer.volume(MixCategory::FocusCar), 0.35, 1e-6);
+    CHECK_THAT(mixer.volume(MixCategory::FocusCar), WithinAbs(0.35, 1e-6));
     CHECK(mixer.current(MixGroup::Gameplay) == MixSnapshotId::FreeRoam);
 }
 
-TEST(discMixSnapshots)
+TEST_CASE("discMixSnapshots", "[audio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const MixSnapshots snapshots = MixSnapshots::load(vfs);
@@ -1901,7 +1878,7 @@ TEST(discMixSnapshots)
         CHECK(active > 0);
         CHECK(!snapshot.settings[static_cast<std::size_t>(MixCategory::RallyCoDriver)].active);
     }
-    CHECK_EQ(present, std::size_t{39});
+    CHECK(present == std::size_t{39});
     CHECK(!snapshots.snapshot(MixSnapshotId::LoadingRally).present);
 
     const MixSnapshot& paused = snapshots.snapshot(MixSnapshotId::Paused);
@@ -1910,15 +1887,15 @@ TEST(discMixSnapshots)
              MixCategory::Transmission, MixCategory::Backfire}) {
         const MixSetting& setting = paused.settings[static_cast<std::size_t>(category)];
         CHECK(setting.active);
-        CHECK_NEAR(setting.volume, 0.0, 1e-6);
-        CHECK_NEAR(setting.fadeTime, 0.2, 1e-6);
-        CHECK_NEAR(setting.returnFadeTime, 0.1, 1e-6);
+        CHECK_THAT(setting.volume, WithinAbs(0.0, 1e-6));
+        CHECK_THAT(setting.fadeTime, WithinAbs(0.2, 1e-6));
+        CHECK_THAT(setting.returnFadeTime, WithinAbs(0.1, 1e-6));
     }
-    CHECK_NEAR(paused.settings[static_cast<std::size_t>(MixCategory::GameMusic)].volume, 0.25, 1e-6);
-    CHECK_NEAR(paused.settings[static_cast<std::size_t>(MixCategory::GameUI)].volume, 1.0, 1e-6);
+    CHECK_THAT(paused.settings[static_cast<std::size_t>(MixCategory::GameMusic)].volume, WithinAbs(0.25, 1e-6));
+    CHECK_THAT(paused.settings[static_cast<std::size_t>(MixCategory::GameUI)].volume, WithinAbs(1.0, 1e-6));
     const MixSnapshot& freeRoam = snapshots.snapshot(MixSnapshotId::FreeRoam);
-    CHECK_NEAR(freeRoam.settings[static_cast<std::size_t>(MixCategory::FocusCar)].volume, 0.35, 1e-6);
-    CHECK_NEAR(freeRoam.settings[static_cast<std::size_t>(MixCategory::FocusCar)].fadeTime, 0.5, 1e-6);
+    CHECK_THAT(freeRoam.settings[static_cast<std::size_t>(MixCategory::FocusCar)].volume, WithinAbs(0.35, 1e-6));
+    CHECK_THAT(freeRoam.settings[static_cast<std::size_t>(MixCategory::FocusCar)].fadeTime, WithinAbs(0.5, 1e-6));
     CHECK(snapshots.snapshot(MixSnapshotId::Crash).group == MixGroup::Impact);
 }
 
@@ -1947,47 +1924,47 @@ constexpr std::string_view kCollisionXml = R"(<CollisionData MSBetweenDiffCollis
 // collisiondata.xml as the game's loader reads it: pairs by surface id in
 // both orders, later entries replacing earlier ones, surfaces not in the
 // list skipped, Whoosh3D left out, break events by smashable name.
-TEST(collisionSoundTableParses)
+TEST_CASE("collisionSoundTableParses", "[audio]")
 {
     using Slot = CollisionSoundTable::Slot;
     const std::vector<std::string> surfaces{"Asphalt", "Dirt", "CarAluminum"};
     const CollisionSoundTable table = CollisionSoundTable::parse(kCollisionXml, surfaces, "test");
-    CHECK_EQ(table.msBetweenDiffCollisions(), std::uint32_t{75});
-    CHECK_EQ(table.surfaceCount(), std::size_t{3});
+    CHECK(table.msBetweenDiffCollisions() == std::uint32_t{75});
+    CHECK(table.surfaceCount() == std::size_t{3});
     const CollisionEventRef* impact = table.event(0, 2, Slot::Impact3D);
     CHECK(impact != nullptr);
     if (impact) {
-        CHECK_EQ(impact->project, std::string("Collisions"));
-        CHECK_EQ(impact->event, std::string("Collisions/Asphalt/CarAluminum/IMPACT_3D"));
+        CHECK(impact->project == std::string("Collisions"));
+        CHECK(impact->event == std::string("Collisions/Asphalt/CarAluminum/IMPACT_3D"));
     }
     const CollisionEventRef* reversed = table.event(2, 0, Slot::Impact3D);
-    CHECK(reversed && impact && reversed->event == impact->event);
+    CHECK((reversed && impact && reversed->event == impact->event));
     const CollisionEventRef* lfe = table.event(2, 0, Slot::ImpactLFE);
-    CHECK(lfe && lfe->event == "Collisions/LFE/IMPACT_LFE");
+    CHECK((lfe && lfe->event == "Collisions/LFE/IMPACT_LFE"));
     const CollisionEventRef* scrape = table.event(0, 2, Slot::Scrape3D);
-    CHECK(scrape && scrape->event == "Collisions/Asphalt/CarAluminum/SCRAPE_3D");
+    CHECK((scrape && scrape->event == "Collisions/Asphalt/CarAluminum/SCRAPE_3D"));
     // The second Dirt entry replaces the first for both orders.
     const CollisionEventRef* dirt = table.event(2, 1, Slot::Impact3D);
-    CHECK(dirt && dirt->event == "Collisions/CarCarbonFiber/Dirt/IMPACT_3D");
+    CHECK((dirt && dirt->event == "Collisions/CarCarbonFiber/Dirt/IMPACT_3D"));
     CHECK(table.event(1, 2, Slot::ImpactLFE) == nullptr);
     CHECK(table.event(0, 1, Slot::Impact3D) == nullptr);
     CHECK(table.event(0, 3, Slot::Impact3D) == nullptr);
-    CHECK_EQ(table.pairCount(Slot::Impact3D), std::size_t{4});
-    CHECK_EQ(table.pairCount(Slot::Scrape3D), std::size_t{2});
+    CHECK(table.pairCount(Slot::Impact3D) == std::size_t{4});
+    CHECK(table.pairCount(Slot::Scrape3D) == std::size_t{2});
     const CollisionEventRef* broken = table.breakEvent("CO_Fest_SpeedCamera_001");
-    CHECK(broken && broken->event == "Smashables/Break/Speedcamera/IMPACT_3D");
+    CHECK((broken && broken->event == "Smashables/Break/Speedcamera/IMPACT_3D"));
     CHECK(table.breakEvent("co_bench_001") == nullptr);
-    CHECK_EQ(table.breakEventCount(), std::size_t{1});
+    CHECK(table.breakEventCount() == std::size_t{1});
 
     const CollisionSoundTable bare = CollisionSoundTable::parse("<CollisionData/>", surfaces, "test");
-    CHECK_EQ(bare.msBetweenDiffCollisions(), CollisionSoundTable::kDefaultMsBetweenDiffCollisions);
-    CHECK_THROWS(CollisionSoundTable::parse("<Other/>", surfaces, "test"));
+    CHECK(bare.msBetweenDiffCollisions() == CollisionSoundTable::kDefaultMsBetweenDiffCollisions);
+    CHECK_THROWS_AS(CollisionSoundTable::parse("<Other/>", surfaces, "test"), std::exception);
 }
 
 // A contact lasts while the same two bodies keep touching through the same
 // surfaces, in either order, and ends once it has not been reported for
 // more than MSBetweenDiffCollisions.
-TEST(collisionSoundsTrackContacts)
+TEST_CASE("collisionSoundsTrackContacts", "[audio]")
 {
     const std::vector<std::string> surfaces{"Asphalt", "Dirt", "CarAluminum"};
     Mixer mixer(48000);
@@ -2001,33 +1978,33 @@ TEST(collisionSoundsTrackContacts)
     report.surfaceB = 0;
     report.relativeVelocity = glm::vec3(0.0F, 0.0F, 20.0F);
     sounds.report(report, 1000);
-    CHECK_EQ(sounds.contactCount(), std::size_t{1});
+    CHECK(sounds.contactCount() == std::size_t{1});
     CollisionReport swapped = report;
     std::swap(swapped.bodyA, swapped.bodyB);
     std::swap(swapped.surfaceA, swapped.surfaceB);
     sounds.report(swapped, 1040);
-    CHECK_EQ(sounds.contactCount(), std::size_t{1});
+    CHECK(sounds.contactCount() == std::size_t{1});
     CollisionReport other = report;
     other.surfaceB = 1;
     sounds.report(other, 1040);
-    CHECK_EQ(sounds.contactCount(), std::size_t{2});
+    CHECK(sounds.contactCount() == std::size_t{2});
     sounds.update(1115);
-    CHECK_EQ(sounds.contactCount(), std::size_t{2});
+    CHECK(sounds.contactCount() == std::size_t{2});
     sounds.update(1116);
-    CHECK_EQ(sounds.contactCount(), std::size_t{0});
+    CHECK(sounds.contactCount() == std::size_t{0});
     // Without the project on this empty file system nothing plays.
     CHECK(sounds.started().empty());
 }
 
 // The Crash snapshot follows the focus car's speed from one update to the
 // next: above the threshold, a fall of more than the drop.
-TEST(crashMixFollowsTheSpeedDrop)
+TEST_CASE("crashMixFollowsTheSpeedDrop", "[audio]")
 {
     const CrashMix crash = CrashMix::parse(R"(<MixSnapshots><DynamicsData>
       <CrashData threshold="50" drop="10"/></DynamicsData></MixSnapshots>)",
         "test");
-    CHECK_NEAR(crash.threshold, 50.0, 1e-6);
-    CHECK_NEAR(crash.drop, 10.0, 1e-6);
+    CHECK_THAT(crash.threshold, WithinAbs(50.0, 1e-6));
+    CHECK_THAT(crash.drop, WithinAbs(10.0, 1e-6));
     constexpr float kMph = 1.0F / 2.2369F;
     CrashMix mix = crash;
     CHECK(!mix.update(60.0F * kMph));
@@ -2038,8 +2015,8 @@ TEST(crashMixFollowsTheSpeedDrop)
     // From 45 mph a stop is below the threshold.
     CHECK(!mix.update(0.0F));
     const CrashMix none = CrashMix::parse("<MixSnapshots/>", "test");
-    CHECK_NEAR(none.threshold, 0.0, 1e-6);
-    CHECK_THROWS(CrashMix::parse("<Other/>", "test"));
+    CHECK_THAT(none.threshold, WithinAbs(0.0, 1e-6));
+    CHECK_THROWS_AS(CrashMix::parse("<Other/>", "test"), std::exception);
 }
 
 std::vector<std::string> discSurfaceNames(const fh::Vfs& vfs)
@@ -2057,26 +2034,23 @@ std::vector<std::string> discSurfaceNames(const fh::Vfs& vfs)
 
 // The disc's collisiondata.xml against surfaceTypes.xml and Collisions.fev,
 // and a car scraping along asphalt played through it.
-TEST(discCollisionSounds)
+TEST_CASE("discCollisionSounds", "[audio]")
 {
     const char* dir = gameDir();
-    if (!dir) {
-        return;
-    }
     using Slot = CollisionSoundTable::Slot;
     fh::Vfs vfs;
     vfs.mountDisc(dir);
     const std::vector<std::string> surfaces = discSurfaceNames(vfs);
-    CHECK_EQ(surfaces.size(), std::size_t{68});
+    CHECK(surfaces.size() == std::size_t{68});
     const auto id = [&](std::string_view name) {
         return static_cast<std::size_t>(std::find(surfaces.begin(), surfaces.end(), name) - surfaces.begin());
     };
     // A car's PhysicsMaterialID indexes this list: 7 and 8 are its two
     // body materials.
-    CHECK_EQ(id("CarAluminum"), std::size_t{7});
-    CHECK_EQ(id("CarCarbonFiber"), std::size_t{8});
+    CHECK(id("CarAluminum") == std::size_t{7});
+    CHECK(id("CarCarbonFiber") == std::size_t{8});
     const CollisionSoundTable table = CollisionSoundTable::load(vfs, surfaces);
-    CHECK_EQ(table.msBetweenDiffCollisions(), std::uint32_t{75});
+    CHECK(table.msBetweenDiffCollisions() == std::uint32_t{75});
     AudioLibrary library(vfs);
     const auto project = library.project("Game:\\Media\\Audio\\Collisions\\Collisions.fev");
     // Every event a car-against-world or car-against-car pair names is in
@@ -2092,7 +2066,7 @@ TEST(discCollisionSounds)
                     continue;
                 }
                 ++carPairs;
-                CHECK_EQ(ref->project, std::string("Collisions"));
+                CHECK(ref->project == std::string("Collisions"));
                 if (!project->findEvent(ref->event)) {
                     missing.insert(ref->event);
                 }
@@ -2101,14 +2075,14 @@ TEST(discCollisionSounds)
     }
     CHECK(carPairs > 150);
     for (const std::string& event : missing) {
-        CHECK(event.find("MetalSign") != std::string::npos || event.find("RubberCone") != std::string::npos);
+        CHECK((event.find("MetalSign") != std::string::npos || event.find("RubberCone") != std::string::npos));
     }
     const CollisionEventRef* asphalt = table.event(id("CarAluminum"), id("Asphalt"), Slot::Impact3D);
-    CHECK(asphalt && asphalt->event == "Collisions/Asphalt/CarAluminum/IMPACT_3D");
+    CHECK((asphalt && asphalt->event == "Collisions/Asphalt/CarAluminum/IMPACT_3D"));
     const CollisionEventRef* cars = table.event(id("CarAluminum"), id("CarCarbonFiber"), Slot::Impact3D);
-    CHECK(cars && project->findEvent(cars->event) != nullptr);
+    CHECK((cars && project->findEvent(cars->event) != nullptr));
     const CollisionEventRef* camera = table.breakEvent("co_fest_speedcamera_001");
-    CHECK(camera && project->findEvent(camera->event) != nullptr);
+    CHECK((camera && project->findEvent(camera->event) != nullptr));
 
     AudioDevice device{AudioDevice::Offline{}};
     CollisionSounds sounds(device.mixer(), library, table, kMasterBus);
@@ -2128,31 +2102,26 @@ TEST(discCollisionSounds)
             energy += static_cast<double>(s) * s;
         }
     }
-    CHECK_EQ(sounds.started().size(), std::size_t{3});
+    CHECK(sounds.started().size() == std::size_t{3});
     if (sounds.started().size() == 3) {
         CHECK(sounds.started()[0].slot == Slot::Impact3D);
-        CHECK_NEAR(sounds.started()[0].relativeVelocityMph, 60.0, 1e-3);
+        CHECK_THAT(sounds.started()[0].relativeVelocityMph, WithinAbs(60.0, 1e-3));
         CHECK(sounds.started()[1].slot == Slot::ImpactLFE);
         CHECK(sounds.started()[2].slot == Slot::Scrape3D);
-        CHECK_NEAR(sounds.started()[2].carSpeedMph, 60.0, 1e-3);
+        CHECK_THAT(sounds.started()[2].carSpeedMph, WithinAbs(60.0, 1e-3));
     }
-    CHECK_EQ(sounds.scrapesPlaying(), std::size_t{1});
+    CHECK(sounds.scrapesPlaying() == std::size_t{1});
     CHECK(energy > 0.0);
     sounds.update(now + 100);
-    CHECK_EQ(sounds.contactCount(), std::size_t{0});
-    CHECK_EQ(sounds.scrapesPlaying(), std::size_t{0});
+    CHECK(sounds.contactCount() == std::size_t{0});
+    CHECK(sounds.scrapesPlaying() == std::size_t{0});
     sounds.playBreak("CO_Fest_SpeedCamera_001", glm::vec3(0.0F), 20.0F);
-    CHECK_EQ(sounds.started().size(), std::size_t{4});
-    CHECK_NEAR(sounds.started().back().relativeVelocityMph, 20.0 * 2.2369, 1e-3);
+    CHECK(sounds.started().size() == std::size_t{4});
+    CHECK_THAT(sounds.started().back().relativeVelocityMph, WithinAbs(20.0 * 2.2369, 1e-3));
 
     const CrashMix crash = CrashMix::load(vfs);
-    CHECK_NEAR(crash.threshold, 50.0, 1e-6);
-    CHECK_NEAR(crash.drop, 10.0, 1e-6);
+    CHECK_THAT(crash.threshold, WithinAbs(50.0, 1e-6));
+    CHECK_THAT(crash.drop, WithinAbs(10.0, 1e-6));
 }
 
 } // namespace
-
-int main(int argc, char** argv)
-{
-    return fh::test::runAllTests(argc > 1 ? argv[1] : "");
-}
