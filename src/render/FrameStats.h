@@ -32,6 +32,8 @@ public:
         /// their mip chain (EnvironmentCube).
         DrawEnvironmentCube,
         DrawWorld,
+        /// The animated objects: posing them and drawing them.
+        DrawAnimated,
         DrawCars,
         /// The sky and the sun, moon and stars drawn with it.
         DrawSky,

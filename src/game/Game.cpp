@@ -458,6 +458,23 @@ void Game::loadWorld()
         m_tyreEffects.reset();
         m_particles.reset();
     }
+    try {
+        const auto animatedStart = std::chrono::steady_clock::now();
+        if (std::optional<animated::AnimatedObjects> objects = animated::AnimatedObjects::load(*m_world->archive)) {
+            m_animatedObjects.emplace(std::move(*objects));
+            m_animatedRenderer
+                = std::make_unique<render::AnimatedObjectRenderer>(*m_animatedObjects, *m_world, *m_jobs);
+            logInfo("animated objects: {} objects placed {} times ({} sets unreadable, {} placements without "
+                    "their object) in {:.2f} s",
+                m_animatedObjects->objects().size(), m_animatedObjects->instances().size(),
+                m_animatedObjects->failedSets(), m_animatedObjects->missingObjects(),
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - animatedStart).count());
+        }
+    } catch (const std::exception& e) {
+        logWarning("animated objects: {}", e.what());
+        m_animatedRenderer.reset();
+        m_animatedObjects.reset();
+    }
     m_hiddenChunks.assign(m_world->index.chunks().size(), false);
     drawLoading();
 
@@ -2193,6 +2210,25 @@ void Game::updateCamera(float dt)
     m_followEye = eye;
 }
 
+void Game::drawAnimatedObjects(const render::FrameParams& frame)
+{
+    if (!m_animatedObjects || !m_animatedRenderer) {
+        return;
+    }
+    // The objects advance by the presentation clock's step, which is 0
+    // while the game is paused (see animated::AnimatedObjects).
+    const float step = std::max(frame.time - m_animatedClock, 0.0F);
+    m_animatedClock = frame.time;
+    animated::AnimatedView view;
+    view.camera = frame.cameraPosition;
+    view.viewProjection = frame.projection * frame.view;
+    view.switchOnLights = frame.lighting.switchOnLights;
+    view.route = m_worldRenderer->eventRoute();
+    m_animatedObjects->update(step, view);
+    m_animatedRenderer->setShadowMask(m_shadowPass->mask());
+    m_animatedRenderer->draw(frame);
+}
+
 render::FrameParams Game::frameParams() const
 {
     render::FrameParams frame;
@@ -3031,6 +3067,9 @@ bool Game::frame(const InputState& controls, float dt)
             m_activityProps->update(m_camera.position, *m_worldRenderer);
         }
         m_worldRenderer->update(m_camera.position);
+        if (m_animatedRenderer) {
+            m_animatedRenderer->update();
+        }
         if (m_clouds) {
             // The clouds drift on the frame's real time (inferred; see
             // render::CloudMotion).
@@ -3069,6 +3108,8 @@ bool Game::frame(const InputState& controls, float dt)
             m_frame->begin(m_present.width(), m_present.height());
             m_worldRenderer->draw(frame);
             m_frameStats->mark(Part::DrawWorld);
+            drawAnimatedObjects(frame);
+            m_frameStats->mark(Part::DrawAnimated);
             drawVehicles(frame);
             m_frameStats->mark(Part::DrawCars);
             m_frame->sky(frame);

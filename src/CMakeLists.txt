@@ -109,6 +109,10 @@ add_library(fh1engine STATIC
     game/TrafficConfig.h
     physics/WorldCollision.cpp
     physics/WorldCollision.h
+    render/AnimatedObjectRenderer.cpp
+    render/AnimatedObjectRenderer.h
+    render/AnimatedObjectShaders.cpp
+    render/AnimatedObjectShaders.h
     render/CarRenderer.cpp
     render/CarRenderer.h
     render/CloudDefs.cpp
@@ -155,7 +159,7 @@ add_library(fh1engine STATIC
     render/XenosProgram.h
 )
 target_compile_options(fh1engine PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1engine PUBLIC fh1platform fh1data fh1world fh1collision fh1audio fh1carmodel fh1ui fh1radio fh1particles fh1profile xds::xds Freetype::Freetype)
+target_link_libraries(fh1engine PUBLIC fh1platform fh1data fh1world fh1collision fh1audio fh1carmodel fh1ui fh1radio fh1particles fh1profile fh1animated xds::xds Freetype::Freetype)
 # The overlay finds its font through fontconfig; Windows has none, and the
 # overlay looks in the system font folder there instead.
 if(NOT WIN32)

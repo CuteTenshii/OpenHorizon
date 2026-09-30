@@ -1,5 +1,6 @@
 #pragma once
 
+#include "animated/AnimatedObjects.h"
 #include "audio/AudioDevice.h"
 #include "audio/AudioLibrary.h"
 #include "audio/EngineSound.h"
@@ -35,6 +36,7 @@
 #include "profile/Profile.h"
 #include "profile/ProfileStore.h"
 #include "radio/Radio.h"
+#include "render/AnimatedObjectRenderer.h"
 #include "render/CarRenderer.h"
 #include "render/CubeMap.h"
 #include "render/DrivingLineRenderer.h"
@@ -225,6 +227,14 @@ public:
     std::size_t activityPropChunksDrawn() const { return m_activityProps ? m_activityProps->chunksDrawn() : 0; }
     /// The particle manager; null when the effects could not be loaded.
     const particles::ParticleManager* particleManager() const { return m_particles ? &*m_particles : nullptr; }
+    /// The track's animated objects as the last frame posed them; null when
+    /// they could not be loaded.
+    const animated::AnimatedObjects* animatedObjects() const
+    {
+        return m_animatedObjects ? &*m_animatedObjects : nullptr;
+    }
+    /// Their renderer, with what the last frame drew; null without them.
+    const render::AnimatedObjectRenderer* animatedObjectRenderer() const { return m_animatedRenderer.get(); }
     /// The flares of the free-roam event starts' activation zones.
     const ActivationFlares& activationFlares() const { return m_activationFlares; }
     /// Times the profile has been written since the game started.
@@ -285,6 +295,9 @@ private:
     /// Runs the tyre effect rules for every car and advances the particles.
     void updateParticles(float dt);
     void drawParticles(const render::FrameParams& frame);
+    /// Advances and poses the animated objects on the presentation clock and
+    /// draws them.
+    void drawAnimatedObjects(const render::FrameParams& frame);
     void attachEngineSound(Vehicle& vehicle, bool spatial) const;
     audio::EngineSoundOptions engineSoundOptions(bool spatial) const;
     void updateAudio(float dt);
@@ -473,6 +486,11 @@ private:
     std::optional<particles::ParticleManager> m_particles;
     std::optional<particles::TyreEffects> m_tyreEffects;
     std::unique_ptr<particles::ParticleRenderer> m_particleRenderer;
+    std::optional<animated::AnimatedObjects> m_animatedObjects;
+    std::unique_ptr<render::AnimatedObjectRenderer> m_animatedRenderer;
+    /// The presentation clock (m_time) when the animated objects last
+    /// advanced.
+    float m_animatedClock = 0.0F;
 
     // Declared before the vehicles so it outlives their engine sounds, whose
     // destructors release mixer buses.

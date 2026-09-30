@@ -1881,6 +1881,104 @@ TEST(carsReflectTheEnvironmentCube)
     }
 }
 
+/// The composite matrices the last frame posed the animated object placed
+/// at `position` with, and its index; nothing when it was not drawn.
+std::optional<std::pair<std::size_t, std::vector<glm::mat4>>> animatedPose(
+    const fh::Game& game, const glm::vec3& position)
+{
+    const fh::animated::AnimatedObjects* objects = game.animatedObjects();
+    if (objects == nullptr) {
+        return std::nullopt;
+    }
+    const auto& visible = objects->visible();
+    for (std::size_t v = 0; v < visible.size(); ++v) {
+        const std::size_t instance = visible[v].instance;
+        if (glm::length(objects->instances()[instance].placement.position - position) > 0.5F) {
+            continue;
+        }
+        const std::size_t end = v + 1 < visible.size() ? visible[v + 1].firstMatrix : objects->pose().size();
+        return std::pair(instance,
+            std::vector<glm::mat4>(objects->pose().begin() + visible[v].firstMatrix,
+                objects->pose().begin() + static_cast<std::ptrdiff_t>(end)));
+    }
+    return std::nullopt;
+}
+
+/// Starts facing the animated object at `object` from `distance` metres
+/// along `from` (a horizontal direction away from it), at noon, and checks
+/// that the object is drawn, moves from frame to frame, stands still while
+/// the game is paused and moves on after.
+void checkAnimatedObject(const glm::vec3& object, const glm::vec2& from, float distance, const std::string& name)
+{
+    fh::GameOptions options;
+    const glm::vec2 away = glm::normalize(from);
+    options.spawnAt = glm::vec2(object.x, object.z) + away * distance;
+    options.spawnHeading = std::atan2(-away.x, -away.y);
+    options.startTime = 12.0F * 3600.0F;
+    Session session(options);
+    CHECK(session.waitForCar());
+    fh::Game& game = session.game();
+    session.run(1.0F, {});
+    session.capture(name + "_a");
+    CHECK(game.animatedObjects() != nullptr);
+    CHECK(game.animatedObjectRenderer() != nullptr);
+    const auto first = animatedPose(game, object);
+    CHECK(first.has_value());
+    if (!first || game.animatedObjectRenderer() == nullptr) {
+        return;
+    }
+    const std::vector<std::uint32_t>& drawn = game.animatedObjectRenderer()->drawnInstances();
+    CHECK(std::ranges::find(drawn, static_cast<std::uint32_t>(first->first)) != drawn.end());
+    // Two frames on, its parts have moved.
+    session.run(2.0F * kStep, {});
+    session.capture(name + "_b");
+    const auto second = animatedPose(game, object);
+    CHECK(second.has_value());
+    CHECK(second && second->second != first->second);
+    const fh::animated::AnimatedObjects& objects = *game.animatedObjects();
+    const float played = objects.clipTime(first->first);
+
+    session.press(fh::Button::Start);
+    CHECK(game.pauseShown());
+    const auto paused = animatedPose(game, object);
+    const float pausedAt = objects.clipTime(first->first);
+    session.run(1.0F, {});
+    CHECK_NEAR(objects.clipTime(first->first), pausedAt, 1e-6);
+    const auto still = animatedPose(game, object);
+    CHECK(paused && still && paused->second == still->second);
+
+    session.press(fh::Button::B);
+    CHECK(!game.pauseShown());
+    session.run(1.0F, {});
+    CHECK(objects.clipTime(first->first) > played + 0.9F);
+    const auto after = animatedPose(game, object);
+    CHECK(after && still && after->second != still->second);
+}
+
+// The wind turbines and fairground rides of Colorado play their Granny
+// animations on the presentation clock (see animated::AnimatedObjects): a
+// wind turbine's rotor turns (a rigid part), and the ferris wheel turns (a
+// skinned model), both stopping while paused. The windmills are not drawn:
+// the textures their sets name (11101, 11170) are not on the disc.
+TEST(windTurbineTurnsAndStopsWhilePaused)
+{
+    if (!gameDir()) {
+        return;
+    }
+    // The first wind turbine of the row placed by set __R00G00211.
+    checkAnimatedObject({-2240.8F, 17.0F, -1876.3F}, {0.0F, 1.0F}, 400.0F, "animated_turbine");
+}
+
+TEST(ferrisWheelTurnsAndStopsWhilePaused)
+{
+    if (!gameDir()) {
+        return;
+    }
+    // The festival's ferris wheel (set __R00G00076), seen across its Z axis
+    // (0.990, 0, -0.139), about which it turns.
+    checkAnimatedObject({-1084.47F, -1.51F, -614.58F}, {-0.990F, 0.139F}, 150.0F, "animated_ferris");
+}
+
 } // namespace
 
 int main(int argc, char** argv)
