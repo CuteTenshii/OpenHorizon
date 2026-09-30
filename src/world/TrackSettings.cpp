@@ -3,8 +3,10 @@
 #include "base/Error.h"
 #include "vfs/Vfs.h"
 
+#include <glm/common.hpp>
 #include <pugixml.hpp>
 
+#include <algorithm>
 #include <format>
 #include <optional>
 #include <string>
@@ -51,6 +53,12 @@ TrackSettings TrackSettings::parse(std::string_view xml)
     s.lightColor = colour(root, "LightColor");
     s.trackLightMap = {attribute(root, "TrackLightMapParams", "DarkPoint"),
         attribute(root, "TrackLightMapParams", "LightPoint"), 0.0F, 0.0F};
+    s.lightHemiTop = glm::vec3(colour(root, "LightHemiTop"));
+    s.lightHemiBottom = glm::vec3(colour(root, "LightHemiBottom"));
+    s.iblDirectScale = attribute(root, "imageBasedLighting", "iblDirectScale");
+    s.iblSunColour = {attribute(root, "imageBasedLighting", "iblSunColorR"),
+        attribute(root, "imageBasedLighting", "iblSunColorG"), attribute(root, "imageBasedLighting", "iblSunColorB")};
+    s.cubemapFarDistance = attribute(root, "Cubemap", "FarDistance");
     s.dynamicCubemap = attribute(root, "Performance", "DynamicCubemap") != 0.0F;
     const pugi::xml_node shadowOverride = root.child("OverrideShadowLightDirection");
     const pugi::xml_node shadowDirection = root.child("ShadowLightDirection");
@@ -59,6 +67,16 @@ TrackSettings TrackSettings::parse(std::string_view xml)
             shadowDirection.attribute("y").as_float(), shadowDirection.attribute("z").as_float());
     }
     return s;
+}
+
+glm::vec4 TrackSettings::cubeClearColour(const glm::vec3& sunDirection) const
+{
+    constexpr float kScale = 0.2F;
+    constexpr float kTopShare = 0.7F;
+    constexpr float kBottomShare = 0.3F;
+    const glm::vec3 lit = iblSunColour * iblDirectScale * std::clamp(-sunDirection.y, 0.0F, 1.0F)
+        + kTopShare * lightHemiTop + kBottomShare * lightHemiBottom;
+    return {kScale * glm::min(lit, glm::vec3(1.0F)), 0.0F};
 }
 
 TrackSettings TrackSettings::load(const Vfs& vfs, std::string_view track)

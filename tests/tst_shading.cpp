@@ -170,8 +170,31 @@ TEST(sceneConstantsTakeTheTrackSettings)
   <cubeSkyScale value="-0.5"/>
   <cubeSkySaturation value="0.6"/>
   <cubeReflGroundScale value="2.0"/>
+  <Cubemap Version="4" MeshSizeThreshold="0.06" MeshLimit="300" LimitPerFace="0" FacesPerFrame="6" FarDistance="200.0" VisibilityThreshold="5000"/>
+  <LightHemiTop r="0.3" g="0.4" b="0.5" a="1.0"/>
+  <LightHemiBottom r="0.1" g="0.2" b="0.3" a="1.0"/>
+  <imageBasedLighting Version="3" Enable="0" LogLuvEncode="0" iblAmbientScale="1.6" iblAmbientSaturation="0.65" iblDirectScale="1.3" iblSunColorR="1.0" iblSunColorG="0.98" iblSunColorB="0.94"/>
 </TrackSettings>)";
     const world::TrackSettings settings = world::TrackSettings::parse(kXml);
+    CHECK_EQ(settings.cubemapFarDistance, 200.0F);
+    CHECK(settings.lightHemiTop == glm::vec3(0.3F, 0.4F, 0.5F));
+    CHECK(settings.lightHemiBottom == glm::vec3(0.1F, 0.2F, 0.3F));
+    CHECK_NEAR(settings.iblDirectScale, 1.3, 1e-6);
+    CHECK(settings.iblSunColour == glm::vec3(1.0F, 0.98F, 0.94F));
+    // The cube faces' clear: 0.2 min(sun 1.3 clamp(-y) + 0.7 top + 0.3
+    // bottom, 1). A sun straight down saturates red and green.
+    const glm::vec4 noon = settings.cubeClearColour(glm::vec3(0.0F, -1.0F, 0.0F));
+    CHECK_NEAR(noon.x, 0.2, 1e-5);
+    CHECK_NEAR(noon.y, 0.2, 1e-5);
+    CHECK_NEAR(noon.z, 0.2, 1e-5);
+    CHECK_EQ(noon.w, 0.0F);
+    // Below the horizon only the hemisphere: 0.7 * 0.3 + 0.3 * 0.1 = 0.24.
+    const glm::vec4 night = settings.cubeClearColour(glm::vec3(0.0F, 1.0F, 0.0F));
+    CHECK_NEAR(night.x, 0.2 * 0.24, 1e-5);
+    CHECK_NEAR(night.y, 0.2 * (0.7 * 0.4 + 0.3 * 0.2), 1e-5);
+    // A low sun: blue gets 1.3 * 0.94 * 0.25 + 0.7 * 0.5 + 0.3 * 0.3.
+    const glm::vec4 low = settings.cubeClearColour(glm::vec3(0.968F, -0.25F, 0.0F));
+    CHECK_NEAR(low.z, 0.2 * (1.3 * 0.94 * 0.25 + 0.7 * 0.5 + 0.3 * 0.3), 1e-5);
     CHECK(settings.skyScale == glm::vec4(1.0F, 0.6F, -0.5F, 2.0F));
     CHECK(settings.roadSpecular2 == glm::vec4(24.0F, 23.0F, 0.49F, 0.93F));
     CHECK(settings.darkColor == glm::vec4(0.1F, 0.2F, 0.3F, 1.0F));

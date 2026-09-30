@@ -76,6 +76,10 @@ public:
         /// techniques, which 170 of Colorado's 173 effects have.
         std::optional<RenderState> depthOnlyState;
         std::optional<RenderState> shadowDepthOnlyState;
+        /// The first pass states of the RealtimeCubemap technique, which
+        /// the environment cube's faces draw with (172 of Colorado's 173
+        /// effects have it; light_pollution does not).
+        std::optional<RenderState> realtimeCubemapState;
     };
 
     /// Reads every `.fxobj` of `archive` on all hardware threads. Effects that

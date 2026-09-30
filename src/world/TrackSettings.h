@@ -45,6 +45,22 @@ struct TrackSettings {
     /// the two points, nor the presentation's constructor), so they are
     /// taken as the zero the object starts with.
     glm::vec4 trackLightMap{0.0F};
+    /// LightHemiTop and LightHemiBottom (loader offsets 336 and 352,
+    /// settings 144 and 160), and imageBasedLighting's iblDirectScale (984)
+    /// and iblSunColorR, G, B (992): the render thread blends the first two
+    /// 0.7 to 0.3 (0x82418A84-0x82418AC0) and adds the sun's share for the
+    /// clear colour of the environment cube's faces (see
+    /// cubeClearColour()).
+    glm::vec3 lightHemiTop{0.0F};
+    glm::vec3 lightHemiBottom{0.0F};
+    float iblDirectScale = 0.0F;
+    glm::vec3 iblSunColour{0.0F};
+    /// Cubemap FarDistance (loader offset 632, parsed at 0x82E15968): the
+    /// render thread hands its square to the environment cube's list job
+    /// (0x82E91F40), or that of min(3 FarDistance, 5000) while the
+    /// renderer's flags +9519 or +9520 are set (their meaning was not
+    /// traced; they are taken as clear).
+    float cubemapFarDistance = 0.0F;
     /// Performance/DynamicCubemap (byte 1378; settings 1186): with it set,
     /// the presentation renders the environment cube around the car each
     /// frame (0x82424244) instead of using staticCarCubemap.xpr.
@@ -59,6 +75,17 @@ struct TrackSettings {
     /// comes from then was not traced. Optional in the file. The scene reads
     /// both at those same offsets of the presentation (0x82420940).
     std::optional<glm::vec3> shadowLightDirection;
+
+    /// The colour the environment cube's faces are cleared to, as stored
+    /// (the square root encoding of the cube), for the sun travelling along
+    /// `sunDirection`: 0.2 min(iblSunColour iblDirectScale clamp(-y, 0, 1)
+    /// + 0.7 LightHemiTop + 0.3 LightHemiBottom, 1), alpha 0 (0x82E792C0,
+    /// used for the first clear at 0x82431998 and after each face's resolve
+    /// at 0x8243A120; the 0.2 is the vector at 0x833A1410, set from
+    /// 0x82253E90; the clamp to 1 is 0x824A7D60). Inferred: that the y it
+    /// takes (+8516 of the renderer, normalised by its setter 0x824A8620) is
+    /// the sun's direction.
+    glm::vec4 cubeClearColour(const glm::vec3& sunDirection) const;
 
     /// Parses the XML text of a TrackSettings.xml. Throws DataError when it
     /// is not a TrackSettings document or lacks one of the elements above.

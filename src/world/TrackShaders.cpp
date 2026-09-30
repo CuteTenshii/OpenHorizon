@@ -183,7 +183,8 @@ TrackShaders TrackShaders::load(const lzx::ZipArchive& archive)
             entry.effect = xenos::parseEffect(data, zipEntry.name);
             entry.state = readRenderState(data, kDefaultTechnique);
             for (const auto& [technique, target] : {std::pair{"DepthOnly", &entry.depthOnlyState},
-                     std::pair{"ShadowDepthOnly", &entry.shadowDepthOnlyState}}) {
+                     std::pair{"ShadowDepthOnly", &entry.shadowDepthOnlyState},
+                     std::pair{"RealtimeCubemap", &entry.realtimeCubemapState}}) {
                 if (entry.effect.findTechnique(technique) != nullptr) {
                     *target = readRenderState(data, technique);
                 }
