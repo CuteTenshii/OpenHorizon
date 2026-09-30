@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh::collision {
+namespace openhorizon::collision {
 
 namespace {
 
@@ -156,4 +156,4 @@ std::pair<glm::vec2, glm::vec2> CollisionIndex::tileBounds(const Tile& tile) con
     return {min - glm::vec2(m_margin), max + glm::vec2(m_margin)};
 }
 
-} // namespace fh::collision
+} // namespace openhorizon::collision

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace fh::animated {
+namespace openhorizon::animated {
 
 namespace {
 
@@ -427,4 +427,4 @@ AnimatedPlacementSet readPlacementSet(ByteView data, const std::string& source)
     return set;
 }
 
-} // namespace fh::animated
+} // namespace openhorizon::animated

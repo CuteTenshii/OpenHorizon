@@ -13,7 +13,7 @@
 #include <optional>
 #include <system_error>
 
-namespace fh::profile {
+namespace openhorizon::profile {
 
 namespace {
 
@@ -692,4 +692,4 @@ bool ProfileStore::save(const Profile& profile)
     return true;
 }
 
-} // namespace fh::profile
+} // namespace openhorizon::profile

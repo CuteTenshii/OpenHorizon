@@ -73,33 +73,33 @@ double secondsSince(std::chrono::steady_clock::time_point start)
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
 
-const char* formatName(fh::world::TextureSurface::Format format)
+const char* formatName(openhorizon::world::TextureSurface::Format format)
 {
     switch (format) {
-    case fh::world::TextureSurface::Format::Dxt1:
+    case openhorizon::world::TextureSurface::Format::Dxt1:
         return "DXT1";
-    case fh::world::TextureSurface::Format::Dxt3:
+    case openhorizon::world::TextureSurface::Format::Dxt3:
         return "DXT3";
-    case fh::world::TextureSurface::Format::Dxt5:
+    case openhorizon::world::TextureSurface::Format::Dxt5:
         return "DXT5";
-    case fh::world::TextureSurface::Format::Bc5:
+    case openhorizon::world::TextureSurface::Format::Bc5:
         return "BC5";
-    case fh::world::TextureSurface::Format::Rgba8:
+    case openhorizon::world::TextureSurface::Format::Rgba8:
         return "RGBA8";
     }
     return "?";
 }
 
-const char* shadingName(fh::world::TileMesh::Shading shading)
+const char* shadingName(openhorizon::world::TileMesh::Shading shading)
 {
     switch (shading) {
-    case fh::world::TileMesh::Shading::Plain:
+    case openhorizon::world::TileMesh::Shading::Plain:
         return "plain";
-    case fh::world::TileMesh::Shading::Splat:
+    case openhorizon::world::TileMesh::Shading::Splat:
         return "splat";
-    case fh::world::TileMesh::Shading::VertexBlend:
+    case openhorizon::world::TileMesh::Shading::VertexBlend:
         return "vertex-blend";
-    case fh::world::TileMesh::Shading::Water:
+    case openhorizon::world::TileMesh::Shading::Water:
         return "water";
     }
     return "?";
@@ -134,11 +134,11 @@ struct LevelCost {
 
 /// Builds every tile of free roam (route 0), one level of detail at a time,
 /// then decodes every texture those tiles use, and prints the totals.
-int reportSizes(const fh::world::TrackWorld& world, unsigned threads)
+int reportSizes(const openhorizon::world::TrackWorld& world, unsigned threads)
 {
-    const fh::world::WorldIndex& index = world.index;
-    const fh::world::WorldTileGrid grid(index, kTileSize, fh::world::EventPropFilter::route(0));
-    const fh::world::TrackTextures* textures = world.textures ? &*world.textures : nullptr;
+    const openhorizon::world::WorldIndex& index = world.index;
+    const openhorizon::world::WorldTileGrid grid(index, kTileSize, openhorizon::world::EventPropFilter::route(0));
+    const openhorizon::world::TrackTextures* textures = world.textures ? &*world.textures : nullptr;
     // Levels -1 (no levels) to 3, placed geometry then procedural copies.
     constexpr std::size_t kLevels = 5;
     std::array<LevelCost, kLevels * 2> costs{};
@@ -147,10 +147,10 @@ int reportSizes(const fh::world::TrackWorld& world, unsigned threads)
     std::mutex mutex;
     const auto start = std::chrono::steady_clock::now();
     parallelEach(grid.tiles().size(), threads, [&](std::size_t t) {
-        const fh::world::WorldTileGrid::Tile& tile = grid.tiles()[t];
+        const openhorizon::world::WorldTileGrid::Tile& tile = grid.tiles()[t];
         std::array<std::vector<std::uint32_t>, kLevels * 2> byLevel;
         for (const std::uint32_t c : tile.chunks) {
-            const fh::world::WorldChunk& chunk = index.chunks()[c];
+            const openhorizon::world::WorldChunk& chunk = index.chunks()[c];
             byLevel[(chunk.scattered ? kLevels : 0) + static_cast<std::size_t>(chunk.lod + 1)].push_back(c);
         }
         for (std::size_t level = 0; level < byLevel.size(); ++level) {
@@ -162,14 +162,14 @@ int reportSizes(const fh::world::TrackWorld& world, unsigned threads)
             std::size_t triangles = 0;
             std::vector<std::uint32_t> ids;
             if (level < kLevels) {
-                const fh::world::ShadedMesh mesh
-                    = fh::world::buildShadedMesh(*world.archive, index, byLevel[level], world.shaders, textures);
+                const openhorizon::world::ShadedMesh mesh = openhorizon::world::buildShadedMesh(
+                    *world.archive, index, byLevel[level], world.shaders, textures);
                 bytes = mesh.vertices.size() + mesh.indices.size() * sizeof(std::uint32_t);
                 triangles = mesh.triangleCount();
                 ids = mesh.textureIds();
             } else {
-                const fh::world::TileMesh mesh
-                    = fh::world::buildTileMesh(*world.archive, index, byLevel[level], textures);
+                const openhorizon::world::TileMesh mesh
+                    = openhorizon::world::buildTileMesh(*world.archive, index, byLevel[level], textures);
                 bytes = (mesh.vertices.size() + mesh.indices.size()) * sizeof(std::uint32_t);
                 triangles = mesh.triangleCount();
                 ids = mesh.textures();
@@ -183,7 +183,7 @@ int reportSizes(const fh::world::TrackWorld& world, unsigned threads)
             cost.buildSeconds += seconds;
             tileBytes[t] += bytes;
             for (const std::uint32_t id : ids) {
-                if (id != fh::world::TileMesh::kNoTexture) {
+                if (id != openhorizon::world::TileMesh::kNoTexture) {
                     textureIds.insert(id);
                 }
             }
@@ -229,14 +229,14 @@ int reportSizes(const fh::world::TrackWorld& world, unsigned threads)
     const auto textureStart = std::chrono::steady_clock::now();
     parallelEach(ids.size(), threads, [&](std::size_t i) {
         try {
-            const fh::world::TextureMipChain chain = textures->loadTexture(*world.archive, ids[i]);
+            const openhorizon::world::TextureMipChain chain = textures->loadTexture(*world.archive, ids[i]);
             const std::lock_guard lock(mutex);
             textureBytes += chain.byteSize();
             topLevelBytes += chain.levels.empty() ? 0 : chain.levels.front().size();
             auto& [count, bytes] = byFormat[formatName(chain.format)];
             ++count;
             bytes += chain.byteSize();
-        } catch (const fh::DataError&) {
+        } catch (const openhorizon::DataError&) {
             const std::lock_guard lock(mutex);
             ++failed;
         }
@@ -275,24 +275,24 @@ int main(int argc, char** argv)
         return usage();
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
         const std::string track = argv[2];
 
         const auto loadStart = std::chrono::steady_clock::now();
-        std::optional<fh::world::TrackWorld> loaded = fh::world::TrackWorld::load(vfs, track);
+        std::optional<openhorizon::world::TrackWorld> loaded = openhorizon::world::TrackWorld::load(vfs, track);
         if (!loaded) {
             return 1;
         }
-        const fh::world::TrackWorld& world = *loaded;
+        const openhorizon::world::TrackWorld& world = *loaded;
         const double loadSeconds = secondsSince(loadStart);
         for (const std::string& warning : world.warnings) {
-            fh::logWarning("{}", warning);
+            openhorizon::logWarning("{}", warning);
         }
 
-        const fh::world::WorldIndex& index = world.index;
+        const openhorizon::world::WorldIndex& index = world.index;
         std::size_t backdrop = 0;
-        for (const fh::world::WorldChunk& chunk : index.chunks()) {
+        for (const openhorizon::world::WorldChunk& chunk : index.chunks()) {
             backdrop += chunk.backdrop ? 1 : 0;
         }
         const std::size_t placed = index.placedCount();
@@ -303,7 +303,7 @@ int main(int argc, char** argv)
             index.chunks().size(), index.chunks().size() - placed, backdrop, placed, placed - scattered, scattered);
         std::printf("local models never placed: %d\n", index.localModelCount());
         if (world.placements) {
-            const fh::world::TrackPlacements& placements = *world.placements;
+            const openhorizon::world::TrackPlacements& placements = *world.placements;
             std::printf("draw records: %zu, zones: %d (%d failed), procedural sets: %zu (%d failed), scatter "
                         "instances: %zu\n",
                 placements.drawCount(), placements.zoneCount(), placements.failedZones(),
@@ -323,14 +323,14 @@ int main(int argc, char** argv)
             return reportSizes(world, *sizesThreads);
         }
 
-        const fh::world::Footprint footprint = index.footprint();
+        const openhorizon::world::Footprint footprint = index.footprint();
         const auto [x, z] = at ? *at : std::pair{footprint.centre().x, footprint.centre().y};
         std::printf("footprint: X %.0f .. %.0f, Z %.0f .. %.0f\n", footprint.min.x, footprint.max.x, footprint.min.y,
             footprint.max.y);
         const int zone = world.zones ? world.zones->zoneAt(x, z) : -1;
         std::printf("tiles of %.0f m around X %.1f, Z %.1f (zone %d):\n", kTileSize, x, z, zone);
 
-        const fh::world::WorldTileGrid grid(index, kTileSize);
+        const openhorizon::world::WorldTileGrid grid(index, kTileSize);
         const auto [cellX, cellZ] = grid.cellAt(x, z);
         struct Job {
             std::size_t tile = 0;
@@ -345,7 +345,7 @@ int main(int argc, char** argv)
                     std::printf("  tile %d,%d: empty\n", cellX + dx, cellZ + dz);
                     continue;
                 }
-                const fh::world::WorldTileGrid::Tile& t = grid.tiles()[*tile];
+                const openhorizon::world::WorldTileGrid::Tile& t = grid.tiles()[*tile];
                 const float distance = grid.distanceTo(t, x, z);
                 std::vector<std::uint32_t> chunks;
                 for (const std::uint32_t c : grid.chunksAt(t, distance)) {
@@ -356,18 +356,18 @@ int main(int argc, char** argv)
                 jobs.push_back({*tile, distance, std::move(chunks)});
             }
         }
-        const fh::world::TrackTextures* textures = world.textures ? &*world.textures : nullptr;
+        const openhorizon::world::TrackTextures* textures = world.textures ? &*world.textures : nullptr;
         const auto meshStart = std::chrono::steady_clock::now();
-        std::vector<std::future<fh::world::TileMesh>> futures;
+        std::vector<std::future<openhorizon::world::TileMesh>> futures;
         futures.reserve(jobs.size());
         for (const Job& job : jobs) {
             futures.push_back(std::async(std::launch::async, [&world, &index, &job, textures] {
-                return fh::world::buildTileMesh(*world.archive, index, job.chunks, textures);
+                return openhorizon::world::buildTileMesh(*world.archive, index, job.chunks, textures);
             }));
         }
-        std::vector<fh::world::TileMesh> meshes;
+        std::vector<openhorizon::world::TileMesh> meshes;
         meshes.reserve(futures.size());
-        for (std::future<fh::world::TileMesh>& future : futures) {
+        for (std::future<openhorizon::world::TileMesh>& future : futures) {
             meshes.push_back(future.get());
         }
         const double meshSeconds = secondsSince(meshStart);
@@ -376,10 +376,10 @@ int main(int argc, char** argv)
         std::size_t totalBatches = 0;
         int totalFailed = 0;
         std::vector<std::uint32_t> textureIds;
-        std::map<fh::world::TileMesh::Shading, std::size_t> batchesByShading;
+        std::map<openhorizon::world::TileMesh::Shading, std::size_t> batchesByShading;
         for (std::size_t j = 0; j < jobs.size(); ++j) {
-            const fh::world::TileMesh& mesh = meshes[j];
-            const fh::world::WorldTileGrid::Tile& t = grid.tiles()[jobs[j].tile];
+            const openhorizon::world::TileMesh& mesh = meshes[j];
+            const openhorizon::world::WorldTileGrid::Tile& t = grid.tiles()[jobs[j].tile];
             std::printf("  tile %d,%d at %.0f m: %zu chunks, %zu vertices, %zu triangles, %zu batches, %d failed\n",
                 t.cellX, t.cellZ, jobs[j].distance, jobs[j].chunks.size(), mesh.vertexCount(), mesh.triangleCount(),
                 mesh.batches.size(), mesh.failedChunks);
@@ -389,7 +389,7 @@ int main(int argc, char** argv)
             totalTriangles += mesh.triangleCount();
             totalBatches += mesh.batches.size();
             totalFailed += mesh.failedChunks;
-            for (const fh::world::TileMesh::Batch& batch : mesh.batches) {
+            for (const openhorizon::world::TileMesh::Batch& batch : mesh.batches) {
                 ++batchesByShading[batch.shading];
             }
             for (const std::uint32_t id : mesh.textures()) {
@@ -413,13 +413,13 @@ int main(int argc, char** argv)
         int skippedMaterials = 0;
         std::map<std::string, std::size_t> batchesByEffect;
         for (const Job& job : jobs) {
-            const fh::world::ShadedMesh shaded
-                = fh::world::buildShadedMesh(*world.archive, index, job.chunks, world.shaders, textures);
+            const openhorizon::world::ShadedMesh shaded
+                = openhorizon::world::buildShadedMesh(*world.archive, index, job.chunks, world.shaders, textures);
             shadedTriangles += shaded.triangleCount();
             shadedBatches += shaded.batches.size();
             shadedBytes += shaded.vertices.size();
             skippedMaterials += shaded.skippedMaterials;
-            for (const fh::world::ShadedMesh::Batch& batch : shaded.batches) {
+            for (const openhorizon::world::ShadedMesh::Batch& batch : shaded.batches) {
                 ++batchesByEffect[world.shaders.at(batch.shader).name];
             }
         }
@@ -438,14 +438,14 @@ int main(int argc, char** argv)
         for (std::size_t i = 0; i < sample; ++i) {
             const std::uint32_t id = textureIds[i];
             try {
-                const fh::world::TextureMipChain chain = textures->loadTexture(*world.archive, id);
+                const openhorizon::world::TextureMipChain chain = textures->loadTexture(*world.archive, id);
                 ++byFormat[formatName(chain.format)];
                 std::printf("  %s: %s %dx%d, %zu levels, %zu bytes, from %s\n",
-                    fh::world::TrackTextures::textureName(id).c_str(), formatName(chain.format), chain.width,
+                    openhorizon::world::TrackTextures::textureName(id).c_str(), formatName(chain.format), chain.width,
                     chain.height, chain.levels.size(), chain.byteSize(), chain.files.c_str());
-            } catch (const fh::DataError& e) {
+            } catch (const openhorizon::DataError& e) {
                 ++failedTextures;
-                std::printf("  %s: FAILED: %s\n", fh::world::TrackTextures::textureName(id).c_str(), e.what());
+                std::printf("  %s: FAILED: %s\n", openhorizon::world::TrackTextures::textureName(id).c_str(), e.what());
             }
         }
         std::printf("textures: %d failed of %zu (", failedTextures, sample);
@@ -457,7 +457,7 @@ int main(int argc, char** argv)
         std::printf("), %.2f s\n", secondsSince(textureStart));
         return totalFailed == 0 && failedTextures == 0 ? 0 : 1;
     } catch (const std::exception& e) {
-        fh::logError("{}", e.what());
+        openhorizon::logError("{}", e.what());
         return 1;
     }
 }

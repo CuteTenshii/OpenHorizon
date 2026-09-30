@@ -8,7 +8,7 @@
 #include <cstring>
 #include <unordered_map>
 
-namespace fh::animated::granny {
+namespace openhorizon::animated::granny {
 
 namespace {
 
@@ -930,4 +930,4 @@ void worldPose(const Model& model, const std::vector<Transform>& locals, std::ve
     }
 }
 
-} // namespace fh::animated::granny
+} // namespace openhorizon::animated::granny

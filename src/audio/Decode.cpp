@@ -15,7 +15,7 @@ extern "C" {
 #include <span>
 #include <string>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -549,4 +549,4 @@ PcmBuffer decodeSample(const FsbBank& bank, std::size_t index, DecodeReport& rep
     return pcm;
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

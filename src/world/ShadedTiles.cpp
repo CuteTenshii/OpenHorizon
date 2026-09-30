@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -350,4 +350,4 @@ ShadedMesh buildShadedMesh(const lzx::ZipArchive& archive, const WorldIndex& ind
     return out;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

@@ -40,7 +40,7 @@
 /// The thresholds are the executable's globals at 0x833A5630-0x833A5684
 /// (distance scale 1, 60 m model reach plus 20 m of fade, 200 m walkers,
 /// 500 queue entries), with the scale the photo camera changes left at 1.
-namespace fh::spectators::draw {
+namespace openhorizon::spectators::draw {
 
 /// Metres from the camera within which people are drawn as models: 60 s +
 /// 20 with the distance scale s at 1 (0x833A5630, 0x833A563C, 0x833A5640).
@@ -166,4 +166,4 @@ inline constexpr std::size_t kClipSlots = 50;
 /// clip. `clips` and `weights` run in step; empty gives no table.
 std::vector<std::uint32_t> clipTable(std::span<const std::uint32_t> clips, std::span<const float> weights);
 
-} // namespace fh::spectators::draw
+} // namespace openhorizon::spectators::draw

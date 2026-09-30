@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 /// The rules of one race: the countdown, each racer's progress along the
 /// route, laps, positions and the finish. It knows racers only by index and
@@ -73,4 +73,4 @@ private:
     int m_finishedCount = 0;
 };
 
-} // namespace fh
+} // namespace openhorizon

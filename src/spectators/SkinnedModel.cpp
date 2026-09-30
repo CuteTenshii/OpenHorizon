@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <limits>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 namespace {
 
@@ -111,4 +111,4 @@ SkinnedModel parseSkinnedModel(ByteView data, const std::string& source)
     return model;
 }
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

@@ -69,7 +69,7 @@
 /// Pixel shaders continue with 2 × u32 ? and the interpolator words.
 /// Interpolator words hold usage index in bits 0-3, usage in 4-7, the
 /// interpolator register in 8-11 and the component mask in 12-15.
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 /// Direct3D declaration usages.
 enum class DeclUsage : std::uint8_t {
@@ -268,4 +268,4 @@ Effect parseEffect(ByteView data, const std::string& source);
 inline constexpr std::uint32_t kVertexShaderMagic = 0x102A1101;
 inline constexpr std::uint32_t kPixelShaderMagic = 0x102A1100;
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

@@ -17,7 +17,7 @@
 #include <numbers>
 #include <unordered_map>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -940,4 +940,4 @@ GLuint MinimapRenderer::render(glm::vec2 position, float heading, float speedMet
     return m_color;
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -621,4 +621,4 @@ void ShadowPass::buildMask(
     collectTimers();
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

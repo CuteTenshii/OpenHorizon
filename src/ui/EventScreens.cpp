@@ -18,7 +18,7 @@
 #include <optional>
 #include <utility>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -902,4 +902,4 @@ std::vector<std::string> PostRaceFinishedScreen::takeSounds()
     return std::exchange(m_impl->sounds, {});
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

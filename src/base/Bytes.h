@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 using Bytes = std::vector<std::uint8_t>;
 using ByteView = std::span<const std::uint8_t>;
@@ -182,4 +182,4 @@ bool iequals(std::string_view a, std::string_view b);
 bool endsWithNoCase(std::string_view text, std::string_view suffix);
 bool startsWithNoCase(std::string_view text, std::string_view prefix);
 
-} // namespace fh
+} // namespace openhorizon

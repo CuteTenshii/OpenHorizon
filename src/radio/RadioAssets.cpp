@@ -8,7 +8,7 @@
 #include <format>
 #include <memory>
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 namespace {
 
@@ -137,4 +137,4 @@ audio::MpegSampleStream RadioAssets::openStream(RadioBank bank, int sampleIndex,
         sample.name), startFrame);
 }
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

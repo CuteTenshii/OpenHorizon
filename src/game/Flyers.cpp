@@ -9,7 +9,7 @@
 #include <format>
 #include <utility>
 
-namespace fh {
+namespace openhorizon {
 
 Flyers Flyers::load(const Vfs& vfs, std::string_view mode)
 {
@@ -101,4 +101,4 @@ void Flyers::restore(const std::vector<std::string>& ids)
     }
 }
 
-} // namespace fh
+} // namespace openhorizon

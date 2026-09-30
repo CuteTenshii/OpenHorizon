@@ -27,12 +27,12 @@
 
 using Catch::Matchers::WithinAbs;
 
-using fh::test::gameDir;
+using openhorizon::test::gameDir;
 
 namespace {
 
-using fh::Bytes;
-namespace xenos = fh::xenos;
+using openhorizon::Bytes;
+namespace xenos = openhorizon::xenos;
 
 constexpr std::uint32_t kFetchBit = 1;
 constexpr std::uint32_t kOne = 5;
@@ -755,7 +755,7 @@ void checkAllTranslate(const xenos::CheckReport& report)
 TEST_CASE("translatesRepresentativeGameShaders", "[xenos]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const std::vector<std::string> paths{"media/shaders/cars/rim_carbon_fiber3.fxobj",
         "media/tracks/colorado/bin/shaders/track/add_diff_opac_rgba.fxobj",
@@ -774,7 +774,7 @@ TEST_CASE("translatesRepresentativeGameShaders", "[xenos]")
 TEST_CASE("translatesEveryGameShader", "[xenos][slow][.]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const std::vector<std::string> paths = xenos::listEffects(vfs);
     CHECK(paths.size() > 300);

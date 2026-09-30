@@ -39,12 +39,12 @@
 
 using Catch::Matchers::WithinAbs;
 
-using fh::test::gameDir;
+using openhorizon::test::gameDir;
 
 namespace {
 
-using fh::Bytes;
-using namespace fh::ui;
+using openhorizon::Bytes;
+using namespace openhorizon::ui;
 
 /// Builds big-endian test data, the byte order of every file read here.
 struct Writer {
@@ -1452,11 +1452,11 @@ TEST_CASE("minimap_camera_follows_the_car", "[ui]")
 TEST_CASE("disc_every_scene_and_gauge_parses", "[ui]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     std::vector<std::string> scenes;
     for (const std::string& path : vfs.list("media")) {
-        if (fh::endsWithNoCase(path, ".bgf")) {
+        if (openhorizon::endsWithNoCase(path, ".bgf")) {
             scenes.push_back(path.substr(0, path.size() - 4));
         }
     }
@@ -1493,7 +1493,7 @@ TEST_CASE("disc_every_scene_and_gauge_parses", "[ui]")
             totalMatching += matching;
             ++parsed;
             gauges += path.find("digitalgauge") != std::string::npos ? 1 : 0;
-        } catch (const fh::DataError& e) {
+        } catch (const openhorizon::DataError& e) {
             FAIL_CHECK(e.what());
         }
     }
@@ -1507,16 +1507,16 @@ TEST_CASE("disc_every_scene_and_gauge_parses", "[ui]")
 TEST_CASE("disc_uv_transform_rebuilds_every_stored_matrix", "[ui]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     std::size_t images = 0;
     std::size_t matching = 0;
     std::size_t otherModes = 0;
     for (const std::string& path : vfs.list("media")) {
-        if (!fh::endsWithNoCase(path, ".fbf")) {
+        if (!openhorizon::endsWithNoCase(path, ".fbf")) {
             continue;
         }
-        const std::optional<fh::Bytes> data = vfs.read(path);
+        const std::optional<openhorizon::Bytes> data = vfs.read(path);
         if (!data) {
             continue;
         }
@@ -1555,7 +1555,7 @@ TEST_CASE("disc_uv_transform_rebuilds_every_stored_matrix", "[ui]")
 TEST_CASE("disc_fonts_cover_latin1", "[ui]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     FontLibrary fonts(vfs, "en");
     for (const char* face : {"horizon_a", "horizon_b", "horizon_d", "horizon_e"}) {
@@ -1588,7 +1588,7 @@ TEST_CASE("disc_fonts_cover_latin1", "[ui]")
 TEST_CASE("disc_hud_authored_text_widths", "[ui]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const Presentation hud(SceneFiles::load(vfs, "media/ui/scenes/ui4/947_HUD"));
     FontLibrary fonts(vfs, "en");
@@ -1628,7 +1628,7 @@ TEST_CASE("disc_hud_authored_text_widths", "[ui]")
 TEST_CASE("disc_hud_scene_structure", "[ui]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     Presentation hud(SceneFiles::load(vfs, "media/ui/scenes/ui4/947_HUD"));
     CHECK(hud.files().bgf.width == 1280);
@@ -1735,7 +1735,7 @@ TEST_CASE("disc_hud_scene_structure", "[ui]")
 TEST_CASE("disc_minimap_data_loads", "[ui]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const NavFile nav = NavFile::parse(vfs.readOrThrow("media/tracks/colorado/colorado.nav"), "colorado.nav");
     std::size_t roads = 0;
@@ -1747,7 +1747,7 @@ TEST_CASE("disc_minimap_data_loads", "[ui]")
     }
     CHECK(nav.ways.size() == std::size_t{459});
     CHECK(roads == std::size_t{385});
-    const fh::Bytes xml = vfs.readOrThrow("media/ui/MapProfileMinimap.xml");
+    const openhorizon::Bytes xml = vfs.readOrThrow("media/ui/MapProfileMinimap.xml");
     const MapProfile profile = MapProfile::parse(
         std::string_view(reinterpret_cast<const char*>(xml.data()), xml.size()), "MapProfileMinimap.xml", "minimap");
     CHECK(profile.groups.size() > 20);
@@ -1770,14 +1770,14 @@ TEST_CASE("disc_minimap_data_loads", "[ui]")
 TEST_CASE("disc_road_colours_by_road_type", "[ui]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     // Undriven, the paved roads are the same grey (and on the full-screen
     // map the dirt roads too); driven, each road type takes its own colour
     // (full-screen: dirt brown, a and b roads light grey, freeways yellow).
     for (const auto& [path, name] : {std::pair{"media/ui/MapProfileFullscreen.xml", "fullscreen"},
              std::pair{"media/ui/MapProfileMinimap.xml", "minimap"}}) {
-        const fh::Bytes xml = vfs.readOrThrow(path);
+        const openhorizon::Bytes xml = vfs.readOrThrow(path);
         const MapProfile profile
             = MapProfile::parse(std::string_view(reinterpret_cast<const char*>(xml.data()), xml.size()), path, name);
         std::vector<std::pair<glm::vec4, glm::vec4>> colours;
@@ -1830,7 +1830,7 @@ TEST_CASE("disc_road_colours_by_road_type", "[ui]")
 TEST_CASE("disc_route_reaches_the_waypoint", "[ui]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const RouteTuning tuning = RouteTuning::load(vfs);
     CHECK_THAT(tuning.mphFreeway, WithinAbs(75.0, 1e-3));
@@ -1938,10 +1938,10 @@ TEST_CASE("map_line_pick_tries_the_segments_beside_the_nearest_point", "[ui]")
 TEST_CASE("disc_player_bar_texts_from_the_profile", "[ui]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
-    const fh::Database db(vfs.readOrThrow("media/db/gamedb.slt"));
-    fh::Localisation names(vfs, "en");
+    const openhorizon::Database db(vfs.readOrThrow("media/db/gamedb.slt"));
+    openhorizon::Localisation names(vfs, "en");
     UiStrings strings(vfs, "en");
     const std::vector<WristbandLevel> levels = loadWristbandLevels(db, names);
     CHECK(levels.size() >= 2);
@@ -1953,7 +1953,7 @@ TEST_CASE("disc_player_bar_texts_from_the_profile", "[ui]")
 
     PlayerBarValues values;
     values.credits = 500;
-    values.carId = fh::carIdByMediaName(db, "ALF_8C_08");
+    values.carId = openhorizon::carIdByMediaName(db, "ALF_8C_08");
     PlayerBarTexts texts = PlayerBar::texts(values, levels, &db, names, strings, true);
     CHECK(texts.credits == std::string("500 Cr"));
     CHECK(texts.wristband == std::string("220 PTS"));
@@ -1993,7 +1993,7 @@ TEST_CASE("disc_player_bar_texts_from_the_profile", "[ui]")
 TEST_CASE("disc_route_distance_is_what_is_left_of_the_route", "[ui]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     Navigation navigation(vfs, "colorado");
     const NavFile& nav = navigation.network();

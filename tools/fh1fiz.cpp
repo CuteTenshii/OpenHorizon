@@ -35,11 +35,11 @@
 
 namespace {
 
-using fh::collision::FizTile;
-using fh::collision::FizTriangle;
-using fh::collision::QueryFilter;
-using fh::collision::RayHit;
-using fh::collision::TrackCollision;
+using openhorizon::collision::FizTile;
+using openhorizon::collision::FizTriangle;
+using openhorizon::collision::QueryFilter;
+using openhorizon::collision::RayHit;
+using openhorizon::collision::TrackCollision;
 
 /// Metres within which collision and render heights count as matching.
 constexpr float kHeightTolerance = 0.2F;
@@ -108,7 +108,7 @@ std::string surfaceLabel(const TrackCollision& collision, std::uint8_t surface)
 
 std::string flagText(std::uint8_t flags)
 {
-    namespace F = fh::collision::TriangleFlags;
+    namespace F = openhorizon::collision::TriangleFlags;
     std::string text = std::format("0x{:02x}", flags);
     if ((flags & F::kGround) != 0) {
         text += " ground";
@@ -122,7 +122,7 @@ std::string flagText(std::uint8_t flags)
     return text;
 }
 
-int stats(const fh::Vfs& vfs, std::string_view track, const TrackCollision& collision)
+int stats(const openhorizon::Vfs& vfs, std::string_view track, const TrackCollision& collision)
 {
     const auto start = std::chrono::steady_clock::now();
     const auto& tiles = collision.index().tiles();
@@ -131,7 +131,7 @@ int stats(const fh::Vfs& vfs, std::string_view track, const TrackCollision& coll
     std::unordered_set<std::string> distinctNames;
     if (const auto archive = vfs.archiveAt(std::format("media/tracks/{}/bin", track))) {
         for (const lzx::ZipEntry& entry : archive->entries()) {
-            if (fh::endsWithNoCase(entry.name, ".fiz")) {
+            if (openhorizon::endsWithNoCase(entry.name, ".fiz")) {
                 ++archiveEntries;
                 distinctNames.insert(lzx::ZipArchive::normalizeName(entry.name));
             }
@@ -151,7 +151,7 @@ int stats(const fh::Vfs& vfs, std::string_view track, const TrackCollision& coll
     };
     Totals totals;
     std::mutex mutex;
-    fh::world::parallelFor(tiles.size(), [&](std::size_t i) {
+    openhorizon::world::parallelFor(tiles.size(), [&](std::size_t i) {
         std::shared_ptr<const FizTile> tile;
         try {
             tile = collision.tile(i);
@@ -243,7 +243,7 @@ int at(const TrackCollision& collision, glm::vec2 point)
 
     QueryFilter everything;
     everything.requiredFlags = 0;
-    everything.activeRoute = fh::collision::kAllRoutes;
+    everything.activeRoute = openhorizon::collision::kAllRoutes;
     const std::vector<RayHit> hits = collision.verticalHits(point.x, point.y, everything);
     const QueryFilter solid;
     std::printf("surfaces along the vertical line, highest first:\n");
@@ -302,7 +302,7 @@ int exportObj(const TrackCollision& collision, const std::filesystem::path& out,
     std::vector<Face> faces;
     QueryFilter everything;
     everything.requiredFlags = 0;
-    everything.activeRoute = fh::collision::kAllRoutes;
+    everything.activeRoute = openhorizon::collision::kAllRoutes;
     collision.forEachTriangle(centre - glm::vec2(radius), centre + glm::vec2(radius), everything,
         [&](std::size_t, const FizTile& tile, std::uint16_t index) {
             const FizTriangle& triangle = tile.triangles[index];
@@ -314,7 +314,7 @@ int exportObj(const TrackCollision& collision, const std::filesystem::path& out,
             face.material = category.empty() ? "Unknown" : std::string(category);
             if (triangle.belongsToRoutes()) {
                 face.group = "route_barriers";
-            } else if ((triangle.flags & fh::collision::TriangleFlags::kSolid) == 0) {
+            } else if ((triangle.flags & openhorizon::collision::TriangleFlags::kSolid) == 0) {
                 face.group = "camera_only";
             } else {
                 face.group = "world";
@@ -389,17 +389,17 @@ Sample makeSample(std::string kind, std::string label, glm::vec3 position, bool 
     return sample;
 }
 
-std::vector<glm::vec3> readNavNodes(const fh::Vfs& vfs, std::string_view track)
+std::vector<glm::vec3> readNavNodes(const openhorizon::Vfs& vfs, std::string_view track)
 {
     const std::string path = std::format("media/tracks/{0}/{0}.nav", track);
-    const std::optional<fh::Bytes> data = vfs.read(path);
+    const std::optional<openhorizon::Bytes> data = vfs.read(path);
     std::vector<glm::vec3> nodes;
     if (!data) {
         return nodes;
     }
     // Header of ten words, the second the node count; nodes of 32 bytes:
     // u32 id, f32 x, y, z, then four words of links.
-    fh::BeReader r(*data, path);
+    openhorizon::BeReader r(*data, path);
     r.skip(4);
     const std::uint32_t count = r.u32();
     r.seek(40);
@@ -415,7 +415,7 @@ std::vector<glm::vec3> readNavNodes(const fh::Vfs& vfs, std::string_view track)
     return nodes;
 }
 
-std::vector<std::pair<std::string, glm::vec3>> readGameObjects(const fh::Vfs& vfs, std::string_view track)
+std::vector<std::pair<std::string, glm::vec3>> readGameObjects(const openhorizon::Vfs& vfs, std::string_view track)
 {
     std::vector<std::pair<std::string, glm::vec3>> objects;
     const std::optional<std::string> text = vfs.readText(std::format("media/tracks/{}/Ribbon_00/GameObjs.xml", track));
@@ -438,12 +438,12 @@ std::vector<std::pair<std::string, glm::vec3>> readGameObjects(const fh::Vfs& vf
 }
 
 /// Heights at which the vertical line through (x, z) crosses the mesh.
-void renderHeightsAt(const fh::world::TileMesh& mesh, Sample& sample)
+void renderHeightsAt(const openhorizon::world::TileMesh& mesh, Sample& sample)
 {
     const float x = sample.position.x;
     const float z = sample.position.z;
-    constexpr int stride = fh::world::TileMesh::kFloatsPerVertex;
-    for (const fh::world::TileMesh::Batch& batch : mesh.batches) {
+    constexpr int stride = openhorizon::world::TileMesh::kFloatsPerVertex;
+    for (const openhorizon::world::TileMesh::Batch& batch : mesh.batches) {
         if (batch.backdrop) {
             continue;
         }
@@ -479,7 +479,7 @@ std::optional<float> nearest(const std::vector<float>& heights, float to)
     return best;
 }
 
-int validate(const fh::Vfs& vfs, std::string_view track, const TrackCollision& collision)
+int validate(const openhorizon::Vfs& vfs, std::string_view track, const TrackCollision& collision)
 {
     const auto start = std::chrono::steady_clock::now();
     const std::vector<glm::vec3> nav = readNavNodes(vfs, track);
@@ -560,12 +560,12 @@ int validate(const fh::Vfs& vfs, std::string_view track, const TrackCollision& c
     }
 
     std::fprintf(stderr, "loading the render world...\n");
-    const std::optional<fh::world::TrackWorld> world = fh::world::TrackWorld::load(vfs, track);
+    const std::optional<openhorizon::world::TrackWorld> world = openhorizon::world::TrackWorld::load(vfs, track);
     if (!world) {
         std::fprintf(stderr, "fh1fiz: the render world could not be loaded\n");
         return 1;
     }
-    const fh::world::WorldTileGrid grid(world->index, kRenderTileSize);
+    const openhorizon::world::WorldTileGrid grid(world->index, kRenderTileSize);
     for (std::size_t t = 0; t < grid.tiles().size(); ++t) {
         const auto& tile = grid.tiles()[t];
         std::vector<Sample*> inside;
@@ -582,12 +582,13 @@ int validate(const fh::Vfs& vfs, std::string_view track, const TrackCollision& c
         // trees and bushes have no collision of their own in the tiles.
         std::vector<std::uint32_t> chunks;
         for (const std::uint32_t chunk : grid.chunksAt(tile, 0.0F)) {
-            const fh::world::WorldChunk& c = world->index.chunks()[chunk];
+            const openhorizon::world::WorldChunk& c = world->index.chunks()[chunk];
             if (!c.backdrop && !c.scattered) {
                 chunks.push_back(chunk);
             }
         }
-        const fh::world::TileMesh mesh = fh::world::buildTileMesh(*world->archive, world->index, chunks);
+        const openhorizon::world::TileMesh mesh
+            = openhorizon::world::buildTileMesh(*world->archive, world->index, chunks);
         for (Sample* sample : inside) {
             renderHeightsAt(mesh, *sample);
         }
@@ -656,7 +657,7 @@ int main(int argc, char** argv)
         return usage();
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
         const std::string track = argv[2];
         const std::string command = argv[3];

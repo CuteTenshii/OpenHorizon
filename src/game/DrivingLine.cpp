@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -126,4 +126,4 @@ std::vector<DrivingLine::Vertex> DrivingLine::build(
     return vertices;
 }
 
-} // namespace fh
+} // namespace openhorizon

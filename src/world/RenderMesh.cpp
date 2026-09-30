@@ -3,7 +3,7 @@
 #include <charconv>
 #include <limits>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -390,4 +390,4 @@ std::string lodGroupKey(std::string_view partName)
 }
 
 } // namespace rendermesh
-} // namespace fh::world
+} // namespace openhorizon::world

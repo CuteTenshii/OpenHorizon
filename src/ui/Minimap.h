@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
@@ -23,7 +23,7 @@ class Vfs;
 /// 0x826e2e20) draws the track's road network through a perspective camera
 /// into the render target the HUD scene's MATERIAL_VIEWPORT shows, styled
 /// by media/ui/MapProfileMinimap.xml.
-namespace fh::ui {
+namespace openhorizon::ui {
 
 class MapCoverage;
 
@@ -324,4 +324,4 @@ private:
     std::optional<std::uint64_t> m_coverageRevision;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

@@ -24,14 +24,14 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Window;
 namespace profile {
 class Profile;
 } // namespace profile
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::test {
+namespace openhorizon::test {
 
 /// The game runs at a fixed 60 Hz so every run of a scenario is the same.
 inline constexpr float kStep = 1.0F / 60.0F;
@@ -167,4 +167,4 @@ float angleBetween(float a, float b);
 /// The stick a player holds to keep the car pointed at `target`.
 float steerTowards(const CarPhysics& car, glm::vec2 target);
 
-} // namespace fh::test
+} // namespace openhorizon::test

@@ -6,11 +6,11 @@
 #include <optional>
 #include <string_view>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// The values of a track's `TrackSettings.xml` that its effects read as
 /// scene constants.
@@ -95,4 +95,4 @@ struct TrackSettings {
     static TrackSettings load(const Vfs& vfs, std::string_view track);
 };
 
-} // namespace fh::world
+} // namespace openhorizon::world

@@ -14,7 +14,7 @@
 #include <map>
 #include <unordered_set>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -413,4 +413,4 @@ Footprint WorldIndex::footprint() const
     return result;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

@@ -11,7 +11,7 @@
 #include <cstring>
 #include <utility>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -237,4 +237,4 @@ std::optional<std::uint32_t> TrackShaders::find(std::string_view path) const
     return it == m_byKey.end() ? std::nullopt : std::optional<std::uint32_t>(it->second);
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

@@ -13,7 +13,7 @@
 #include <limits>
 #include <map>
 
-namespace fh::animated {
+namespace openhorizon::animated {
 
 namespace {
 
@@ -368,4 +368,4 @@ void AnimatedObjects::update(float dt, const AnimatedView& view)
     }
 }
 
-} // namespace fh::animated
+} // namespace openhorizon::animated

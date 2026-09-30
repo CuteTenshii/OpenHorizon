@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <cstdlib>
 
-namespace fh::collision {
+namespace openhorizon::collision {
 
 namespace {
 
@@ -207,4 +207,4 @@ const CategoryPair* SurfaceTable::pair(std::string_view category0, std::string_v
     return fallback;
 }
 
-} // namespace fh::collision
+} // namespace openhorizon::collision

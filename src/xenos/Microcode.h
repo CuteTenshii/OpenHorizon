@@ -26,7 +26,7 @@
 /// and was checked against them for consistency (verified: exec, alloc,
 /// vertex fetch, texture fetch, ALU with vector and scalar halves and exports;
 /// the loop, call and jump encodings are from the documentation only).
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 enum class ShaderStage : std::uint8_t {
     Vertex,
@@ -485,4 +485,4 @@ constexpr std::uint32_t swizzledComponent(std::uint32_t swizzle, std::uint32_t c
     return ((swizzle >> (2 * component)) + component) & 3;
 }
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

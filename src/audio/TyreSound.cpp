@@ -14,7 +14,7 @@
 #include <format>
 #include <numbers>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -375,4 +375,4 @@ bool TyreSound::isPlaying() const
     return std::any_of(m_lod2Events.begin(), m_lod2Events.end(), playing);
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

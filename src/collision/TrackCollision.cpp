@@ -18,7 +18,7 @@
 #include <tuple>
 #include <unordered_map>
 
-namespace fh::collision {
+namespace openhorizon::collision {
 
 namespace {
 
@@ -659,4 +659,4 @@ void TrackCollision::forEachTriangle(glm::vec2 lo, glm::vec2 hi, const QueryFilt
     }
 }
 
-} // namespace fh::collision
+} // namespace openhorizon::collision

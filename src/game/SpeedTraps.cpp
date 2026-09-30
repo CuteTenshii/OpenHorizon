@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <format>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -114,4 +114,4 @@ bool SpeedTraps::restore(std::string_view name, bool discovered, float personalB
     return false;
 }
 
-} // namespace fh
+} // namespace openhorizon

@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace fh {
+namespace openhorizon {
 
 /// The player's settings, from `settings.ini` in the Config user folder
 /// (`~/.config/fh1-native` on Linux, `%APPDATA%\fh1-native` on Windows; see
@@ -31,4 +31,4 @@ private:
     std::unordered_map<std::string, std::string> m_values;
 };
 
-} // namespace fh
+} // namespace openhorizon

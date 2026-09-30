@@ -16,7 +16,7 @@ class ZipArchive;
 struct ZipEntry;
 } // namespace lzx
 
-namespace fh {
+namespace openhorizon {
 
 /// The game's file system: the files of an extracted disc, with every
 /// archive of `media/zipmanifest.xml` mounted at its own path without the
@@ -97,4 +97,4 @@ private:
     mutable std::mutex m_openMutex;
 };
 
-} // namespace fh
+} // namespace openhorizon

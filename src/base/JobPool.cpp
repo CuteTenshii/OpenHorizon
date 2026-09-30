@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace fh {
+namespace openhorizon {
 
 JobPool::JobPool(unsigned threads)
 {
@@ -89,4 +89,4 @@ void JobPool::run()
     }
 }
 
-} // namespace fh
+} // namespace openhorizon

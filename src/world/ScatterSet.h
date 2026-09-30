@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// A procedural placement set of a track (`__R00G#####.pgeo` in bin.zip,
 /// magic "OEGP", big-endian): many copies of a few models, such as the trees,
@@ -105,4 +105,4 @@ std::optional<std::uint32_t> scatterSetKind(ByteView prefix);
 /// have the layout ScatterSet documents.
 ScatterSet readScatterSet(ByteView data);
 
-} // namespace fh::world
+} // namespace openhorizon::world

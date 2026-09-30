@@ -16,7 +16,7 @@ namespace lzx {
 class ZipArchive;
 } // namespace lzx
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// A texture ready for upload: every mip level from the full size down to
 /// 1x1, all in one format. Level 0 keeps the game's own compressed blocks;
@@ -189,4 +189,4 @@ private:
     std::unique_ptr<PackCache> m_packs;
 };
 
-} // namespace fh::world
+} // namespace openhorizon::world

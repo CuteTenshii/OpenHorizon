@@ -45,7 +45,7 @@
 
 namespace {
 
-using namespace fh::ui;
+using namespace openhorizon::ui;
 
 int usage()
 {
@@ -130,7 +130,7 @@ std::string pathOf(const Presentation& scene, int element)
     return path;
 }
 
-int dumpContracts(const fh::Vfs& vfs, const std::string& path, const Names& names)
+int dumpContracts(const openhorizon::Vfs& vfs, const std::string& path, const Names& names)
 {
     const Presentation scene(SceneFiles::load(vfs, path));
     const BgfFile& bgf = scene.files().bgf;
@@ -242,9 +242,9 @@ private:
     GLuint m_framebuffer = 0;
 };
 
-fh::WindowOptions hiddenWindow()
+openhorizon::WindowOptions hiddenWindow()
 {
-    fh::WindowOptions options;
+    openhorizon::WindowOptions options;
     options.title = "fh1menu";
     options.width = 64;
     options.height = 64;
@@ -353,9 +353,9 @@ struct RenderOptions {
     int height = 720;
 };
 
-int renderPause(const fh::Vfs& vfs, const std::string& out, const RenderOptions& options)
+int renderPause(const openhorizon::Vfs& vfs, const std::string& out, const RenderOptions& options)
 {
-    fh::Window window(hiddenWindow());
+    openhorizon::Window window(hiddenWindow());
     OffscreenTarget target(options.width, options.height);
     PauseMenu menu(vfs, "en");
     PauseMenuContext context;
@@ -388,12 +388,12 @@ int renderPause(const fh::Vfs& vfs, const std::string& out, const RenderOptions&
 }
 
 /// The event screens' view of an event, read from gamedb as the game's
-/// loader does (see fh::loadRaceEvents).
-EventScreenInfo eventScreenInfo(const fh::Vfs& vfs, const std::string& horizonId)
+/// loader does (see openhorizon::loadRaceEvents).
+EventScreenInfo eventScreenInfo(const openhorizon::Vfs& vfs, const std::string& horizonId)
 {
-    const fh::Database database(vfs.readOrThrow("media/db/gamedb.slt"));
-    fh::Localisation strings(vfs, "en");
-    const std::optional<fh::Row> row = database.queryOne(
+    const openhorizon::Database database(vfs.readOrThrow("media/db/gamedb.slt"));
+    openhorizon::Localisation strings(vfs, "en");
+    const std::optional<openhorizon::Row> row = database.queryOne(
         "SELECT e.Id, e.Name, e.ShortName, e.Description, e.RestrictionDescription, e.CareerEventStyle, e.Level, "
         "e.CashPrize, e.PlayerCarId, e.EventTicket, r.NumLaps, t.Length, t.RibbonConfiguration FROM Events e "
         "JOIN Races r ON r.EventId = e.Id JOIN Tracks t ON t.id = r.TrackId WHERE e.HorizonEventID = ?",
@@ -414,7 +414,7 @@ EventScreenInfo eventScreenInfo(const fh::Vfs& vfs, const std::string& horizonId
     info.laps = row->i("NumLaps");
     info.lengthMetres = row->f("Length");
     if (info.playerCarId != 0) {
-        if (const std::optional<fh::Row> car
+        if (const std::optional<openhorizon::Row> car
             = database.queryOne("SELECT ModelShort FROM Data_Car WHERE Id = ?", {std::to_string(info.playerCarId)})) {
             info.providedCarName = strings.resolve("Data_Car", car->text("ModelShort"));
         }
@@ -422,10 +422,10 @@ EventScreenInfo eventScreenInfo(const fh::Vfs& vfs, const std::string& horizonId
     return info;
 }
 
-int renderEvent(const fh::Vfs& vfs, std::string_view screen, const std::string& out, const std::string& horizonId,
-    int place, const RenderOptions& options)
+int renderEvent(const openhorizon::Vfs& vfs, std::string_view screen, const std::string& out,
+    const std::string& horizonId, int place, const RenderOptions& options)
 {
-    fh::Window window(hiddenWindow());
+    openhorizon::Window window(hiddenWindow());
     OffscreenTarget target(options.width, options.height);
     const EventScreenInfo info = eventScreenInfo(vfs, horizonId);
     constexpr float kStep = 1.0F / 60.0F;
@@ -512,13 +512,13 @@ bool parseSize(const std::string& text, int& width, int& height)
 /// gamedb's Events (other than free roam) at the gameplay object its
 /// HorizonEventID names in Ribbon_00/GameObjs.xml, tagged with its career
 /// style's activity_type and named from the Events string table.
-std::vector<WorldMapMarker> raceStartMarkers(const fh::Vfs& vfs, const std::string& track)
+std::vector<WorldMapMarker> raceStartMarkers(const openhorizon::Vfs& vfs, const std::string& track)
 {
     const std::string objectsPath = std::format("media/tracks/{}/Ribbon_00/GameObjs.xml", track);
-    const fh::Bytes objects = vfs.readOrThrow(objectsPath);
+    const openhorizon::Bytes objects = vfs.readOrThrow(objectsPath);
     pugi::xml_document document;
     if (!document.load_buffer(objects.data(), objects.size())) {
-        throw fh::DataError("{}: not XML", objectsPath);
+        throw openhorizon::DataError("{}: not XML", objectsPath);
     }
     std::unordered_map<std::string, glm::vec2> positions;
     for (const pugi::xml_node object : document.child("GameObjs").children()) {
@@ -526,10 +526,10 @@ std::vector<WorldMapMarker> raceStartMarkers(const fh::Vfs& vfs, const std::stri
         positions.emplace(object.attribute("GameplayID").as_string(),
             glm::vec2(pos.attribute("x").as_float(), pos.attribute("z").as_float()));
     }
-    const fh::Database database(vfs.readOrThrow("media/db/gamedb.slt"));
-    fh::Localisation strings(vfs, "en");
+    const openhorizon::Database database(vfs.readOrThrow("media/db/gamedb.slt"));
+    openhorizon::Localisation strings(vfs, "en");
     std::vector<WorldMapMarker> markers;
-    for (const fh::Row& row : database.query("SELECT HorizonEventID, CareerEventStyle, Name FROM Events")) {
+    for (const openhorizon::Row& row : database.query("SELECT HorizonEventID, CareerEventStyle, Name FROM Events")) {
         std::string id = row.text("HorizonEventID");
         while (!id.empty() && id.back() == ' ') {
             id.pop_back();
@@ -578,9 +578,9 @@ const char* mapActionName(WorldMapAction action)
     return "?";
 }
 
-int renderMap(const fh::Vfs& vfs, const std::string& out, const MapOptions& options)
+int renderMap(const openhorizon::Vfs& vfs, const std::string& out, const MapOptions& options)
 {
-    fh::Window window(hiddenWindow());
+    openhorizon::Window window(hiddenWindow());
     OffscreenTarget target(options.width, options.height);
     WorldMap map(vfs, options.track, "en");
     WorldMapState state;
@@ -639,10 +639,10 @@ glm::vec2 parsePair(const std::string& text)
     return {std::stof(text.substr(0, comma)), std::stof(text.substr(comma + 1))};
 }
 
-int renderLoading(const fh::Vfs& vfs, const std::string& out, const std::string& group, std::uint32_t seed,
+int renderLoading(const openhorizon::Vfs& vfs, const std::string& out, const std::string& group, std::uint32_t seed,
     float seconds, int width, int height)
 {
-    fh::Window window(hiddenWindow());
+    openhorizon::Window window(hiddenWindow());
     OffscreenTarget target(width, height);
     LoadingScreen screen(vfs, "en", seed);
     screen.show(group);
@@ -680,13 +680,13 @@ const char* titleActionName(TitleAction action)
     return "?";
 }
 
-int renderTitle(const fh::Vfs& vfs, const std::string& out, const TitleOptions& options)
+int renderTitle(const openhorizon::Vfs& vfs, const std::string& out, const TitleOptions& options)
 {
-    fh::Window window(hiddenWindow());
+    openhorizon::Window window(hiddenWindow());
     OffscreenTarget target(options.width, options.height);
     // The music is mixed without a playback device, into a WAV if asked.
-    fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
-    fh::audio::AudioLibrary library(vfs);
+    openhorizon::audio::AudioDevice device{openhorizon::audio::AudioDevice::Offline{}};
+    openhorizon::audio::AudioLibrary library(vfs);
     TitleAudio audio;
     audio.mixer = &device.mixer();
     audio.library = &library;
@@ -695,7 +695,7 @@ int renderTitle(const fh::Vfs& vfs, const std::string& out, const TitleOptions& 
     std::printf("prompt: %s\n", screen.pressStartText().c_str());
     std::vector<float> mixed;
     constexpr float kStep = 1.0F / 60.0F;
-    constexpr std::size_t kFramesPerStep = fh::audio::AudioDevice::kSampleRate / 60;
+    constexpr std::size_t kFramesPerStep = openhorizon::audio::AudioDevice::kSampleRate / 60;
     const auto frame = [&](const MenuInput& input) {
         const TitleAction action = screen.update(input, kStep);
         if (action != TitleAction::None) {
@@ -720,11 +720,11 @@ int renderTitle(const fh::Vfs& vfs, const std::string& out, const TitleOptions& 
     std::printf("movie %s at %.2f s, music %s\n", screen.hasMovie() ? "playing" : "missing", screen.movieTime(),
         screen.musicPlaying() ? "playing" : "silent");
     if (!options.wav.empty()) {
-        fh::audio::PcmBuffer pcm;
-        pcm.sampleRate = fh::audio::AudioDevice::kSampleRate;
-        pcm.channels = fh::audio::AudioDevice::kChannels;
+        openhorizon::audio::PcmBuffer pcm;
+        pcm.sampleRate = openhorizon::audio::AudioDevice::kSampleRate;
+        pcm.channels = openhorizon::audio::AudioDevice::kChannels;
         pcm.samples = std::move(mixed);
-        fh::audio::writeWav(options.wav, pcm, fh::audio::WavFormat::Float32);
+        openhorizon::audio::writeWav(options.wav, pcm, openhorizon::audio::WavFormat::Float32);
     }
     return writePng(out, target.read()) ? 0 : 1;
 }
@@ -737,7 +737,7 @@ int main(int argc, char** argv)
         return usage();
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
         const std::string_view command = argv[2];
         const std::vector<std::string_view> args(argv + 3, argv + argc);

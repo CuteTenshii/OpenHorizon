@@ -7,7 +7,7 @@
 #include <cmath>
 #include <cstring>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 namespace {
 
@@ -425,4 +425,4 @@ void skinMatrices(
     }
 }
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Vfs;
 
@@ -118,4 +118,4 @@ private:
     std::optional<TimeOfDayCurves::FogTemplate> m_fog;
 };
 
-} // namespace fh
+} // namespace openhorizon

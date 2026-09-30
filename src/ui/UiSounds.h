@@ -7,16 +7,16 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
-namespace fh::audio {
+namespace openhorizon::audio {
 class AudioLibrary;
 class EventInstance;
 class FevProject;
-} // namespace fh::audio
+} // namespace openhorizon::audio
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// One sound of media/audio/ui/ui4audio.xml: the name the game plays it by
 /// and the FMOD event it plays.
@@ -111,4 +111,4 @@ private:
     std::vector<std::string> m_missing;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

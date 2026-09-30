@@ -42,12 +42,12 @@ extern "C" {
 
 using Catch::Matchers::WithinAbs;
 
-using fh::test::gameDir;
+using openhorizon::test::gameDir;
 
 namespace {
 
-using namespace fh::radio;
-using fh::Bytes;
+using namespace openhorizon::radio;
+using openhorizon::Bytes;
 
 constexpr int kRate = RadioSequencer::kOutputRate;
 
@@ -466,9 +466,9 @@ TEST_CASE("mpegStreamDecodesFromAnyFrame", "[radio]")
     if (data.empty()) {
         SKIP("FFmpeg has no MP2 encoder");
     }
-    fh::audio::FsbSample sample;
+    openhorizon::audio::FsbSample sample;
     sample.name = "tone";
-    sample.codec = fh::audio::SampleCodec::Mpeg;
+    sample.codec = openhorizon::audio::SampleCodec::Mpeg;
     sample.channels = 2;
     sample.frequency = kRate;
     sample.sampleCount = static_cast<std::uint32_t>(mpegFrames * 1152);
@@ -480,19 +480,19 @@ TEST_CASE("mpegStreamDecodesFromAnyFrame", "[radio]")
     sample.dataOffset = 16;
     Bytes file(16 + padded.size(), 0xEE);
     std::copy(padded.begin(), padded.end(), file.begin() + 16);
-    const fh::audio::ByteSource source = [&file](std::uint64_t offset, std::span<std::uint8_t> out) {
+    const openhorizon::audio::ByteSource source = [&file](std::uint64_t offset, std::span<std::uint8_t> out) {
         const std::size_t n = offset >= file.size() ? 0 : std::min(out.size(), file.size() - offset);
         std::memcpy(out.data(), file.data() + offset, n);
         return n;
     };
-    fh::audio::MpegSampleStream whole(sample, source, "tone");
+    openhorizon::audio::MpegSampleStream whole(sample, source, "tone");
     std::vector<float> all;
     while (!whole.finished()) {
         whole.decode(3000, all);
     }
     CHECK(all.size() == std::size_t{sample.sampleCount} * 2);
     for (const std::size_t start : {std::size_t{1}, std::size_t{1152 * 20 + 77}, std::size_t{1152 * 150}}) {
-        fh::audio::MpegSampleStream part(sample, source, "tone", start);
+        openhorizon::audio::MpegSampleStream part(sample, source, "tone", start);
         std::vector<float> got;
         part.decode(4000, got);
         CHECK(got.size() >= 4000 * 2);
@@ -502,7 +502,8 @@ TEST_CASE("mpegStreamDecodesFromAnyFrame", "[radio]")
         }
         CHECK(worst < 1e-4F);
     }
-    CHECK_THROWS_AS(fh::audio::MpegSampleStream(sample, source, "tone", sample.sampleCount + 1), std::exception);
+    CHECK_THROWS_AS(
+        openhorizon::audio::MpegSampleStream(sample, source, "tone", sample.sampleCount + 1), std::exception);
 }
 
 /// Builds an FSB4 bank with one MPEG sample that carries a SYNC chunk.
@@ -558,29 +559,29 @@ Bytes syncBank()
 TEST_CASE("fsbReadsSyncPointsAndHeadersAlone", "[radio]")
 {
     const Bytes file = syncBank();
-    const fh::audio::FsbBank full = fh::audio::FsbBank::parse(file, "sync.fsb");
-    const fh::audio::FsbSample& s = full.sample(0);
+    const openhorizon::audio::FsbBank full = openhorizon::audio::FsbBank::parse(file, "sync.fsb");
+    const openhorizon::audio::FsbSample& s = full.sample(0);
     CHECK(s.syncPoints.size() == std::size_t{2});
     CHECK(s.syncPoints[0].frame == 4800U);
     CHECK(s.syncPoints[0].name == std::string("SongStart"));
     CHECK(s.syncPoints[1].frame == 90000U);
     CHECK(s.syncPoints[1].name == std::string("IdentStart"));
 
-    const std::size_t headerBytes = fh::audio::FsbBank::headersSize(file, "sync.fsb");
+    const std::size_t headerBytes = openhorizon::audio::FsbBank::headersSize(file, "sync.fsb");
     CHECK(headerBytes == file.size() - 64);
-    const fh::audio::FsbBank headers = fh::audio::FsbBank::parseHeaders(
+    const openhorizon::audio::FsbBank headers = openhorizon::audio::FsbBank::parseHeaders(
         Bytes(file.begin(), file.begin() + static_cast<std::ptrdiff_t>(headerBytes)), file.size(), "sync.fsb");
     CHECK(!headers.hasData());
     CHECK(headers.sample(0).dataOffset == full.sample(0).dataOffset);
     CHECK(headers.sample(0).syncPoints.size() == std::size_t{2});
     CHECK_THROWS_AS(headers.sampleData(0), std::exception);
     CHECK_THROWS_AS(
-        fh::audio::FsbBank::parseHeaders(
+        openhorizon::audio::FsbBank::parseHeaders(
             Bytes(file.begin(), file.begin() + static_cast<std::ptrdiff_t>(headerBytes)), file.size() - 1, "short"),
         std::exception);
 }
 
-class ConstantStream final : public fh::audio::PcmStream {
+class ConstantStream final : public openhorizon::audio::PcmStream {
 public:
     int channels() const override { return 2; }
     std::size_t read(float* out, std::size_t frames) override
@@ -601,9 +602,9 @@ private:
 
 TEST_CASE("mixerPlaysStreams", "[radio]")
 {
-    fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
-    const fh::audio::VoiceId voice = device.mixer().playStream(std::make_shared<ConstantStream>(), {});
-    CHECK(voice != fh::audio::kNoVoice);
+    openhorizon::audio::AudioDevice device{openhorizon::audio::AudioDevice::Offline{}};
+    const openhorizon::audio::VoiceId voice = device.mixer().playStream(std::make_shared<ConstantStream>(), {});
+    CHECK(voice != openhorizon::audio::kNoVoice);
     const std::vector<float> out = device.render(1200);
     CHECK_THAT(out[200], WithinAbs(0.25, 1e-5));
     CHECK_THAT(out[201], WithinAbs(-0.5, 1e-5));
@@ -614,7 +615,7 @@ TEST_CASE("mixerPlaysStreams", "[radio]")
 TEST_CASE("discRadioDataResolves", "[radio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const auto assets = RadioAssets::load(vfs);
     const RadioCatalog& c = *assets->catalog();
@@ -637,13 +638,13 @@ TEST_CASE("discRadioDataResolves", "[radio]")
             FAIL_CHECK(std::format("no sound bank info for {}", name));
             return;
         }
-        const fh::audio::FsbBank& bank = assets->bank(bankKind);
+        const openhorizon::audio::FsbBank& bank = assets->bank(bankKind);
         const auto index = static_cast<std::size_t>(it->second.soundBankIndex);
         CHECK(index < bank.size());
         if (index >= bank.size()) {
             return;
         }
-        const fh::audio::FsbSample& s = bank.sample(index);
+        const openhorizon::audio::FsbSample& s = bank.sample(index);
         CHECK(bank.sampleHasName(index, name));
         const auto ms = [&](std::uint32_t frame) {
             return static_cast<std::uint32_t>(std::uint64_t{frame} * 1000 / static_cast<std::uint64_t>(s.frequency));
@@ -684,16 +685,17 @@ TEST_CASE("discRadioDataResolves", "[radio]")
 TEST_CASE("discStreamMatchesWholeDecode", "[radio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const auto assets = RadioAssets::load(vfs);
-    const fh::audio::FsbBank voice = fh::audio::FsbBank::parse(vfs.readOrThrow("media/audio/radio/Radio_VO_EN.fsb"),
-        "Radio_VO_EN.fsb");
+    const openhorizon::audio::FsbBank voice
+        = openhorizon::audio::FsbBank::parse(vfs.readOrThrow("media/audio/radio/Radio_VO_EN.fsb"), "Radio_VO_EN.fsb");
     const std::size_t index = voice.findSample("R1_Ident_01").value_or(0);
-    const fh::audio::PcmBuffer whole = fh::audio::decodeSample(voice, index);
+    const openhorizon::audio::PcmBuffer whole = openhorizon::audio::decodeSample(voice, index);
     const std::size_t channels = static_cast<std::size_t>(whole.channels);
     for (const std::size_t start : {std::size_t{0}, whole.frames() / 3}) {
-        fh::audio::MpegSampleStream stream = assets->openStream(RadioBank::Voice, static_cast<int>(index), start);
+        openhorizon::audio::MpegSampleStream stream
+            = assets->openStream(RadioBank::Voice, static_cast<int>(index), start);
         std::vector<float> got;
         while (!stream.finished()) {
             stream.decode(8192, got);
@@ -710,7 +712,7 @@ TEST_CASE("discStreamMatchesWholeDecode", "[radio]")
 TEST_CASE("discStationsNeverRepeatEarly", "[radio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const auto assets = RadioAssets::load(vfs);
     for (std::size_t station = 0; station < 3; ++station) {
@@ -735,9 +737,9 @@ TEST_CASE("discStationsNeverRepeatEarly", "[radio]")
 TEST_CASE("discRadioRendersOffline", "[radio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
-    fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
+    openhorizon::audio::AudioDevice device{openhorizon::audio::AudioDevice::Offline{}};
     Radio::Options options;
     options.worker = false;
     options.seed = 4;
@@ -772,9 +774,9 @@ TEST_CASE("discRadioRendersOffline", "[radio]")
 TEST_CASE("discRadioWorkerProducesAudio", "[radio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
-    fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
+    openhorizon::audio::AudioDevice device{openhorizon::audio::AudioDevice::Offline{}};
     Radio::Options options;
     options.seed = 2;
     Radio radio(vfs, device, options);

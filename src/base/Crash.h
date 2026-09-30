@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 
-namespace fh {
+namespace openhorizon {
 
 /// Starts fh1 as the crash reporter rather than the game: `fh1
 /// --crash-report=LOG [--crash-detail=TEXT]` shows the crash message box
@@ -99,7 +99,7 @@ std::string gameDataErrorText(std::string_view detail, const std::filesystem::pa
 /// player can fix: `problem` says what is wrong, `fix` what to do.
 std::string startupErrorText(std::string_view problem, std::string_view fix);
 
-/// An exception's type as the source spells it (`fh::DataError`) and its
+/// An exception's type as the source spells it (`openhorizon::DataError`) and its
 /// message; the type is empty when `error` is null, and "unknown type"
 /// stands in for what cannot be named.
 struct ExceptionDescription {
@@ -114,4 +114,4 @@ ExceptionDescription describeException(const std::exception_ptr& error);
 /// on every platform.
 std::string windowsCommandLineArgument(std::string_view argument);
 
-} // namespace fh
+} // namespace openhorizon

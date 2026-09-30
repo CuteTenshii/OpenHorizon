@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <format>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -178,4 +178,4 @@ void PlayerBar::apply(std::vector<DrawItem>& items) const
     }
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

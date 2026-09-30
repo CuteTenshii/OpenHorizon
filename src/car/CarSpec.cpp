@@ -16,7 +16,7 @@
 #include <string_view>
 #include <utility>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -787,4 +787,4 @@ int carIdByMediaName(const Database& db, const std::string& mediaName)
     return row ? row->i("Id") : -1;
 }
 
-} // namespace fh
+} // namespace openhorizon

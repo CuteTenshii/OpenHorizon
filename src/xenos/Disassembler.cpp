@@ -6,7 +6,7 @@
 
 #include <format>
 
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 namespace {
 
@@ -376,4 +376,4 @@ std::string describeShader(const Shader& shader)
     return out;
 }
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

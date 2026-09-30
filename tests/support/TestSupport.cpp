@@ -8,7 +8,7 @@
 
 #include <cstdlib>
 
-namespace fh::test {
+namespace openhorizon::test {
 
 const char* gameDir()
 {
@@ -31,4 +31,4 @@ int runTests(int argc, char** argv)
     return Catch::Session().run(argc, argv);
 }
 
-} // namespace fh::test
+} // namespace openhorizon::test

@@ -56,11 +56,11 @@
 
 using Catch::Matchers::WithinAbs;
 
-using fh::test::gameDir;
+using openhorizon::test::gameDir;
 
 namespace {
 
-using namespace fh::ui;
+using namespace openhorizon::ui;
 
 /// The shipped UI/Map values, so the camera tests read like the game.
 WorldMapTuning shippedTuning()
@@ -328,7 +328,7 @@ std::vector<std::string> texts(const std::vector<PauseMenuEntry>& entries)
 TEST_CASE("disc_pause_entries_follow_the_builder", "[menu]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     UiStrings strings(vfs, "en");
     PauseMenuContext freeRoam;
@@ -349,7 +349,7 @@ TEST_CASE("disc_pause_entries_follow_the_builder", "[menu]")
 TEST_CASE("disc_pause_scene_has_the_bound_controls", "[menu]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const Presentation scene(SceneFiles::load(vfs, "media/ui/scenes/ui4/925_pause_menu"));
     const int root = scene.contract(0, "UIContract");
@@ -386,7 +386,7 @@ TEST_CASE("disc_pause_scene_has_the_bound_controls", "[menu]")
 TEST_CASE("disc_map_data_is_where_the_map_reads_it", "[menu]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const WorldMapTuning tuning = WorldMapTuning::load(vfs);
     CHECK_THAT(tuning.distanceMax, WithinAbs(7652.0, 1e-3));
@@ -413,7 +413,7 @@ TEST_CASE("disc_map_data_is_where_the_map_reads_it", "[menu]")
 TEST_CASE("disc_loading_tips_resolve_from_the_string_tables", "[menu]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     UiStrings strings(vfs, "en");
     const LoadingDefinitions definitions = LoadingDefinitions::load(vfs, strings);
@@ -449,7 +449,7 @@ TEST_CASE("disc_loading_tips_resolve_from_the_string_tables", "[menu]")
 /// The UI textures the bars are drawn with, decoded once.
 class DecodedTextures {
 public:
-    explicit DecodedTextures(const fh::Vfs& vfs)
+    explicit DecodedTextures(const openhorizon::Vfs& vfs)
         : m_vfs(vfs)
     {
     }
@@ -461,7 +461,7 @@ public:
             return it->second ? &*it->second : nullptr;
         }
         std::optional<xds::Image> image;
-        if (const std::optional<fh::Bytes> data = m_vfs.read(path)) {
+        if (const std::optional<openhorizon::Bytes> data = m_vfs.read(path)) {
             image = xds::Texture::parse(std::span<const std::uint8_t>(*data)).decodeLevel(0);
         }
         const auto& stored = m_images.emplace(path, std::move(image)).first->second;
@@ -469,7 +469,7 @@ public:
     }
 
 private:
-    const fh::Vfs& m_vfs;
+    const openhorizon::Vfs& m_vfs;
     std::map<std::string, std::optional<xds::Image>> m_images;
 };
 
@@ -541,8 +541,8 @@ float opacityAt(const DrawModel& model, glm::vec2 at, DecodedTextures& textures)
 TEST_CASE("disc_loading_tip_lines_sit_on_their_bars", "[menu]")
 {
     const char* dir = gameDir();
-    fh::test::requireGlContext();
-    fh::Vfs vfs;
+    openhorizon::test::requireGlContext();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     // Seed 33 draws the tip of the report first.
     LoadingScreen screen(vfs, "en", 33);
@@ -588,8 +588,8 @@ TEST_CASE("disc_loading_tip_lines_sit_on_their_bars", "[menu]")
 TEST_CASE("disc_loading_status_takes_the_place_of_please_wait", "[menu]")
 {
     const char* dir = gameDir();
-    fh::test::requireGlContext();
-    fh::Vfs vfs;
+    openhorizon::test::requireGlContext();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     LoadingScreen screen(vfs, "en", 0);
     screen.show("freeroam");
@@ -608,7 +608,7 @@ TEST_CASE("disc_loading_status_takes_the_place_of_please_wait", "[menu]")
 TEST_CASE("disc_title_scene_binds_the_movie_and_the_prompt", "[menu]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     UiStrings strings(vfs, "en");
     CHECK(strings.get("Main", "IDS_PressStart") == std::string("PRESS START"));
@@ -645,7 +645,7 @@ TEST_CASE("disc_title_scene_binds_the_movie_and_the_prompt", "[menu]")
 TEST_CASE("disc_title_movie_is_the_wmv3_stream_its_definition_names", "[menu]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const MovieStreams streams
         = MovieStreams::parse(vfs.readText("media/ui/videos/pressstart.def").value_or(""), "PressStart.def");
@@ -663,11 +663,11 @@ TEST_CASE("disc_title_movie_is_the_wmv3_stream_its_definition_names", "[menu]")
 TEST_CASE("disc_ui_sounds_resolve_to_uiingame_events", "[menu]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const UiSoundTable table = UiSoundTable::load(vfs);
     CHECK(table.size() == std::size_t{754});
-    fh::audio::AudioLibrary library(vfs);
+    openhorizon::audio::AudioLibrary library(vfs);
     const auto project = library.project("Game:\\Media\\Audio\\UI\\UIInGame\\UIInGame.fev");
     const auto event = [&](std::string_view name) -> std::string {
         const UiSound* sound = table.find(name);
@@ -691,7 +691,7 @@ TEST_CASE("disc_ui_sounds_resolve_to_uiingame_events", "[menu]")
     const UiSound* splash = table.find("SplashScreen");
     CHECK((splash != nullptr && splash->looping));
     CHECK(event("SplashScreen") == std::string("UI/FrontEnd/FE_Ambience"));
-    const fh::audio::FevEvent* ambience = project->findEvent(event("SplashScreen"));
+    const openhorizon::audio::FevEvent* ambience = project->findEvent(event("SplashScreen"));
     CHECK(ambience != nullptr);
     if (ambience != nullptr) {
         CHECK(ambience->layers.size() == std::size_t{1});
@@ -707,8 +707,8 @@ TEST_CASE("disc_ui_sounds_resolve_to_uiingame_events", "[menu]")
     // Played on a device with no output: the pause sound sounds, a second
     // Accept restarts the first (the event allows one playback), the map's
     // loop stays started while RadioIsPlaying keeps its only sound silent.
-    fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
-    UiSounds sounds(vfs, device.mixer(), library, fh::audio::kMasterBus);
+    openhorizon::audio::AudioDevice device{openhorizon::audio::AudioDevice::Offline{}};
+    UiSounds sounds(vfs, device.mixer(), library, openhorizon::audio::kMasterBus);
     sounds.play("Pause");
     CHECK(sounds.isPlaying("Pause"));
     CHECK(device.mixer().activeVoiceCount() == std::size_t{1});
@@ -753,7 +753,7 @@ EventScreenInfo festivalRaceInfo()
 TEST_CASE("disc_event_titles_follow_the_name_rule", "[menu]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     UiStrings strings(vfs, "en");
     EventScreenInfo info = festivalRaceInfo();
@@ -780,8 +780,8 @@ TEST_CASE("disc_event_titles_follow_the_name_rule", "[menu]")
 TEST_CASE("disc_event_summary_shows_the_ticket_and_enters", "[menu]")
 {
     const char* dir = gameDir();
-    fh::test::requireGlContext();
-    fh::Vfs vfs;
+    openhorizon::test::requireGlContext();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     EventSummaryScreen screen(vfs, "en");
     screen.open(festivalRaceInfo());
@@ -809,8 +809,8 @@ TEST_CASE("disc_event_summary_shows_the_ticket_and_enters", "[menu]")
 TEST_CASE("disc_event_title_card_is_done_after_four_seconds", "[menu]")
 {
     const char* dir = gameDir();
-    fh::test::requireGlContext();
-    fh::Vfs vfs;
+    openhorizon::test::requireGlContext();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     EventTitleCard card(vfs, "en");
     card.show(festivalRaceInfo());
@@ -831,8 +831,8 @@ TEST_CASE("disc_event_title_card_is_done_after_four_seconds", "[menu]")
 TEST_CASE("disc_pre_race_menu_starts_or_quits_after_its_box", "[menu]")
 {
     const char* dir = gameDir();
-    fh::test::requireGlContext();
-    fh::Vfs vfs;
+    openhorizon::test::requireGlContext();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     PreRaceMenu menu(vfs, "en");
     menu.open(festivalRaceInfo());
@@ -876,8 +876,8 @@ TEST_CASE("disc_pre_race_menu_starts_or_quits_after_its_box", "[menu]")
 TEST_CASE("disc_finish_position_goes_after_its_tape", "[menu]")
 {
     const char* dir = gameDir();
-    fh::test::requireGlContext();
-    fh::Vfs vfs;
+    openhorizon::test::requireGlContext();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     PostRaceFinishedScreen screen(vfs, "en");
     screen.show(3, 1);
@@ -915,7 +915,8 @@ public:
 
     void testRunStarting(const Catch::TestRunInfo& /*info*/) override
     {
-        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache), fh::pathToUtf8(folder()));
+        openhorizon::setEnvironmentVariable(
+            openhorizon::userFolderVariable(openhorizon::UserFolder::Cache), openhorizon::pathToUtf8(folder()));
     }
 
     void testRunEnded(const Catch::TestRunStats& /*stats*/) override { std::filesystem::remove_all(folder()); }

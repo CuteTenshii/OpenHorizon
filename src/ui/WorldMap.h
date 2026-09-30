@@ -12,12 +12,12 @@
 #include <string>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Database;
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 class MapCoverage;
 
@@ -269,7 +269,7 @@ enum class WorldMapAction {
 /// Construct with a current OpenGL 4.5 context.
 class WorldMap {
 public:
-    /// Throws fh::DataError when the scene, profile, network or tunables
+    /// Throws openhorizon::DataError when the scene, profile, network or tunables
     /// cannot be read. Without `database` the player bar has no wristbands
     /// and no car.
     WorldMap(const Vfs& vfs, const std::string& track, const std::string& language = "en",
@@ -316,4 +316,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

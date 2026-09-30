@@ -11,7 +11,7 @@
 #include <variant>
 #include <vector>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// A sound bank an FEV project plays from; `name` + ".fsb" next to the .fev.
 struct FevBank {
@@ -258,4 +258,4 @@ private:
     std::vector<FevSoundDefinition> m_soundDefinitions;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

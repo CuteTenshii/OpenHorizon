@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-namespace fh {
+namespace openhorizon {
 
 Outposts Outposts::build(const ActivityCatalogue& catalogue, const GameObjects& objects)
 {
@@ -81,4 +81,4 @@ std::size_t Outposts::discoveredCount() const
         std::count_if(m_outposts.begin(), m_outposts.end(), [](const Outpost& o) { return o.discovered; }));
 }
 
-} // namespace fh
+} // namespace openhorizon

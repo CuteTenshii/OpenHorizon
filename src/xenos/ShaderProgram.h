@@ -13,7 +13,7 @@
 /// What the renderer needs to draw with one pass of a game effect: GLSL for
 /// both stages and where every named constant, texture and vertex input
 /// goes. See GlslTranslator.h for the binding points of the generated code.
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 /// Where a named constant of the effect lives.
 struct ConstantBinding {
@@ -143,4 +143,4 @@ struct ControlConstants {
     std::array<std::uint8_t, kBytes> pack() const;
 };
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

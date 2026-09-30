@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh {
+namespace openhorizon {
 
 Race::Race(RaceEvent event, RaceRoute route, RacingLine line)
     : m_event(std::move(event))
@@ -132,4 +132,4 @@ int Race::lap(const Racer& racer) const
     return std::clamp(lap, 1, m_event.laps);
 }
 
-} // namespace fh
+} // namespace openhorizon

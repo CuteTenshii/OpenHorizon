@@ -11,7 +11,7 @@
 #include <filesystem>
 #include <memory>
 
-namespace fh {
+namespace openhorizon {
 
 /// The title screen the game opens on, before anything of the session
 /// loads: ui::TitleScreen in the game's 16:9 picture, with its music on its
@@ -52,4 +52,4 @@ private:
     bool m_started = false;
 };
 
-} // namespace fh
+} // namespace openhorizon

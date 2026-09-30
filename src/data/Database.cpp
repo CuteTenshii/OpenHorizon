@@ -4,7 +4,7 @@
 
 #include <cstdlib>
 
-namespace fh {
+namespace openhorizon {
 
 const Row::Value* Row::find(std::string_view column) const
 {
@@ -188,4 +188,4 @@ bool Database::hasTable(std::string_view table) const
         .has_value();
 }
 
-} // namespace fh
+} // namespace openhorizon

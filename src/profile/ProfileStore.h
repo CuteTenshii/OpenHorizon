@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 
-namespace fh::profile {
+namespace openhorizon::profile {
 
 /// Where a player's profile is kept, and how it is read and written.
 ///
@@ -81,7 +81,7 @@ public:
 
     /// `profile` in the Data user folder: `~/.local/share/fh1-native/profile`
     /// on Linux, `%LOCALAPPDATA%\fh1-native\profile` on Windows (see
-    /// fh::UserFolder); one profile per user of the machine.
+    /// openhorizon::UserFolder); one profile per user of the machine.
     static std::filesystem::path defaultDirectory();
 
     explicit ProfileStore(std::filesystem::path directory);
@@ -134,4 +134,4 @@ private:
 /// CRC-32 of `data` (the reflected polynomial 0xEDB88320 of zlib and PNG).
 std::uint32_t crc32(std::string_view data);
 
-} // namespace fh::profile
+} // namespace openhorizon::profile

@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace fh {
+namespace openhorizon {
 
 /// A file or piece of game data that could not be read or does not have the
 /// layout the reader expects.
@@ -22,4 +22,4 @@ public:
     }
 };
 
-} // namespace fh
+} // namespace openhorizon

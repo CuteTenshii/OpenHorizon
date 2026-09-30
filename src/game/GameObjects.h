@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Vfs;
 
@@ -40,4 +40,4 @@ private:
     std::vector<GameObject> m_objects;
 };
 
-} // namespace fh
+} // namespace openhorizon

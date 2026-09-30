@@ -60,7 +60,7 @@
 ///    program can link a vertex and pixel shader by semantic.
 ///  - Pixel outputs: `layout(location = n) out vec4 xe_color<n>` for each
 ///    colour export, and gl_FragDepth when the shader exports depth.
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 /// Where one vertex fetch reads its data, as the Direct3D runtime would bind
 /// it from a vertex declaration.
@@ -151,4 +151,4 @@ inline constexpr std::uint32_t kControlConstants = 2;
 inline constexpr std::uint32_t kSystemConstants = 3;
 } // namespace binding
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

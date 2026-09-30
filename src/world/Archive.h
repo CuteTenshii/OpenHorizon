@@ -19,7 +19,7 @@ class ZipArchive;
 struct ZipEntry;
 } // namespace lzx
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// Reports how far a long job has come: `done` of `total` items.
 using Progress = std::function<void(std::size_t done, std::size_t total)>;
@@ -99,4 +99,4 @@ template <typename Job> void parallelFor(std::size_t count, Job&& job, const Pro
     }
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

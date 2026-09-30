@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 /// The time-of-day slots a music track has a likelihood for. The numbering
 /// is the order of the four floats in the game's track record (verified in
@@ -196,4 +196,4 @@ SoundBankInfoMap parseSoundBankInfo(std::string_view xml, const std::string& sou
 /// ingame.str).
 std::uint16_t stringIdKey(std::string_view id);
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

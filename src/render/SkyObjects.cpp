@@ -12,7 +12,7 @@
 #include <optional>
 #include <vector>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -208,4 +208,4 @@ void SkyObjects::draw(const FrameParams& frame)
     glEnable(GL_CULL_FACE);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

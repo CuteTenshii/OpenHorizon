@@ -8,14 +8,14 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
 /// The front-end screens of a career event's flow, from the event
 /// description at its start in free roam to the finish position after the
 /// race.
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// What the event screens show of an event: its gamedb row as the game
 /// reads it for them (Events, Tracks and EventUIColors), with the database
@@ -113,7 +113,7 @@ public:
         Back,
     };
 
-    /// Throws fh::DataError if the scene cannot be loaded.
+    /// Throws openhorizon::DataError if the scene cannot be loaded.
     explicit EventSummaryScreen(const Vfs& vfs, const std::string& language = "en");
     ~EventSummaryScreen();
     EventSummaryScreen(const EventSummaryScreen&) = delete;
@@ -163,7 +163,7 @@ private:
 /// Construct with a current OpenGL 4.5 context.
 class EventTitleCard {
 public:
-    /// Throws fh::DataError if the scene cannot be loaded.
+    /// Throws openhorizon::DataError if the scene cannot be loaded.
     explicit EventTitleCard(const Vfs& vfs, const std::string& language = "en");
     ~EventTitleCard();
     EventTitleCard(const EventTitleCard&) = delete;
@@ -238,7 +238,7 @@ public:
         Options,
     };
 
-    /// Throws fh::DataError if a scene cannot be loaded.
+    /// Throws openhorizon::DataError if a scene cannot be loaded.
     explicit PreRaceMenu(const Vfs& vfs, const std::string& language = "en");
     ~PreRaceMenu();
     PreRaceMenu(const PreRaceMenu&) = delete;
@@ -287,7 +287,7 @@ private:
 /// Construct with a current OpenGL 4.5 context.
 class PostRaceFinishedScreen {
 public:
-    /// Throws fh::DataError if the scene cannot be loaded.
+    /// Throws openhorizon::DataError if the scene cannot be loaded.
     explicit PostRaceFinishedScreen(const Vfs& vfs, const std::string& language = "en");
     ~PostRaceFinishedScreen();
     PostRaceFinishedScreen(const PostRaceFinishedScreen&) = delete;
@@ -314,4 +314,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

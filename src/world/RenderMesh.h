@@ -14,7 +14,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// A render model file (`*.rmb.bin` in a track's bin.zip).
 ///
@@ -172,4 +172,4 @@ int lodLevel(std::string_view partName);
 std::string lodGroupKey(std::string_view partName);
 
 } // namespace rendermesh
-} // namespace fh::world
+} // namespace openhorizon::world

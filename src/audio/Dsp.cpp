@@ -5,7 +5,7 @@
 #include <complex>
 #include <numbers>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 BiquadCoefficients BiquadCoefficients::design(const FilterSpec& spec, float sampleRate)
 {
@@ -67,4 +67,4 @@ float BiquadCoefficients::magnitudeAt(float frequency, float sampleRate) const
     return static_cast<float>(std::abs(numerator / denominator));
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

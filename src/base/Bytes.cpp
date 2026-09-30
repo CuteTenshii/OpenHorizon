@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh {
+namespace openhorizon {
 
 float halfToFloat(std::uint16_t half)
 {
@@ -61,4 +61,4 @@ bool startsWithNoCase(std::string_view text, std::string_view prefix)
     return text.size() >= prefix.size() && iequals(text.substr(0, prefix.size()), prefix);
 }
 
-} // namespace fh
+} // namespace openhorizon

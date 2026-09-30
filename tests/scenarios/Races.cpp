@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace fh::test {
+namespace openhorizon::test {
 namespace {
 
 // "Mannnnnn this is a recurring issue atp", about the name of an event
@@ -34,21 +34,21 @@ namespace {
 // the event with the zone's call to action, ENTER NOW.
 TEST_CASE_METHOD(GameScenario, "eventStartShowsTheGamesZone", "[scenario][races]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnObject = "FR04";
     Session session(options);
     CHECK(session.waitForCar());
     session.run(3.0F, {});
-    fh::Game& game = session.game();
+    openhorizon::Game& game = session.game();
     session.capture("event_start_fr04");
     CHECK(game.overlayVerticesDrawn() == 0);
     CHECK(game.activityPropChunksDrawn() > 0);
-    const fh::ui::HudState hud = game.currentHudState();
+    const openhorizon::ui::HudState hud = game.currentHudState();
     CHECK(!hud.prompt.empty());
     CHECK(hud.promptDetail == std::string("ENTER NOW"));
     CHECK(hud.promptTitle.empty());
     // X is the zone's activation.
-    session.press(fh::Button::X);
+    session.press(openhorizon::Button::X);
     session.run(0.5F, {});
     CHECK(game.race() != nullptr);
     CHECK(game.activityPropChunksDrawn() == 0);
@@ -56,18 +56,18 @@ TEST_CASE_METHOD(GameScenario, "eventStartShowsTheGamesZone", "[scenario][races]
 
 /// The flare of `object`'s activation zone: whether it runs, and the
 /// particles alive in the systems it runs in.
-std::pair<bool, std::size_t> zoneFlare(const fh::Game& game, std::string_view object)
+std::pair<bool, std::size_t> zoneFlare(const openhorizon::Game& game, std::string_view object)
 {
-    const fh::particles::ParticleManager* particles = game.particleManager();
+    const openhorizon::particles::ParticleManager* particles = game.particleManager();
     if (particles == nullptr) {
         return {false, 0};
     }
-    const fh::particles::SimpleEmitterState* flare = particles->simpleEmitter(std::string(object) + "_flare");
+    const openhorizon::particles::SimpleEmitterState* flare = particles->simpleEmitter(std::string(object) + "_flare");
     if (flare == nullptr) {
         return {false, 0};
     }
     std::size_t live = 0;
-    for (const fh::particles::ParticleSystem* system : particles->systemsOf(*flare)) {
+    for (const openhorizon::particles::ParticleSystem* system : particles->systemsOf(*flare)) {
         live += system->size();
     }
     return {flare->running, live};
@@ -78,14 +78,14 @@ std::pair<bool, std::size_t> zoneFlare(const fh::Game& game, std::string_view ob
 // within 500 m; a start farther away does not.
 TEST_CASE_METHOD(GameScenario, "eventStartBurnsItsFlare", "[scenario][races]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     // 60 m north of the FR04 zone, outside its 25 m prompt, facing it.
     options.spawnAt = glm::vec2(-1958.7F, 52.7F);
     options.spawnHeading = std::numbers::pi_v<float>;
     Session session(options);
     CHECK(session.waitForCar());
     session.run(2.0F, {});
-    fh::Game& game = session.game();
+    openhorizon::Game& game = session.game();
     session.capture("event_start_flare_fr04");
     const auto [running, live] = zoneFlare(game, "FR04");
     CHECK(running);
@@ -97,18 +97,18 @@ TEST_CASE_METHOD(GameScenario, "eventStartBurnsItsFlare", "[scenario][races]")
 // In a race the free-roam zones are disabled, and their flares are out.
 TEST_CASE_METHOD(GameScenario, "raceNoZoneFlareBurns", "[scenario][races]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.race = "FR02";
     Session session(options);
     CHECK(session.waitForCar());
     session.run(1.0F, {});
-    const fh::particles::ParticleManager* particles = session.game().particleManager();
+    const openhorizon::particles::ParticleManager* particles = session.game().particleManager();
     CHECK(particles != nullptr);
     if (particles != nullptr) {
         CHECK(std::none_of(particles->simpleEmitters().begin(), particles->simpleEmitters().end(),
-            [](const fh::particles::SimpleEmitterState& e) { return e.running; }));
+            [](const openhorizon::particles::SimpleEmitterState& e) { return e.running; }));
     }
 }
 
 } // namespace
-} // namespace fh::test
+} // namespace openhorizon::test

@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 /// `media/spectators/spectators.xml`: the people of the crowd, how they are
 /// grouped, which animations each skeleton plays and the crowd classes that
@@ -108,4 +108,4 @@ struct SpectatorConfig {
     int findSkeleton(std::string_view name) const;
 };
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

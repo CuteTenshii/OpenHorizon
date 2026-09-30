@@ -9,7 +9,7 @@
 #include <functional>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 /// The driving line assist ("suggested line", the tunables' "GreenLine"):
 /// a row of chevrons along the racing line ahead of the car, coloured by
@@ -86,4 +86,4 @@ private:
     float m_revealTime = 0.0F;
 };
 
-} // namespace fh
+} // namespace openhorizon

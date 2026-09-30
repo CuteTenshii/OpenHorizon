@@ -7,11 +7,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::particles {
+namespace openhorizon::particles {
 
 /// The tyre effect channels, in the order of the game's name table
 /// (0x824AB4A8). A surface's SkidData/SmokeType element gives a weight for
@@ -85,4 +85,4 @@ private:
     std::vector<SurfaceEffects> m_surfaces;
 };
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

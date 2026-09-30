@@ -17,7 +17,7 @@
 #include <thread>
 #include <utility>
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 namespace {
 
@@ -530,4 +530,4 @@ std::vector<RadioEvent> Radio::takeEvents()
     return std::exchange(m_released, {});
 }
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

@@ -7,11 +7,11 @@
 #include <variant>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::profile {
+namespace openhorizon::profile {
 
 /// A property type as ForzaProfile.sch names it, numbered as the game's
 /// type name table numbers it (0x82154ee8: pairs of name and id, read by
@@ -113,4 +113,4 @@ private:
 const Property* findProperty(const std::vector<Property>& bags, std::string_view path);
 Property* findProperty(std::vector<Property>& bags, std::string_view path);
 
-} // namespace fh::profile
+} // namespace openhorizon::profile

@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// Which visibility zone (see TrackPlacements) covers each point of a track,
 /// read from `Ribbon_00/<Track>_00.hex` (big-endian):
@@ -50,4 +50,4 @@ private:
     std::vector<std::int32_t> m_cells;
 };
 
-} // namespace fh::world
+} // namespace openhorizon::world

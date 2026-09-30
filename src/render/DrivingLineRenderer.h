@@ -9,11 +9,11 @@
 #include <cstddef>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// Draws DrivingLine chevrons the way the game's draw (0x82430e20) does:
 /// media/ui/textures/raceline.xds (a white chevron in alpha only) clamped,
@@ -42,7 +42,7 @@ namespace fh::render {
 /// other passes marked the stencil first; nothing here writes stencil.
 class DrivingLineRenderer {
 public:
-    /// Throws fh::DataError if the texture is missing or cannot be decoded
+    /// Throws openhorizon::DataError if the texture is missing or cannot be decoded
     /// and std::runtime_error if the shaders do not compile.
     explicit DrivingLineRenderer(const Vfs& vfs);
     ~DrivingLineRenderer();
@@ -63,4 +63,4 @@ private:
     std::vector<DrivingLine::Vertex> m_triangles;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

@@ -26,8 +26,8 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using fh::Bytes;
-namespace carmodel = fh::carmodel;
+using openhorizon::Bytes;
+namespace carmodel = openhorizon::carmodel;
 using carmodel::CarBin;
 
 /// Builds big-endian test data.
@@ -439,10 +439,10 @@ TEST_CASE("loadFlagsEvaluateTextureTableExpressions", "[carmodel]")
 
 TEST_CASE("realCarsLoad", "[carmodel]")
 {
-    const char* gameDir = fh::test::gameDir();
-    fh::Vfs vfs;
+    const char* gameDir = openhorizon::test::gameDir();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(gameDir);
-    std::optional<fh::Database> db;
+    std::optional<openhorizon::Database> db;
     if (const std::optional<Bytes> image = vfs.read("media/db/gamedb.slt")) {
         db.emplace(*image);
     }

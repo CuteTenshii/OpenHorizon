@@ -13,7 +13,7 @@
 #include <format>
 #include <numbers>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -487,4 +487,4 @@ float CutscenePlayer::overlay(glm::vec3& colour) const
     return 0.0F;
 }
 
-} // namespace fh
+} // namespace openhorizon

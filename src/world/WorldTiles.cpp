@@ -14,7 +14,7 @@
 #include <memory>
 #include <tuple>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -488,4 +488,4 @@ std::vector<std::uint32_t> TileMesh::textures() const
     return ids;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

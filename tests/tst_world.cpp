@@ -45,8 +45,8 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using fh::Bytes;
-namespace world = fh::world;
+using openhorizon::Bytes;
+namespace world = openhorizon::world;
 
 /// Builds big-endian test data.
 struct Writer {
@@ -714,7 +714,7 @@ TEST_CASE("parsesRenderModels", "[world]")
     CHECK(mesh.boundsMin.z <= mesh.boundsMax.z);
 
     const std::optional<world::RenderMeshHeader> header = world::rendermesh::readHeader(
-        fh::ByteView(data).first(std::min(data.size(), world::rendermesh::kHeaderBytes)));
+        openhorizon::ByteView(data).first(std::min(data.size(), world::rendermesh::kHeaderBytes)));
     CHECK(header.has_value());
     if (header) {
         CHECK(header->partCount == 2U);
@@ -782,7 +782,8 @@ TEST_CASE("rejectsMalformedModels", "[world]")
     badVersion[3] = 7;
     CHECK_THROWS_AS(world::rendermesh::parse(badVersion, "test"), std::exception);
     CHECK(!world::rendermesh::readHeader(badVersion).has_value());
-    CHECK_THROWS_AS(world::rendermesh::parse(fh::ByteView(good).first(good.size() / 2), "test"), std::exception);
+    CHECK_THROWS_AS(
+        world::rendermesh::parse(openhorizon::ByteView(good).first(good.size() / 2), "test"), std::exception);
     TestPart pastEnd = quad("Road_LOD01", 0, 0, 0, 1);
     pastEnd.materials[0].indices = {0, 1, 2, 4};
     CHECK_THROWS_AS(world::rendermesh::parse(renderModel({pastEnd}), "test"), std::exception);
@@ -820,7 +821,7 @@ TEST_CASE("looksUpZonesInTheHexGrid", "[world]")
     CHECK_THROWS_AS(world::ZoneGrid::read(wrongMagic), std::exception);
     CHECK_THROWS_AS(world::ZoneGrid::read(hexFile(1, 1, 1, {3})), std::exception);
     const Bytes truncated = hexFile(1, 2, 2, {0});
-    CHECK_THROWS_AS(world::ZoneGrid::read(fh::ByteView(truncated).first(40)), std::exception);
+    CHECK_THROWS_AS(world::ZoneGrid::read(openhorizon::ByteView(truncated).first(40)), std::exception);
 }
 
 TEST_CASE("readsZonePlacements", "[world]")
@@ -983,7 +984,7 @@ TEST_CASE("readsEventGatedScatterSets", "[world]")
     const std::string name = "models_proc_clrd_trees_redstone_area02[freeroam]_0";
     const Bytes plain = scatterFile("Models_Ungrouped_1706", {tree}, {trees});
     CHECK(world::scatterSetKind(plain) == std::optional<std::uint32_t>(world::kModelSetKind));
-    CHECK(!world::scatterSetKind(fh::ByteView(plain).first(0x20)).has_value());
+    CHECK(!world::scatterSetKind(openhorizon::ByteView(plain).first(0x20)).has_value());
     CHECK(!world::readScatterSet(plain).eventProp);
 
     // The event block and the longer name replace the plain set's 32-byte
@@ -1092,7 +1093,7 @@ TEST_CASE("readsShaderLayoutsAndPvsTables", "[world]")
         CHECK(blend->samplerRegister("Splat_Sampler") == -1);
     }
     const std::string_view noShader = "no shader here";
-    const fh::ByteView noShaderBytes(reinterpret_cast<const std::uint8_t*>(noShader.data()), noShader.size());
+    const openhorizon::ByteView noShaderBytes(reinterpret_cast<const std::uint8_t*>(noShader.data()), noShader.size());
     CHECK(!world::readShaderLayout(noShaderBytes).has_value());
 
     const world::PvsTables tables = world::readPvs(pvsFile({0x10, 0x20, 0x2B40}, {{2, 0}, {}, {1}}, {4, 2}));
@@ -1104,7 +1105,8 @@ TEST_CASE("readsShaderLayoutsAndPvsTables", "[world]")
     CHECK(tables.drawObjects == (std::vector<std::uint16_t>{4, 2}));
     CHECK_THROWS_AS(world::readPvs(pvsFile({0x10}, {{5}})), std::exception);
     const std::string_view notPvs = "FPVS but nothing else";
-    CHECK_THROWS_AS(world::readPvs(fh::ByteView(reinterpret_cast<const std::uint8_t*>(notPvs.data()), notPvs.size())),
+    CHECK_THROWS_AS(
+        world::readPvs(openhorizon::ByteView(reinterpret_cast<const std::uint8_t*>(notPvs.data()), notPvs.size())),
         std::exception);
 
     CHECK(world::TrackTextures::objectNumber("coloradoout.06454.rmb.bin") == std::optional<std::uint32_t>(6454));
@@ -1161,7 +1163,8 @@ TEST_CASE("decodesAndEncodesTextures", "[world]")
     CHECK(image.rgba[0] == 255);
     CHECK(image.rgba[1] == 0);
     CHECK(image.rgba[3] == 255);
-    CHECK_THROWS_AS(world::untileXboxSurface(fh::ByteView(tiled).first(100), kDxt1Swapped, 128, 128), std::exception);
+    CHECK_THROWS_AS(
+        world::untileXboxSurface(openhorizon::ByteView(tiled).first(100), kDxt1Swapped, 128, 128), std::exception);
     CHECK_THROWS_AS(world::untileXboxSurface(tiled, 17, 128, 128), std::exception);
 
     const world::TextureMipChain chain = world::buildMipChain(surface);
@@ -1215,20 +1218,21 @@ TEST_CASE("decodesAndEncodesTextures", "[world]")
 TEST_CASE("convertsTrackVertexDeclarations", "[world]")
 {
     namespace dt = world::decltype360;
-    fh::xenos::VertexDeclaration file;
-    const auto element = [](std::uint16_t offset, std::uint32_t type, fh::xenos::DeclUsage usage, std::uint8_t index) {
-        fh::xenos::VertexDeclElement e;
+    openhorizon::xenos::VertexDeclaration file;
+    const auto element
+        = [](std::uint16_t offset, std::uint32_t type, openhorizon::xenos::DeclUsage usage, std::uint8_t index) {
+        openhorizon::xenos::VertexDeclElement e;
         e.offset = offset;
         e.type = type;
         e.usage = static_cast<std::uint8_t>(usage);
         e.usageIndex = index;
         return e;
     };
-    file.elements = {element(0, dt::kFloat3, fh::xenos::DeclUsage::Position, 0),
-        element(12, dt::kDec3N, fh::xenos::DeclUsage::Normal, 0),
-        element(16, dt::kUShort2N, fh::xenos::DeclUsage::Texcoord, 0),
-        element(20, dt::kColor, fh::xenos::DeclUsage::Color, 0)};
-    const std::optional<fh::xenos::VertexDeclaration> render = world::TrackShaders::renderDeclaration(file);
+    file.elements = {element(0, dt::kFloat3, openhorizon::xenos::DeclUsage::Position, 0),
+        element(12, dt::kDec3N, openhorizon::xenos::DeclUsage::Normal, 0),
+        element(16, dt::kUShort2N, openhorizon::xenos::DeclUsage::Texcoord, 0),
+        element(20, dt::kColor, openhorizon::xenos::DeclUsage::Color, 0)};
+    const std::optional<openhorizon::xenos::VertexDeclaration> render = world::TrackShaders::renderDeclaration(file);
     CHECK(render.has_value());
     if (render) {
         CHECK(render->elements.size() == std::size_t{4});
@@ -1242,10 +1246,10 @@ TEST_CASE("convertsTrackVertexDeclarations", "[world]")
         // Same formats, no byte swap.
         CHECK(render->elements[0].format() == file.elements[0].format());
         CHECK(render->elements[0].endian() == 0U);
-        CHECK(render->elements[2].format() == fh::xenos::VertexFormat::F32_32_Float);
+        CHECK(render->elements[2].format() == openhorizon::xenos::VertexFormat::F32_32_Float);
     }
-    fh::xenos::VertexDeclaration unknown;
-    unknown.elements = {element(0, 0x2A2360, fh::xenos::DeclUsage::Position, 0)};
+    openhorizon::xenos::VertexDeclaration unknown;
+    unknown.elements = {element(0, 0x2A2360, openhorizon::xenos::DeclUsage::Position, 0)};
     CHECK(!world::TrackShaders::renderDeclaration(unknown).has_value());
 }
 
@@ -1403,8 +1407,8 @@ TEST_CASE("buildsAWorldFromAnArchive", "[world]")
 
 TEST_CASE("loadsColorado", "[world]")
 {
-    const char* gameDir = fh::test::gameDir();
-    fh::Vfs vfs;
+    const char* gameDir = openhorizon::test::gameDir();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(gameDir);
     const std::optional<world::TrackWorld> loaded = world::TrackWorld::load(vfs, "colorado");
     CHECK(loaded.has_value());
@@ -1579,10 +1583,11 @@ TEST_CASE("loadsColorado", "[world]")
             CHECK(glm::length(glm::vec3(batch.model * glm::vec4(1.0F, 2.0F, 3.0F, 1.0F))
                       - flag.placement.apply(glm::vec3(1.0F, 2.0F, -3.0F)))
                 < 1e-3F);
-            const fh::xenos::VertexDeclaration& declaration = colorado.shaders.at(batch.shader).renderDeclaration;
+            const openhorizon::xenos::VertexDeclaration& declaration
+                = colorado.shaders.at(batch.shader).renderDeclaration;
             const auto position = std::find_if(declaration.elements.begin(), declaration.elements.end(),
-                [](const fh::xenos::VertexDeclElement& element) {
-                return element.usage == static_cast<std::uint8_t>(fh::xenos::DeclUsage::Position);
+                [](const openhorizon::xenos::VertexDeclElement& element) {
+                return element.usage == static_cast<std::uint8_t>(openhorizon::xenos::DeclUsage::Position);
             });
             CHECK(position != declaration.elements.end());
             if (position == declaration.elements.end()) {

@@ -12,11 +12,11 @@
 #include <string>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// Which nodes and ways a network position may use, by their ways'
 /// road_type (the modes of 0x82d9c128 and 0x82d9c190, against "shortcut"
@@ -307,4 +307,4 @@ private:
     float m_routeLength = 0.0F;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

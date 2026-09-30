@@ -13,7 +13,7 @@
 #include <cmath>
 #include <utility>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -595,4 +595,4 @@ void UiRenderer::drawText(const DrawText& text)
     }
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

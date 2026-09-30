@@ -20,7 +20,7 @@
 #include <cstring>
 #include <mutex>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 namespace {
 
@@ -908,4 +908,4 @@ void CrowdSet::frameSkinMatrices(std::uint32_t animation, int frame, std::span<g
     mirrorToSpectatorSpace(out.first(clip.boneCount()));
 }
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

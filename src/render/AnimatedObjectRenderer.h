@@ -18,16 +18,16 @@
 #include <unordered_set>
 #include <vector>
 
-namespace fh::animated {
+namespace openhorizon::animated {
 class AnimatedObjects;
-} // namespace fh::animated
+} // namespace openhorizon::animated
 
-namespace fh::world {
+namespace openhorizon::world {
 struct TextureMipChain;
 struct TrackWorld;
-} // namespace fh::world
+} // namespace openhorizon::world
 
-namespace fh::render {
+namespace openhorizon::render {
 
 struct FrameParams;
 
@@ -164,4 +164,4 @@ private:
     Stats m_stats;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

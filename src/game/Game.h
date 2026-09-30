@@ -77,7 +77,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 struct GameOptions {
     std::filesystem::path gameDir;
@@ -678,4 +678,4 @@ private:
     int m_frameCount = 0;
 };
 
-} // namespace fh
+} // namespace openhorizon

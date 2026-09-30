@@ -11,7 +11,7 @@
 #include <optional>
 #include <string>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -89,4 +89,4 @@ TrackSettings TrackSettings::load(const Vfs& vfs, std::string_view track)
     return parse(*text);
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

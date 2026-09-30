@@ -8,7 +8,7 @@
 #include <cmath>
 #include <numbers>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -584,4 +584,4 @@ void Mixer::render(std::span<float> out)
     }
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

@@ -4,7 +4,7 @@
 #include <format>
 #include <string_view>
 
-namespace fh {
+namespace openhorizon {
 
 enum class LogLevel { Debug, Info, Warning, Error };
 
@@ -67,4 +67,4 @@ template <typename... Args> void logError(std::format_string<Args...> format, Ar
     logLine(LogLevel::Error, std::format(format, std::forward<Args>(args)...));
 }
 
-} // namespace fh
+} // namespace openhorizon

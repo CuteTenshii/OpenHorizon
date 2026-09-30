@@ -30,7 +30,7 @@
 
 using Catch::Matchers::WithinAbs;
 
-namespace particles = fh::particles;
+namespace particles = openhorizon::particles;
 
 namespace {
 
@@ -391,8 +391,8 @@ TEST_CASE("tyreSmokeRules", "[particles]")
 
 TEST_CASE("discEffects", "[particles]")
 {
-    const char* gameDir = fh::test::gameDir();
-    fh::Vfs vfs;
+    const char* gameDir = openhorizon::test::gameDir();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(gameDir);
 
     const particles::ParticleManager manager = particles::ParticleManager::load(vfs);
@@ -443,7 +443,7 @@ TEST_CASE("discEffects", "[particles]")
     const auto texture = vfs.read("media/effects/gr_puffy_smoke_diff.xds");
     CHECK(texture.has_value());
     if (texture) {
-        const fh::world::RgbaImage image = fh::world::decodeXboxTexture(*texture);
+        const openhorizon::world::RgbaImage image = openhorizon::world::decodeXboxTexture(*texture);
         CHECK((image.width > 0 && image.height > 0));
     }
 }
@@ -574,8 +574,8 @@ TEST_CASE("keptEmittersRunAndStop", "[particles]")
 
 TEST_CASE("discParticleEmitters", "[particles]")
 {
-    const char* gameDir = fh::test::gameDir();
-    fh::Vfs vfs;
+    const char* gameDir = openhorizon::test::gameDir();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(gameDir);
     const particles::ParticleEmitterSet set = particles::ParticleEmitterSet::load(vfs, "colorado");
     CHECK(set.simpleEmitters().size() == std::size_t{132});

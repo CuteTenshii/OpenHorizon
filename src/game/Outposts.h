@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class ActivityCatalogue;
 class GameObjects;
@@ -98,4 +98,4 @@ private:
     std::vector<Outpost> m_outposts;
 };
 
-} // namespace fh
+} // namespace openhorizon

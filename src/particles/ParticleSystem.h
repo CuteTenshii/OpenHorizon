@@ -11,7 +11,7 @@
 #include <optional>
 #include <vector>
 
-namespace fh::particles {
+namespace openhorizon::particles {
 
 /// One live particle, with the fields of the game's 64-byte particle record
 /// (the offsets in the comments). The game stores everything after the
@@ -189,4 +189,4 @@ private:
     std::vector<SystemEmitter> m_emitters;
 };
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

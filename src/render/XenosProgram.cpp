@@ -8,7 +8,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -296,4 +296,4 @@ void XenosConstantStream::bind(std::size_t index) const
         static_cast<GLsizeiptr>(xenos::SystemConstants::kBytes));
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

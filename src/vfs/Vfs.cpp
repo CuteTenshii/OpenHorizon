@@ -10,7 +10,7 @@
 #include <fstream>
 #include <set>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -333,4 +333,4 @@ std::shared_ptr<const lzx::ZipArchive> Vfs::archiveAt(std::string_view mountPoin
     return it->second.front()->archive;
 }
 
-} // namespace fh
+} // namespace openhorizon

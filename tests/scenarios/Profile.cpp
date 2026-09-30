@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-namespace fh::test {
+namespace openhorizon::test {
 namespace {
 
 // "Add a game progression system so stuff is saved": what the player found
@@ -37,7 +37,7 @@ TEST_CASE_METHOD(GameScenario, "progressIsKeptAcrossRestarts", "[scenario][profi
 {
     const glm::vec2 gate{2274.2F, 319.6F};
     const glm::vec2 north = glm::normalize(glm::vec2(0.1167F, 0.9932F));
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = gate - north * 120.0F;
     options.spawnHeading = std::atan2(north.x, north.y);
     options.profileDir = freshProfileDir("restart");
@@ -46,8 +46,8 @@ TEST_CASE_METHOD(GameScenario, "progressIsKeptAcrossRestarts", "[scenario][profi
     {
         Session session(options);
         CHECK(session.waitForCar());
-        const fh::SpeedTraps* traps = session.game().speedTraps();
-        const fh::SpeedTrap* trap = traps ? traps->find("speed_camera_01") : nullptr;
+        const openhorizon::SpeedTraps* traps = session.game().speedTraps();
+        const openhorizon::SpeedTrap* trap = traps ? traps->find("speed_camera_01") : nullptr;
         CHECK(trap != nullptr);
         if (trap == nullptr) {
             return;
@@ -59,7 +59,7 @@ TEST_CASE_METHOD(GameScenario, "progressIsKeptAcrossRestarts", "[scenario][profi
         CHECK(best >= 30.0F * 0.44704F);
         // The save came at the end of that frame, with the roads driven up to
         // it; those driven after wait for the next save, as in the game.
-        const fh::ui::Navigation* navigation = session.game().navigation();
+        const openhorizon::ui::Navigation* navigation = session.game().navigation();
         CHECK(navigation != nullptr);
         if (navigation != nullptr) {
             driven = navigation->coverage().visitedNodes();
@@ -70,13 +70,13 @@ TEST_CASE_METHOD(GameScenario, "progressIsKeptAcrossRestarts", "[scenario][profi
     }
     Session session(options);
     CHECK(session.waitForCar());
-    fh::Game& game = session.game();
-    const fh::SpeedTrap* trap = game.speedTraps() ? game.speedTraps()->find("speed_camera_01") : nullptr;
+    openhorizon::Game& game = session.game();
+    const openhorizon::SpeedTrap* trap = game.speedTraps() ? game.speedTraps()->find("speed_camera_01") : nullptr;
     CHECK(trap != nullptr);
     CHECK((trap && trap->discovered));
     CHECK((trap && trap->best.value_or(0.0F) == best));
     CHECK(hasMarker(game.currentMapState(), "speed_camera_discovered"));
-    const fh::ui::Navigation* navigation = game.navigation();
+    const openhorizon::ui::Navigation* navigation = game.navigation();
     CHECK(navigation != nullptr);
     if (navigation != nullptr) {
         const std::vector<bool> now = navigation->coverage().visitedNodes();
@@ -95,7 +95,7 @@ TEST_CASE_METHOD(GameScenario, "quittingKeepsTheRoadsDriven", "[scenario][profil
 {
     // Colorado's road_094, as in drivenRoadsColourTheMap, far from any
     // speed trap, outpost or discount sign.
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
     options.spawnHeading = 3.14159265F;
     options.profileDir = freshProfileDir("quit");
@@ -111,7 +111,7 @@ TEST_CASE_METHOD(GameScenario, "quittingKeepsTheRoadsDriven", "[scenario][profil
         return true;
     };
     const auto visited = [](Session& session) {
-        const fh::ui::Navigation* navigation = session.game().navigation();
+        const openhorizon::ui::Navigation* navigation = session.game().navigation();
         return navigation != nullptr ? navigation->coverage().visitedNodes() : std::vector<bool>{};
     };
     std::vector<bool> beforeQuit;
@@ -123,17 +123,17 @@ TEST_CASE_METHOD(GameScenario, "quittingKeepsTheRoadsDriven", "[scenario][profil
         CHECK(session.game().profileSaves() == std::size_t{0});
         beforeQuit = visited(session);
         CHECK(drivenCount(beforeQuit) > 1);
-        session.press(fh::Button::Start);
-        const fh::ui::PauseMenu* menu = session.game().pauseMenu();
+        session.press(openhorizon::Button::Start);
+        const openhorizon::ui::PauseMenu* menu = session.game().pauseMenu();
         CHECK(menu != nullptr);
         if (menu == nullptr) {
             return;
         }
-        CHECK(session.focusPauseItem(fh::ui::PauseItem::Quit));
-        CHECK(session.pressMayQuit(fh::Button::A));
+        CHECK(session.focusPauseItem(openhorizon::ui::PauseItem::Quit));
+        CHECK(session.pressMayQuit(openhorizon::Button::A));
         CHECK(menu->confirming());
         // EXIT SINGLE PLAYER, confirmed: the game quits, saving once.
-        CHECK(!session.pressMayQuit(fh::Button::A));
+        CHECK(!session.pressMayQuit(openhorizon::Button::A));
         CHECK(session.game().profileSaves() == std::size_t{1});
     }
     std::vector<bool> beforeClose;
@@ -154,4 +154,4 @@ TEST_CASE_METHOD(GameScenario, "quittingKeepsTheRoadsDriven", "[scenario][profil
 }
 
 } // namespace
-} // namespace fh::test
+} // namespace openhorizon::test

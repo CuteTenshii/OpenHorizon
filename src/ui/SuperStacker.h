@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 class Presentation;
 class UiRenderer;
@@ -72,4 +72,4 @@ private:
     std::vector<Stacker> m_stackers;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

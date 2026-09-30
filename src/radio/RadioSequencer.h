@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 /// The two sound banks the radio plays from: Radio_Music.fsb and
 /// Radio_VO_<language>.fsb.
@@ -381,4 +381,4 @@ private:
     std::vector<RadioEvent> m_events;
 };
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

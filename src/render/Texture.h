@@ -5,11 +5,11 @@
 #include <cstdint>
 #include <span>
 
-namespace fh::world {
+namespace openhorizon::world {
 struct TextureMipChain;
-} // namespace fh::world
+} // namespace openhorizon::world
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// A 2D texture on the GPU. Compressed game formats (DXT1, DXT5, BC5) are
 /// uploaded as they are; the driver samples them directly.
@@ -43,4 +43,4 @@ private:
     std::size_t m_bytes = 0;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

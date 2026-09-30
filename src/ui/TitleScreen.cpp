@@ -14,7 +14,7 @@
 
 #include <optional>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -374,4 +374,4 @@ std::vector<std::string> TitleScreen::soundsPlayed() const
     return m_impl->sounds ? m_impl->sounds->played() : std::vector<std::string>();
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

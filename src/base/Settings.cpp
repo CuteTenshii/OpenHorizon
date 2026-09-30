@@ -9,7 +9,7 @@
 #include <fstream>
 #include <map>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -109,4 +109,4 @@ bool Settings::save() const
     return static_cast<bool>(out);
 }
 
-} // namespace fh
+} // namespace openhorizon

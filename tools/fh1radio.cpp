@@ -21,7 +21,7 @@
 
 namespace {
 
-using namespace fh::radio;
+using namespace openhorizon::radio;
 
 int usage()
 {
@@ -67,7 +67,7 @@ std::size_t stationIndex(const RadioSystemData& system, const std::string& text)
     if (end != text.c_str() && *end == '\0' && index < system.stations.size()) {
         return index;
     }
-    throw fh::DataError("no station '{}'", text);
+    throw openhorizon::DataError("no station '{}'", text);
 }
 
 std::string clock(std::uint64_t frame)
@@ -76,7 +76,7 @@ std::string clock(std::uint64_t frame)
     return std::format("{:02}:{:02}.{:03}", ms / 60000, ms / 1000 % 60, ms % 1000);
 }
 
-int stations(const fh::Vfs& vfs, const std::map<std::string, std::string>& options)
+int stations(const openhorizon::Vfs& vfs, const std::map<std::string, std::string>& options)
 {
     const auto assets = RadioAssets::load(vfs);
     const RadioSystemData& system = assets->catalog()->system;
@@ -95,7 +95,7 @@ int stations(const fh::Vfs& vfs, const std::map<std::string, std::string>& optio
     return 0;
 }
 
-int tracks(const fh::Vfs& vfs, const std::string& stationText)
+int tracks(const openhorizon::Vfs& vfs, const std::string& stationText)
 {
     const auto assets = RadioAssets::load(vfs);
     const RadioCatalog& c = *assets->catalog();
@@ -130,7 +130,7 @@ int tracks(const fh::Vfs& vfs, const std::string& stationText)
     return 0;
 }
 
-int wav(const fh::Vfs& vfs, const std::string& name, const std::string& out,
+int wav(const openhorizon::Vfs& vfs, const std::string& name, const std::string& out,
     const std::map<std::string, std::string>& options)
 {
     const auto assets = RadioAssets::load(vfs, option(options, "vo", "EN"));
@@ -141,24 +141,24 @@ int wav(const fh::Vfs& vfs, const std::string& name, const std::string& out,
         bank = RadioBank::Voice;
         info = c.voiceInfo.find(name);
         if (info == c.voiceInfo.end()) {
-            throw fh::DataError("no radio sound named '{}'", name);
+            throw openhorizon::DataError("no radio sound named '{}'", name);
         }
     }
-    fh::audio::MpegSampleStream stream = assets->openStream(bank, info->second.soundBankIndex, 0);
-    fh::audio::PcmBuffer pcm;
+    openhorizon::audio::MpegSampleStream stream = assets->openStream(bank, info->second.soundBankIndex, 0);
+    openhorizon::audio::PcmBuffer pcm;
     pcm.sampleRate = stream.sampleRate();
     pcm.channels = stream.channels();
     while (!stream.finished()) {
         stream.decode(1 << 16, pcm.samples);
     }
     pcm.loopEnd = pcm.frames();
-    fh::audio::writeWav(out, pcm, fh::audio::WavFormat::Pcm16);
+    openhorizon::audio::writeWav(out, pcm, openhorizon::audio::WavFormat::Pcm16);
     std::printf("%s: %zu frames at %d Hz, %d channels -> %s\n", name.c_str(), pcm.frames(), pcm.sampleRate,
         pcm.channels, out.c_str());
     return 0;
 }
 
-int simulate(const fh::Vfs& vfs, const std::string& stationText, double minutes,
+int simulate(const openhorizon::Vfs& vfs, const std::string& stationText, double minutes,
     const std::map<std::string, std::string>& options)
 {
     const auto assets = RadioAssets::load(vfs, option(options, "vo", "EN"));
@@ -223,10 +223,10 @@ int simulate(const fh::Vfs& vfs, const std::string& stationText, double minutes,
     return 0;
 }
 
-int render(const fh::Vfs& vfs, const std::string& stationText, double seconds, const std::string& out,
+int render(const openhorizon::Vfs& vfs, const std::string& stationText, double seconds, const std::string& out,
     const std::map<std::string, std::string>& options)
 {
-    fh::audio::AudioDevice device{fh::audio::AudioDevice::Offline{}};
+    openhorizon::audio::AudioDevice device{openhorizon::audio::AudioDevice::Offline{}};
     Radio::Options radioOptions;
     radioOptions.voiceLanguage = option(options, "vo", "EN");
     radioOptions.seed = static_cast<std::uint32_t>(std::strtoul(option(options, "seed", "0").c_str(), nullptr, 10));
@@ -234,11 +234,11 @@ int render(const fh::Vfs& vfs, const std::string& stationText, double seconds, c
     Radio radio(vfs, device, radioOptions);
     radio.selectStation(stationIndex(radio.assets().catalog()->system, stationText));
     radio.startFreeRoam();
-    fh::audio::PcmBuffer pcm;
-    pcm.sampleRate = fh::audio::AudioDevice::kSampleRate;
-    pcm.channels = fh::audio::AudioDevice::kChannels;
-    const auto total = static_cast<std::size_t>(seconds * fh::audio::AudioDevice::kSampleRate);
-    constexpr std::size_t kFrame = fh::audio::AudioDevice::kSampleRate / 60;
+    openhorizon::audio::PcmBuffer pcm;
+    pcm.sampleRate = openhorizon::audio::AudioDevice::kSampleRate;
+    pcm.channels = openhorizon::audio::AudioDevice::kChannels;
+    const auto total = static_cast<std::size_t>(seconds * openhorizon::audio::AudioDevice::kSampleRate);
+    constexpr std::size_t kFrame = openhorizon::audio::AudioDevice::kSampleRate / 60;
     for (std::size_t done = 0; done < total; done += kFrame) {
         const std::vector<float> block = device.render(std::min(kFrame, total - done));
         pcm.samples.insert(pcm.samples.end(), block.begin(), block.end());
@@ -255,7 +255,7 @@ int render(const fh::Vfs& vfs, const std::string& stationText, double seconds, c
         }
     }
     pcm.loopEnd = pcm.frames();
-    fh::audio::writeWav(out, pcm, fh::audio::WavFormat::Pcm16);
+    openhorizon::audio::writeWav(out, pcm, openhorizon::audio::WavFormat::Pcm16);
     std::printf("wrote %s\n", out.c_str());
     return 0;
 }
@@ -268,7 +268,7 @@ int main(int argc, char** argv)
         return usage();
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
         const std::string command = argv[2];
         if (command == "stations") {
@@ -292,7 +292,7 @@ int main(int argc, char** argv)
         }
         return usage();
     } catch (const std::exception& e) {
-        fh::logError("{}", e.what());
+        openhorizon::logError("{}", e.what());
         return 1;
     }
 }

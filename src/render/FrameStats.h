@@ -6,7 +6,7 @@
 #include <chrono>
 #include <cstddef>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// Where frame time goes, logged every few seconds: CPU time per part of the
 /// frame, and GPU time per drawing part from timestamp queries. A player's
@@ -124,4 +124,4 @@ private:
     bool m_serialised = false;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

@@ -4,7 +4,7 @@
 
 #include <lzx/zip.h>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 TrackPaths TrackPaths::of(std::string_view track)
 {
@@ -76,4 +76,4 @@ std::optional<TrackWorld> TrackWorld::load(
     return world;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

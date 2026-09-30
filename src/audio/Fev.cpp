@@ -2,7 +2,7 @@
 
 #include "LeReader.h"
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -452,4 +452,4 @@ const FevParameter* FevEvent::findParameter(std::string_view parameterName) cons
     return nullptr;
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

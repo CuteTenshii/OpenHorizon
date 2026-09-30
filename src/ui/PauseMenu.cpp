@@ -14,7 +14,7 @@
 #include <format>
 #include <optional>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -508,4 +508,4 @@ std::vector<PauseEntryExtent> PauseMenu::entryExtents() const
     return out;
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

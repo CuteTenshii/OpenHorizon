@@ -14,7 +14,7 @@ namespace lzx {
 class ZipArchive;
 } // namespace lzx
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// Where the faces of an Xbox 360 cube texture lie in its texture memory, as
 /// its GPU fetch constant describes them.
@@ -106,4 +106,4 @@ CubeTexture readCaffCube(ByteView data);
 /// `archive`. Throws DataError if the archive lacks it or it is no cube.
 CubeTexture loadTrackCube(const lzx::ZipArchive& archive, std::uint32_t id);
 
-} // namespace fh::world
+} // namespace openhorizon::world

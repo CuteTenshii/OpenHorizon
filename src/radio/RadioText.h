@@ -6,11 +6,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 /// The radio's localised text, from media/stringtables/<language>/.
 ///
@@ -42,4 +42,4 @@ private:
     std::string m_empty;
 };
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

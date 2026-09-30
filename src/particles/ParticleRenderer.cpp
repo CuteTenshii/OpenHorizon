@@ -18,7 +18,7 @@
 #include <cctype>
 #include <cmath>
 
-namespace fh::particles {
+namespace openhorizon::particles {
 namespace {
 
 /// One particle as the shaders read it (ParticleShaders.cpp).
@@ -364,4 +364,4 @@ void ParticleRenderer::drawSystem(const ParticleSystem& system, const ParticleFr
     m_lastDrawn += count;
 }
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

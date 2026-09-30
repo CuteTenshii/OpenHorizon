@@ -14,15 +14,15 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::audio {
+namespace openhorizon::audio {
 class AudioDevice;
 }
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 class RadioAssets;
 
@@ -154,4 +154,4 @@ private:
     std::optional<RadioNowPlaying> m_hudRequest;
 };
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

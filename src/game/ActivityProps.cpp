@@ -10,7 +10,7 @@
 #include <cmath>
 #include <format>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -125,4 +125,4 @@ std::size_t ActivityProps::chunksDrawn() const
     return count;
 }
 
-} // namespace fh
+} // namespace openhorizon

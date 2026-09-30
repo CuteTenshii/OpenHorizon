@@ -4,7 +4,7 @@
 
 #include <glm/geometric.hpp>
 
-namespace fh {
+namespace openhorizon {
 
 std::string ActivationFlares::flareId(std::string_view object)
 {
@@ -52,4 +52,4 @@ void ActivationFlares::update(const std::optional<glm::vec3>& subject, particles
     }
 }
 
-} // namespace fh
+} // namespace openhorizon

@@ -6,7 +6,7 @@
 #include <format>
 #include <string>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -174,4 +174,4 @@ void FrameStats::endFrame(int physicsSteps, std::size_t vehicles)
     m_vehicles = 0;
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

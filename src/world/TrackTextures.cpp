@@ -10,7 +10,7 @@
 #include <list>
 #include <mutex>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -464,4 +464,4 @@ TextureMipChain TrackTextures::loadBundled(const lzx::ZipArchive& archive, std::
     return chain;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

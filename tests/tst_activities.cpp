@@ -31,13 +31,13 @@
 
 using Catch::Matchers::WithinAbs;
 
-using fh::test::gameDir;
+using openhorizon::test::gameDir;
 
 namespace {
 
-fh::GameObject object(const std::string& id, glm::vec3 position)
+openhorizon::GameObject object(const std::string& id, glm::vec3 position)
 {
-    fh::GameObject o;
+    openhorizon::GameObject o;
     o.id = id;
     o.position = position;
     return o;
@@ -64,9 +64,10 @@ constexpr const char* kGasStation = R"(<ActivityManager>
 
 TEST_CASE("zone_attributes_parse_as_the_game_reads_them", "[activities]")
 {
-    const std::vector<fh::Activity> activities = fh::ActivityCatalogue::parse(kGasStation, "gas_stations.xml");
+    const std::vector<openhorizon::Activity> activities
+        = openhorizon::ActivityCatalogue::parse(kGasStation, "gas_stations.xml");
     CHECK(activities.size() == std::size_t{1});
-    const fh::ActivityZone& zone = activities.front().zones.front();
+    const openhorizon::ActivityZone& zone = activities.front().zones.front();
     CHECK(zone.object == std::string("GASSTATION_001"));
     CHECK_THAT(zone.radius, WithinAbs(54.0, 1e-6));
     CHECK(zone.maxSpeed.has_value());
@@ -79,26 +80,28 @@ TEST_CASE("zone_attributes_parse_as_the_game_reads_them", "[activities]")
 
 TEST_CASE("commented_out_activities_are_skipped", "[activities]")
 {
-    const std::vector<fh::Activity> activities = fh::ActivityCatalogue::parse(kSpeedCamera, "speed_camera.xml");
+    const std::vector<openhorizon::Activity> activities
+        = openhorizon::ActivityCatalogue::parse(kSpeedCamera, "speed_camera.xml");
     CHECK(activities.size() == std::size_t{1});
     CHECK(activities.front().scoreboardId == 201);
     CHECK_THAT(activities.front().minimumSpeedMph.value_or(0.0F), WithinAbs(30.0, 1e-6));
 }
 
 /// A speed trap across the Z axis at the origin, its posts 20 m apart.
-fh::SpeedTraps oneTrap()
+openhorizon::SpeedTraps oneTrap()
 {
-    const std::vector<fh::Activity> activities = fh::ActivityCatalogue::parse(kSpeedCamera, "speed_camera.xml");
-    const fh::GameObjects objects = fh::GameObjects::fromObjects({
+    const std::vector<openhorizon::Activity> activities
+        = openhorizon::ActivityCatalogue::parse(kSpeedCamera, "speed_camera.xml");
+    const openhorizon::GameObjects objects = openhorizon::GameObjects::fromObjects({
         object("speed_camera_01_left", {-10.0F, 0.0F, 0.0F}),
         object("speed_camera_01_right", {10.0F, 0.0F, 0.0F}),
     });
-    return fh::SpeedTraps::build(fh::ActivityCatalogue::fromActivities(activities), objects);
+    return openhorizon::SpeedTraps::build(openhorizon::ActivityCatalogue::fromActivities(activities), objects);
 }
 
 TEST_CASE("a_speed_trap_counts_a_pass_at_its_minimum_speed_or_more", "[activities]")
 {
-    fh::SpeedTraps traps = oneTrap();
+    openhorizon::SpeedTraps traps = oneTrap();
     CHECK(traps.traps().size() == std::size_t{1});
     // 30 mph is 13.41 m/s: just below does not count and discovers nothing.
     CHECK(!traps.update({0.0F, 0.0F, -0.1F}, {0.0F, 0.0F, 0.1F}, {0.0F, 0.0F, 13.3F}));
@@ -118,7 +121,7 @@ TEST_CASE("a_speed_trap_counts_a_pass_at_its_minimum_speed_or_more", "[activitie
 
 TEST_CASE("driving_past_a_speed_trap_outside_its_posts_does_not_count", "[activities]")
 {
-    fh::SpeedTraps traps = oneTrap();
+    openhorizon::SpeedTraps traps = oneTrap();
     CHECK(!traps.update({15.0F, 0.0F, -1.0F}, {15.0F, 0.0F, 1.0F}, {0.0F, 0.0F, 50.0F}));
     CHECK(!traps.update({0.0F, 0.0F, 1.0F}, {0.0F, 0.0F, 3.0F}, {0.0F, 0.0F, 50.0F}));
     CHECK(traps.passCount() == std::size_t{0});
@@ -126,12 +129,14 @@ TEST_CASE("driving_past_a_speed_trap_outside_its_posts_does_not_count", "[activi
 
 TEST_CASE("an_outpost_is_discovered_in_its_discovery_zone_and_then_offers_its_zone", "[activities]")
 {
-    const std::vector<fh::Activity> activities = fh::ActivityCatalogue::parse(kGasStation, "gas_stations.xml");
-    const fh::GameObjects objects = fh::GameObjects::fromObjects({
+    const std::vector<openhorizon::Activity> activities
+        = openhorizon::ActivityCatalogue::parse(kGasStation, "gas_stations.xml");
+    const openhorizon::GameObjects objects = openhorizon::GameObjects::fromObjects({
         object("GASSTATION_001", {0.0F, 0.0F, 0.0F}),
         object("GASSTATION_001_DISCOVERY", {300.0F, 0.0F, 0.0F}),
     });
-    fh::Outposts outposts = fh::Outposts::build(fh::ActivityCatalogue::fromActivities(activities), objects);
+    openhorizon::Outposts outposts
+        = openhorizon::Outposts::build(openhorizon::ActivityCatalogue::fromActivities(activities), objects);
     CHECK(outposts.all().size() == std::size_t{1});
     // Undiscovered, its own zone offers nothing.
     CHECK(!outposts.zoneAt({0.0F, 0.0F, 0.0F}, 0.0F));
@@ -146,24 +151,24 @@ TEST_CASE("an_outpost_is_discovered_in_its_discovery_zone_and_then_offers_its_zo
 
 TEST_CASE("a_zone_shows_its_object_and_its_numbered_objects_until_one_is_missing", "[activities]")
 {
-    const fh::GameObjects objects = fh::GameObjects::fromObjects({
+    const openhorizon::GameObjects objects = openhorizon::GameObjects::fromObjects({
         object("FR04", {}),
         object("FR04_00", {}),
         object("FR04_01", {}),
         object("FR04_03", {}),
         object("FR04_NODE", {}),
     });
-    const std::vector<std::string> names = fh::ActivityProps::zoneNames("FR04", objects);
+    const std::vector<std::string> names = openhorizon::ActivityProps::zoneNames("FR04", objects);
     CHECK((names == std::vector<std::string>{"FR04", "FR04_L", "FR04_00", "FR04_01"}));
 }
 
 TEST_CASE("colorado_activities", "[activities]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
-    const fh::ActivityCatalogue catalogue = fh::ActivityCatalogue::load(vfs, "colorado");
-    const fh::GameObjects objects = fh::GameObjects::load(vfs, "colorado");
+    const openhorizon::ActivityCatalogue catalogue = openhorizon::ActivityCatalogue::load(vfs, "colorado");
+    const openhorizon::GameObjects objects = openhorizon::GameObjects::load(vfs, "colorado");
     CHECK(catalogue.ofType("ActivitySpeedCamera").size() == std::size_t{22});
     CHECK(catalogue.ofType("ActivityAverageSpeed").size() == std::size_t{9});
     CHECK(catalogue.ofType("ActivityGasStation").size() == std::size_t{10});
@@ -171,18 +176,18 @@ TEST_CASE("colorado_activities", "[activities]")
     CHECK(catalogue.ofType("ActivityBarnFind").size() == std::size_t{9});
     CHECK(catalogue.ofType("ActivityCareerEventActivation").size() == std::size_t{88});
 
-    const fh::SpeedTraps traps = fh::SpeedTraps::build(catalogue, objects);
+    const openhorizon::SpeedTraps traps = openhorizon::SpeedTraps::build(catalogue, objects);
     CHECK(traps.traps().size() == std::size_t{22});
-    for (const fh::SpeedTrap& trap : traps.traps()) {
+    for (const openhorizon::SpeedTrap& trap : traps.traps()) {
         CHECK_THAT(trap.minimumSpeedMph, WithinAbs(30.0, 1e-6));
         // The posts stand either side of a road.
         const float gap = glm::length(trap.right - trap.left);
         CHECK((gap > 5.0F && gap < 60.0F));
     }
 
-    const fh::Outposts outposts = fh::Outposts::build(catalogue, objects);
+    const openhorizon::Outposts outposts = openhorizon::Outposts::build(catalogue, objects);
     CHECK(outposts.all().size() == std::size_t{10});
-    for (const fh::Outpost& outpost : outposts.all()) {
+    for (const openhorizon::Outpost& outpost : outposts.all()) {
         CHECK(outpost.promptTitle == std::string("IDS_Description_GasStation"));
         CHECK(outpost.discoveryRadius > 0.0F);
         CHECK(glm::length(outpost.discoveryPosition - outpost.position) > 0.0F);
@@ -198,7 +203,7 @@ TEST_CASE("colorado_activities", "[activities]")
         CHECK_THAT(fr04->second->maxSpeed.value_or(0.0F), WithinAbs(150.0 * 0.44704, 1e-3));
         CHECK(fr04->second->isActivation);
     }
-    const std::vector<std::string> names = fh::ActivityProps::zoneNames("FR04", objects);
+    const std::vector<std::string> names = openhorizon::ActivityProps::zoneNames("FR04", objects);
     CHECK(names.size() == std::size_t{19});
 }
 
@@ -211,16 +216,16 @@ TEST_CASE("colorado_activities", "[activities]")
 TEST_CASE("colorado_outposts_are_named_by_their_own_strings", "[activities]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
-    const fh::ActivityCatalogue catalogue = fh::ActivityCatalogue::load(vfs, "colorado");
-    const fh::GameObjects objects = fh::GameObjects::load(vfs, "colorado");
-    const fh::Outposts outposts = fh::Outposts::build(catalogue, objects);
-    fh::ui::UiStrings strings(vfs, "en");
+    const openhorizon::ActivityCatalogue catalogue = openhorizon::ActivityCatalogue::load(vfs, "colorado");
+    const openhorizon::GameObjects objects = openhorizon::GameObjects::load(vfs, "colorado");
+    const openhorizon::Outposts outposts = openhorizon::Outposts::build(catalogue, objects);
+    openhorizon::ui::UiStrings strings(vfs, "en");
     CHECK(outposts.all().size() == std::size_t{10});
     std::vector<std::string> shownNames;
     for (std::size_t i = 0; i < outposts.all().size(); ++i) {
-        const fh::Outpost& outpost = outposts.all()[i];
+        const openhorizon::Outpost& outpost = outposts.all()[i];
         const std::size_t number = i + 1;
         CHECK(outpost.name == std::format("GasStation_{:02}", number));
         CHECK(outpost.object == std::format("GASSTATION_{:03}", number));
@@ -234,17 +239,17 @@ TEST_CASE("colorado_outposts_are_named_by_their_own_strings", "[activities]")
     std::sort(distinct.begin(), distinct.end());
     CHECK(std::adjacent_find(distinct.begin(), distinct.end()) == distinct.end());
 
-    const fh::Outpost& mediaCenter = outposts.all()[4];
+    const openhorizon::Outpost& mediaCenter = outposts.all()[4];
     CHECK(shownNames[4] == std::string("MEDIA CENTER"));
     std::size_t buildings = 0;
     for (const char* type : {"ActivityAutoshow", "ActivityRaceCentral", "ActivityCarClub", "ActivityDlcCenter",
              "ActivityPaintshop", "ActivityWorkshop"}) {
-        for (const fh::Activity* activity : catalogue.ofType(type)) {
-            for (const fh::ActivityZone& zone : activity->zones) {
+        for (const openhorizon::Activity* activity : catalogue.ofType(type)) {
+            for (const openhorizon::ActivityZone& zone : activity->zones) {
                 ++buildings;
                 CHECK(!zone.prompt.starts_with("IDS_GasStationName_"));
                 CHECK(zone.promptTitle != "IDS_Description_GasStation");
-                const fh::GameObject* building = objects.find(zone.object);
+                const openhorizon::GameObject* building = objects.find(zone.object);
                 CHECK(building != nullptr);
                 if (building != nullptr) {
                     CHECK(glm::length(building->position - mediaCenter.position) > 3000.0F);
@@ -264,30 +269,31 @@ TEST_CASE("colorado_outposts_are_named_by_their_own_strings", "[activities]")
 TEST_CASE("an_enabled_zone_burns_its_flare_while_the_car_is_within_500_m", "[activities]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
-    const fh::ActivityCatalogue catalogue = fh::ActivityCatalogue::load(vfs, "colorado");
-    const fh::particles::ParticleEmitterSet set = fh::particles::ParticleEmitterSet::load(vfs, "colorado");
+    const openhorizon::ActivityCatalogue catalogue = openhorizon::ActivityCatalogue::load(vfs, "colorado");
+    const openhorizon::particles::ParticleEmitterSet set
+        = openhorizon::particles::ParticleEmitterSet::load(vfs, "colorado");
     std::size_t zones = 0;
     std::size_t withFlare = 0;
-    for (const fh::Activity* activity : catalogue.ofType("ActivityCareerEventActivation")) {
-        for (const fh::ActivityZone& zone : activity->zones) {
+    for (const openhorizon::Activity* activity : catalogue.ofType("ActivityCareerEventActivation")) {
+        for (const openhorizon::ActivityZone& zone : activity->zones) {
             ++zones;
-            withFlare += set.findSimple(fh::ActivationFlares::flareId(zone.object)) != nullptr ? 1 : 0;
+            withFlare += set.findSimple(openhorizon::ActivationFlares::flareId(zone.object)) != nullptr ? 1 : 0;
         }
     }
     CHECK(zones >= 88);
     CHECK(withFlare == std::size_t{88});
 
-    const fh::GameObjects objects = fh::GameObjects::load(vfs, "colorado");
-    const fh::GameObject* fr04 = objects.find("FR04");
+    const openhorizon::GameObjects objects = openhorizon::GameObjects::load(vfs, "colorado");
+    const openhorizon::GameObject* fr04 = objects.find("FR04");
     CHECK(fr04 != nullptr);
     if (fr04 == nullptr) {
         return;
     }
-    fh::particles::ParticleManager particles = fh::particles::ParticleManager::load(vfs);
+    openhorizon::particles::ParticleManager particles = openhorizon::particles::ParticleManager::load(vfs);
     particles.placeSimpleEmitters(vfs, set);
-    const fh::particles::SimpleEmitterState* emitter = particles.simpleEmitter("FR04_flare");
+    const openhorizon::particles::SimpleEmitterState* emitter = particles.simpleEmitter("FR04_flare");
     CHECK(emitter != nullptr);
     if (emitter == nullptr) {
         return;
@@ -295,7 +301,7 @@ TEST_CASE("an_enabled_zone_burns_its_flare_while_the_car_is_within_500_m", "[act
     // The flare stands by its zone's object.
     CHECK(glm::distance(emitter->position, fr04->position) < 20.0F);
 
-    fh::ActivationFlares flares;
+    openhorizon::ActivationFlares flares;
     const std::size_t zone = flares.add("FR04", fr04->position);
     const glm::vec3 near = fr04->position + glm::vec3(0.0F, 0.0F, 499.0F);
     const glm::vec3 far = fr04->position + glm::vec3(0.0F, 0.0F, 501.0F);

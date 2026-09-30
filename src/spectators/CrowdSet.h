@@ -20,9 +20,9 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
 /// Spectators: the crowds of the festival, of race starts and along routes.
 ///
@@ -37,7 +37,7 @@ class Vfs;
 /// (CProceduralCharacters, 0x82EDD8A8) draws them from a generator seeded
 /// with the set's person count, and this library draws them the same way
 /// (see placeSpectators()).
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 /// Spectator space: the skinned mesh files' coordinates mirrored in X, so
 /// that a person faces +Z with the left side at -X in the left-handed world
@@ -393,4 +393,4 @@ world::TextureMipChain loadXdsMipChain(ByteView data, const std::string& source)
 /// all its mip levels. Throws DataError on failure.
 world::TextureMipChain loadDdsMipChain(ByteView data, const std::string& source);
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

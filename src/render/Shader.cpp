@@ -4,7 +4,7 @@
 
 #include <utility>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 Shader::Shader(std::string_view name, std::string_view vertexSource, std::string_view fragmentSource)
     : m_program(linkProgram(name, vertexSource, fragmentSource))
@@ -87,4 +87,4 @@ void Shader::set(const char* name, const glm::mat3& value)
     glProgramUniformMatrix3fv(m_program, location(name), 1, GL_FALSE, glm::value_ptr(value));
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

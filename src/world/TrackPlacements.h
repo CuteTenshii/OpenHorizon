@@ -18,7 +18,7 @@ namespace lzx {
 class ZipArchive;
 } // namespace lzx
 
-namespace fh::world {
+namespace openhorizon::world {
 
 struct ScatterSet;
 
@@ -169,4 +169,4 @@ private:
     std::vector<bool> m_scatterTemplates;
 };
 
-} // namespace fh::world
+} // namespace openhorizon::world

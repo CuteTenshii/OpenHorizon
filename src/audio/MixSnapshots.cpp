@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -328,4 +328,4 @@ void SnapshotMixer::update(float seconds)
     std::erase_if(m_faders, [](const Fader& fader) { return !fader.fadeTimer && !fader.returnTimer; });
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

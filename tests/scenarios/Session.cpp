@@ -27,7 +27,7 @@
 #include <string>
 #include <utility>
 
-namespace fh::test {
+namespace openhorizon::test {
 
 namespace {
 
@@ -50,7 +50,7 @@ const Vfs& sharedDisc()
 {
     static const std::unique_ptr<Vfs> vfs = [] {
         auto mounted = std::make_unique<Vfs>();
-        mounted->mountDisc(pathFromUtf8(fh::test::gameDir()));
+        mounted->mountDisc(pathFromUtf8(openhorizon::test::gameDir()));
         return mounted;
     }();
     return *vfs;
@@ -84,14 +84,14 @@ public:
 
 } // namespace
 
-} // namespace fh::test
+} // namespace openhorizon::test
 
-CATCH_REGISTER_LISTENER(fh::test::ScenarioFolders)
+CATCH_REGISTER_LISTENER(openhorizon::test::ScenarioFolders)
 
-namespace fh::test {
+namespace openhorizon::test {
 
 GameScenario::GameScenario()
-    : m_gameDir(fh::test::gameDir())
+    : m_gameDir(openhorizon::test::gameDir())
 {
     if (!openGlError().empty()) {
         SKIP("no OpenGL context (" << openGlError() << ")");
@@ -132,7 +132,7 @@ void saveProfile(const std::filesystem::path& dir, const std::function<void(prof
 
 Session::Session(GameOptions options)
 {
-    options.gameDir = pathFromUtf8(fh::test::gameDir());
+    options.gameDir = pathFromUtf8(openhorizon::test::gameDir());
     if (options.profileDir.empty()) {
         // A new profile for every session, so none sees what another
         // discovered.
@@ -292,4 +292,4 @@ float steerTowards(const CarPhysics& car, glm::vec2 target)
         std::remainder(wanted - headingOf(car.forward()), 2.0F * std::numbers::pi_v<float>) * 3.0F, -1.0F, 1.0F);
 }
 
-} // namespace fh::test
+} // namespace openhorizon::test

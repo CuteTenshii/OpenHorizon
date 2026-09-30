@@ -11,7 +11,7 @@
 #include <numbers>
 #include <utility>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace attr {
 const std::uint32_t PositionX = anarkHash("position.x");
@@ -1083,4 +1083,4 @@ bool Presentation::present(int element) const
     return m_present[static_cast<std::size_t>(element)] != 0;
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

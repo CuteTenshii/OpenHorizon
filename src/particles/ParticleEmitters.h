@@ -12,11 +12,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::particles {
+namespace openhorizon::particles {
 
 /// An emitter placed in a track's world by its ParticleEmitters.xml.
 ///
@@ -116,4 +116,4 @@ private:
     std::vector<EmitterTriggerZone> m_zones;
 };
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

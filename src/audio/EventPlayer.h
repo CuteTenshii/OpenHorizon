@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 class AudioLibrary;
 
@@ -110,4 +110,4 @@ private:
     bool m_started = false;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

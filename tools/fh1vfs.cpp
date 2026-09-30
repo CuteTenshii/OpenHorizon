@@ -28,7 +28,7 @@ int main(int argc, char** argv)
         return usage();
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
         const std::string command = argv[2];
         if (command == "list") {
@@ -38,7 +38,7 @@ int main(int argc, char** argv)
             return 0;
         }
         if (command == "cat" || command == "extract") {
-            const fh::Bytes data = vfs.readOrThrow(argv[3]);
+            const openhorizon::Bytes data = vfs.readOrThrow(argv[3]);
             if (command == "cat") {
                 std::fwrite(data.data(), 1, data.size(), stdout);
                 return 0;
@@ -52,7 +52,7 @@ int main(int argc, char** argv)
         }
         return usage();
     } catch (const std::exception& e) {
-        fh::logError("{}", e.what());
+        openhorizon::logError("{}", e.what());
         return 1;
     }
 }

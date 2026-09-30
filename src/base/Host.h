@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 /// Text crosses into and out of std::filesystem::path as UTF-8 on every
 /// platform. On Windows a path built from a plain std::string is read in
@@ -112,4 +112,4 @@ private:
 #endif
 };
 
-} // namespace fh
+} // namespace openhorizon

@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Vfs;
 
@@ -89,4 +89,4 @@ private:
     std::vector<Activity> m_activities;
 };
 
-} // namespace fh
+} // namespace openhorizon

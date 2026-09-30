@@ -5,7 +5,7 @@
 
 #include <pugixml.hpp>
 
-namespace fh::particles {
+namespace openhorizon::particles {
 namespace {
 
 constexpr std::string_view kSurfaceTypesPath = "media/physics/surfaceTypes.xml";
@@ -74,4 +74,4 @@ std::optional<std::size_t> SurfaceEffectTable::idOf(std::string_view name) const
     return std::nullopt;
 }
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

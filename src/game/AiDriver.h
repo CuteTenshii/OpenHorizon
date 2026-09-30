@@ -5,7 +5,7 @@
 
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 /// Drives a car along a racing line: steers at a point ahead on the line
 /// (pure pursuit) and holds a speed profile computed from the line's
@@ -50,4 +50,4 @@ private:
     float m_reverseTime = 0.0F;
 };
 
-} // namespace fh
+} // namespace openhorizon

@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// Linked GLSL programs, kept between runs as the driver's own binaries
 /// (glGetProgramBinary) so a second start skips compiling.
@@ -16,7 +16,7 @@ namespace fh::render {
 /// The cache lives in `shaders` in the Cache user folder:
 /// `~/.cache/fh1-native/shaders` on Linux (under `$XDG_CACHE_HOME` when that
 /// is an absolute path), `%LOCALAPPDATA%\fh1-native\cache\shaders` on
-/// Windows (see fh::UserFolder). An entry is keyed by the two sources and
+/// Windows (see openhorizon::UserFolder). An entry is keyed by the two sources and
 /// the driver's GL_VENDOR, GL_RENDERER and GL_VERSION, so a driver update or
 /// a changed shader never loads a stale binary. When the driver refuses a
 /// binary anyway (glProgramBinary leaves the program unlinked, which the
@@ -101,4 +101,4 @@ private:
 /// Builds a program and waits for it: ProgramBuild(...).finish().
 GLuint linkProgram(std::string_view name, std::string_view vertex, std::string_view fragment);
 
-} // namespace fh::render
+} // namespace openhorizon::render

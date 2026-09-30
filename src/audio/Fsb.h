@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// How a sample's data is encoded, from the FSOUND_* bits of its mode word.
 enum class SampleCodec {
@@ -179,4 +179,4 @@ private:
 /// The codec an FSOUND_* mode word selects.
 SampleCodec codecFromMode(std::uint32_t mode);
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

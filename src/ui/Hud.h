@@ -8,11 +8,11 @@
 #include <string>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 class MapCoverage;
 
@@ -182,7 +182,7 @@ class Hud {
 public:
     /// `track` names the track folder under media/tracks ("colorado"),
     /// whose road network the minimap draws; without one the minimap stays
-    /// empty. Throws fh::DataError if the HUD scene cannot be loaded and
+    /// empty. Throws openhorizon::DataError if the HUD scene cannot be loaded and
     /// std::runtime_error if its shaders do not compile.
     Hud(const Vfs& vfs, const std::string& track, const std::string& language = "en");
     ~Hud();
@@ -205,4 +205,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

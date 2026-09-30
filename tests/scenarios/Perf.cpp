@@ -41,11 +41,11 @@
 #include <string>
 #include <vector>
 
-namespace fh::test {
+namespace openhorizon::test {
 namespace {
 
-using Part = fh::render::FrameStats::Part;
-using PartTimes = fh::render::FrameStats::PartTimes;
+using Part = openhorizon::render::FrameStats::Part;
+using PartTimes = openhorizon::render::FrameStats::PartTimes;
 
 /// Width and height from FH1_PERF_SIZE ("1920x1080"), or `fallback`.
 std::array<int, 2> perfSize(std::array<int, 2> fallback)
@@ -108,9 +108,9 @@ void report(const Drive& drive, int width, int height)
     std::fprintf(
         stderr, "%dx%d: %zu frames, %.0f m driven\n", width, height, drive.frames, static_cast<double>(drive.metres));
     std::fprintf(stderr, "  %-14s %8s %8s %8s %8s\n", "part", "CPU ms", "worst", "GPU ms", "wait ms");
-    for (std::size_t part = 0; part < fh::render::FrameStats::kParts; ++part) {
+    for (std::size_t part = 0; part < openhorizon::render::FrameStats::kParts; ++part) {
         std::fprintf(stderr, "  %-14s %8.2f %8.2f %8.2f %8.2f\n",
-            fh::render::FrameStats::partName(static_cast<Part>(part)), drive.cpu[part] * 1000.0 / frames,
+            openhorizon::render::FrameStats::partName(static_cast<Part>(part)), drive.cpu[part] * 1000.0 / frames,
             drive.worst[part] * 1000.0, drive.gpu[part] * 1000.0 / frames, drive.wait[part] * 1000.0 / frames);
     }
     double cpuTotal = 0.0;
@@ -129,7 +129,7 @@ std::optional<Drive> drive(int width, int height, float seconds)
 {
     window().setSize(width, height);
     Session session({});
-    fh::Game& game = session.game();
+    openhorizon::Game& game = session.game();
     game.frameStats().setSerialised(perfSerialised());
     if (!session.waitForCar() || game.navigation() == nullptr) {
         std::fprintf(stderr, "free roam did not start\n");
@@ -142,9 +142,9 @@ std::optional<Drive> drive(int width, int height, float seconds)
             return false;
         }
         if (timed) {
-            const fh::render::FrameStats& stats = game.frameStats();
+            const openhorizon::render::FrameStats& stats = game.frameStats();
             ++result.frames;
-            for (std::size_t part = 0; part < fh::render::FrameStats::kParts; ++part) {
+            for (std::size_t part = 0; part < openhorizon::render::FrameStats::kParts; ++part) {
                 result.cpu[part] += stats.frameSeconds()[part];
                 result.gpu[part] += stats.gpuFrameSeconds()[part];
                 result.wait[part] += stats.waitSeconds()[part];
@@ -202,4 +202,4 @@ TEST_CASE_METHOD(GameScenario, "freeRoamDrawingStaysInBudget", "[scenario][perf]
 }
 
 } // namespace
-} // namespace fh::test
+} // namespace openhorizon::test

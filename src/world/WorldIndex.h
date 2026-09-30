@@ -21,7 +21,7 @@ namespace lzx {
 class ZipArchive;
 } // namespace lzx
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// World coordinates.
 ///
@@ -191,4 +191,4 @@ private:
     std::optional<ZoneGrid> m_zoneGrid;
 };
 
-} // namespace fh::world
+} // namespace openhorizon::world

@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 struct Shader;
 
@@ -26,4 +26,4 @@ std::string disassembleCf(const CfInstruction& cf);
 /// literals and the listing.
 std::string describeShader(const Shader& shader);
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

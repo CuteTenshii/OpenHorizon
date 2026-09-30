@@ -49,47 +49,47 @@ std::filesystem::path& cacheHome()
 
 TEST_CASE("cacheKeyIsStableAndCoversEveryInput", "[render]")
 {
-    const std::string key = fh::render::programCacheKey("vendor\nrenderer\n4.5", "vertex", "fragment");
+    const std::string key = openhorizon::render::programCacheKey("vendor\nrenderer\n4.5", "vertex", "fragment");
     CHECK(key.size() == std::size_t{32});
     CHECK(key.find_first_not_of("0123456789abcdef") == std::string::npos);
-    CHECK(fh::render::programCacheKey("vendor\nrenderer\n4.5", "vertex", "fragment") == key);
+    CHECK(openhorizon::render::programCacheKey("vendor\nrenderer\n4.5", "vertex", "fragment") == key);
     // A driver update, or either source changing, gives another key.
-    CHECK(fh::render::programCacheKey("vendor\nrenderer\n4.6", "vertex", "fragment") != key);
-    CHECK(fh::render::programCacheKey("vendor\nrenderer\n4.5", "vertex ", "fragment") != key);
-    CHECK(fh::render::programCacheKey("vendor\nrenderer\n4.5", "vertex", "fragment ") != key);
+    CHECK(openhorizon::render::programCacheKey("vendor\nrenderer\n4.6", "vertex", "fragment") != key);
+    CHECK(openhorizon::render::programCacheKey("vendor\nrenderer\n4.5", "vertex ", "fragment") != key);
+    CHECK(openhorizon::render::programCacheKey("vendor\nrenderer\n4.5", "vertex", "fragment ") != key);
     // Text moved from one source to the other is not the same program.
-    CHECK(fh::render::programCacheKey("d", "ab", "c") != fh::render::programCacheKey("d", "a", "bc"));
-    CHECK(fh::render::programCacheKey("d", "vertex", "fragment")
-        != fh::render::programCacheKey("d", "fragment", "vertex"));
+    CHECK(openhorizon::render::programCacheKey("d", "ab", "c") != openhorizon::render::programCacheKey("d", "a", "bc"));
+    CHECK(openhorizon::render::programCacheKey("d", "vertex", "fragment")
+        != openhorizon::render::programCacheKey("d", "fragment", "vertex"));
 }
 
 TEST_CASE("cacheFolderIsInTheUserCacheFolder", "[render]")
 {
     // CacheFolder points the cache's variable at cacheHome(); the folder rules
     // themselves are tst_base's.
-    CHECK(fh::render::programCacheDirectory().native().starts_with(cacheHome().native()));
-    CHECK(fh::render::programCacheDirectory().filename() == std::filesystem::path("shaders"));
+    CHECK(openhorizon::render::programCacheDirectory().native().starts_with(cacheHome().native()));
+    CHECK(openhorizon::render::programCacheDirectory().filename() == std::filesystem::path("shaders"));
 }
 
 TEST_CASE("programsRoundTripThroughTheCache", "[render]")
 {
-    fh::test::requireGlContext();
-    const std::filesystem::path file = fh::render::programCacheFile(kVertex, kFragment);
+    openhorizon::test::requireGlContext();
+    const std::filesystem::path file = openhorizon::render::programCacheFile(kVertex, kFragment);
     if (file.empty()) {
         SKIP("the driver has no program binary formats");
     }
     CHECK(file.native().starts_with(cacheHome().native()));
-    const fh::render::ProgramCacheStats before = fh::render::programCacheStats();
+    const openhorizon::render::ProgramCacheStats before = openhorizon::render::programCacheStats();
 
-    const GLuint cold = fh::render::linkProgram("cold", kVertex, kFragment);
+    const GLuint cold = openhorizon::render::linkProgram("cold", kVertex, kFragment);
     CHECK(cold != 0);
     glDeleteProgram(cold);
-    const fh::render::ProgramCacheStats afterCold = fh::render::programCacheStats();
+    const openhorizon::render::ProgramCacheStats afterCold = openhorizon::render::programCacheStats();
     CHECK(afterCold.compiled == before.compiled + 1);
     CHECK(afterCold.stored == before.stored + 1);
     CHECK(std::filesystem::exists(file));
 
-    fh::render::ProgramBuild warm("warm", kVertex, kFragment);
+    openhorizon::render::ProgramBuild warm("warm", kVertex, kFragment);
     CHECK(warm.fromCache());
     CHECK(warm.ready());
     const GLuint restored = warm.finish();
@@ -98,21 +98,21 @@ TEST_CASE("programsRoundTripThroughTheCache", "[render]")
     glGetProgramiv(restored, GL_LINK_STATUS, &linked);
     CHECK(linked != 0);
     glDeleteProgram(restored);
-    const fh::render::ProgramCacheStats afterWarm = fh::render::programCacheStats();
+    const openhorizon::render::ProgramCacheStats afterWarm = openhorizon::render::programCacheStats();
     CHECK(afterWarm.fromCache == afterCold.fromCache + 1);
     CHECK(afterWarm.compiled == afterCold.compiled);
 }
 
 TEST_CASE("refusedBinariesFallBackToCompiling", "[render]")
 {
-    fh::test::requireGlContext();
+    openhorizon::test::requireGlContext();
     // Sources of their own, so this test's entry is not the other test's.
     const std::string vertex = std::string(kVertex) + "// refused\n";
-    const std::filesystem::path file = fh::render::programCacheFile(vertex, kFragment);
+    const std::filesystem::path file = openhorizon::render::programCacheFile(vertex, kFragment);
     if (file.empty()) {
         SKIP("the driver has no program binary formats");
     }
-    glDeleteProgram(fh::render::linkProgram("first", vertex, kFragment));
+    glDeleteProgram(openhorizon::render::linkProgram("first", vertex, kFragment));
     CHECK(std::filesystem::exists(file));
 
     // Keep the header, so the entry is read and handed to the driver, and
@@ -129,8 +129,8 @@ TEST_CASE("refusedBinariesFallBackToCompiling", "[render]")
         entry.seekp(60);
         entry.write(header.data(), static_cast<std::streamsize>(header.size()));
     }
-    const fh::render::ProgramCacheStats before = fh::render::programCacheStats();
-    fh::render::ProgramBuild spoiled("spoiled", vertex, kFragment);
+    const openhorizon::render::ProgramCacheStats before = openhorizon::render::programCacheStats();
+    openhorizon::render::ProgramBuild spoiled("spoiled", vertex, kFragment);
     CHECK(!spoiled.fromCache());
     const GLuint program = spoiled.finish();
     CHECK(program != 0);
@@ -138,37 +138,37 @@ TEST_CASE("refusedBinariesFallBackToCompiling", "[render]")
     glGetProgramiv(program, GL_LINK_STATUS, &linked);
     CHECK(linked != 0);
     glDeleteProgram(program);
-    const fh::render::ProgramCacheStats after = fh::render::programCacheStats();
+    const openhorizon::render::ProgramCacheStats after = openhorizon::render::programCacheStats();
     CHECK(after.rejected == before.rejected + 1);
     CHECK(after.compiled == before.compiled + 1);
     CHECK(after.stored == before.stored + 1);
 
     // The rewritten entry loads again.
-    fh::render::ProgramBuild again("again", vertex, kFragment);
+    openhorizon::render::ProgramBuild again("again", vertex, kFragment);
     CHECK(again.fromCache());
     glDeleteProgram(again.finish());
 
     // A cut-short entry is not handed to the driver at all.
     std::filesystem::resize_file(file, 20);
-    fh::render::ProgramBuild truncated("truncated", vertex, kFragment);
+    openhorizon::render::ProgramBuild truncated("truncated", vertex, kFragment);
     CHECK(!truncated.fromCache());
     glDeleteProgram(truncated.finish());
-    CHECK(fh::render::programCacheStats().rejected == after.rejected + 1);
+    CHECK(openhorizon::render::programCacheStats().rejected == after.rejected + 1);
 }
 
 TEST_CASE("brokenSourcesThrowWithTheirName", "[render]")
 {
-    fh::test::requireGlContext();
+    openhorizon::test::requireGlContext();
     const std::string broken = "#version 450 core\nvoid main() { this is not glsl }\n";
     bool threw = false;
     try {
-        glDeleteProgram(fh::render::linkProgram("broken one", kVertex, broken));
+        glDeleteProgram(openhorizon::render::linkProgram("broken one", kVertex, broken));
     } catch (const std::exception& e) {
         threw = true;
         CHECK(std::string(e.what()).starts_with("broken one fragment shader: "));
     }
     CHECK(threw);
-    const std::filesystem::path file = fh::render::programCacheFile(kVertex, broken);
+    const std::filesystem::path file = openhorizon::render::programCacheFile(kVertex, broken);
     CHECK((file.empty() || !std::filesystem::exists(file)));
 }
 
@@ -182,7 +182,7 @@ TEST_CASE("selectedChunksBecomeMergedIndexRanges", "[render]")
     struct Batch {
         std::uint32_t firstIndex = 0;
         std::uint32_t indexCount = 0;
-        std::vector<fh::world::ChunkRun> runs;
+        std::vector<openhorizon::world::ChunkRun> runs;
     };
     const std::vector<Batch> batches{
         {0, 30, {{4, 0, 6}, {5, 6, 12}, {6, 18, 12}}},
@@ -193,9 +193,9 @@ TEST_CASE("selectedChunksBecomeMergedIndexRanges", "[render]")
     drawn[5] = 1;
     drawn[6] = 1;
     drawn[4] = 1;
-    std::vector<fh::render::IndexRange> ranges;
+    std::vector<openhorizon::render::IndexRange> ranges;
     std::vector<std::uint32_t> start;
-    fh::render::selectRanges(batches, drawn, ranges, start);
+    openhorizon::render::selectRanges(batches, drawn, ranges, start);
     CHECK(start == (std::vector<std::uint32_t>{0, 1, 1, 2}));
     CHECK(ranges.size() == std::size_t{2});
     CHECK(ranges[0].first == 0U);
@@ -204,21 +204,21 @@ TEST_CASE("selectedChunksBecomeMergedIndexRanges", "[render]")
     CHECK(ranges[1].count == 12U);
 
     drawn[5] = 0;
-    fh::render::selectRanges(batches, drawn, ranges, start);
+    openhorizon::render::selectRanges(batches, drawn, ranges, start);
     CHECK(start == (std::vector<std::uint32_t>{0, 2, 2, 3}));
     CHECK(ranges[0].count == 6U);
     CHECK(ranges[1].first == 18U);
 
-    fh::render::wholeRanges(batches, ranges, start);
+    openhorizon::render::wholeRanges(batches, ranges, start);
     CHECK(start == (std::vector<std::uint32_t>{0, 1, 2, 3}));
     CHECK(ranges[1].first == 30U);
     CHECK(ranges[1].count == 9U);
 
-    std::vector<fh::world::ChunkRun> runs;
-    fh::world::appendChunkRun(runs, 3, 0, 6);
-    fh::world::appendChunkRun(runs, 3, 6, 3);
-    fh::world::appendChunkRun(runs, 4, 9, 0);
-    fh::world::appendChunkRun(runs, 4, 9, 3);
+    std::vector<openhorizon::world::ChunkRun> runs;
+    openhorizon::world::appendChunkRun(runs, 3, 0, 6);
+    openhorizon::world::appendChunkRun(runs, 3, 6, 3);
+    openhorizon::world::appendChunkRun(runs, 4, 9, 0);
+    openhorizon::world::appendChunkRun(runs, 4, 9, 3);
     CHECK(runs.size() == std::size_t{2});
     CHECK(runs[0].indexCount == 9U);
     CHECK(runs[1].chunk == 4U);
@@ -236,7 +236,8 @@ public:
     {
         cacheHome() = std::filesystem::temp_directory_path() / "fh1-tst-render-cache";
         std::filesystem::remove_all(cacheHome());
-        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache), fh::pathToUtf8(cacheHome()));
+        openhorizon::setEnvironmentVariable(
+            openhorizon::userFolderVariable(openhorizon::UserFolder::Cache), openhorizon::pathToUtf8(cacheHome()));
     }
 
     void testRunEnded(const Catch::TestRunStats& /*stats*/) override { std::filesystem::remove_all(cacheHome()); }

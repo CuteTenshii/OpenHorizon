@@ -13,11 +13,11 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// One line of a DrawText as UiRenderer::drawText() places it, in the
 /// text's own space (before DrawText::world): the pen starts at (x,
@@ -170,4 +170,4 @@ private:
     glm::vec2 m_design{1280.0F, 720.0F};
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

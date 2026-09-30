@@ -24,7 +24,7 @@
 #include <numbers>
 #include <unordered_map>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -1532,4 +1532,4 @@ glm::vec2 WorldMap::cursorExtent() const
     return glm::abs(glm::vec2(high - low));
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

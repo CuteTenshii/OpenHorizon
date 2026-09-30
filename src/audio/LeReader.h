@@ -8,7 +8,7 @@
 #include <format>
 #include <string>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// Bounds-checked reader of little-endian data. FMOD writes its FSB and FEV
 /// files little-endian even for the Xbox 360, unlike the rest of the game's
@@ -128,4 +128,4 @@ private:
     std::size_t m_pos = 0;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

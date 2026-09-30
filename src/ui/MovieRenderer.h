@@ -9,11 +9,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// The streams a movie's .def file (media/ui/videos/<name>.def, read by the
 /// scene resource loader through its "StreamDefinition" and ".def" strings)
@@ -101,4 +101,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

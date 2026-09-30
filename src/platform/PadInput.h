@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace fh {
+namespace openhorizon {
 
 /// A thumbstick's dead zone in the pad's raw units (XInput thumb values,
 /// -32768 to 32767): nothing inside `inner`, full deflection from `outer` on.
@@ -62,4 +62,4 @@ StickDeadZone controllerSteeringDeadZone(float inside, float outside);
 /// deflection past the inner edge.
 StickPosition shapeThumbstick(std::int16_t rawX, std::int16_t rawY, const StickDeadZone& deadZone);
 
-} // namespace fh
+} // namespace openhorizon

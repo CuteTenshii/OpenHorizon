@@ -7,7 +7,7 @@
 #include <format>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -134,4 +134,4 @@ std::string Localisation::resolve(std::string_view tableName, std::string_view r
     return strings->get(static_cast<std::uint16_t>(value & 0xFFFF)).value_or(std::string(reference));
 }
 
-} // namespace fh
+} // namespace openhorizon

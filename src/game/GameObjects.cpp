@@ -10,7 +10,7 @@
 #include <format>
 #include <utility>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -74,4 +74,4 @@ const GameObject* GameObjects::find(std::string_view id) const
     return nullptr;
 }
 
-} // namespace fh
+} // namespace openhorizon

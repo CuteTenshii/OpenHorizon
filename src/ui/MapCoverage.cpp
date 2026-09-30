@@ -11,7 +11,7 @@
 #include <string_view>
 #include <unordered_map>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -407,4 +407,4 @@ void MapCoverage::pruneLinks()
     }
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

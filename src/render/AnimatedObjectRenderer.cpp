@@ -15,7 +15,7 @@
 #include <format>
 #include <tuple>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -469,4 +469,4 @@ void AnimatedObjectRenderer::issue(const std::vector<DrawItem>& items)
     }
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

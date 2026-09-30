@@ -9,7 +9,7 @@
 #include <cmath>
 #include <format>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -352,4 +352,4 @@ CloudDome<CloseCloudVertex> buildCloseCloudDome()
     return dome;
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

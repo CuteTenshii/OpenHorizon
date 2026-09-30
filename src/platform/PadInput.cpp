@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -39,4 +39,4 @@ StickPosition shapeThumbstick(std::int16_t rawX, std::int16_t rawY, const StickD
         std::clamp(static_cast<float>(x) * scale, -1.0F, 1.0F), std::clamp(static_cast<float>(y) * scale, -1.0F, 1.0F)};
 }
 
-} // namespace fh
+} // namespace openhorizon

@@ -11,7 +11,7 @@
 #include <cmath>
 #include <format>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -240,4 +240,4 @@ float TimeOfDay::stars() const
     return std::clamp(m_curves.sampleScalar("StarFade", minutes()), 0.0F, 1.0F);
 }
 
-} // namespace fh
+} // namespace openhorizon

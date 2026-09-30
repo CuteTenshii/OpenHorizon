@@ -38,9 +38,9 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using fh::PostZone;
-using fh::PostZoneTracker;
-namespace post = fh::render::post;
+using openhorizon::PostZone;
+using openhorizon::PostZoneTracker;
+namespace post = openhorizon::render::post;
 
 constexpr const char* kBloom = R"(<Templates>
     <Template Name="Hazy" Cutoff="1" Scale="1.2" Persist="0.001" Weight0="3.8" Weight1="0.8" />
@@ -131,9 +131,9 @@ constexpr const char* kTrackSettings = R"(<TrackSettings Version="64">
   <Brightness value="0.2"/>
 </TrackSettings>)";
 
-fh::PostTemplates templates()
+openhorizon::PostTemplates templates()
 {
-    return fh::parsePostTemplates(kBloom, kColour, kVignette, kFog);
+    return openhorizon::parsePostTemplates(kBloom, kColour, kVignette, kFog);
 }
 
 /// A DDS volume of 16x16x16 A8R8G8B8 texels holding colour(x, y, z).
@@ -175,9 +175,9 @@ template <typename F> std::vector<std::uint8_t> ddsVolume(F colour)
     return dds;
 }
 
-fh::GradingLut identityLut()
+openhorizon::GradingLut identityLut()
 {
-    return fh::parseGradingLut(ddsVolume([](std::uint32_t x, std::uint32_t y, std::uint32_t z) {
+    return openhorizon::parseGradingLut(ddsVolume([](std::uint32_t x, std::uint32_t y, std::uint32_t z) {
         return std::array<std::uint8_t, 3>{
             static_cast<std::uint8_t>(x * 17), static_cast<std::uint8_t>(y * 17), static_cast<std::uint8_t>(z * 17)};
     }),
@@ -186,7 +186,7 @@ fh::GradingLut identityLut()
 
 TEST_CASE("templatesReadTheAttributesTheGameReads", "[postprocess]")
 {
-    const fh::PostTemplates t = templates();
+    const openhorizon::PostTemplates t = templates();
     CHECK(t.bloom.size() == std::size_t{2});
     CHECK(t.bloom[0].name == std::string("Hazy"));
     CHECK_THAT(t.bloom[0].cutoff, WithinAbs(1.0, 1e-6));
@@ -195,7 +195,7 @@ TEST_CASE("templatesReadTheAttributesTheGameReads", "[postprocess]")
 
     // The colour settings' blue post modulation comes from the red
     // attribute, as the game's loader reads it.
-    const fh::PostTemplates::ColourSettings& c = t.colourSettings.at(0);
+    const openhorizon::PostTemplates::ColourSettings& c = t.colourSettings.at(0);
     CHECK_THAT(c.desaturation, WithinAbs(0.9, 1e-6));
     CHECK_THAT(c.luminosity.y, WithinAbs(0.71, 1e-6));
     CHECK_THAT(c.postMod.x, WithinAbs(1.1, 1e-6));
@@ -205,7 +205,7 @@ TEST_CASE("templatesReadTheAttributesTheGameReads", "[postprocess]")
     CHECK_THAT(c.brightness, WithinAbs(0.125, 1e-6));
     CHECK_THAT(c.contrast, WithinAbs(0.25, 1e-6));
 
-    const fh::VignetteSettings& v = t.vignette.at(0).settings;
+    const openhorizon::VignetteSettings& v = t.vignette.at(0).settings;
     CHECK_THAT(v.angleDegrees, WithinAbs(-2.3, 1e-6));
     CHECK_THAT(v.position.y, WithinAbs(0.2, 1e-6));
     CHECK_THAT(v.scale.x, WithinAbs(0.01, 1e-6));
@@ -229,9 +229,9 @@ TEST_CASE("templatesReadTheAttributesTheGameReads", "[postprocess]")
     // Bloom, colour and vignette templates have no defaults in the game.
     bool threw = false;
     try {
-        fh::parsePostTemplates(
+        openhorizon::parsePostTemplates(
             R"(<Templates><Template Name="X" Cutoff="1" Scale="1"/></Templates>)", kColour, kVignette, kFog);
-    } catch (const fh::DataError&) {
+    } catch (const openhorizon::DataError&) {
         threw = true;
     }
     CHECK(threw);
@@ -239,7 +239,7 @@ TEST_CASE("templatesReadTheAttributesTheGameReads", "[postprocess]")
 
 TEST_CASE("zonesResolveTheirTemplatesAndKeepTheirTriangles", "[postprocess]")
 {
-    const std::vector<PostZone> zones = fh::parsePostZones(kZones, templates());
+    const std::vector<PostZone> zones = openhorizon::parsePostZones(kZones, templates());
     // The zone naming a missing template is dropped, as the loader drops it.
     CHECK(zones.size() == std::size_t{2});
     if (zones.size() != 2) {
@@ -265,7 +265,7 @@ TEST_CASE("zonesResolveTheirTemplatesAndKeepTheirTriangles", "[postprocess]")
 
 TEST_CASE("zoneBlendSnapsFromOutsideAndEasesBetweenZones", "[postprocess]")
 {
-    const std::vector<PostZone> zones = fh::parsePostZones(kZones, templates());
+    const std::vector<PostZone> zones = openhorizon::parsePostZones(kZones, templates());
     PostZoneTracker tracker;
     const float dt = 0.5F;
     tracker.update(zones, glm::vec2(-50.0F, -50.0F), dt);
@@ -308,8 +308,8 @@ TEST_CASE("zoneBlendSnapsFromOutsideAndEasesBetweenZones", "[postprocess]")
 
 TEST_CASE("trackSettingsGiveTheDefaultBlock", "[postprocess]")
 {
-    const fh::TrackPostSettings track = fh::parseTrackPostSettings(kTrackSettings);
-    const fh::PostSettings& s = track.settings;
+    const openhorizon::TrackPostSettings track = openhorizon::parseTrackPostSettings(kTrackSettings);
+    const openhorizon::PostSettings& s = track.settings;
     CHECK_THAT(s.bloomCutoff, WithinAbs(1.0, 1e-6));
     CHECK_THAT(s.bloomLowerGradient, WithinAbs(0.5, 1e-6));
     CHECK_THAT(s.bloomUpperGradient, WithinAbs(2.0, 1e-6));
@@ -336,22 +336,25 @@ TEST_CASE("trackSettingsGiveTheDefaultBlock", "[postprocess]")
 
 TEST_CASE("gradingTablesReadAndBlendAsTheGameRebuildsThem", "[postprocess]")
 {
-    const fh::GradingLut identity = identityLut();
+    const openhorizon::GradingLut identity = identityLut();
     CHECK(identity[(((5 * 16) + 3) * 16 + 2) * 4 + 0] == std::uint8_t{34});
     CHECK(identity[(((5 * 16) + 3) * 16 + 2) * 4 + 1] == std::uint8_t{51});
     CHECK(identity[(((5 * 16) + 3) * 16 + 2) * 4 + 2] == std::uint8_t{85});
-    const fh::GradingLut red = fh::parseGradingLut(ddsVolume([](std::uint32_t, std::uint32_t y, std::uint32_t z) {
+    const openhorizon::GradingLut red
+        = openhorizon::parseGradingLut(ddsVolume([](std::uint32_t, std::uint32_t y, std::uint32_t z) {
         return std::array<std::uint8_t, 3>{255, static_cast<std::uint8_t>(y * 17), static_cast<std::uint8_t>(z * 17)};
     }),
-        "red");
+            "red");
     // Day fully graded: the day table of the zone blended towards.
-    const fh::GradingLut day = fh::blendGradingLuts(identity, identity, red, identity, 1.0F, 1.0F, 0.0F);
+    const openhorizon::GradingLut day
+        = openhorizon::blendGradingLuts(identity, identity, red, identity, 1.0F, 1.0F, 0.0F);
     CHECK(day == red);
     // Nothing graded: identity whatever the tables.
-    const fh::GradingLut none = fh::blendGradingLuts(red, red, red, red, 0.3F, 0.0F, 0.0F);
+    const openhorizon::GradingLut none = openhorizon::blendGradingLuts(red, red, red, red, 0.3F, 0.0F, 0.0F);
     CHECK(none == identity);
     // Half way from identity to red: red at texel x = 0 is 0 + 0.5 * 1.
-    const fh::GradingLut half = fh::blendGradingLuts(identity, identity, red, identity, 0.5F, 1.0F, 0.0F);
+    const openhorizon::GradingLut half
+        = openhorizon::blendGradingLuts(identity, identity, red, identity, 0.5F, 1.0F, 0.0F);
     CHECK(half[0] == std::uint8_t{128});
     CHECK(half[1] == std::uint8_t{0});
 
@@ -361,8 +364,8 @@ TEST_CASE("gradingTablesReadAndBlendAsTheGameRebuildsThem", "[postprocess]")
             [](std::uint32_t, std::uint32_t, std::uint32_t) { return std::array<std::uint8_t, 3>{0, 0, 0}; });
         // Not a volume: DDSCAPS2_VOLUME cleared.
         flat[114] = 0;
-        fh::parseGradingLut(flat, "flat");
-    } catch (const fh::DataError&) {
+        openhorizon::parseGradingLut(flat, "flat");
+    } catch (const openhorizon::DataError&) {
         threw = true;
     }
     CHECK(threw);
@@ -459,7 +462,7 @@ void release(Picture& p)
 
 /// The combine's output for a uniform scene of square-root colour `s` with
 /// no bloom, grading or vignette, from the traced formulas.
-float expectedUniform(float s, const fh::render::PostFrame& frame, float bloomSquared)
+float expectedUniform(float s, const openhorizon::render::PostFrame& frame, float bloomSquared)
 {
     const float linear = s * s + bloomSquared;
     const float luminance = s * s;
@@ -469,9 +472,9 @@ float expectedUniform(float s, const fh::render::PostFrame& frame, float bloomSq
     return std::sqrt(std::clamp(mapped, 0.0F, 1.0F));
 }
 
-fh::render::PostFrame uniformFrame()
+openhorizon::render::PostFrame uniformFrame()
 {
-    fh::render::PostFrame f;
+    openhorizon::render::PostFrame f;
     f.luminanceKeys = glm::vec4(0.0F, 4.0F, 13.0F, 65.0F) / 255.0F;
     f.exposures = glm::vec4(1.3F, 0.437F, 0.001F, -0.8F);
     f.exposureBias = 0.31F;
@@ -484,7 +487,7 @@ fh::render::PostFrame uniformFrame()
 
 TEST_CASE("gpuChainTonemapsAUniformPictureAsTheFormulasDo", "[postprocess]")
 {
-    fh::test::requireGlContext();
+    openhorizon::test::requireGlContext();
     constexpr int kWidth = 160;
     constexpr int kHeight = 90;
     Picture scene = picture(kWidth, kHeight, GL_RGBA16F);
@@ -492,7 +495,7 @@ TEST_CASE("gpuChainTonemapsAUniformPictureAsTheFormulasDo", "[postprocess]")
     const float s = 0.5F;
     const float colour[4] = {s, s, s, 1.0F};
     glClearNamedFramebufferfv(scene.framebuffer, GL_COLOR, 0, colour);
-    fh::render::PostProcess postProcess;
+    openhorizon::render::PostProcess postProcess;
     const auto centre = [&] {
         std::array<std::uint8_t, 4> pixel{};
         glBindFramebuffer(GL_FRAMEBUFFER, out.framebuffer);
@@ -501,7 +504,7 @@ TEST_CASE("gpuChainTonemapsAUniformPictureAsTheFormulasDo", "[postprocess]")
     };
 
     // No bloom (scale 0): the tonemapped scene alone.
-    fh::render::PostFrame frame = uniformFrame();
+    openhorizon::render::PostFrame frame = uniformFrame();
     postProcess.run(scene.texture, kWidth, kHeight, out.framebuffer, frame);
     CHECK_THAT(centre(), WithinAbs(expectedUniform(s, frame, 0.0F), 1.5 / 255.0));
 
@@ -538,20 +541,20 @@ TEST_CASE("gpuChainTonemapsAUniformPictureAsTheFormulasDo", "[postprocess]")
 
 TEST_CASE("gpuCombineDrawsEachHalfWithItsVignette", "[postprocess]")
 {
-    fh::test::requireGlContext();
+    openhorizon::test::requireGlContext();
     constexpr int kWidth = 64;
     constexpr int kHeight = 36;
     Picture scene = picture(kWidth, kHeight, GL_RGBA16F);
     Picture out = picture(kWidth, kHeight, GL_RGBA8);
     const float colour[4] = {0.5F, 0.5F, 0.5F, 1.0F};
     glClearNamedFramebufferfv(scene.framebuffer, GL_COLOR, 0, colour);
-    fh::render::PostFrame frame = uniformFrame();
+    openhorizon::render::PostFrame frame = uniformFrame();
     // A top vignette with power 0 covers everything: black at full
     // strength. The bottom one is off.
     frame.vignetteTop.transform = glm::vec4(1.0F, 0.0F, 0.0F, 1.0F);
     frame.vignetteTop.power = 0.0F;
     frame.vignetteTop.colour = glm::vec4(0.0F, 0.0F, 0.0F, 1.0F);
-    fh::render::PostProcess postProcess;
+    openhorizon::render::PostProcess postProcess;
     postProcess.run(scene.texture, kWidth, kHeight, out.framebuffer, frame);
     std::array<std::uint8_t, 4> top{};
     std::array<std::uint8_t, 4> bottom{};
@@ -568,17 +571,17 @@ TEST_CASE("gpuCombineDrawsEachHalfWithItsVignette", "[postprocess]")
 // for the record.
 TEST_CASE("gpuChainTimeAt720p", "[postprocess]")
 {
-    fh::test::requireGlContext();
+    openhorizon::test::requireGlContext();
     constexpr int kWidth = 1280;
     constexpr int kHeight = 720;
     Picture scene = picture(kWidth, kHeight, GL_RGBA16F);
     Picture out = picture(kWidth, kHeight, GL_RGBA8);
     const float colour[4] = {0.5F, 0.4F, 0.3F, 1.0F};
     glClearNamedFramebufferfv(scene.framebuffer, GL_COLOR, 0, colour);
-    fh::render::PostProcess postProcess;
-    fh::render::PostFrame frame = uniformFrame();
+    openhorizon::render::PostProcess postProcess;
+    openhorizon::render::PostFrame frame = uniformFrame();
     frame.bloomScale = 1.0F;
-    const fh::GradingLut lut = identityLut();
+    const openhorizon::GradingLut lut = identityLut();
     frame.gradingLut = lut;
     GLuint query = 0;
     glGenQueries(1, &query);
@@ -606,7 +609,8 @@ TEST_CASE("gpuChainTimeAt720p", "[postprocess]")
 /// luminance, the filmic curve, the grading table sampled trilinearly at
 /// the texel centres, the vignette at `v` (the pixel's offset from the
 /// picture's centre, y down) and the colour matrix. Red channel, 0..1.
-float referenceCombine(float s, const fh::render::PostFrame& f, const fh::render::PostVignette& vignette, glm::vec2 v)
+float referenceCombine(
+    float s, const openhorizon::render::PostFrame& f, const openhorizon::render::PostVignette& vignette, glm::vec2 v)
 {
     const float luminance = s * s;
     const float exposure = std::exp2(post::exposureLog2(luminance, f.luminanceKeys, f.exposures, f.exposureBias));
@@ -663,17 +667,18 @@ float referenceCombine(float s, const fh::render::PostFrame& f, const fh::render
 // Inner_Festival zone), against the traced formulas.
 TEST_CASE("coloradoNoonShadowAndSunComeOutAsTheFormulasGive", "[postprocess]")
 {
-    const char* dir = fh::test::gameDir();
-    fh::test::requireGlContext();
-    fh::Vfs vfs;
-    vfs.mountDisc(fh::pathFromUtf8(dir));
-    fh::PostProcessing p = fh::PostProcessing::load(vfs, "colorado");
-    const fh::TimeOfDayCurves curves = fh::TimeOfDayCurves::load(vfs, "colorado");
+    const char* dir = openhorizon::test::gameDir();
+    openhorizon::test::requireGlContext();
+    openhorizon::Vfs vfs;
+    vfs.mountDisc(openhorizon::pathFromUtf8(dir));
+    openhorizon::PostProcessing p = openhorizon::PostProcessing::load(vfs, "colorado");
+    const openhorizon::TimeOfDayCurves curves = openhorizon::TimeOfDayCurves::load(vfs, "colorado");
     p.update(glm::vec2(-1366.0F, -377.0F), 1.0F / 60.0F, curves, 12.0F * 60.0F);
     CHECK(std::string(p.zoneName()) == std::string("Inner_Festival"));
     constexpr int kWidth = 1280;
     constexpr int kHeight = 720;
-    const fh::render::PostFrame frame = p.frame(static_cast<float>(kWidth) / static_cast<float>(kHeight), true);
+    const openhorizon::render::PostFrame frame
+        = p.frame(static_cast<float>(kWidth) / static_cast<float>(kHeight), true);
     Picture scene = picture(kWidth, kHeight, GL_RGBA16F);
     Picture out = picture(kWidth, kHeight, GL_RGBA8);
     // A pixel low in the picture, where the road is: in the bottom half.
@@ -687,7 +692,7 @@ TEST_CASE("coloradoNoonShadowAndSunComeOutAsTheFormulasGive", "[postprocess]")
     for (std::size_t i = 0; i < values.size(); ++i) {
         const float colour[4] = {values[i], values[i], values[i], 1.0F};
         glClearNamedFramebufferfv(scene.framebuffer, GL_COLOR, 0, colour);
-        fh::render::PostProcess postProcess;
+        openhorizon::render::PostProcess postProcess;
         postProcess.run(scene.texture, kWidth, kHeight, out.framebuffer, frame);
         std::array<std::uint8_t, 4> pixel{};
         glBindFramebuffer(GL_FRAMEBUFFER, out.framebuffer);
@@ -704,13 +709,13 @@ TEST_CASE("coloradoNoonShadowAndSunComeOutAsTheFormulasGive", "[postprocess]")
 
 TEST_CASE("coloradoPostProcessingLoadsAndFollowsItsZones", "[postprocess]")
 {
-    const char* dir = fh::test::gameDir();
-    fh::Vfs vfs;
-    vfs.mountDisc(fh::pathFromUtf8(dir));
-    fh::PostProcessing p = fh::PostProcessing::load(vfs, "colorado");
+    const char* dir = openhorizon::test::gameDir();
+    openhorizon::Vfs vfs;
+    vfs.mountDisc(openhorizon::pathFromUtf8(dir));
+    openhorizon::PostProcessing p = openhorizon::PostProcessing::load(vfs, "colorado");
     // Every one of the sixteen zones names templates that exist.
     CHECK(p.zones().size() == std::size_t{16});
-    const fh::TimeOfDayCurves curves = fh::TimeOfDayCurves::load(vfs, "colorado");
+    const openhorizon::TimeOfDayCurves curves = openhorizon::TimeOfDayCurves::load(vfs, "colorado");
     const float noon = 12.0F * 60.0F;
     // Outside every zone: TrackSettings' block times the curves.
     p.update(glm::vec2(20000.0F, 20000.0F), 1.0F / 60.0F, curves, noon);
@@ -732,7 +737,7 @@ TEST_CASE("coloradoPostProcessingLoadsAndFollowsItsZones", "[postprocess]")
     CHECK_THAT(p.settings().vignetteBottom.minIntensity, WithinAbs(0.749, 1e-5));
     // At noon the day grading applies in full: the Redrock table, not the
     // identity.
-    const fh::GradingLut identity = identityLut();
+    const openhorizon::GradingLut identity = identityLut();
     CHECK(p.gradingLut() != identity);
     // At night the filmic curve is the night one.
     const float midnight = 0.0F;
@@ -751,8 +756,8 @@ public:
 
     void testRunStarting(const Catch::TestRunInfo& /*info*/) override
     {
-        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Cache),
-            fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-postprocess-cache"));
+        openhorizon::setEnvironmentVariable(openhorizon::userFolderVariable(openhorizon::UserFolder::Cache),
+            openhorizon::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-postprocess-cache"));
     }
 };
 

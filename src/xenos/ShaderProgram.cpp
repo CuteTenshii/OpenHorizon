@@ -7,7 +7,7 @@
 #include <cstring>
 #include <format>
 
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 namespace {
 
@@ -242,4 +242,4 @@ std::array<std::uint8_t, ControlConstants::kBytes> ControlConstants::pack() cons
     return bytes;
 }
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

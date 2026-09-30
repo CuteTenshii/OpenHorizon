@@ -21,7 +21,7 @@
 #include <map>
 #include <utility>
 
-namespace fh::carmodel {
+namespace openhorizon::carmodel {
 
 namespace {
 
@@ -959,4 +959,4 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
     return model;
 }
 
-} // namespace fh::carmodel
+} // namespace openhorizon::carmodel

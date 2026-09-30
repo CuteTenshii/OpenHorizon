@@ -15,11 +15,11 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::physics {
+namespace openhorizon::physics {
 
 /// A point where a sphere overlaps the world.
 struct SphereContact {
@@ -131,4 +131,4 @@ private:
     std::vector<bool> m_excluded;
 };
 
-} // namespace fh::physics
+} // namespace openhorizon::physics

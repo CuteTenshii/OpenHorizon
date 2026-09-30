@@ -7,11 +7,11 @@
 
 #include <cstddef>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::render {
+namespace openhorizon::render {
 
 struct FrameParams;
 
@@ -104,4 +104,4 @@ private:
     GLsizei m_closeIndexCount = 0;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

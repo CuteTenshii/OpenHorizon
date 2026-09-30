@@ -39,7 +39,8 @@ void printUsage()
                 "Other choices are settings in the same file: car (a media name such as\n"
                 "ALF_8C_08), track, manual (gearbox), metric (speedometer), vsync, and debug\n"
                 "(verbose console and OpenGL debug output).\n",
-        fh::pathToUtf8(fh::Settings::defaultPath()).c_str(), fh::pathToUtf8(fh::defaultLogPath()).c_str());
+        openhorizon::pathToUtf8(openhorizon::Settings::defaultPath()).c_str(),
+        openhorizon::pathToUtf8(openhorizon::defaultLogPath()).c_str());
 }
 
 /// What is wrong with `folder` as the extracted disc, in words for the
@@ -47,7 +48,7 @@ void printUsage()
 /// media/) or the media folder itself, as Vfs accepts.
 std::optional<std::string> gameFolderProblem(const std::filesystem::path& folder)
 {
-    const std::string name = fh::pathToUtf8(folder);
+    const std::string name = openhorizon::pathToUtf8(folder);
     std::error_code error;
     const std::filesystem::file_status status = std::filesystem::status(folder, error);
     if (status.type() == std::filesystem::file_type::not_found) {
@@ -74,24 +75,26 @@ std::optional<std::string> gameFolderProblem(const std::filesystem::path& folder
 /// when no log could be written.
 std::string logPointer(const std::filesystem::path& logPath)
 {
-    return logPath.empty() ? std::string()
-                           : std::format("\n\nThe log file records what happened:\n{}", fh::pathToUtf8(logPath));
+    return logPath.empty()
+        ? std::string()
+        : std::format("\n\nThe log file records what happened:\n{}", openhorizon::pathToUtf8(logPath));
 }
 
 } // namespace
 
 int main(int argc, char** argv)
 {
-    const std::vector<std::string> arguments = fh::commandLineArguments(argc, argv);
-    const std::string title = fh::WindowOptions().title;
-    if (const std::optional<fh::CrashReport> report = fh::parseCrashReportArguments(arguments)) {
-        fh::showErrorDialog(title, fh::crashDialogText(*report, fh::crashDumpPath(report->logPath)));
+    const std::vector<std::string> arguments = openhorizon::commandLineArguments(argc, argv);
+    const std::string title = openhorizon::WindowOptions().title;
+    if (const std::optional<openhorizon::CrashReport> report = openhorizon::parseCrashReportArguments(arguments)) {
+        openhorizon::showErrorDialog(
+            title, openhorizon::crashDialogText(*report, openhorizon::crashDumpPath(report->logPath)));
         return 0;
     }
 
-    fh::Settings settings = fh::Settings::load();
-    fh::GameOptions options;
-    fh::WindowOptions window;
+    openhorizon::Settings settings = openhorizon::Settings::load();
+    openhorizon::GameOptions options;
+    openhorizon::WindowOptions window;
     window.width = static_cast<int>(settings.getFloat("width", 1600.0F));
     window.height = static_cast<int>(settings.getFloat("height", 900.0F));
     window.fullscreen = settings.getBool("fullscreen", false);
@@ -101,13 +104,13 @@ int main(int argc, char** argv)
     options.manualGearbox = settings.getBool("manual", false);
     options.metric = settings.getBool("metric", true);
     if (settings.getBool("debug", false)) {
-        fh::setLogLevel(fh::LogLevel::Debug);
+        openhorizon::setLogLevel(openhorizon::LogLevel::Debug);
         window.glDebug = true;
     }
 
-    std::filesystem::path logPath = fh::defaultLogPath();
+    std::filesystem::path logPath = openhorizon::defaultLogPath();
     std::string gameDir = settings.get("game", "");
-    if (std::optional<std::string> env = fh::environmentVariable("FH1_GAME_DIR")) {
+    if (std::optional<std::string> env = openhorizon::environmentVariable("FH1_GAME_DIR")) {
         gameDir = std::move(*env);
     }
     for (std::size_t i = 1; i < arguments.size(); ++i) {
@@ -131,39 +134,40 @@ int main(int argc, char** argv)
         } else if (arg == "--fullscreen") {
             window.fullscreen = true;
         } else if (arg == "--log") {
-            logPath = fh::pathFromUtf8(value());
+            logPath = openhorizon::pathFromUtf8(value());
         } else {
             std::fprintf(stderr, "unknown option %s\n", arg.c_str());
             printUsage();
             return 2;
         }
     }
-    const std::filesystem::path shownLog = fh::openLogFile(logPath) ? logPath : std::filesystem::path();
-    fh::CrashHandlerOptions crash;
+    const std::filesystem::path shownLog = openhorizon::openLogFile(logPath) ? logPath : std::filesystem::path();
+    openhorizon::CrashHandlerOptions crash;
     crash.logPath = shownLog;
-    if (fh::errorDialogsAllowed()) {
-        crash.reporter = fh::currentExecutablePath();
+    if (openhorizon::errorDialogsAllowed()) {
+        crash.reporter = openhorizon::currentExecutablePath();
     }
-    crash.minidumpPath = fh::crashDumpPath(logPath);
-    fh::installCrashHandlers(crash);
+    crash.minidumpPath = openhorizon::crashDumpPath(logPath);
+    openhorizon::installCrashHandlers(crash);
 
     const std::string chooseFolder = "Start the game with --game followed by the folder you extracted the disc to "
                                      "(the one holding the media folder).";
     if (gameDir.empty()) {
-        fh::logError("no game folder given");
+        openhorizon::logError("no game folder given");
         std::fprintf(stderr, "No game folder given.\n\n");
         printUsage();
-        fh::showErrorDialog(
-            title, fh::startupErrorText("No game folder is set.", chooseFolder + " The game remembers it after that."));
+        openhorizon::showErrorDialog(title,
+            openhorizon::startupErrorText(
+                "No game folder is set.", chooseFolder + " The game remembers it after that."));
         return 2;
     }
-    options.gameDir = fh::pathFromUtf8(gameDir);
+    options.gameDir = openhorizon::pathFromUtf8(gameDir);
     if (const std::optional<std::string> problem = gameFolderProblem(options.gameDir)) {
-        fh::logError("{}", *problem);
-        fh::showErrorDialog(title,
-            fh::startupErrorText(*problem,
+        openhorizon::logError("{}", *problem);
+        openhorizon::showErrorDialog(title,
+            openhorizon::startupErrorText(*problem,
                 std::format("{} If the game remembered this folder from an earlier start, change the game line in {}.",
-                    chooseFolder, fh::pathToUtf8(fh::Settings::defaultPath()))));
+                    chooseFolder, openhorizon::pathToUtf8(openhorizon::Settings::defaultPath()))));
         return 2;
     }
     // Remember the folder so the next start needs no options; only once it
@@ -174,40 +178,42 @@ int main(int argc, char** argv)
     }
 
     // Outside the try, so the error box below can open over the window.
-    std::optional<fh::Window> win;
+    std::optional<openhorizon::Window> win;
     try {
         try {
             win.emplace(window);
-        } catch (const fh::GraphicsDriverError& e) {
-            fh::logError("{}", e.what());
-            fh::showErrorDialog(title,
-                fh::startupErrorText("The graphics driver does not offer OpenGL 4.5, which the game needs.",
+        } catch (const openhorizon::GraphicsDriverError& e) {
+            openhorizon::logError("{}", e.what());
+            openhorizon::showErrorDialog(title,
+                openhorizon::startupErrorText("The graphics driver does not offer OpenGL 4.5, which the game needs.",
                     "Update the graphics driver, then start the game again." + logPointer(shownLog)));
             return 1;
         } catch (const std::exception& e) {
-            fh::logError("{}", e.what());
-            fh::showErrorDialog(title,
-                fh::startupErrorText("The game window could not be opened.",
+            openhorizon::logError("{}", e.what());
+            openhorizon::showErrorDialog(title,
+                openhorizon::startupErrorText("The game window could not be opened.",
                     "Check that a desktop session is running, then start the game again." + logPointer(shownLog)));
             return 1;
         }
         {
             // Closed before the game starts, so its audio device is gone
             // when the game opens one.
-            fh::Title titleScreen(*win, options.gameDir);
+            openhorizon::Title titleScreen(*win, options.gameDir);
             if (!titleScreen.run()) {
                 return 0;
             }
         }
-        fh::Game game(*win, options);
+        openhorizon::Game game(*win, options);
         return game.run();
-    } catch (const fh::DataError& e) {
-        fh::logError("{}", e.what());
-        fh::showErrorDialog(title, fh::gameDataErrorText(e.what(), shownLog), win ? win->sdlWindow() : nullptr);
+    } catch (const openhorizon::DataError& e) {
+        openhorizon::logError("{}", e.what());
+        openhorizon::showErrorDialog(
+            title, openhorizon::gameDataErrorText(e.what(), shownLog), win ? win->sdlWindow() : nullptr);
         return 1;
     } catch (const std::exception& e) {
-        fh::logError("{}", e.what());
-        fh::showErrorDialog(title, fh::crashDialogText({shownLog, e.what()}), win ? win->sdlWindow() : nullptr);
+        openhorizon::logError("{}", e.what());
+        openhorizon::showErrorDialog(
+            title, openhorizon::crashDialogText({shownLog, e.what()}), win ? win->sdlWindow() : nullptr);
         return 1;
     }
 }

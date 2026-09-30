@@ -14,14 +14,14 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 struct InputState;
-} // namespace fh
+} // namespace openhorizon
 
 /// Pieces the game's front-end screens share: the string tables by name,
 /// the pad input a screen reads, and the help button bar most scenes carry.
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// The game's string tables, looked up by table name and string id as the
 /// executable does (0x82d6d6d8 takes a table name such as "PauseMenu" and a
@@ -270,4 +270,4 @@ template <typename Measure> std::string wrapText(std::string_view text, float wi
     return out;
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

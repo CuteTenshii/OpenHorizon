@@ -3,11 +3,11 @@
 #include <optional>
 #include <string_view>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh {
+namespace openhorizon {
 
 /// The values of a render scenario (`media/renderscenarios/<name>.xml`, a
 /// DynamicRenderSettings document) this game uses.
@@ -40,4 +40,4 @@ struct RenderScenario {
     static RenderScenario stacked(const Vfs& vfs, std::string_view top);
 };
 
-} // namespace fh
+} // namespace openhorizon

@@ -11,11 +11,11 @@
 #include <string>
 #include <string_view>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 /// The radio's files on the disc, under media/audio/radio (verified: the
 /// paths are built at 0x82c9caa0 from "Game:\Media\Audio\Radio\" and the
@@ -74,4 +74,4 @@ private:
     std::shared_ptr<BankFile> m_voice;
 };
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

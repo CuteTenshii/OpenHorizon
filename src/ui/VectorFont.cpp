@@ -10,7 +10,7 @@
 #include <cmath>
 #include <limits>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -341,4 +341,4 @@ const VectorFont* FontLibrary::load(const std::string& target)
     return result;
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

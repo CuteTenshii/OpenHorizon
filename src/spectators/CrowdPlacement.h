@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 /// One spectator as a crowd placement set stores it.
 struct PlacedSpectator {
@@ -148,4 +148,4 @@ struct LegacyCrowdFile {
 /// than 12 bytes.
 LegacyCrowdFile parseLegacyCrowdFile(ByteView data, const std::string& source);
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

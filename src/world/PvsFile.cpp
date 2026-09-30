@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -101,4 +101,4 @@ PvsTables readPvs(ByteView pvs)
     return tables;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

@@ -15,7 +15,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::carmodel {
+namespace openhorizon::carmodel {
 
 /// A car render model file (`*.carbin`): a car's exterior or cockpit, a
 /// wheel, or a brake rotor or caliper.
@@ -283,4 +283,4 @@ void appendTriangles(std::span<const std::uint32_t> indices, std::uint32_t primi
     std::vector<std::uint32_t>& out);
 
 } // namespace carbin
-} // namespace fh::carmodel
+} // namespace openhorizon::carmodel

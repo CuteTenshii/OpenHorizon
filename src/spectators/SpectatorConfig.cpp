@@ -4,7 +4,7 @@
 
 #include <pugixml.hpp>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 namespace {
 
@@ -112,4 +112,4 @@ int SpectatorConfig::findSkeleton(std::string_view name) const
     return findByName(skeletons, name);
 }
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

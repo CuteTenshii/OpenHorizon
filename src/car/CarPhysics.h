@@ -9,7 +9,7 @@
 #include <span>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 /// What a suspension ray found below a wheel.
 struct GroundHit {
@@ -329,4 +329,4 @@ void findCarContacts(const CarPhysics& a, std::span<const CarSpec::CollisionSphe
 float resolveCarContacts(
     CarPhysics& a, CarPhysics& b, std::span<const CarContact> contacts, float turnA, float turnB, float restitution);
 
-} // namespace fh
+} // namespace openhorizon

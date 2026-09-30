@@ -4,7 +4,7 @@
 #include <string_view>
 #include <unordered_map>
 
-namespace fh {
+namespace openhorizon {
 
 class Database;
 class Vfs;
@@ -100,4 +100,4 @@ struct CarCameras {
     static CarCameras load(const CameraSettings& settings, const Database& db, int carId);
 };
 
-} // namespace fh
+} // namespace openhorizon

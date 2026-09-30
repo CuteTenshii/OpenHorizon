@@ -5,7 +5,7 @@
 #include <array>
 #include <cstdint>
 
-namespace fh::render::envcube {
+namespace openhorizon::render::envcube {
 
 /// Edge of the dynamic environment cube in texels. Verified: the renderer's
 /// creation descriptor takes it from the game options (0x824B40B0-
@@ -135,4 +135,4 @@ glm::vec2 sphereCoordinates(const glm::vec3& d);
 float gameAtan2(float y, float x);
 float gameAcos(float x);
 
-} // namespace fh::render::envcube
+} // namespace openhorizon::render::envcube

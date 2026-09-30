@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -114,4 +114,4 @@ const TrafficConfig::Settings* TrafficConfig::find(std::string_view name) const
     return it == settings.end() ? nullptr : &it->second;
 }
 
-} // namespace fh
+} // namespace openhorizon

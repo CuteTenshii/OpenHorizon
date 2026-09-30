@@ -6,7 +6,7 @@
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_messagebox.h>
 
-namespace fh {
+namespace openhorizon {
 
 bool showErrorDialog(const std::string& title, const std::string& message, SDL_Window* parent)
 {
@@ -20,4 +20,4 @@ bool showErrorDialog(const std::string& title, const std::string& message, SDL_W
     return true;
 }
 
-} // namespace fh
+} // namespace openhorizon

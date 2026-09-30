@@ -17,7 +17,7 @@
 #include <optional>
 #include <utility>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -361,4 +361,4 @@ std::size_t CollisionSounds::scrapesPlaying() const
         [](const Contact& c) { return c.scrape != nullptr && c.scrape->isStarted(); }));
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

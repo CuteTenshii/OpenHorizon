@@ -9,7 +9,7 @@
 #include <cmath>
 #include <numbers>
 
-namespace fh::particles {
+namespace openhorizon::particles {
 namespace {
 
 /// 0x82000D44, the factor the loader multiplies degree fields by.
@@ -394,4 +394,4 @@ bool isCompositeName(std::string_view file)
     return lower(file).starts_with("_composite_");
 }
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

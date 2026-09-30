@@ -44,7 +44,7 @@ constexpr const char* kReportOutVariable = "FH1_TST_CRASH_REPORT_OUT";
 
 std::filesystem::path scratchFolder()
 {
-    return std::filesystem::temp_directory_path() / std::format("fh1-tst-crash-{}", fh::processId());
+    return std::filesystem::temp_directory_path() / std::format("fh1-tst-crash-{}", openhorizon::processId());
 }
 
 std::string readFile(const std::filesystem::path& path)
@@ -87,14 +87,14 @@ struct ChildEnd {
 
 ChildEnd runChild(const std::vector<std::string>& arguments)
 {
-    const std::filesystem::path self = fh::currentExecutablePath();
+    const std::filesystem::path self = openhorizon::currentExecutablePath();
     ChildEnd end;
 #ifdef _WIN32
-    std::string commandLine = fh::windowsCommandLineArgument(fh::pathToUtf8(self));
+    std::string commandLine = openhorizon::windowsCommandLineArgument(openhorizon::pathToUtf8(self));
     for (const std::string& argument : arguments) {
-        commandLine += ' ' + fh::windowsCommandLineArgument(argument);
+        commandLine += ' ' + openhorizon::windowsCommandLineArgument(argument);
     }
-    std::wstring wide = fh::pathFromUtf8(commandLine).native();
+    std::wstring wide = openhorizon::pathFromUtf8(commandLine).native();
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
@@ -140,8 +140,8 @@ std::pair<ChildEnd, std::string> crash(std::string_view kind, bool withReporter 
     const std::filesystem::path folder = scratchFolder() / kind;
     std::filesystem::create_directories(folder);
     const std::filesystem::path log = folder / "fh1.log";
-    const ChildEnd end
-        = runChild({std::string(kChildArgument), std::string(kind), fh::pathToUtf8(log), withReporter ? "1" : "0"});
+    const ChildEnd end = runChild(
+        {std::string(kChildArgument), std::string(kind), openhorizon::pathToUtf8(log), withReporter ? "1" : "0"});
     return {end, readFile(log)};
 }
 
@@ -216,7 +216,7 @@ TEST_CASE("uncaught_data_error_logs_its_type_and_message", "[crash]")
 {
     const auto [end, log] = crash("dataerror");
     checkEndedWithSignal(end, SIGABRT, 3);
-    checkReport(log, "uncaught exception fh::DataError: media/missing.xml: cannot open");
+    checkReport(log, "uncaught exception openhorizon::DataError: media/missing.xml: cannot open");
 }
 
 TEST_CASE("crash_starts_the_reporter_with_the_log_and_the_message", "[crash]")
@@ -224,9 +224,9 @@ TEST_CASE("crash_starts_the_reporter_with_the_log_and_the_message", "[crash]")
     const std::filesystem::path out = scratchFolder() / "reporter.txt";
     std::filesystem::create_directories(scratchFolder());
     std::filesystem::remove(out);
-    fh::setEnvironmentVariable(kReportOutVariable, fh::pathToUtf8(out));
+    openhorizon::setEnvironmentVariable(kReportOutVariable, openhorizon::pathToUtf8(out));
     const auto [end, log] = crash("exception", true);
-    fh::unsetEnvironmentVariable(kReportOutVariable);
+    openhorizon::unsetEnvironmentVariable(kReportOutVariable);
     checkEndedWithSignal(end, SIGABRT, 3);
     // The reporter is not waited for by the crashed process, so it may
     // still be starting.
@@ -238,7 +238,7 @@ TEST_CASE("crash_starts_the_reporter_with_the_log_and_the_message", "[crash]")
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
-    const std::string logPath = fh::pathToUtf8(scratchFolder() / "exception" / "fh1.log");
+    const std::string logPath = openhorizon::pathToUtf8(scratchFolder() / "exception" / "fh1.log");
     CHECK(arguments == "--crash-report=" + logPath + "\n--crash-detail=boom from tst_crash\n");
 }
 
@@ -247,32 +247,32 @@ TEST_CASE("crash_dialog_text_names_the_log", "[crash]")
     const std::filesystem::path folder = scratchFolder() / "text";
     std::filesystem::create_directories(folder);
     const std::filesystem::path log = folder / "fh1.log";
-    const std::string logName = fh::pathToUtf8(log);
-    CHECK(fh::crashDialogText({log, ""})
+    const std::string logName = openhorizon::pathToUtf8(log);
+    CHECK(openhorizon::crashDialogText({log, ""})
         == "Forza Horizon has stopped unexpectedly.\n\n"
            "It ran into a problem it could not recover from.\n\n"
            "The log file records what happened:\n"
             + logName + "\n\nPlease attach it to your bug report.");
-    CHECK(fh::crashDialogText({log, "media/x.xml: cannot open"})
+    CHECK(openhorizon::crashDialogText({log, "media/x.xml: cannot open"})
         == "Forza Horizon has stopped unexpectedly.\n\n"
            "media/x.xml: cannot open\n\n"
            "The log file records what happened:\n"
             + logName + "\n\nPlease attach it to your bug report.");
 
     // A dump is named only when there is one.
-    const std::filesystem::path dump = fh::crashDumpPath(log);
+    const std::filesystem::path dump = openhorizon::crashDumpPath(log);
     CHECK(dump == folder / "fh1.dmp");
     std::filesystem::remove(dump);
-    CHECK(fh::crashDialogText({log, ""}, dump).find("dump") == std::string::npos);
+    CHECK(openhorizon::crashDialogText({log, ""}, dump).find("dump") == std::string::npos);
     std::ofstream(dump) << "MDMP";
-    CHECK(fh::crashDialogText({log, ""}, dump)
+    CHECK(openhorizon::crashDialogText({log, ""}, dump)
         == "Forza Horizon has stopped unexpectedly.\n\n"
            "It ran into a problem it could not recover from.\n\n"
            "The log file records what happened:\n"
-            + logName + "\n\nA crash dump was saved next to it:\n" + fh::pathToUtf8(dump)
+            + logName + "\n\nA crash dump was saved next to it:\n" + openhorizon::pathToUtf8(dump)
             + "\n\nPlease attach both files to your bug report.");
 
-    CHECK(fh::crashDialogText({{}, ""})
+    CHECK(openhorizon::crashDialogText({{}, ""})
         == "Forza Horizon has stopped unexpectedly.\n\n"
            "It ran into a problem it could not recover from.\n\n"
            "No log file could be written for this run.");
@@ -280,17 +280,18 @@ TEST_CASE("crash_dialog_text_names_the_log", "[crash]")
 
 TEST_CASE("startup_and_data_error_texts", "[crash]")
 {
-    CHECK(fh::startupErrorText("No game folder is set.", "Start the game with --game.")
+    CHECK(openhorizon::startupErrorText("No game folder is set.", "Start the game with --game.")
         == "Forza Horizon could not start.\n\nNo game folder is set.\n\nStart the game with --game.");
-    const std::filesystem::path log = fh::pathFromUtf8("/home/player/fh1.log");
-    CHECK(fh::gameDataErrorText("media/db/gamedb.slt: cannot open", log)
+    const std::filesystem::path log = openhorizon::pathFromUtf8("/home/player/fh1.log");
+    CHECK(openhorizon::gameDataErrorText("media/db/gamedb.slt: cannot open", log)
         == "Forza Horizon has stopped because it could not read one of the game's files.\n\n"
            "media/db/gamedb.slt: cannot open\n\n"
            "Check that the game folder holds a complete copy of the disc.\n\n"
            "The log file records what happened:\n"
-            + fh::pathToUtf8(log));
+            + openhorizon::pathToUtf8(log));
     // User-visible text avoids em dashes.
-    for (const std::string& text : {fh::crashDialogText({log, ""}), fh::gameDataErrorText("x", log)}) {
+    for (const std::string& text :
+        {openhorizon::crashDialogText({log, ""}), openhorizon::gameDataErrorText("x", log)}) {
         CHECK(text.find("\xE2\x80\x94") == std::string::npos);
     }
 }
@@ -298,78 +299,79 @@ TEST_CASE("startup_and_data_error_texts", "[crash]")
 TEST_CASE("crash_report_arguments", "[crash]")
 {
     const std::vector<std::string> report = {"fh1", "--crash-report=/tmp/fh1.log", "--crash-detail=a \"quoted\" line"};
-    const std::optional<fh::CrashReport> parsed = fh::parseCrashReportArguments(report);
+    const std::optional<openhorizon::CrashReport> parsed = openhorizon::parseCrashReportArguments(report);
     CHECK(parsed.has_value());
     if (parsed) {
-        CHECK(parsed->logPath == fh::pathFromUtf8("/tmp/fh1.log"));
+        CHECK(parsed->logPath == openhorizon::pathFromUtf8("/tmp/fh1.log"));
         CHECK(parsed->detail == "a \"quoted\" line");
     }
     const std::vector<std::string> plain = {"fh1", "--crash-report="};
-    CHECK(fh::parseCrashReportArguments(plain).has_value());
+    CHECK(openhorizon::parseCrashReportArguments(plain).has_value());
     const std::vector<std::string> game = {"fh1", "--game", "/disc", "--crash-report=/tmp/fh1.log"};
-    CHECK(!fh::parseCrashReportArguments(game).has_value());
+    CHECK(!openhorizon::parseCrashReportArguments(game).has_value());
     const std::vector<std::string> none = {"fh1"};
-    CHECK(!fh::parseCrashReportArguments(none).has_value());
+    CHECK(!openhorizon::parseCrashReportArguments(none).has_value());
 }
 
 TEST_CASE("windows_command_line_quoting", "[crash]")
 {
-    CHECK(fh::windowsCommandLineArgument("plain") == "\"plain\"");
-    CHECK(fh::windowsCommandLineArgument("two words") == "\"two words\"");
-    CHECK(fh::windowsCommandLineArgument("say \"hi\"") == "\"say \\\"hi\\\"\"");
-    CHECK(fh::windowsCommandLineArgument("C:\\dir\\") == "\"C:\\dir\\\\\"");
-    CHECK(fh::windowsCommandLineArgument("a\\\"b") == "\"a\\\\\\\"b\"");
-    CHECK(fh::windowsCommandLineArgument("") == "\"\"");
+    CHECK(openhorizon::windowsCommandLineArgument("plain") == "\"plain\"");
+    CHECK(openhorizon::windowsCommandLineArgument("two words") == "\"two words\"");
+    CHECK(openhorizon::windowsCommandLineArgument("say \"hi\"") == "\"say \\\"hi\\\"\"");
+    CHECK(openhorizon::windowsCommandLineArgument("C:\\dir\\") == "\"C:\\dir\\\\\"");
+    CHECK(openhorizon::windowsCommandLineArgument("a\\\"b") == "\"a\\\\\\\"b\"");
+    CHECK(openhorizon::windowsCommandLineArgument("") == "\"\"");
 }
 
 TEST_CASE("exception_descriptions", "[crash]")
 {
-    CHECK(fh::describeException(nullptr).type.empty());
-    const fh::ExceptionDescription runtime
-        = fh::describeException(std::make_exception_ptr(std::runtime_error("went wrong")));
+    CHECK(openhorizon::describeException(nullptr).type.empty());
+    const openhorizon::ExceptionDescription runtime
+        = openhorizon::describeException(std::make_exception_ptr(std::runtime_error("went wrong")));
     CHECK(runtime.type == "std::runtime_error");
     CHECK(runtime.message == "went wrong");
-    const fh::ExceptionDescription data = fh::describeException(std::make_exception_ptr(fh::DataError("bad file")));
-    CHECK(data.type == "fh::DataError");
+    const openhorizon::ExceptionDescription data
+        = openhorizon::describeException(std::make_exception_ptr(openhorizon::DataError("bad file")));
+    CHECK(data.type == "openhorizon::DataError");
     CHECK(data.message == "bad file");
-    const fh::ExceptionDescription number = fh::describeException(std::make_exception_ptr(42));
+    const openhorizon::ExceptionDescription number = openhorizon::describeException(std::make_exception_ptr(42));
     CHECK(!number.type.empty());
     CHECK(number.message.empty());
 }
 
 TEST_CASE("error_dialogs_stay_closed_under_tests_and_without_a_display", "[crash]")
 {
-    const std::optional<std::string> savedDriver = fh::environmentVariable("SDL_VIDEO_DRIVER");
-    const std::optional<std::string> savedDisplay = fh::environmentVariable("DISPLAY");
-    const std::optional<std::string> savedWayland = fh::environmentVariable("WAYLAND_DISPLAY");
+    const std::optional<std::string> savedDriver = openhorizon::environmentVariable("SDL_VIDEO_DRIVER");
+    const std::optional<std::string> savedDisplay = openhorizon::environmentVariable("DISPLAY");
+    const std::optional<std::string> savedWayland = openhorizon::environmentVariable("WAYLAND_DISPLAY");
     const auto restore = [](const char* name, const std::optional<std::string>& value) {
         if (value) {
-            fh::setEnvironmentVariable(name, *value);
+            openhorizon::setEnvironmentVariable(name, *value);
         } else {
-            fh::unsetEnvironmentVariable(name);
+            openhorizon::unsetEnvironmentVariable(name);
         }
     };
 
     // The harness sets the variable for every test.
-    CHECK(!fh::errorDialogsAllowed());
+    CHECK(!openhorizon::errorDialogsAllowed());
 
-    fh::unsetEnvironmentVariable(fh::kNoCrashDialogVariable);
-    fh::setEnvironmentVariable("DISPLAY", ":0");
-    fh::unsetEnvironmentVariable("WAYLAND_DISPLAY");
-    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen");
-    CHECK(!fh::errorDialogsAllowed());
-    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "wayland,dummy");
-    CHECK(!fh::errorDialogsAllowed());
-    fh::setEnvironmentVariable("SDL_VIDEO_DRIVER", "x11");
-    CHECK(fh::errorDialogsAllowed());
+    openhorizon::unsetEnvironmentVariable(openhorizon::kNoCrashDialogVariable);
+    openhorizon::setEnvironmentVariable("DISPLAY", ":0");
+    openhorizon::unsetEnvironmentVariable("WAYLAND_DISPLAY");
+    openhorizon::setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen");
+    CHECK(!openhorizon::errorDialogsAllowed());
+    openhorizon::setEnvironmentVariable("SDL_VIDEO_DRIVER", "wayland,dummy");
+    CHECK(!openhorizon::errorDialogsAllowed());
+    openhorizon::setEnvironmentVariable("SDL_VIDEO_DRIVER", "x11");
+    CHECK(openhorizon::errorDialogsAllowed());
 #ifndef _WIN32
-    fh::unsetEnvironmentVariable("DISPLAY");
-    CHECK(!fh::errorDialogsAllowed());
-    fh::setEnvironmentVariable("WAYLAND_DISPLAY", "wayland-0");
-    CHECK(fh::errorDialogsAllowed());
+    openhorizon::unsetEnvironmentVariable("DISPLAY");
+    CHECK(!openhorizon::errorDialogsAllowed());
+    openhorizon::setEnvironmentVariable("WAYLAND_DISPLAY", "wayland-0");
+    CHECK(openhorizon::errorDialogsAllowed());
 #endif
 
-    fh::setEnvironmentVariable(fh::kNoCrashDialogVariable, "1");
+    openhorizon::setEnvironmentVariable(openhorizon::kNoCrashDialogVariable, "1");
     restore("SDL_VIDEO_DRIVER", savedDriver);
     restore("DISPLAY", savedDisplay);
     restore("WAYLAND_DISPLAY", savedWayland);
@@ -377,9 +379,9 @@ TEST_CASE("error_dialogs_stay_closed_under_tests_and_without_a_display", "[crash
 
 TEST_CASE("executable_path_is_this_test", "[crash]")
 {
-    const std::filesystem::path self = fh::currentExecutablePath();
+    const std::filesystem::path self = openhorizon::currentExecutablePath();
     CHECK(std::filesystem::is_regular_file(self));
-    CHECK(fh::pathToUtf8(self.stem()) == "tst_crash");
+    CHECK(openhorizon::pathToUtf8(self.stem()) == "tst_crash");
 }
 
 namespace {
@@ -393,17 +395,17 @@ int crashChild(const std::vector<std::string>& arguments)
     prctl(PR_SET_DUMPABLE, 0);
 #endif
     const std::string& kind = arguments.at(2);
-    const std::filesystem::path log = fh::pathFromUtf8(arguments.at(3));
-    fh::openLogFile(log);
-    fh::logInfo("crash test child ready");
-    fh::CrashHandlerOptions options;
+    const std::filesystem::path log = openhorizon::pathFromUtf8(arguments.at(3));
+    openhorizon::openLogFile(log);
+    openhorizon::logInfo("crash test child ready");
+    openhorizon::CrashHandlerOptions options;
     options.logPath = log;
-    options.minidumpPath = fh::crashDumpPath(log);
+    options.minidumpPath = openhorizon::crashDumpPath(log);
     if (arguments.at(4) == "1") {
-        options.reporter = fh::currentExecutablePath();
+        options.reporter = openhorizon::currentExecutablePath();
     }
-    fh::installCrashHandlers(options);
-    fh::installCrashHandlers(options);
+    openhorizon::installCrashHandlers(options);
+    openhorizon::installCrashHandlers(options);
     if (kind == "null") {
         int* volatile target = nullptr;
         *target = 1;
@@ -412,7 +414,7 @@ int crashChild(const std::vector<std::string>& arguments)
     } else if (kind == "exception") {
         throw std::runtime_error("boom from tst_crash");
     } else if (kind == "dataerror") {
-        throw fh::DataError("media/missing.xml: cannot open");
+        throw openhorizon::DataError("media/missing.xml: cannot open");
     }
     return 0;
 }
@@ -422,7 +424,7 @@ int crashChild(const std::vector<std::string>& arguments)
 /// test never reads half of it.
 int recordReport(const std::vector<std::string>& arguments)
 {
-    const std::optional<std::string> out = fh::environmentVariable(kReportOutVariable);
+    const std::optional<std::string> out = openhorizon::environmentVariable(kReportOutVariable);
     if (!out) {
         return 1;
     }
@@ -430,10 +432,10 @@ int recordReport(const std::vector<std::string>& arguments)
     for (std::size_t i = 1; i < arguments.size(); ++i) {
         text += arguments[i] + '\n';
     }
-    const std::filesystem::path target = fh::pathFromUtf8(*out);
+    const std::filesystem::path target = openhorizon::pathFromUtf8(*out);
     std::filesystem::path partial = target;
     partial += ".part";
-    if (!fh::writeFileToDisk(partial, text)) {
+    if (!openhorizon::writeFileToDisk(partial, text)) {
         return 1;
     }
     std::filesystem::rename(partial, target);
@@ -447,14 +449,14 @@ int recordReport(const std::vector<std::string>& arguments)
 // NOLINTNEXTLINE(bugprone-exception-escape)
 int main(int argc, char** argv)
 {
-    const std::vector<std::string> arguments = fh::commandLineArguments(argc, argv);
+    const std::vector<std::string> arguments = openhorizon::commandLineArguments(argc, argv);
     if (arguments.size() >= 5 && arguments[1] == kChildArgument) {
         return crashChild(arguments);
     }
-    if (fh::parseCrashReportArguments(arguments)) {
+    if (openhorizon::parseCrashReportArguments(arguments)) {
         return recordReport(arguments);
     }
-    const int result = fh::test::runTests(argc, argv);
+    const int result = openhorizon::test::runTests(argc, argv);
     std::error_code ignored;
     std::filesystem::remove_all(scratchFolder(), ignored);
     return result;

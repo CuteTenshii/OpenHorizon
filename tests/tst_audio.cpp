@@ -53,12 +53,12 @@
 
 using Catch::Matchers::WithinAbs;
 
-using fh::test::gameDir;
+using openhorizon::test::gameDir;
 
 namespace {
 
-using fh::Bytes;
-using namespace fh::audio;
+using openhorizon::Bytes;
+using namespace openhorizon::audio;
 
 /// Builds little-endian test data, the byte order of FMOD's files.
 struct Writer {
@@ -608,17 +608,17 @@ TEST_CASE("wavHeaderDescribesTheData", "[audio]")
     pcm.samples = {0.0F, 1.0F, -1.0F, 2.0F};
     const Bytes pcmWav = encodeWav(pcm, WavFormat::Pcm16);
     CHECK(pcmWav.size() == std::size_t{44 + 8});
-    CHECK(fh::loadLe32(pcmWav.data() + 24) == 44100U);
-    CHECK(fh::loadLe16(pcmWav.data() + 20) == 1);
-    CHECK(fh::loadLe16(pcmWav.data() + 22) == 2);
-    CHECK(static_cast<std::int16_t>(fh::loadLe16(pcmWav.data() + 46)) == 32767);
-    CHECK(static_cast<std::int16_t>(fh::loadLe16(pcmWav.data() + 50)) == 32767);
+    CHECK(openhorizon::loadLe32(pcmWav.data() + 24) == 44100U);
+    CHECK(openhorizon::loadLe16(pcmWav.data() + 20) == 1);
+    CHECK(openhorizon::loadLe16(pcmWav.data() + 22) == 2);
+    CHECK(static_cast<std::int16_t>(openhorizon::loadLe16(pcmWav.data() + 46)) == 32767);
+    CHECK(static_cast<std::int16_t>(openhorizon::loadLe16(pcmWav.data() + 50)) == 32767);
 
     const Bytes floatWav = encodeWav(pcm, WavFormat::Float32);
     CHECK(floatWav.size() == std::size_t{44 + 16});
-    CHECK(fh::loadLe16(floatWav.data() + 20) == 3);
-    CHECK(fh::loadLe32(floatWav.data() + 40) == 16U);
-    CHECK_THAT(std::bit_cast<float>(fh::loadLe32(floatWav.data() + 56)), WithinAbs(2.0, 0.0));
+    CHECK(openhorizon::loadLe16(floatWav.data() + 20) == 3);
+    CHECK(openhorizon::loadLe32(floatWav.data() + 40) == 16U);
+    CHECK_THAT(std::bit_cast<float>(openhorizon::loadLe32(floatWav.data() + 56)), WithinAbs(2.0, 0.0));
 }
 
 TEST_CASE("biquadResponses", "[audio]")
@@ -1273,11 +1273,11 @@ TEST_CASE("loopIndicesCountChannels", "[audio]")
     CHECK(!resolveLoopIndex(30, 15, 2).has_value());
 }
 
-std::vector<std::string> filesUnder(const fh::Vfs& vfs, std::string_view suffix)
+std::vector<std::string> filesUnder(const openhorizon::Vfs& vfs, std::string_view suffix)
 {
     std::vector<std::string> files;
     for (const std::string& path : vfs.list("media")) {
-        if (fh::endsWithNoCase(path, suffix)) {
+        if (openhorizon::endsWithNoCase(path, suffix)) {
             files.push_back(path);
         }
     }
@@ -1310,7 +1310,7 @@ bool decodesWhole(const FsbBank& bank, std::size_t index, std::string_view path)
 TEST_CASE("discDecodesRepresentativeBanks", "[audio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     for (const char* path :
         {"media/audio/cars/engines/soundbanks/lod1/2rt2_rx7_exh.fsb", "media/tracks/colorado/bin/amb_festival.fsb"}) {
@@ -1343,7 +1343,7 @@ TEST_CASE("discDecodesRepresentativeBanks", "[audio]")
 TEST_CASE("discDecodesEverySample", "[audio][slow][.]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const std::vector<std::string> banks = filesUnder(vfs, ".fsb");
     CHECK(banks.size() == std::size_t{1006});
@@ -1401,7 +1401,7 @@ TEST_CASE("discDecodesEverySample", "[audio][slow][.]")
 TEST_CASE("discProjectsParseAndResolve", "[audio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     AudioLibrary library(vfs);
     const std::vector<std::string> projects = filesUnder(vfs, ".fev");
@@ -1469,7 +1469,7 @@ TEST_CASE("discProjectsParseAndResolve", "[audio]")
 TEST_CASE("discEngineTuningsLoad", "[audio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     std::size_t loaded = 0;
     std::size_t total = 0;
@@ -1486,7 +1486,7 @@ TEST_CASE("discEngineTuningsLoad", "[audio]")
             } else {
                 std::fprintf(stderr, "no intake or exhaust: %s\n", path.c_str());
             }
-        } catch (const fh::DataError& e) {
+        } catch (const openhorizon::DataError& e) {
             std::fprintf(stderr, "not loaded: %s\n", e.what());
         }
     }
@@ -1531,7 +1531,7 @@ double renderRms(AudioDevice& device, const std::function<void()>& update, float
 TEST_CASE("discTyreSoundFollowsTheGame", "[audio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const auto library = std::make_shared<AudioLibrary>(vfs);
     AudioDevice device{AudioDevice::Offline{}};
@@ -1623,7 +1623,7 @@ TEST_CASE("discTyreSoundFollowsTheGame", "[audio]")
 TEST_CASE("discEngineSoundPlays", "[audio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     AudioDevice device{AudioDevice::Offline{}};
     EngineSound engine(device, vfs, "ALF_8C_08");
@@ -1860,7 +1860,7 @@ TEST_CASE("snapshotMixerGroupsMultiplyAndReturn", "[audio]")
 TEST_CASE("discMixSnapshots", "[audio]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const MixSnapshots snapshots = MixSnapshots::load(vfs);
     std::size_t present = 0;
@@ -1968,7 +1968,7 @@ TEST_CASE("collisionSoundsTrackContacts", "[audio]")
 {
     const std::vector<std::string> surfaces{"Asphalt", "Dirt", "CarAluminum"};
     Mixer mixer(48000);
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     AudioLibrary library(vfs);
     CollisionSounds sounds(mixer, library, CollisionSoundTable::parse(kCollisionXml, surfaces, "test"), kMasterBus);
     CollisionReport report;
@@ -2019,7 +2019,7 @@ TEST_CASE("crashMixFollowsTheSpeedDrop", "[audio]")
     CHECK_THROWS_AS(CrashMix::parse("<Other/>", "test"), std::exception);
 }
 
-std::vector<std::string> discSurfaceNames(const fh::Vfs& vfs)
+std::vector<std::string> discSurfaceNames(const openhorizon::Vfs& vfs)
 {
     std::vector<std::string> names;
     const std::optional<std::string> text = vfs.readText("media/physics/surfacetypes.xml");
@@ -2038,7 +2038,7 @@ TEST_CASE("discCollisionSounds", "[audio]")
 {
     const char* dir = gameDir();
     using Slot = CollisionSoundTable::Slot;
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const std::vector<std::string> surfaces = discSurfaceNames(vfs);
     CHECK(surfaces.size() == std::size_t{68});

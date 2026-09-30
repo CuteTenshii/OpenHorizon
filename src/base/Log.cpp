@@ -9,7 +9,7 @@
 #include <string>
 #include <system_error>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -140,4 +140,4 @@ void logLine(LogLevel level, std::string_view message)
     }
 }
 
-} // namespace fh
+} // namespace openhorizon

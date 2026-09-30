@@ -14,7 +14,7 @@
 #include <format>
 #include <limits>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -332,4 +332,4 @@ float visibleRight(const DrawModel& model)
     return right;
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

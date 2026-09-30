@@ -13,7 +13,7 @@
 #include <numeric>
 #include <string>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -776,4 +776,4 @@ void CrowdRenderer::draw(const FrameParams& frame, const world::TrackSettings* s
     glBindVertexArray(0);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

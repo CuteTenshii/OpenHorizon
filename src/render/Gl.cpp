@@ -1,6 +1,6 @@
 #include "Gl.h"
 
-namespace fh::gl {
+namespace openhorizon::gl {
 
 #define FH_GL_DEFINE(type, name) type name = nullptr;
 FH_GL_FUNCTIONS(FH_GL_DEFINE)
@@ -25,4 +25,4 @@ const char* load(ProcLoader loader)
     return nullptr;
 }
 
-} // namespace fh::gl
+} // namespace openhorizon::gl

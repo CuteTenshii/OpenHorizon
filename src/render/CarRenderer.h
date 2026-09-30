@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 class CarProgramCache;
 
@@ -216,4 +216,4 @@ private:
     std::vector<Draw> m_draws;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

@@ -9,11 +9,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::carmodel {
+namespace openhorizon::carmodel {
 
 /// Which carbin a mesh comes from.
 enum class ModelSource : std::uint8_t { Exterior, Cockpit, Wheel, Brake };
@@ -174,4 +174,4 @@ struct PartVariant {
 
 PartVariant partVariant(std::string_view partName);
 
-} // namespace fh::carmodel
+} // namespace openhorizon::carmodel

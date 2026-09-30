@@ -13,11 +13,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::carmodel {
+namespace openhorizon::carmodel {
 
 /// One pass of a car technique, translated.
 struct CarPass {
@@ -75,4 +75,4 @@ private:
     mutable std::map<std::string, Entry, std::less<>> m_translated;
 };
 
-} // namespace fh::carmodel
+} // namespace openhorizon::carmodel

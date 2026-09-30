@@ -34,7 +34,7 @@
 
 namespace {
 
-using namespace fh::ui;
+using namespace openhorizon::ui;
 
 int usage()
 {
@@ -79,12 +79,12 @@ bool writeFile(const std::string& path, const std::vector<std::uint8_t>& data)
     return static_cast<bool>(out);
 }
 
-int listFonts(const fh::Vfs& vfs)
+int listFonts(const openhorizon::Vfs& vfs)
 {
     FontLibrary library(vfs, "en");
     for (const std::string& target : library.targets()) {
         const std::string file = library.fileFor(target);
-        const std::optional<fh::Bytes> data = vfs.read(file);
+        const std::optional<openhorizon::Bytes> data = vfs.read(file);
         if (!data) {
             std::printf("%-4s %-40s missing\n", target.c_str(), file.c_str());
             continue;
@@ -98,7 +98,7 @@ int listFonts(const fh::Vfs& vfs)
             std::printf("%-4s %-40s %4zu glyphs %7zu triangles  line %.3f em  caps %.3f em  space %.3f em\n",
                 target.c_str(), file.c_str(), font.glyphs().size(), triangles, static_cast<double>(font.lineHeight()),
                 static_cast<double>(font.capHeight()), static_cast<double>(font.spaceAdvance()));
-        } catch (const fh::DataError& e) {
+        } catch (const openhorizon::DataError& e) {
             std::printf("%-4s %-40s error: %s\n", target.c_str(), file.c_str(), e.what());
         }
     }
@@ -134,7 +134,7 @@ const char* kindName(const Presentation& p, int element)
     return p.kind(element) == ElementKind::Behavior ? "behaviour" : "element";
 }
 
-int dumpScene(const fh::Vfs& vfs, const std::string& path, bool attributes)
+int dumpScene(const openhorizon::Vfs& vfs, const std::string& path, bool attributes)
 {
     const Presentation p(SceneFiles::load(vfs, path));
     const BgfFile& bgf = p.files().bgf;
@@ -201,10 +201,10 @@ int dumpScene(const fh::Vfs& vfs, const std::string& path, bool attributes)
     return 0;
 }
 
-int dumpTexture(const fh::Vfs& vfs, const std::string& path, const std::string& out)
+int dumpTexture(const openhorizon::Vfs& vfs, const std::string& path, const std::string& out)
 {
-    const std::string file = path.ends_with(".xds") ? fh::Vfs::normalize(path) : texturePathForScene(path);
-    const fh::Bytes data = vfs.readOrThrow(file);
+    const std::string file = path.ends_with(".xds") ? openhorizon::Vfs::normalize(path) : texturePathForScene(path);
+    const openhorizon::Bytes data = vfs.readOrThrow(file);
     const xds::Texture texture = xds::Texture::parse(std::span<const std::uint8_t>(data));
     std::printf("%s: %s\n", file.c_str(), xds::describe(texture.info()).c_str());
     return writeFile(out, xds::writePng(texture.decodeLevel(0))) ? 0 : 1;
@@ -274,9 +274,9 @@ private:
     GLuint m_framebuffer = 0;
 };
 
-fh::WindowOptions hiddenWindow()
+openhorizon::WindowOptions hiddenWindow()
 {
-    fh::WindowOptions options;
+    openhorizon::WindowOptions options;
     options.title = "fh1ui";
     options.width = 64;
     options.height = 64;
@@ -333,9 +333,9 @@ void appendUtf8(std::string& out, char32_t c)
     }
 }
 
-int renderGlyphs(const fh::Vfs& vfs, const std::string& out, const std::string& face, float size)
+int renderGlyphs(const openhorizon::Vfs& vfs, const std::string& out, const std::string& face, float size)
 {
-    fh::Window window(hiddenWindow());
+    openhorizon::Window window(hiddenWindow());
     FontLibrary fonts(vfs, "en");
     const VectorFont* font = fonts.font(face);
     if (!font) {
@@ -474,9 +474,9 @@ HudState sampleState(const RenderOptions& options)
     return state;
 }
 
-int renderHud(const fh::Vfs& vfs, const std::string& out, const RenderOptions& options)
+int renderHud(const openhorizon::Vfs& vfs, const std::string& out, const RenderOptions& options)
 {
-    fh::Window window(hiddenWindow());
+    openhorizon::Window window(hiddenWindow());
     OffscreenTarget target(options.width, options.height);
     target.clear();
     FontLibrary fonts(vfs, "en");
@@ -505,20 +505,20 @@ int renderHud(const fh::Vfs& vfs, const std::string& out, const RenderOptions& o
     return writeFile(out, xds::writePng(target.read())) ? 0 : 1;
 }
 
-int findString(const fh::Vfs& vfs, std::string_view id, const std::string& language)
+int findString(const openhorizon::Vfs& vfs, std::string_view id, const std::string& language)
 {
     const std::uint16_t key = stringIdHash(id);
     const std::string folder = "media/stringtables/" + language;
     int found = 0;
     for (const std::string& path : vfs.list(folder)) {
-        if (!fh::endsWithNoCase(path, ".str")) {
+        if (!openhorizon::endsWithNoCase(path, ".str")) {
             continue;
         }
-        const std::optional<fh::Bytes> data = vfs.read(path);
+        const std::optional<openhorizon::Bytes> data = vfs.read(path);
         if (!data) {
             continue;
         }
-        const fh::StringTable table = fh::StringTable::parse(*data, path);
+        const openhorizon::StringTable table = openhorizon::StringTable::parse(*data, path);
         if (const std::optional<std::string> text = table.get(key)) {
             std::printf("%s: %s\n", path.c_str(), text->c_str());
             ++found;
@@ -535,7 +535,7 @@ int main(int argc, char** argv)
         return usage();
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
         const std::string_view command = argv[2];
         std::vector<std::string_view> args(argv + 3, argv + argc);

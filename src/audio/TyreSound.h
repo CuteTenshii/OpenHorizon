@@ -13,11 +13,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 class AudioLibrary;
 class EventInstance;
@@ -229,4 +229,4 @@ private:
     std::uint32_t m_nextSeed = 1;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

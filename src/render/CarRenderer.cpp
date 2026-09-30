@@ -15,7 +15,7 @@
 #include <tuple>
 #include <utility>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -876,4 +876,4 @@ void CarRenderer::drawDepth(const glm::mat4& viewProjection, const CarPose& pose
     glBindVertexArray(0);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

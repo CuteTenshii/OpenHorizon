@@ -18,7 +18,7 @@
 #include <map>
 #include <optional>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -459,4 +459,4 @@ std::vector<std::size_t> Smashables::reset()
     return was;
 }
 
-} // namespace fh
+} // namespace openhorizon

@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh::particles {
+namespace openhorizon::particles {
 namespace {
 
 float saturate(float v)
@@ -240,4 +240,4 @@ void TyreEffects::emitWheel(const TyreCarInput& car, std::size_t w, float intens
     }
 }
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

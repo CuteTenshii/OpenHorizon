@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cstddef>
 
-namespace fh::render::envcube {
+namespace openhorizon::render::envcube {
 
 namespace {
 
@@ -146,4 +146,4 @@ glm::vec3 faceDirection(int face, float s, float t)
     return glm::normalize(basis.axis + (2.0F * s - 1.0F) * basis.s + (2.0F * t - 1.0F) * basis.t);
 }
 
-} // namespace fh::render::envcube
+} // namespace openhorizon::render::envcube

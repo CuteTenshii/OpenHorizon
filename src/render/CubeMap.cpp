@@ -4,7 +4,7 @@
 
 #include <utility>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -92,4 +92,4 @@ CubeMap CubeMap::fromCube(const world::CubeTexture& cube, bool srgb)
     return map;
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

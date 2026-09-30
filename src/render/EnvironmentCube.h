@@ -10,7 +10,7 @@
 #include <functional>
 #include <span>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// The dynamic environment cube the cars reflect (their envSampler), which
 /// the game renders around the focus car on tracks whose TrackSettings.xml
@@ -98,4 +98,4 @@ private:
     int m_mipBuilds = 0;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

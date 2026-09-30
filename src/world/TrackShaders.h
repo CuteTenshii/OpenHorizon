@@ -15,7 +15,7 @@ namespace lzx {
 class ZipArchive;
 } // namespace lzx
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// The track's compiled effects (`shaders/track/*.fxobj` in bin.zip), which
 /// the render models name as `shaders\track\<name>.fx`, parsed once.
@@ -144,4 +144,4 @@ inline constexpr std::uint32_t kFloat3Native = 0x2A2339;
 inline constexpr std::uint32_t kFloat2Native = 0x2C2025;
 } // namespace decltype360
 
-} // namespace fh::world
+} // namespace openhorizon::world

@@ -12,7 +12,7 @@
 #include <format>
 #include <optional>
 
-namespace fh::particles {
+namespace openhorizon::particles {
 namespace {
 
 /// The threshold and replacement of 0x82dc5114 (0x82249240, 0x82063cf0).
@@ -185,4 +185,4 @@ std::map<std::string, std::size_t> ParticleEmitterSet::countByEffect() const
     return counts;
 }
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

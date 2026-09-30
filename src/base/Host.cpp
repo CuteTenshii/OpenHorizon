@@ -28,7 +28,7 @@
 #include <unistd.h>
 #endif
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -477,4 +477,4 @@ std::size_t ReadOnlyFile::readAt(std::uint64_t offset, std::span<std::uint8_t> o
     return done;
 }
 
-} // namespace fh
+} // namespace openhorizon

@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -428,4 +428,4 @@ std::vector<LoadingTipLine> LoadingScreen::tipLines() const
     return out;
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

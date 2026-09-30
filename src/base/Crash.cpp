@@ -32,7 +32,7 @@
 #include <cxxabi.h>
 #endif
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -614,7 +614,7 @@ std::string typeName(const std::type_info& type)
     std::free(demangled);
     return type.name();
 #else
-    // MSVC spells names as "class fh::DataError".
+    // MSVC spells names as "class openhorizon::DataError".
     std::string_view name = type.name();
     for (const std::string_view keyword : {"class ", "struct ", "union ", "enum "}) {
         if (name.starts_with(keyword)) {
@@ -833,4 +833,4 @@ std::string windowsCommandLineArgument(std::string_view argument)
     return quoted;
 }
 
-} // namespace fh
+} // namespace openhorizon

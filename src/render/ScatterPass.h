@@ -15,7 +15,7 @@
 #include <memory>
 #include <vector>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 struct FrameParams;
 
@@ -117,4 +117,4 @@ private:
     Texture m_white;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

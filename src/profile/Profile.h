@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::profile {
+namespace openhorizon::profile {
 
 /// The game keeps what the player has done in free roam in a tree of named
 /// state objects (namespace HorizonGameState), which its profile object owns
@@ -130,4 +130,4 @@ private:
     std::vector<Property> m_bags;
 };
 
-} // namespace fh::profile
+} // namespace openhorizon::profile

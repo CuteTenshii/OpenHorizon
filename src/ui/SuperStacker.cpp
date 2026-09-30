@@ -10,7 +10,7 @@
 #include <string>
 #include <string_view>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 float textElementWidth(const Presentation& scene, UiRenderer& renderer, int element)
 {
@@ -191,4 +191,4 @@ void SuperStackers::layout(Presentation& scene, UiRenderer& renderer) const
     }
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

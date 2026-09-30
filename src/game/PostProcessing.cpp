@@ -12,7 +12,7 @@
 #include <format>
 #include <limits>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -666,4 +666,4 @@ std::string_view PostProcessing::zoneName() const
     return target == PostZoneTracker::kNone ? std::string_view() : m_zones[static_cast<std::size_t>(target)].name;
 }
 
-} // namespace fh
+} // namespace openhorizon

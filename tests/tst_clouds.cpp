@@ -31,11 +31,11 @@
 
 using Catch::Matchers::WithinAbs;
 
-using fh::test::gameDir;
+using openhorizon::test::gameDir;
 
 namespace {
 
-using fh::render::CloudDefinitions;
+using openhorizon::render::CloudDefinitions;
 
 constexpr const char* kTwoSets = R"(<?xml version="1.0" encoding="utf-8"?>
 <cloudDefinitions>
@@ -91,19 +91,20 @@ TEST_CASE("cloud_definitions_reject_bad_documents", "[clouds]")
 
 TEST_CASE("cloud_texture_paths_follow_the_format_strings", "[clouds]")
 {
-    CHECK(fh::render::farCloudMapPath("Front", 0) == std::string("media/realtimesky/FarCloudMapFront0.xds"));
-    CHECK(fh::render::farCloudMaskPath() == std::string("media/realtimesky/FarCloudMask.xds"));
-    CHECK(fh::render::closeCloudAlphaDensityPath("FrontSmall", 3)
+    CHECK(openhorizon::render::farCloudMapPath("Front", 0) == std::string("media/realtimesky/FarCloudMapFront0.xds"));
+    CHECK(openhorizon::render::farCloudMaskPath() == std::string("media/realtimesky/FarCloudMask.xds"));
+    CHECK(openhorizon::render::closeCloudAlphaDensityPath("FrontSmall", 3)
         == std::string("media/realtimesky/CloseCloudAlphaDensityFrontSmall3.xds"));
-    CHECK(fh::render::closeCloudTopBottomAmbientPath("Front", 0)
+    CHECK(openhorizon::render::closeCloudTopBottomAmbientPath("Front", 0)
         == std::string("media/realtimesky/CloseCloudTopBottomAmbientFront0.xds"));
-    CHECK(fh::render::closeCloudAmbientPath("Back", 1) == std::string("media/realtimesky/CloseCloudAmbientBack1.xds"));
+    CHECK(openhorizon::render::closeCloudAmbientPath("Back", 1)
+        == std::string("media/realtimesky/CloseCloudAmbientBack1.xds"));
 }
 
 TEST_CASE("cloud_parameters_keep_block_defaults_for_missing_curves", "[clouds]")
 {
-    const fh::render::CloudParameters p
-        = fh::render::sampleCloudParameters([](std::string_view) -> std::optional<glm::vec3> { return std::nullopt; });
+    const openhorizon::render::CloudParameters p = openhorizon::render::sampleCloudParameters(
+        [](std::string_view) -> std::optional<glm::vec3> { return std::nullopt; });
     // 0x82655D30.
     CHECK_THAT(p.farFront.speedX, WithinAbs(9.0F, 1e-6F));
     CHECK_THAT(p.farBack.speedZ, WithinAbs(9.0F, 1e-6F));
@@ -134,8 +135,8 @@ TEST_CASE("cloud_parameters_take_the_curves_found", "[clouds]")
         {"CloseCloudTopColour", glm::vec3(1.0F, 2.0F, 3.0F)},
         {"CloseCloudFrontRevs", glm::vec3(12.0F, 0.0F, 0.0F)},
     };
-    const fh::render::CloudParameters p
-        = fh::render::sampleCloudParameters([&](std::string_view name) -> std::optional<glm::vec3> {
+    const openhorizon::render::CloudParameters p
+        = openhorizon::render::sampleCloudParameters([&](std::string_view name) -> std::optional<glm::vec3> {
         const auto it = curves.find(std::string(name));
         return it == curves.end() ? std::nullopt : std::optional<glm::vec3>(it->second);
     });
@@ -152,14 +153,14 @@ TEST_CASE("cloud_parameters_take_the_curves_found", "[clouds]")
 
 TEST_CASE("cloud_motion_scrolls_per_hour_and_wraps", "[clouds]")
 {
-    fh::render::CloudParameters p;
+    openhorizon::render::CloudParameters p;
     p.farFront.speedX = 36.0F;
     p.farFront.speedZ = -18.0F;
     p.farBack.speedX = 0.0F;
     p.farBack.speedZ = 0.0F;
     p.close.frontRevs = 360.0F;
     p.close.backRevs = 0.0F;
-    fh::render::CloudMotion motion;
+    openhorizon::render::CloudMotion motion;
     CHECK_THAT(motion.closeFront, WithinAbs(0.5F, 1e-6F));
     CHECK_THAT(motion.closeBack, WithinAbs(0.0F, 1e-6F));
     // 10 s: 36 per hour is 0.1 of the texture along u, -0.05 along v.
@@ -183,15 +184,15 @@ TEST_CASE("cloud_min_sky_height", "[clouds]")
 {
     const float expected = 300.0F * std::sin(std::atan2(-1000.0F, 15000.0F)) + 1.0F;
     // Starts above -1000 m are clamped to -1000 m.
-    CHECK_THAT(fh::render::cloudMinSkyHeight(0.0F), WithinAbs(expected, 1e-4F));
-    CHECK_THAT(fh::render::cloudMinSkyHeight(500.0F), WithinAbs(expected, 1e-4F));
+    CHECK_THAT(openhorizon::render::cloudMinSkyHeight(0.0F), WithinAbs(expected, 1e-4F));
+    CHECK_THAT(openhorizon::render::cloudMinSkyHeight(500.0F), WithinAbs(expected, 1e-4F));
     const float lower = 300.0F * std::sin(std::atan2(-4000.0F, 15000.0F)) + 1.0F;
-    CHECK_THAT(fh::render::cloudMinSkyHeight(-4000.0F), WithinAbs(lower, 1e-4F));
+    CHECK_THAT(openhorizon::render::cloudMinSkyHeight(-4000.0F), WithinAbs(lower, 1e-4F));
 }
 
 TEST_CASE("far_cloud_dome_shape", "[clouds]")
 {
-    const auto dome = fh::render::buildFarCloudDome();
+    const auto dome = openhorizon::render::buildFarCloudDome();
     CHECK(dome.vertices.size() == std::size_t{1501});
     CHECK(dome.indices.size() == std::size_t{8700});
     CHECK(std::all_of(dome.indices.begin(), dome.indices.end(), [&](std::uint32_t i) { return i < 1501; }));
@@ -214,7 +215,7 @@ TEST_CASE("far_cloud_dome_shape", "[clouds]")
 
 TEST_CASE("close_cloud_dome_shape", "[clouds]")
 {
-    const auto dome = fh::render::buildCloseCloudDome();
+    const auto dome = openhorizon::render::buildCloseCloudDome();
     CHECK(dome.vertices.size() == std::size_t{1617});
     CHECK(dome.indices.size() == std::size_t{9300});
     CHECK(std::all_of(dome.indices.begin(), dome.indices.end(), [&](std::uint32_t i) { return i < 1617; }));
@@ -238,7 +239,7 @@ TEST_CASE("close_cloud_dome_shape", "[clouds]")
 TEST_CASE("disc_cloud_definitions", "[clouds]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const CloudDefinitions defs = CloudDefinitions::load(vfs);
     CHECK(defs.sets.size() == std::size_t{1});
@@ -256,22 +257,22 @@ TEST_CASE("disc_cloud_definitions", "[clouds]")
         CHECK_THAT(layer.seconds, WithinAbs(5.0F, 1e-6F));
     }
     // Every texture the main view's clouds use is on the disc.
-    CHECK(vfs.exists(fh::render::farCloudMaskPath()));
-    CHECK(vfs.exists(fh::render::farCloudMapPath("Front", 0)));
-    CHECK(vfs.exists(fh::render::closeCloudAlphaDensityPath("Front", 0)));
-    CHECK(vfs.exists(fh::render::closeCloudTopBottomAmbientPath("Front", 0)));
-    CHECK(vfs.exists(fh::render::closeCloudAmbientPath("Front", 0)));
+    CHECK(vfs.exists(openhorizon::render::farCloudMaskPath()));
+    CHECK(vfs.exists(openhorizon::render::farCloudMapPath("Front", 0)));
+    CHECK(vfs.exists(openhorizon::render::closeCloudAlphaDensityPath("Front", 0)));
+    CHECK(vfs.exists(openhorizon::render::closeCloudTopBottomAmbientPath("Front", 0)));
+    CHECK(vfs.exists(openhorizon::render::closeCloudAmbientPath("Front", 0)));
 }
 
 TEST_CASE("disc_colorado_cloud_curves", "[clouds]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
-    const fh::TimeOfDayCurves curves = fh::TimeOfDayCurves::load(vfs, "colorado");
+    const openhorizon::TimeOfDayCurves curves = openhorizon::TimeOfDayCurves::load(vfs, "colorado");
     const float noon = 12.0F * 60.0F;
-    const fh::render::CloudParameters p
-        = fh::render::sampleCloudParameters([&](std::string_view name) -> std::optional<glm::vec3> {
+    const openhorizon::render::CloudParameters p
+        = openhorizon::render::sampleCloudParameters([&](std::string_view name) -> std::optional<glm::vec3> {
         if (!curves.has(name)) {
             return std::nullopt;
         }
@@ -299,23 +300,23 @@ TEST_CASE("disc_colorado_cloud_curves", "[clouds]")
 TEST_CASE("disc_clouds_draw", "[clouds]")
 {
     const char* dir = gameDir();
-    fh::test::requireGlContext();
-    fh::Vfs vfs;
+    openhorizon::test::requireGlContext();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const CloudDefinitions defs = CloudDefinitions::load(vfs);
-    fh::render::Clouds clouds(vfs, defs.sets.front());
+    openhorizon::render::Clouds clouds(vfs, defs.sets.front());
 
-    fh::TimeOfDay time(fh::TimeOfDayCurves::load(vfs, "colorado"));
+    openhorizon::TimeOfDay time(openhorizon::TimeOfDayCurves::load(vfs, "colorado"));
     time.setSeconds(12.0F * 3600.0F);
-    const fh::TimeOfDayCurves curves = fh::TimeOfDayCurves::load(vfs, "colorado");
-    const fh::render::CloudParameters parameters
-        = fh::render::sampleCloudParameters([&](std::string_view name) -> std::optional<glm::vec3> {
+    const openhorizon::TimeOfDayCurves curves = openhorizon::TimeOfDayCurves::load(vfs, "colorado");
+    const openhorizon::render::CloudParameters parameters
+        = openhorizon::render::sampleCloudParameters([&](std::string_view name) -> std::optional<glm::vec3> {
         if (!curves.has(name)) {
             return std::nullopt;
         }
         return curves.sample(name, time.minutes());
     });
-    const fh::render::CloudMotion motion;
+    const openhorizon::render::CloudMotion motion;
 
     constexpr int kWidth = 1920;
     constexpr int kHeight = 1080;
@@ -334,10 +335,10 @@ TEST_CASE("disc_clouds_draw", "[clouds]")
     glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
     glEnable(GL_DEPTH_TEST);
 
-    fh::render::Camera camera;
+    openhorizon::render::Camera camera;
     camera.position = glm::vec3(0.0F, 2.0F, 0.0F);
     camera.target = glm::vec3(0.0F, 2.3F, 1.0F);
-    fh::render::FrameParams frame;
+    openhorizon::render::FrameParams frame;
     frame.view = camera.view();
     frame.projection = camera.projection(static_cast<float>(kWidth) / static_cast<float>(kHeight));
     frame.cameraPosition = camera.position;

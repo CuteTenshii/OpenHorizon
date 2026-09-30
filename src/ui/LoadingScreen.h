@@ -10,11 +10,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// One tip of media/ui/LoadingDefs.xml, its texts resolved.
 struct LoadingTip {
@@ -90,7 +90,7 @@ struct LoadingTipLine {
 class LoadingScreen {
 public:
     /// `seed` seeds the choice of background and tip (the game uses the C
-    /// library's rand()). Throws fh::DataError when the scene or
+    /// library's rand()). Throws openhorizon::DataError when the scene or
     /// LoadingDefs.xml cannot be read.
     explicit LoadingScreen(const Vfs& vfs, const std::string& language = "en", std::uint32_t seed = 0);
     ~LoadingScreen();
@@ -132,4 +132,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

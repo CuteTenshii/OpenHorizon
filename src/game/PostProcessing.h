@@ -14,7 +14,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Vfs;
 
@@ -264,4 +264,4 @@ private:
     TimeOfDayCurves::FogTemplate m_fog;
 };
 
-} // namespace fh
+} // namespace openhorizon

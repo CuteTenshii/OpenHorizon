@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 /// The game's random number generator, which the radio uses for every pick
 /// (verified at 0x82dbe490 and the helpers after it): a 32-bit linear
@@ -62,4 +62,4 @@ private:
     std::uint32_t m_state;
 };
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

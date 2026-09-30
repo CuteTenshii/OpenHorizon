@@ -10,7 +10,7 @@
 #include <numbers>
 #include <string>
 
-namespace fh {
+namespace openhorizon {
 
 std::optional<FadeOptions> loadStateFade(const Vfs& vfs, std::string_view stateId)
 {
@@ -52,4 +52,4 @@ float fadeInOpacity(const FadeOptions& fade, float elapsed)
     return fade.sCurve ? (1.0F - std::cos(std::numbers::pi_v<float> * x)) * 0.5F : x;
 }
 
-} // namespace fh
+} // namespace openhorizon

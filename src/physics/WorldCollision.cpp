@@ -7,7 +7,7 @@
 #include <cmath>
 #include <limits>
 
-namespace fh::physics {
+namespace openhorizon::physics {
 
 namespace {
 
@@ -516,4 +516,4 @@ std::optional<float> WorldCollision::groundHeight(float x, float z, float fromY)
     return std::nullopt;
 }
 
-} // namespace fh::physics
+} // namespace openhorizon::physics

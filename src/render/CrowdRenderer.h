@@ -14,11 +14,11 @@
 #include <cstdint>
 #include <vector>
 
-namespace fh::world {
+namespace openhorizon::world {
 struct TrackSettings;
 }
 
-namespace fh::render {
+namespace openhorizon::render {
 
 struct FrameParams;
 
@@ -190,4 +190,4 @@ private:
     Stats m_stats;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

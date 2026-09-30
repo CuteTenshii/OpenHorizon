@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <span>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// One half of the screen's vignette as the combine takes it.
 struct PostVignette {
@@ -165,4 +165,4 @@ private:
     std::array<Target, kLevels> m_composite;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

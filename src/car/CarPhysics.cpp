@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -1443,4 +1443,4 @@ void CarPhysics::step(const CarControls& input, const GroundQuery& ground)
     m_orientation = glm::normalize(m_orientation + spin * m_orientation * (0.5F * dt));
 }
 
-} // namespace fh
+} // namespace openhorizon

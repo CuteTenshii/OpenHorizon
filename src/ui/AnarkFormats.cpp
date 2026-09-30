@@ -11,7 +11,7 @@
 #include <numbers>
 #include <tuple>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -653,4 +653,4 @@ std::string texturePathForScene(std::string_view scenePath)
     return path + ".xds";
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

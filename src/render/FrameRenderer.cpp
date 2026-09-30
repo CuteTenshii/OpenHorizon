@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -162,4 +162,4 @@ void FrameRenderer::finish(const PostFrame& post)
     m_post.run(m_colour, m_width, m_height, m_output, post);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

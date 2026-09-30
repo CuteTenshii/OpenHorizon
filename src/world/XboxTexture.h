@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// One mip level of a texture in the layout PC graphics APIs expect: blocks
 /// in row-major order with little-endian fields, no tiling. Compressed
@@ -127,4 +127,4 @@ void encodeDxt5(const Rgba* texels, std::uint8_t* block);
 void encodeBc5(const Rgba* texels, std::uint8_t* block);
 
 } // namespace dxt
-} // namespace fh::world
+} // namespace openhorizon::world

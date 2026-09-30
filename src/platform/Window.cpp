@@ -9,7 +9,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -325,4 +325,4 @@ void Window::rumble(float low, float high, int milliseconds)
     SDL_RumbleGamepad(m_gamepad, scale(low), scale(high), static_cast<Uint32>(std::max(0, milliseconds)));
 }
 
-} // namespace fh
+} // namespace openhorizon

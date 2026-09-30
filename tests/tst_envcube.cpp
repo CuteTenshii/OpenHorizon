@@ -29,7 +29,7 @@
 
 namespace {
 
-namespace envcube = fh::render::envcube;
+namespace envcube = openhorizon::render::envcube;
 
 bool near(float a, float b, float tolerance = 1e-4F)
 {
@@ -173,7 +173,7 @@ TEST_CASE("face_transforms_are_the_face_cameras_about_the_centre", "[envcube]")
     const glm::mat4 toCentre = glm::translate(glm::mat4(1.0F), -centre);
     for (int face = 0; face < 6; ++face) {
         const glm::mat4 whole = envcube::faceProjection() * envcube::faceView(face, centre);
-        const glm::mat4 split = fh::render::EnvironmentCube::faceTransform(face) * toCentre;
+        const glm::mat4 split = openhorizon::render::EnvironmentCube::faceTransform(face) * toCentre;
         for (int c = 0; c < 4; ++c) {
             for (int r = 0; r < 4; ++r) {
                 CHECK(near(whole[c][r], split[c][r], 1e-2F));
@@ -203,7 +203,7 @@ TEST_CASE("face_cameras_keep_the_scene_winding", "[envcube]")
         glm::vec3(0.0F, 0.0F, -1.0F)};
     for (int face = 0; face < 6; ++face) {
         const glm::vec3 axis = fromGame(towards[static_cast<std::size_t>(face)]);
-        fh::render::Camera camera;
+        openhorizon::render::Camera camera;
         camera.position = centre;
         camera.target = centre + axis;
         camera.up = std::abs(axis.y) > 0.5F ? glm::vec3(0.0F, 0.0F, 1.0F) : glm::vec3(0.0F, 1.0F, 0.0F);
@@ -276,19 +276,19 @@ TEST_CASE("sphere_levels_halve_down_to_six_by_three", "[envcube]")
 
 TEST_CASE("render_scenario_reads_env_map_frequency_scale", "[envcube]")
 {
-    const fh::RenderScenario set = fh::RenderScenario::parse(R"(<DynamicRenderSettings>
+    const openhorizon::RenderScenario set = openhorizon::RenderScenario::parse(R"(<DynamicRenderSettings>
   <FrameRate value="30"/>
   <EnvMapFrequencyScale value="0.5"/>
 </DynamicRenderSettings>)");
     CHECK(set.envMapFrequencyScale.has_value());
     CHECK(near(set.envMapFrequencyScale.value_or(0.0F), 0.5F));
-    const fh::RenderScenario unset
-        = fh::RenderScenario::parse("<DynamicRenderSettings><TilingScenario value=\"1\"/></DynamicRenderSettings>");
+    const openhorizon::RenderScenario unset = openhorizon::RenderScenario::parse(
+        "<DynamicRenderSettings><TilingScenario value=\"1\"/></DynamicRenderSettings>");
     CHECK(!unset.envMapFrequencyScale.has_value());
     bool threw = false;
     try {
-        fh::RenderScenario::parse("<Other/>");
-    } catch (const fh::DataError&) {
+        openhorizon::RenderScenario::parse("<Other/>");
+    } catch (const openhorizon::DataError&) {
         threw = true;
     }
     CHECK(threw);
@@ -296,10 +296,11 @@ TEST_CASE("render_scenario_reads_env_map_frequency_scale", "[envcube]")
 
 TEST_CASE("disc_in_game_scenario_draws_every_face_each_frame", "[envcube]")
 {
-    const char* disc = fh::test::gameDir();
-    fh::Vfs vfs;
+    const char* disc = openhorizon::test::gameDir();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(disc);
-    const fh::RenderScenario scenario = fh::RenderScenario::stacked(vfs, fh::RenderScenario::kInGame);
+    const openhorizon::RenderScenario scenario
+        = openhorizon::RenderScenario::stacked(vfs, openhorizon::RenderScenario::kInGame);
     CHECK(scenario.envMapFrequencyScale.has_value());
     CHECK(envcube::facesPerFrame(scenario.envMapFrequencyScale.value_or(0.0F)) == 6);
 }
@@ -314,7 +315,7 @@ void clearBound(const std::array<float, 4>& colour)
 
 TEST_CASE("mip_chain_keeps_each_face_where_it_was_drawn", "[envcube]")
 {
-    fh::test::requireGlContext();
+    openhorizon::test::requireGlContext();
     // Each face drawn a colour of its own (as stored: square roots). The
     // chain goes through the lat-long map and back, so a level below the
     // top must show each face's colour near its centre, and a uniform cube
@@ -322,10 +323,11 @@ TEST_CASE("mip_chain_keeps_each_face_where_it_was_drawn", "[envcube]")
     constexpr std::array<glm::vec3, 6> kColours{glm::vec3(0.9F, 0.1F, 0.1F), glm::vec3(0.1F, 0.9F, 0.1F),
         glm::vec3(0.1F, 0.1F, 0.9F), glm::vec3(0.9F, 0.9F, 0.1F), glm::vec3(0.1F, 0.9F, 0.9F),
         glm::vec3(0.9F, 0.1F, 0.9F)};
-    fh::render::EnvironmentCube cube;
+    openhorizon::render::EnvironmentCube cube;
     int facesSeen = 0;
-    const fh::render::FrameParams frame;
-    cube.update(glm::vec3(0.0F), 1.0F, glm::vec4(0.0F), frame, nullptr, [&](const fh::render::FrameParams& face) {
+    const openhorizon::render::FrameParams frame;
+    cube.update(
+        glm::vec3(0.0F), 1.0F, glm::vec4(0.0F), frame, nullptr, [&](const openhorizon::render::FrameParams& face) {
         // Which face this is, from its camera: the view's third row is the
         // face's axis (in this renderer's world, z negated).
         const glm::vec3 axis(face.view[0][2], face.view[1][2], -face.view[2][2]);
@@ -370,7 +372,7 @@ TEST_CASE("mip_chain_keeps_each_face_where_it_was_drawn", "[envcube]")
         }
     }
     // A second frame: all faces again, so the mips are rebuilt.
-    cube.update(glm::vec3(0.0F), 1.0F, glm::vec4(0.0F), frame, nullptr, [&](const fh::render::FrameParams&) {
+    cube.update(glm::vec3(0.0F), 1.0F, glm::vec4(0.0F), frame, nullptr, [&](const openhorizon::render::FrameParams&) {
         const std::array<float, 4> grey{0.5F, 0.5F, 0.5F, 1.0F};
         clearBound(grey);
     });

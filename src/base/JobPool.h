@@ -8,7 +8,7 @@
 #include <thread>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 /// Worker threads that run queued jobs, lowest priority value first; for
 /// streaming work (decoding world tiles and textures) whose order should
@@ -62,4 +62,4 @@ private:
     std::vector<std::thread> m_threads;
 };
 
-} // namespace fh
+} // namespace openhorizon

@@ -10,7 +10,7 @@
 #include <iterator>
 #include <utility>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -125,4 +125,4 @@ std::optional<std::pair<const Activity*, const ActivityZone*>> ActivityCatalogue
     return std::nullopt;
 }
 
-} // namespace fh
+} // namespace openhorizon

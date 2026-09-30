@@ -7,7 +7,7 @@
 #include <cmath>
 #include <format>
 
-namespace fh::carmodel {
+namespace openhorizon::carmodel {
 
 namespace {
 
@@ -501,4 +501,4 @@ void appendTriangles(std::span<const std::uint32_t> indices, std::uint32_t primi
 }
 
 } // namespace carbin
-} // namespace fh::carmodel
+} // namespace openhorizon::carmodel

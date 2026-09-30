@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// A filter as FMOD's DSP units describe it; the engine tunings drive these
 /// with curves (see EngineTuning).
@@ -94,4 +94,4 @@ inline float hermite(float y0, float y1, float y2, float y3, float t)
     return ((c3 * t + c2) * t + c1) * t + y1;
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

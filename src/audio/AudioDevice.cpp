@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 AudioDevice::AudioDevice()
     : m_mixer(kSampleRate)
@@ -72,4 +72,4 @@ void AudioDevice::feed(void* self, SDL_AudioStream* stream, int additional, int 
     }
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

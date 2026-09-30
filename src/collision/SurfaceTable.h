@@ -8,11 +8,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::collision {
+namespace openhorizon::collision {
 
 /// Game path of the surface table.
 inline constexpr std::string_view kSurfaceTypesPath = "media/physics/surfaceTypes.xml";
@@ -146,4 +146,4 @@ private:
     std::vector<CategoryPair> m_pairs;
 };
 
-} // namespace fh::collision
+} // namespace openhorizon::collision

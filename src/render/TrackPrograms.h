@@ -23,11 +23,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::world {
+namespace openhorizon::world {
 struct TrackSettings;
-} // namespace fh::world
+} // namespace openhorizon::world
 
-namespace fh::render {
+namespace openhorizon::render {
 
 struct SceneLighting;
 
@@ -316,4 +316,4 @@ private:
     std::size_t m_compiled = 0;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

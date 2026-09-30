@@ -35,7 +35,7 @@
 #include <utility>
 #include <vector>
 
-namespace fh::test {
+namespace openhorizon::test {
 namespace {
 
 using Catch::Matchers::WithinAbs;
@@ -50,7 +50,7 @@ double worldPassMs(Session& session)
         session.run(kStep, {});
         seconds += session.game()
                        .frameStats()
-                       .gpuFrameSeconds()[static_cast<std::size_t>(fh::render::FrameStats::Part::DrawWorld)];
+                       .gpuFrameSeconds()[static_cast<std::size_t>(openhorizon::render::FrameStats::Part::DrawWorld)];
         ++frames;
     }
     return seconds * 1000.0 / frames;
@@ -61,14 +61,14 @@ double worldPassMs(Session& session)
 // stand around here), which were never loaded.
 TEST_CASE_METHOD(GameScenario, "freeRoamDrawsItsForests", "[scenario][world]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(4330.0F, -250.0F);
     options.spawnHeading = 0.0F;
     options.startTime = 12.0F * 3600.0F;
     Session session(options);
     CHECK(session.waitForCar());
     session.run(4.0F, {});
-    const fh::render::WorldRenderer* world = session.game().worldRenderer();
+    const openhorizon::render::WorldRenderer* world = session.game().worldRenderer();
     CHECK(world != nullptr);
     if (world == nullptr) {
         return;
@@ -83,13 +83,13 @@ TEST_CASE_METHOD(GameScenario, "freeRoamDrawsItsForests", "[scenario][world]")
 // leaving it takes them away again, back to free roam's.
 TEST_CASE_METHOD(GameScenario, "raceShowsItsRoutePropsUntilItEnds", "[scenario][world]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.race = "FR02";
     Session session(options);
     CHECK(session.waitForCar());
     session.run(2.0F, {});
-    fh::Game& game = session.game();
-    const fh::render::WorldRenderer* world = game.worldRenderer();
+    openhorizon::Game& game = session.game();
+    const openhorizon::render::WorldRenderer* world = game.worldRenderer();
     CHECK((world != nullptr && game.race() != nullptr));
     if (world == nullptr || game.race() == nullptr) {
         return;
@@ -102,16 +102,16 @@ TEST_CASE_METHOD(GameScenario, "raceShowsItsRoutePropsUntilItEnds", "[scenario][
     std::fprintf(stderr, "race grid: %zu event chunks, world pass GPU %.3f ms\n", raceChunks, worldPassMs(session));
     session.capture("race_props_grid");
 
-    session.press(fh::Button::Start);
-    const fh::ui::PauseMenu* menu = game.pauseMenu();
+    session.press(openhorizon::Button::Start);
+    const openhorizon::ui::PauseMenu* menu = game.pauseMenu();
     CHECK(menu != nullptr);
     if (menu == nullptr) {
         return;
     }
-    CHECK(session.focusPauseItem(fh::ui::PauseItem::QuitRace));
-    session.press(fh::Button::A);
+    CHECK(session.focusPauseItem(openhorizon::ui::PauseItem::QuitRace));
+    session.press(openhorizon::Button::A);
     CHECK(menu->confirming());
-    session.press(fh::Button::A);
+    session.press(openhorizon::Button::A);
     session.run(2.0F, {});
     CHECK(game.race() == nullptr);
     CHECK(world->eventRoute() == 0);
@@ -127,29 +127,29 @@ TEST_CASE_METHOD(GameScenario, "trackAnimationClockStopsWhilePaused", "[scenario
     Session session({});
     CHECK(session.waitForCar());
     session.run(2.0F, {});
-    fh::Game& game = session.game();
-    const fh::render::WorldRenderer* world = game.worldRenderer();
+    openhorizon::Game& game = session.game();
+    const openhorizon::render::WorldRenderer* world = game.worldRenderer();
     CHECK(world != nullptr);
     if (world == nullptr) {
         return;
     }
     const float running = world->timeGain().x;
     CHECK(running > 1.0F);
-    CHECK_THAT(running, WithinAbs(fh::render::TrackFrameConstants::timeGain(game.animationTime()).x, 0.05));
+    CHECK_THAT(running, WithinAbs(openhorizon::render::TrackFrameConstants::timeGain(game.animationTime()).x, 0.05));
     CHECK_THAT(world->timeGain().w, WithinAbs(1.0, 1e-6));
 
-    session.press(fh::Button::Start);
+    session.press(openhorizon::Button::Start);
     CHECK(game.pauseShown());
     session.run(0.1F, {});
     const float paused = world->timeGain().x;
     session.run(2.0F, {});
     CHECK_THAT(world->timeGain().x, WithinAbs(paused, 1e-6));
 
-    session.press(fh::Button::B);
+    session.press(openhorizon::Button::B);
     CHECK(!game.pauseShown());
     session.run(1.0F, {});
     CHECK(world->timeGain().x > paused + 0.9F);
-    CHECK_THAT(fh::render::TrackFrameConstants::timeGain(28800.0F + 5.0F).x, WithinAbs(5.0, 0.01));
+    CHECK_THAT(openhorizon::render::TrackFrameConstants::timeGain(28800.0F + 5.0F).x, WithinAbs(5.0, 0.01));
 }
 
 // "The world still feels horrible": the track effects read scene
@@ -168,12 +168,12 @@ TEST_CASE_METHOD(GameScenario, "trackShadingSwitchesLightsAndReflects", "[scenar
         {"shading_night", 23.0F * 3600.0F, true},
     };
     for (const Shot& shot : shots) {
-        fh::GameOptions options;
+        openhorizon::GameOptions options;
         options.startTime = shot.seconds;
         Session session(options);
         CHECK(session.waitForCar());
         session.run(4.0F, {});
-        const fh::render::WorldRenderer* world = session.game().worldRenderer();
+        const openhorizon::render::WorldRenderer* world = session.game().worldRenderer();
         CHECK(world != nullptr);
         if (world == nullptr) {
             return;
@@ -181,7 +181,7 @@ TEST_CASE_METHOD(GameScenario, "trackShadingSwitchesLightsAndReflects", "[scenar
         const glm::vec4 emissive = world->emissiveSwitchOn();
         CHECK(emissive.z == 1.0F);
         if (shot.lit) {
-            CHECK(emissive.x >= fh::render::TrackFrameConstants::kSwitchOnLightsFloor);
+            CHECK(emissive.x >= openhorizon::render::TrackFrameConstants::kSwitchOnLightsFloor);
         } else {
             CHECK(emissive.x == -1.0F);
         }
@@ -209,13 +209,12 @@ ShadowReading readShadows(Session& session)
     int frames = 0;
     for (float t = 0.0F; t < 1.0F; t += kStep) {
         session.run(kStep, {});
-        reading.gpuMs += session.game()
-                             .frameStats()
-                             .gpuFrameSeconds()[static_cast<std::size_t>(fh::render::FrameStats::Part::DrawShadows)];
+        reading.gpuMs += session.game().frameStats().gpuFrameSeconds()[static_cast<std::size_t>(
+            openhorizon::render::FrameStats::Part::DrawShadows)];
         ++frames;
     }
     reading.gpuMs *= 1000.0 / frames;
-    const fh::render::ShadowPass* pass = session.game().shadowPass();
+    const openhorizon::render::ShadowPass* pass = session.game().shadowPass();
     if (pass == nullptr || pass->width() <= 0) {
         return reading;
     }
@@ -273,7 +272,7 @@ TEST_CASE_METHOD(GameScenario, "sunShadowsFallByDayOnly", "[scenario][world]")
     };
     for (const Shot shot :
         {Shot{"shadows_noon", 12.0F, true}, Shot{"shadows_low_sun", 18.5F, true}, Shot{"shadows_night", 2.0F, false}}) {
-        fh::GameOptions options;
+        openhorizon::GameOptions options;
         options.spawnAt = glm::vec2(4330.0F, -250.0F);
         options.spawnHeading = 0.0F;
         options.startTime = shot.hours * 3600.0F;
@@ -329,7 +328,7 @@ TEST_CASE_METHOD(GameScenario, "postProcessingAtTimesAndInAZone", "[scenario][wo
         {"post_zone_redrock", 12.0F * 3600.0F, glm::vec2(-6384.0F, -4888.0F), "Redrock", 1.0F, 1.0F},
     };
     for (const Shot& shot : shots) {
-        fh::GameOptions options;
+        openhorizon::GameOptions options;
         options.startTime = shot.seconds;
         options.spawnAt = shot.at;
         Session session(options);
@@ -341,15 +340,14 @@ TEST_CASE_METHOD(GameScenario, "postProcessingAtTimesAndInAZone", "[scenario][wo
         int frames = 0;
         for (float t = 0.0F; t < 1.0F; t += kStep) {
             session.run(kStep, {});
-            tonemapSeconds += session.game()
-                                  .frameStats()
-                                  .gpuFrameSeconds()[static_cast<std::size_t>(fh::render::FrameStats::Part::Tonemap)];
+            tonemapSeconds += session.game().frameStats().gpuFrameSeconds()[static_cast<std::size_t>(
+                openhorizon::render::FrameStats::Part::Tonemap)];
             ++frames;
         }
         std::fprintf(stderr, "%s: post-processing GPU %.3f ms\n", shot.name, tonemapSeconds * 1000.0 / frames);
         session.capture(shot.name);
         CHECK(std::string(session.game().postProcessingZone()) == std::string(shot.zone));
-        const fh::PostSettings* settings = session.game().postSettings();
+        const openhorizon::PostSettings* settings = session.game().postSettings();
         CHECK(settings != nullptr);
         if (settings != nullptr) {
             CHECK((settings->filmic.white >= shot.whiteMin - 1e-4F && settings->filmic.white <= shot.whiteMax + 1e-4F));
@@ -361,7 +359,7 @@ TEST_CASE_METHOD(GameScenario, "postProcessingAtTimesAndInAZone", "[scenario][wo
 // over the dome.
 TEST_CASE_METHOD(GameScenario, "skyDrawsItsClouds", "[scenario][world]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(4330.0F, -250.0F);
     options.spawnHeading = 0.0F;
     options.startTime = 13.0F * 3600.0F;
@@ -386,17 +384,17 @@ TEST_CASE_METHOD(GameScenario, "carsReflectTheEnvironmentCube", "[scenario][worl
         float hours;
     };
     for (const Shot shot : {Shot{"cube_noon", 12.0F}, Shot{"cube_low_sun", 18.5F}}) {
-        fh::GameOptions options;
+        openhorizon::GameOptions options;
         options.spawnAt = glm::vec2(4330.0F, -250.0F);
         options.spawnHeading = 0.0F;
         options.startTime = shot.hours * 3600.0F;
         Session session(options);
         CHECK(session.waitForCar());
         session.run(3.0F, {});
-        const fh::Game& game = session.game();
-        const fh::render::EnvironmentCube* cube = game.environmentCube();
+        const openhorizon::Game& game = session.game();
+        const openhorizon::render::EnvironmentCube* cube = game.environmentCube();
         CHECK(cube != nullptr);
-        const fh::render::CarRenderer* car = game.playerCarModel();
+        const openhorizon::render::CarRenderer* car = game.playerCarModel();
         CHECK(car != nullptr);
         if (cube == nullptr || car == nullptr) {
             continue;
@@ -413,7 +411,7 @@ TEST_CASE_METHOD(GameScenario, "carsReflectTheEnvironmentCube", "[scenario][worl
         // No face is black. Level 3 (32 texels) of each face, in the square
         // root encoding.
         constexpr int kLevel = 3;
-        constexpr int kSize = fh::render::envcube::kSize >> kLevel;
+        constexpr int kSize = openhorizon::render::envcube::kSize >> kLevel;
         std::vector<float> texels(static_cast<std::size_t>(kSize * kSize * 6 * 4));
         glGetTextureImage(cube->texture(), kLevel, GL_RGBA, GL_FLOAT,
             static_cast<GLsizei>(texels.size() * sizeof(float)), texels.data());
@@ -435,8 +433,8 @@ TEST_CASE_METHOD(GameScenario, "carsReflectTheEnvironmentCube", "[scenario][worl
                 CHECK(brightest > 0.3F);
             }
         }
-        const fh::render::FrameStats& stats = game.frameStats();
-        const auto part = static_cast<std::size_t>(fh::render::FrameStats::Part::DrawEnvironmentCube);
+        const openhorizon::render::FrameStats& stats = game.frameStats();
+        const auto part = static_cast<std::size_t>(openhorizon::render::FrameStats::Part::DrawEnvironmentCube);
         std::fprintf(stderr, "%s: environment cube CPU %.3f ms, GPU %.3f ms\n", shot.name,
             stats.frameSeconds()[part] * 1000.0, stats.gpuFrameSeconds()[part] * 1000.0);
         session.capture(shot.name);
@@ -446,9 +444,9 @@ TEST_CASE_METHOD(GameScenario, "carsReflectTheEnvironmentCube", "[scenario][worl
 /// The composite matrices the last frame posed the animated object placed
 /// at `position` with, and its index; nothing when it was not drawn.
 std::optional<std::pair<std::size_t, std::vector<glm::mat4>>> animatedPose(
-    const fh::Game& game, const glm::vec3& position)
+    const openhorizon::Game& game, const glm::vec3& position)
 {
-    const fh::animated::AnimatedObjects* objects = game.animatedObjects();
+    const openhorizon::animated::AnimatedObjects* objects = game.animatedObjects();
     if (objects == nullptr) {
         return std::nullopt;
     }
@@ -472,14 +470,14 @@ std::optional<std::pair<std::size_t, std::vector<glm::mat4>>> animatedPose(
 /// the game is paused and moves on after.
 void checkAnimatedObject(const glm::vec3& object, const glm::vec2& from, float distance, const std::string& name)
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     const glm::vec2 away = glm::normalize(from);
     options.spawnAt = glm::vec2(object.x, object.z) + away * distance;
     options.spawnHeading = std::atan2(-away.x, -away.y);
     options.startTime = 12.0F * 3600.0F;
     Session session(options);
     CHECK(session.waitForCar());
-    fh::Game& game = session.game();
+    openhorizon::Game& game = session.game();
     session.run(1.0F, {});
     session.capture(name + "_a");
     CHECK(game.animatedObjects() != nullptr);
@@ -497,10 +495,10 @@ void checkAnimatedObject(const glm::vec3& object, const glm::vec2& from, float d
     const auto second = animatedPose(game, object);
     CHECK(second.has_value());
     CHECK((second && second->second != first->second));
-    const fh::animated::AnimatedObjects& objects = *game.animatedObjects();
+    const openhorizon::animated::AnimatedObjects& objects = *game.animatedObjects();
     const float played = objects.clipTime(first->first);
 
-    session.press(fh::Button::Start);
+    session.press(openhorizon::Button::Start);
     CHECK(game.pauseShown());
     const auto paused = animatedPose(game, object);
     const float pausedAt = objects.clipTime(first->first);
@@ -509,7 +507,7 @@ void checkAnimatedObject(const glm::vec3& object, const glm::vec2& from, float d
     const auto still = animatedPose(game, object);
     CHECK((paused && still && paused->second == still->second));
 
-    session.press(fh::Button::B);
+    session.press(openhorizon::Button::B);
     CHECK(!game.pauseShown());
     session.run(1.0F, {});
     CHECK(objects.clipTime(first->first) > played + 0.9F);
@@ -543,13 +541,13 @@ TEST_CASE_METHOD(GameScenario, "festivalCrowdIsDrawnAndAnimated", "[scenario][wo
     Session session({});
     CHECK(session.waitForCar());
     session.run(1.0F, {});
-    fh::Game& game = session.game();
-    const fh::render::CrowdRenderer* crowd = game.crowdRenderer();
+    openhorizon::Game& game = session.game();
+    const openhorizon::render::CrowdRenderer* crowd = game.crowdRenderer();
     CHECK(crowd != nullptr);
     if (crowd == nullptr) {
         return;
     }
-    const fh::render::CrowdRenderer::Stats& stats = crowd->stats();
+    const openhorizon::render::CrowdRenderer::Stats& stats = crowd->stats();
     std::fprintf(stderr,
         "festival crowd: models %zu %zu %zu %zu, walkers %zu, %zu sets in view, %zu sprites in %zu sets\n",
         stats.models[0], stats.models[1], stats.models[2], stats.models[3], stats.walkers, stats.visibleSets,
@@ -567,13 +565,13 @@ TEST_CASE_METHOD(GameScenario, "festivalCrowdIsDrawnAndAnimated", "[scenario][wo
     std::uint64_t before = crowd->ticksApplied();
     session.run(1.0F, {});
     CHECK((crowd->ticksApplied() - before >= 29 && crowd->ticksApplied() - before <= 31));
-    session.press(fh::Button::Start);
+    session.press(openhorizon::Button::Start);
     CHECK(game.pauseShown());
     session.run(0.1F, {});
     before = crowd->ticksApplied();
     session.run(1.0F, {});
     CHECK(crowd->ticksApplied() == before);
-    session.press(fh::Button::B);
+    session.press(openhorizon::Button::B);
     session.run(1.0F, {});
     CHECK(crowd->ticksApplied() > before + 25);
 }
@@ -584,13 +582,13 @@ TEST_CASE_METHOD(GameScenario, "festivalCrowdFromAfarIsSprites", "[scenario][wor
 {
     // Free roam starts at (-836.6, -250.6) heading -63 degrees.
     const float heading = -63.0F * std::numbers::pi_v<float> / 180.0F;
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(-836.6F, -250.6F) - 300.0F * glm::vec2(std::sin(heading), std::cos(heading));
     options.spawnHeading = heading;
     Session session(options);
     CHECK(session.waitForCar());
     session.run(1.0F, {});
-    const fh::render::CrowdRenderer* crowd = session.game().crowdRenderer();
+    const openhorizon::render::CrowdRenderer* crowd = session.game().crowdRenderer();
     CHECK(crowd != nullptr);
     if (crowd == nullptr) {
         return;
@@ -606,18 +604,18 @@ TEST_CASE_METHOD(GameScenario, "festivalCrowdFromAfarIsSprites", "[scenario][wor
 // tagged FR04 or listing its route, 108.
 TEST_CASE_METHOD(GameScenario, "raceCrowdShowsAtTheStart", "[scenario][world]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.race = "FR04";
     Session session(options);
     CHECK(session.waitForCar());
     session.run(1.0F, {});
-    fh::Game& game = session.game();
-    const fh::render::CrowdRenderer* crowd = game.crowdRenderer();
+    openhorizon::Game& game = session.game();
+    const openhorizon::render::CrowdRenderer* crowd = game.crowdRenderer();
     CHECK((crowd != nullptr && game.race() != nullptr));
     if (crowd == nullptr || game.race() == nullptr) {
         return;
     }
-    const fh::render::CrowdRenderer::Stats& stats = crowd->stats();
+    const openhorizon::render::CrowdRenderer::Stats& stats = crowd->stats();
     std::fprintf(stderr, "FR04 start: %zu event sets in view of %zu, %zu models, %zu sprites\n", stats.visibleEventSets,
         stats.visibleSets, stats.modelTotal(), stats.spriteInstances);
     CHECK(game.race()->event().routeId == 108);
@@ -641,7 +639,7 @@ TEST_CASE_METHOD(GameScenario, "raceCrowdShowsAtTheStart", "[scenario][world]")
 /// of its band has popped in where the game would not show it.
 class StreamingProbe {
 public:
-    explicit StreamingProbe(const fh::render::WorldRenderer& world)
+    explicit StreamingProbe(const openhorizon::render::WorldRenderer& world)
         : m_world(world)
     {
     }
@@ -660,17 +658,17 @@ public:
     /// Chunk-frames drawn while not wanted.
     std::size_t drawnUnwanted = 0;
 
-    void frame(const fh::render::Camera& camera)
+    void frame(const openhorizon::render::Camera& camera)
     {
-        const fh::world::WorldTileGrid& grid = m_world.grid();
+        const openhorizon::world::WorldTileGrid& grid = m_world.grid();
         const auto& chunks = grid.index().chunks();
         const glm::mat4 viewProjection = camera.projection(16.0F / 9.0F) * camera.view();
-        const fh::world::ZoneGrid* zones = grid.index().zoneGrid();
+        const openhorizon::world::ZoneGrid* zones = grid.index().zoneGrid();
         const int zone = zones != nullptr ? zones->zoneAt(camera.position.x, camera.position.z) : -1;
         m_drawnBefore.resize(chunks.size(), 0);
         m_residentFrame.resize(chunks.size(), -1);
         for (std::size_t t = 0; t < grid.tiles().size(); ++t) {
-            const fh::world::WorldTileGrid::Tile& tile = grid.tiles()[t];
+            const openhorizon::world::WorldTileGrid::Tile& tile = grid.tiles()[t];
             if (grid.distanceTo(tile, camera.position.x, camera.position.z) > kStreamingWatchDistance) {
                 continue;
             }
@@ -678,7 +676,7 @@ public:
                 m_residentFrame[c] = m_frame;
             }
             for (const std::uint32_t c : tile.chunks) {
-                const fh::world::WorldChunk& chunk = chunks[c];
+                const openhorizon::world::WorldChunk& chunk = chunks[c];
                 const glm::vec3 nearest = glm::clamp(camera.position, chunk.boundsMin, chunk.boundsMax);
                 const float distance = glm::length(camera.position - nearest);
                 const bool wanted = distance >= chunk.bandStart && distance < chunk.bandEnd && chunk.visibleFrom(zone);
@@ -735,7 +733,7 @@ private:
         return true;
     }
 
-    const fh::render::WorldRenderer& m_world;
+    const openhorizon::render::WorldRenderer& m_world;
     std::unordered_map<std::uint32_t, int> m_waiting;
     std::vector<std::uint8_t> m_drawnBefore;
     /// The last frame each chunk's tile had it on the GPU.
@@ -768,8 +766,8 @@ TEST_CASE_METHOD(GameScenario, "drivingStreamsTheWorldInTime", "[scenario][world
 {
     Session session({});
     CHECK(session.waitForCar());
-    fh::Game& game = session.game();
-    const fh::render::WorldRenderer* world = game.worldRenderer();
+    openhorizon::Game& game = session.game();
+    const openhorizon::render::WorldRenderer* world = game.worldRenderer();
     CHECK(world != nullptr);
     if (world == nullptr) {
         return;
@@ -841,15 +839,15 @@ TEST_CASE_METHOD(GameScenario, "redstoneLakeShowsItsWater", "[scenario][world]")
 {
     // The lake's model; the name is the disc's, whose one part is
     // Redstone_Lake_01_NOLOD.
-    const std::optional<fh::Bytes> file = disc().read("media/tracks/colorado/bin/coloradoout.12840.rmb.bin");
+    const std::optional<openhorizon::Bytes> file = disc().read("media/tracks/colorado/bin/coloradoout.12840.rmb.bin");
     CHECK(file.has_value());
     if (!file) {
         return;
     }
-    const fh::world::RenderMesh lake = fh::world::rendermesh::parse(*file, "Redstone_Lake_01");
+    const openhorizon::world::RenderMesh lake = openhorizon::world::rendermesh::parse(*file, "Redstone_Lake_01");
     std::vector<std::array<glm::vec3, 3>> triangles;
-    for (const fh::world::RenderMesh::Part& part : lake.parts) {
-        for (const fh::world::RenderMesh::Material& material : part.materials) {
+    for (const openhorizon::world::RenderMesh::Part& part : lake.parts) {
+        for (const openhorizon::world::RenderMesh::Material& material : part.materials) {
             for (std::size_t t = 0; t + 2 < material.triangles.size(); t += 3) {
                 triangles.push_back({part.positions[material.triangles[t]], part.positions[material.triangles[t + 1]],
                     part.positions[material.triangles[t + 2]]});
@@ -873,7 +871,7 @@ TEST_CASE_METHOD(GameScenario, "redstoneLakeShowsItsWater", "[scenario][world]")
         return std::nullopt;
     };
 
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(1800.0F, 1650.0F);
     options.spawnHeading = std::numbers::pi_v<float>;
     options.startTime = 19.0F * 3600.0F;
@@ -922,7 +920,7 @@ TEST_CASE_METHOD(GameScenario, "redstoneLakeShowsItsWater", "[scenario][world]")
 // material (vc360_3.y = 0.2 rad/s: 31.4 s).
 TEST_CASE_METHOD(GameScenario, "riverWavesStayOnTheRiverAtTheInterstate", "[scenario][world]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(-3033.0F, -3517.0F);
     options.spawnHeading = -2.51F;
     options.startTime = 19.5F * 3600.0F;
@@ -976,7 +974,7 @@ TEST_CASE_METHOD(GameScenario, "riverWavesStayOnTheRiverAtTheInterstate", "[scen
 // -489.3; -721.2, -535.1) stays sky while they sway.
 TEST_CASE_METHOD(GameScenario, "festivalFlagsKeepTheirSize", "[scenario][world]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(-735.0F, -455.0F);
     options.spawnHeading = 2.48F;
     Session session(options);
@@ -1027,4 +1025,4 @@ TEST_CASE_METHOD(GameScenario, "festivalFlagsKeepTheirSize", "[scenario][world]"
 }
 
 } // namespace
-} // namespace fh::test
+} // namespace openhorizon::test

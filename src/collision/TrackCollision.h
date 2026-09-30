@@ -21,11 +21,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::collision {
+namespace openhorizon::collision {
 
 /// Which triangles a query sees.
 struct QueryFilter {
@@ -163,4 +163,4 @@ private:
     mutable std::map<std::size_t, std::string> m_failed;
 };
 
-} // namespace fh::collision
+} // namespace openhorizon::collision

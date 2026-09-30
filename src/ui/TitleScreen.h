@@ -9,14 +9,14 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
-namespace fh::audio {
+namespace openhorizon::audio {
 class AudioLibrary;
 }
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// What the host should do after the title screen's update.
 enum class TitleAction {
@@ -139,7 +139,7 @@ struct TitleAudio {
 /// Construct with a current OpenGL 4.5 context.
 class TitleScreen {
 public:
-    /// Throws fh::DataError if the scene or its strings cannot be loaded. A
+    /// Throws openhorizon::DataError if the scene or its strings cannot be loaded. A
     /// movie or music that cannot be loaded is logged and left out.
     TitleScreen(const Vfs& vfs, TitleAudio audio = {}, const std::string& language = "en");
     ~TitleScreen();
@@ -179,4 +179,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// The four constant blocks a translated game shader reads (see
 /// xenos/GlslTranslator.h): the vertex and pixel float constants, the
@@ -153,4 +153,4 @@ private:
     std::vector<Offsets> m_draws;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

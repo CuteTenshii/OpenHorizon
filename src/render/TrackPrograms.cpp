@@ -19,7 +19,7 @@
 #include <stdexcept>
 #include <string_view>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 void TrackMaterial::setModel(const glm::mat4& matrix)
 {
@@ -682,4 +682,4 @@ const TrackPrograms::Program* TrackPrograms::adopt(std::uint32_t effect, Program
     }
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

@@ -15,11 +15,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::particles {
+namespace openhorizon::particles {
 
 class ParticleEmitterSet;
 
@@ -141,4 +141,4 @@ private:
     float m_rateScale = 1.0F;
 };
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

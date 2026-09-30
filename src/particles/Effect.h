@@ -10,9 +10,9 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
 /// The game's particle effects: `media/effects/*.xml`, one emitter each, and
 /// the list of effects a track loads (`media/effects/DefaultTrack.xml`).
@@ -22,7 +22,7 @@ class Vfs;
 /// 0x82DC7A58 and its material's at 0x82DC3F50): element and attribute
 /// names, which file versions carry which elements, the unit conversions and
 /// the defaults for missing values all come from that code.
-namespace fh::particles {
+namespace openhorizon::particles {
 
 /// Game path of the folder holding the effect files and their textures.
 inline constexpr std::string_view kEffectsFolder = "media/effects";
@@ -298,4 +298,4 @@ std::string effectPath(std::string_view file);
 /// effect (the game tells them apart by the `_Composite_` prefix).
 bool isCompositeName(std::string_view file);
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

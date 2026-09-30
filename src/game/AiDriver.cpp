@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -170,4 +170,4 @@ CarControls AiDriver::update(const CarPhysics& car, float dt, float speedScale)
     return controls;
 }
 
-} // namespace fh
+} // namespace openhorizon

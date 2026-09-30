@@ -13,9 +13,9 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using fh::controllerSteeringDeadZone;
-using fh::shapeThumbstick;
-using fh::StickDeadZone;
+using openhorizon::controllerSteeringDeadZone;
+using openhorizon::shapeThumbstick;
+using openhorizon::StickDeadZone;
 
 /// ForzaProfile.sch's ControllerAdvancedOptions defaults.
 constexpr float kDefaultInside = 0.24F;
@@ -79,11 +79,11 @@ TEST_CASE("deadZoneIsRadial", "[input]")
     CHECK(shapeThumbstick(7865, 0, zone).x > 0.0F);
     // Each axis alone is past the old per-axis 12 %, but the stick is
     // inside the circle.
-    const fh::StickPosition inside = shapeThumbstick(7000, -3000, zone);
+    const openhorizon::StickPosition inside = shapeThumbstick(7000, -3000, zone);
     CHECK(inside.x == 0.0F);
     CHECK(inside.y == 0.0F);
     // Out of the circle both axes keep their share of the direction.
-    const fh::StickPosition diagonal = shapeThumbstick(20000, -20000, zone);
+    const openhorizon::StickPosition diagonal = shapeThumbstick(20000, -20000, zone);
     CHECK_THAT(diagonal.x, WithinAbs(-diagonal.y, 1e-6));
     const float length = 28284.271F;
     CHECK_THAT(diagonal.x, WithinAbs(20000.0F * (length - zone.inner) / length / (zone.outer - zone.inner), 1e-4));
@@ -98,9 +98,9 @@ TEST_CASE("halfwayIsLinearPastTheInnerEdge", "[input]")
 
 TEST_CASE("padDefaultDeadZone", "[input]")
 {
-    CHECK(shapeThumbstick(8689, 0, fh::kPadDefaultStickDeadZone).x == 0.0F);
-    CHECK_THAT(shapeThumbstick(32767, 0, fh::kPadDefaultStickDeadZone).x, WithinAbs(1.0F, 1e-6));
-    CHECK_THAT(shapeThumbstick(-32768, 0, fh::kPadDefaultStickDeadZone).x, WithinAbs(-1.0F, 1e-6));
+    CHECK(shapeThumbstick(8689, 0, openhorizon::kPadDefaultStickDeadZone).x == 0.0F);
+    CHECK_THAT(shapeThumbstick(32767, 0, openhorizon::kPadDefaultStickDeadZone).x, WithinAbs(1.0F, 1e-6));
+    CHECK_THAT(shapeThumbstick(-32768, 0, openhorizon::kPadDefaultStickDeadZone).x, WithinAbs(-1.0F, 1e-6));
 }
 
 } // namespace

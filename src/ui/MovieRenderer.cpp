@@ -18,7 +18,7 @@ extern "C" {
 #include <array>
 #include <cstring>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -471,4 +471,4 @@ const std::vector<std::uint8_t>& MovieRenderer::pixels() const
     return m_impl->rgba;
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

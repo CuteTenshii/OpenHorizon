@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <optional>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -132,4 +132,4 @@ void DrivingLineRenderer::draw(const std::vector<DrivingLine::Vertex>& chevrons,
     glDisable(GL_BLEND);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

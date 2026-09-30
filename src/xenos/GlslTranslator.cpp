@@ -8,7 +8,7 @@
 #include <format>
 #include <set>
 
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 namespace {
 
@@ -1559,4 +1559,4 @@ TranslationResult translate(const Shader& shader, const VertexDeclaration* decla
     return translate(program, defaultOptions(shader, declaration));
 }
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

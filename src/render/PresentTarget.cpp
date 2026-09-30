@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 PresentTarget::~PresentTarget()
 {
@@ -66,4 +66,4 @@ void PresentTarget::present() const
         GL_COLOR_BUFFER_BIT, GL_NEAREST);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

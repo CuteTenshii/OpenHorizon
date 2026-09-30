@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 /// Which picture of a person a sprite cell holds.
 ///
@@ -93,4 +93,4 @@ SpriteFrame chooseSprite(const SpriteAtlasLayout& layout, int baseCell, bool six
 /// Returns the defaults when no standing front cell has opaque texels.
 SpriteMetrics measureSprites(const world::RgbaImage& atlas, const std::vector<float>& modelHeights);
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

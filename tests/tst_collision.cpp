@@ -29,9 +29,9 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using fh::Bytes;
-namespace collision = fh::collision;
-namespace Flags = fh::collision::TriangleFlags;
+using openhorizon::Bytes;
+namespace collision = openhorizon::collision;
+namespace Flags = openhorizon::collision::TriangleFlags;
 
 /// Builds big-endian test data.
 struct Writer {
@@ -348,7 +348,7 @@ std::unique_ptr<collision::TrackCollision> twoTileCollision(std::map<std::uint32
         [shared](std::uint32_t id) {
             const auto found = shared->find(id);
             if (found == shared->end()) {
-                throw fh::DataError("{}.fiz: missing", id);
+                throw openhorizon::DataError("{}.fiz: missing", id);
             }
             return found->second;
         });
@@ -435,14 +435,14 @@ TEST_CASE("rejectsDamagedTiles", "[collision]")
     CHECK_THROWS_AS(collision::parseFizTile(version, "version.fiz"), std::exception);
 
     // The first triangle's first vertex offset, moved off a vertex.
-    const std::size_t triangles = 0x20 + fh::loadBe32(good.data() + 0x20 + 0x0C);
+    const std::size_t triangles = 0x20 + openhorizon::loadBe32(good.data() + 0x20 + 0x0C);
     Bytes vertex = good;
     vertex[triangles + 7] = static_cast<std::uint8_t>(vertex[triangles + 7] + 4);
     CHECK_THROWS_AS(collision::parseFizTile(vertex, "vertex.fiz"), std::exception);
 
     // A cell list naming a triangle past the end.
-    const std::size_t grid = 0x20 + fh::loadBe32(good.data() + 0x20 + 0x38);
-    const std::size_t list = 0x20 + fh::loadBe32(good.data() + grid);
+    const std::size_t grid = 0x20 + openhorizon::loadBe32(good.data() + 0x20 + 0x38);
+    const std::size_t list = 0x20 + openhorizon::loadBe32(good.data() + grid);
     Bytes cell = good;
     cell[list + 2] = 0x7F;
     CHECK_THROWS_AS(collision::parseFizTile(cell, "cell.fiz"), std::exception);
@@ -692,7 +692,7 @@ TEST_CASE("cachesTilesAndSurvivesBadOnes", "[collision]")
     const auto shared = twoTileCollision(twoTileWorld());
     std::atomic<int> same{0};
     const std::shared_ptr<const collision::FizTile> first = shared->tile(0);
-    fh::world::parallelFor(64, [&](std::size_t) {
+    openhorizon::world::parallelFor(64, [&](std::size_t) {
         if (shared->tile(0) == first) {
             same.fetch_add(1);
         }
@@ -702,8 +702,8 @@ TEST_CASE("cachesTilesAndSurvivesBadOnes", "[collision]")
 
 TEST_CASE("coloradoCollision", "[collision]")
 {
-    const char* gameDir = fh::test::gameDir();
-    fh::Vfs vfs;
+    const char* gameDir = openhorizon::test::gameDir();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(gameDir);
     const auto world = collision::TrackCollision::open(vfs, "colorado");
     const collision::CollisionIndex& index = world->index();
@@ -724,7 +724,7 @@ TEST_CASE("coloradoCollision", "[collision]")
     std::atomic<std::size_t> failures{0};
     std::atomic<std::size_t> triangles{0};
     std::atomic<std::size_t> outOfTable{0};
-    fh::world::parallelFor(index.tiles().size(), [&](std::size_t i) {
+    openhorizon::world::parallelFor(index.tiles().size(), [&](std::size_t i) {
         const auto tile = world->tryTile(i);
         if (!tile) {
             failures.fetch_add(1);

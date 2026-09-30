@@ -8,7 +8,7 @@
 
 #include <format>
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 namespace {
 
@@ -51,4 +51,4 @@ const std::string& RadioText::stationName(std::size_t station) const
     return station < m_names.size() ? m_names[station] : m_empty;
 }
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

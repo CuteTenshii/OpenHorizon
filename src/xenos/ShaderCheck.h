@@ -9,14 +9,14 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
 /// Validation of generated GLSL with the glslang front end (through
 /// shaderc), without a GL context. Kept out of the fh1xenos library so the
 /// engine does not link shaderc.
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 /// Compiles `glsl` as a GLSL 4.50 shader of `stage` for OpenGL. Returns the
 /// compiler's messages on failure, nothing on success.
@@ -58,4 +58,4 @@ CheckReport checkEffects(const Vfs& vfs, const std::vector<std::string>& paths, 
 
 std::string formatReport(const CheckReport& report);
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

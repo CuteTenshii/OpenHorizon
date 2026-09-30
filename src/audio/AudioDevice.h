@@ -7,7 +7,7 @@
 
 struct SDL_AudioStream;
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// The game's audio output: a Mixer at 48 kHz stereo float, either playing
 /// through the default SDL3 playback device or rendered on demand without
@@ -45,4 +45,4 @@ private:
     std::vector<float> m_scratch;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

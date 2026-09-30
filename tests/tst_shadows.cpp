@@ -18,9 +18,9 @@
 
 namespace {
 
-using fh::render::ShadowCamera;
-using fh::render::ShadowCascades;
-namespace shadowmath = fh::render::shadowmath;
+using openhorizon::render::ShadowCamera;
+using openhorizon::render::ShadowCascades;
+namespace shadowmath = openhorizon::render::shadowmath;
 
 /// Colorado's ShadowLightDirection (TrackSettings.xml), which the game
 /// uses as written while OverrideShadowLightDirection is set.
@@ -219,10 +219,10 @@ TEST_CASE("cascades_cover_the_near_slices", "[shadows]")
 
 TEST_CASE("shadow_intensity_follows_the_time_of_day", "[shadows]")
 {
-    const char* disc = fh::test::gameDir();
-    fh::Vfs vfs;
+    const char* disc = openhorizon::test::gameDir();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(disc);
-    fh::TimeOfDay time(fh::TimeOfDayCurves::load(vfs, "colorado"));
+    openhorizon::TimeOfDay time(openhorizon::TimeOfDayCurves::load(vfs, "colorado"));
     time.setSeconds(12.0F * 3600.0F);
     // Colorado's ShadowIntensity is 1 from 07:50 to 19:09.
     CHECK(near(time.lighting().shadowIntensity, 1.0F, 1e-3F));

@@ -10,7 +10,7 @@
 
 #include <glm/glm.hpp>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// The camera for one frame.
 struct Camera {
@@ -102,4 +102,4 @@ private:
     const CloudMotion* m_cloudMotion = nullptr;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

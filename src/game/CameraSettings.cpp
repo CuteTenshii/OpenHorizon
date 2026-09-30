@@ -9,7 +9,7 @@
 #include <format>
 #include <sstream>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -126,4 +126,4 @@ CarCameras CarCameras::load(const CameraSettings& settings, const Database& db, 
     return cameras;
 }
 
-} // namespace fh
+} // namespace openhorizon

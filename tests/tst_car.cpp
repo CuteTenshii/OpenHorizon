@@ -28,7 +28,7 @@
 
 using Catch::Matchers::WithinAbs;
 
-using fh::test::gameDir;
+using openhorizon::test::gameDir;
 
 namespace {
 
@@ -36,8 +36,8 @@ constexpr int kStepsPerSecond = 360;
 
 /// The disc's database, loaded once for all tests.
 struct Disc {
-    fh::Vfs vfs;
-    std::optional<fh::Database> db;
+    openhorizon::Vfs vfs;
+    std::optional<openhorizon::Database> db;
 
     static Disc& get(const char* dir)
     {
@@ -49,18 +49,22 @@ struct Disc {
         return disc;
     }
 
-    fh::CarSpec car(const char* media) { return fh::loadCarSpec(*db, fh::carIdByMediaName(*db, media), &vfs); }
+    openhorizon::CarSpec car(const char* media)
+    {
+        return openhorizon::loadCarSpec(*db, openhorizon::carIdByMediaName(*db, media), &vfs);
+    }
 };
 
 /// A plane through the origin rising `grade` metres per metre towards -z.
-class Slope final : public fh::GroundQuery {
+class Slope final : public openhorizon::GroundQuery {
 public:
     explicit Slope(float grade)
         : m_normal(glm::normalize(glm::vec3(0.0F, 1.0F, -grade)))
     {
     }
 
-    bool raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, fh::GroundHit& hit) const override
+    bool raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
+        openhorizon::GroundHit& hit) const override
     {
         const float denominator = glm::dot(m_normal, direction);
         if (std::abs(denominator) < 1e-6F) {
@@ -81,7 +85,8 @@ private:
     glm::vec3 m_normal;
 };
 
-void drive(fh::CarPhysics& car, const fh::GroundQuery& ground, const fh::CarControls& controls, float seconds)
+void drive(openhorizon::CarPhysics& car, const openhorizon::GroundQuery& ground,
+    const openhorizon::CarControls& controls, float seconds)
 {
     const int steps = static_cast<int>(seconds * static_cast<float>(kStepsPerSecond));
     for (int i = 0; i < steps; ++i) {
@@ -89,21 +94,21 @@ void drive(fh::CarPhysics& car, const fh::GroundQuery& ground, const fh::CarCont
     }
 }
 
-void accelerateTo(fh::CarPhysics& car, const fh::GroundQuery& ground, float kmh)
+void accelerateTo(openhorizon::CarPhysics& car, const openhorizon::GroundQuery& ground, float kmh)
 {
-    fh::CarControls controls;
+    openhorizon::CarControls controls;
     controls.throttle = 1.0F;
     for (int i = 0; i < kStepsPerSecond * 60 && car.speed() * 3.6F < kmh; ++i) {
         car.step(controls, ground);
     }
 }
 
-float yawRate(const fh::CarPhysics& car)
+float yawRate(const openhorizon::CarPhysics& car)
 {
     return glm::dot(car.angularVelocity(), car.up());
 }
 
-float bodySlip(const fh::CarPhysics& car)
+float bodySlip(const openhorizon::CarPhysics& car)
 {
     const glm::vec3 v = car.velocity();
     return std::atan2(glm::dot(v, car.right()), glm::dot(v, car.forward()));
@@ -112,8 +117,8 @@ float bodySlip(const fh::CarPhysics& car)
 TEST_CASE("carLeftAloneOnFlatGroundStaysStill", "[car]")
 {
     const char* dir = gameDir();
-    fh::FlatGround ground;
-    fh::CarPhysics car(Disc::get(dir).car("ALF_8C_08"));
+    openhorizon::FlatGround ground;
+    openhorizon::CarPhysics car(Disc::get(dir).car("ALF_8C_08"));
     car.reset({0, 0, 0}, 0, ground);
     drive(car, ground, {}, 2.0F);
     const glm::vec3 start = car.position();
@@ -129,9 +134,9 @@ TEST_CASE("handbrakeHoldsACarOnASlope", "[car]")
     // steep slope; this bounds that creep.
     for (const float grade : {0.05F, 0.20F}) {
         const Slope ground(grade);
-        fh::CarPhysics car(Disc::get(dir).car("ALF_8C_08"));
+        openhorizon::CarPhysics car(Disc::get(dir).car("ALF_8C_08"));
         car.reset({0, 0, 0}, 0, ground);
-        fh::CarControls controls;
+        openhorizon::CarControls controls;
         controls.handbrake = 1.0F;
         drive(car, ground, controls, 2.0F);
         const glm::vec3 start = car.position();
@@ -146,11 +151,11 @@ TEST_CASE("assistsRecoverFromPowerOversteer", "[car]")
     const char* dir = gameDir();
     // A second of full lock at full throttle, then the wheel straight: with
     // the default assists the car must come back in line, not keep turning.
-    fh::FlatGround ground;
-    fh::CarPhysics car(Disc::get(dir).car("ALF_8C_08"));
+    openhorizon::FlatGround ground;
+    openhorizon::CarPhysics car(Disc::get(dir).car("ALF_8C_08"));
     car.reset({0, 0, 0}, 0, ground);
     accelerateTo(car, ground, 70.0F);
-    fh::CarControls controls;
+    openhorizon::CarControls controls;
     controls.throttle = 1.0F;
     controls.steer = 1.0F;
     drive(car, ground, controls, 1.0F);
@@ -163,12 +168,12 @@ TEST_CASE("assistsRecoverFromPowerOversteer", "[car]")
 TEST_CASE("steeringLockIsTheSameBothWays", "[car]")
 {
     const char* dir = gameDir();
-    fh::FlatGround ground;
-    const fh::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
+    openhorizon::FlatGround ground;
+    const openhorizon::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
     const auto lockAt = [&](float steer) {
-        fh::CarPhysics car(spec);
+        openhorizon::CarPhysics car(spec);
         car.reset({0, 0, 0}, 0, ground);
-        fh::CarControls controls;
+        openhorizon::CarControls controls;
         controls.steer = steer;
         drive(car, ground, controls, 1.0F);
         return std::pair{car.wheels()[0].steerAngle, car.wheels()[1].steerAngle};
@@ -184,7 +189,7 @@ TEST_CASE("steeringLockIsTheSameBothWays", "[car]")
 /// The steering angle at the middle of the front axle, from the two front
 /// wheels' Ackermann angles (CarPhysics turns the inner wheel tighter
 /// about the same turning centre): tan = 2 / (cot inner + cot outer).
-float centreSteerAngle(const fh::CarPhysics& car)
+float centreSteerAngle(const openhorizon::CarPhysics& car)
 {
     const float a = car.wheels()[0].steerAngle;
     const float b = car.wheels()[1].steerAngle;
@@ -196,15 +201,15 @@ float centreSteerAngle(const fh::CarPhysics& car)
 
 /// Holds `input` on the stick for a second from a start at `kmh` and
 /// returns the centre steering angle in degrees.
-float steadySteerAngle(const fh::CarSpec& spec, float kmh, float input)
+float steadySteerAngle(const openhorizon::CarSpec& spec, float kmh, float input)
 {
-    fh::FlatGround ground;
-    fh::CarPhysics car(spec);
+    openhorizon::FlatGround ground;
+    openhorizon::CarPhysics car(spec);
     car.reset({0, 0, 0}, 0, ground);
     if (kmh > 0.0F) {
         accelerateTo(car, ground, kmh);
     }
-    fh::CarControls controls;
+    openhorizon::CarControls controls;
     controls.steer = input;
     drive(car, ground, controls, 1.0F);
     constexpr float kRadToDeg = 57.2957795F;
@@ -217,7 +222,7 @@ TEST_CASE("fullSteerAtRestReachesFullLock", "[car]")
     // Below 2 m/s (0x82000CE0) CCarDynamics' pad steering (0x82DF9620)
     // asks for the stick's share of the full lock, SteerMaxAngle.
     for (const char* media : {"ALF_8C_08", "HON_CivicR_04", "FOR_GT40_66"}) {
-        const fh::CarSpec spec = Disc::get(dir).car(media);
+        const openhorizon::CarSpec spec = Disc::get(dir).car(media);
         CHECK_THAT(steadySteerAngle(spec, 0.0F, 1.0F), WithinAbs(spec.steerMaxAngleDeg, 1e-3));
         CHECK_THAT(steadySteerAngle(spec, 0.0F, -1.0F), WithinAbs(-spec.steerMaxAngleDeg, 1e-3));
         CHECK_THAT(steadySteerAngle(spec, 0.0F, 0.5F), WithinAbs(0.5F * spec.steerMaxAngleDeg, 1e-3));
@@ -229,7 +234,7 @@ TEST_CASE("fullSteerLockFallsWithSpeed", "[car]")
     const char* dir = gameDir();
     // The speed-sensitive lock (0x82DE7E70) narrows towards
     // SteerSpeedSensitiveMinMaxAngle as speed rises, the same both ways.
-    const fh::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
+    const openhorizon::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
     float previous = spec.steerMaxAngleDeg;
     for (const float kmh : {20.0F, 40.0F, 60.0F, 100.0F, 150.0F}) {
         const float right = steadySteerAngle(spec, kmh, 1.0F);
@@ -250,7 +255,7 @@ TEST_CASE("nearlyFullSteerAtSpeedGetsTheFindPeakLock", "[car]")
     // pad reporting 31000 at full travel gives 0.9945 through the game's
     // shaping and gets that extra lock; the 0.939 the old 12 % per-axis
     // dead zone gave it does not, and steers markedly less at speed.
-    const fh::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
+    const openhorizon::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
     const float full = steadySteerAngle(spec, 60.0F, 1.0F);
     CHECK(steadySteerAngle(spec, 60.0F, 0.9945F) > 0.99F * full);
     CHECK(steadySteerAngle(spec, 60.0F, 0.939F) < 0.8F * full);
@@ -268,25 +273,25 @@ struct WallHit {
 /// controls on contact and measures its turning over `seconds`. The body's
 /// contacts are found as the game's are, from worldContactSpheres(), and
 /// resolved by CarPhysics::resolveWorldContacts() after each step.
-WallHit driveIntoWall(const fh::CarSpec& spec, float kmh, float angle, float seconds)
+WallHit driveIntoWall(const openhorizon::CarSpec& spec, float kmh, float angle, float seconds)
 {
     Disc& disc = Disc::get(gameDir());
-    const fh::CollisionSettings settings = fh::loadCollisionSettings(disc.vfs);
-    const fh::collision::SurfaceTable surfaces = fh::collision::SurfaceTable::load(disc.vfs);
-    const fh::collision::CategoryPair* concrete = surfaces.pair("Car", "HardWorld");
+    const openhorizon::CollisionSettings settings = openhorizon::loadCollisionSettings(disc.vfs);
+    const openhorizon::collision::SurfaceTable surfaces = openhorizon::collision::SurfaceTable::load(disc.vfs);
+    const openhorizon::collision::CategoryPair* concrete = surfaces.pair("Car", "HardWorld");
     CHECK(concrete != nullptr);
-    const std::vector<fh::CarSpec::CollisionSphere> spheres = fh::worldContactSpheres(spec);
+    const std::vector<openhorizon::CarSpec::CollisionSphere> spheres = openhorizon::worldContactSpheres(spec);
 
-    fh::FlatGround ground;
-    fh::CarPhysics car(spec);
+    openhorizon::FlatGround ground;
+    openhorizon::CarPhysics car(spec);
     // Far enough back to reach the speed first.
     car.reset({-400.0F, 0.0F, 0.0F}, std::numbers::pi_v<float> * 0.5F - angle, ground);
     accelerateTo(car, ground, kmh);
     WallHit result;
-    std::vector<fh::WorldContact> contacts;
+    std::vector<openhorizon::WorldContact> contacts;
     float yaw = std::atan2(car.forward().x, car.forward().z);
     const int steps = static_cast<int>(seconds * static_cast<float>(kStepsPerSecond));
-    fh::CarControls controls;
+    openhorizon::CarControls controls;
     controls.throttle = 1.0F;
     for (int i = 0; i < kStepsPerSecond * 60 && (!result.hit || i < steps); ++i) {
         if (!result.hit) {
@@ -297,11 +302,11 @@ WallHit driveIntoWall(const fh::CarSpec& spec, float kmh, float angle, float sec
         car.step(controls, ground);
         contacts.clear();
         const glm::mat4 transform = car.transform();
-        for (const fh::CarSpec::CollisionSphere& sphere : spheres) {
+        for (const openhorizon::CarSpec::CollisionSphere& sphere : spheres) {
             const glm::vec3 centre
                 = glm::vec3(transform * glm::vec4(sphere.centre[0], sphere.centre[1], sphere.centre[2], 1.0F));
             if (centre.x + sphere.radius > 0.0F) {
-                fh::WorldContact& contact = contacts.emplace_back();
+                openhorizon::WorldContact& contact = contacts.emplace_back();
                 contact.point = {0.0F, centre.y, centre.z};
                 contact.normal = {-1.0F, 0.0F, 0.0F};
                 contact.depth = centre.x + sphere.radius;
@@ -334,7 +339,7 @@ TEST_CASE("wallImpactDoesNotSpinTheCar", "[car]")
     // Head-on and at 40 degrees, at town and open-road speeds, a car
     // glances off or stops against the wall; it does not turn round, and it
     // has stopped turning a few seconds later.
-    const fh::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
+    const openhorizon::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
     constexpr float kDegree = std::numbers::pi_v<float> / 180.0F;
     for (const float angle : {0.0F, 40.0F * kDegree}) {
         for (const float kmh : {60.0F, 120.0F}) {
@@ -351,13 +356,13 @@ TEST_CASE("wallImpactDoesNotSpinTheCar", "[car]")
 /// How deep `car`'s contact spheres reach into `other`'s bounding box (its
 /// maxdata.xml BoundingBox), metres: the overlap a player sees, whatever
 /// shapes stand in for the bodies.
-float boxPenetration(const fh::CarPhysics& car, const fh::CarPhysics& other)
+float boxPenetration(const openhorizon::CarPhysics& car, const openhorizon::CarPhysics& other)
 {
     const glm::mat4 toOther = glm::inverse(other.transform()) * car.transform();
     const glm::vec3 lo(other.spec().boundsMin[0], other.spec().boundsMin[1], other.spec().boundsMin[2]);
     const glm::vec3 hi(other.spec().boundsMax[0], other.spec().boundsMax[1], other.spec().boundsMax[2]);
     float deepest = 0.0F;
-    for (const fh::CarSpec::CollisionSphere& sphere : fh::carContactSpheres(car.spec())) {
+    for (const openhorizon::CarSpec::CollisionSphere& sphere : openhorizon::carContactSpheres(car.spec())) {
         const glm::vec3 centre(toOther * glm::vec4(sphere.centre[0], sphere.centre[1], sphere.centre[2], 1.0F));
         const glm::vec3 nearest = glm::clamp(centre, lo, hi);
         const float outside = glm::length(centre - nearest);
@@ -377,11 +382,11 @@ TEST_CASE("carDoesNotSinkIntoOrLaunchATruck", "[car]")
     // 60 km/h, with the contacts, torque scales and restitution the game
     // uses between the player and traffic.
     Disc& disc = Disc::get(dir);
-    const fh::CollisionSettings settings = fh::loadCollisionSettings(disc.vfs);
-    const fh::CarSpec carSpec = disc.car("ALF_8C_08");
-    const fh::CarSpec truckSpec = disc.car("KEN_T440_12");
-    const std::vector<fh::CarSpec::CollisionSphere> carSpheres = fh::carContactSpheres(carSpec);
-    const std::vector<fh::CarSpec::CollisionSphere> truckSpheres = fh::carContactSpheres(truckSpec);
+    const openhorizon::CollisionSettings settings = openhorizon::loadCollisionSettings(disc.vfs);
+    const openhorizon::CarSpec carSpec = disc.car("ALF_8C_08");
+    const openhorizon::CarSpec truckSpec = disc.car("KEN_T440_12");
+    const std::vector<openhorizon::CarSpec::CollisionSphere> carSpheres = openhorizon::carContactSpheres(carSpec);
+    const std::vector<openhorizon::CarSpec::CollisionSphere> truckSpheres = openhorizon::carContactSpheres(truckSpec);
     const float halfPi = std::numbers::pi_v<float> * 0.5F;
     struct Approach {
         const char* name;
@@ -395,31 +400,31 @@ TEST_CASE("carDoesNotSinkIntoOrLaunchATruck", "[car]")
     }};
     for (const Approach& approach : approaches) {
         for (const float kmh : {30.0F, 60.0F}) {
-            fh::FlatGround ground;
-            fh::CarPhysics car(carSpec);
-            fh::CarPhysics truck(truckSpec);
+            openhorizon::FlatGround ground;
+            openhorizon::CarPhysics car(carSpec);
+            openhorizon::CarPhysics truck(truckSpec);
             car.reset({-300.0F, 0.0F, 0.0F}, halfPi, ground);
             truck.reset({0.0F, 0.0F, 0.0F}, approach.truckHeading, ground);
             accelerateTo(car, ground, kmh);
-            fh::CarControls throttle;
-            std::vector<fh::CarContact> contacts;
+            openhorizon::CarControls throttle;
+            std::vector<openhorizon::CarContact> contacts;
             float speedAtImpact = 0.0F;
             float truckSpeed = 0.0F;
             float truckLowestUp = 1.0F;
             float deepest = 0.0F;
             for (int i = 0; i < kStepsPerSecond * 60; ++i) {
                 throttle.throttle = speedAtImpact == 0.0F && car.speed() * 3.6F < kmh ? 1.0F : 0.0F;
-                car.step(speedAtImpact == 0.0F ? throttle : fh::CarControls{}, ground);
+                car.step(speedAtImpact == 0.0F ? throttle : openhorizon::CarControls{}, ground);
                 truck.step({}, ground);
                 contacts.clear();
-                fh::findCarContacts(car, carSpheres, fh::carContactIsBox(carSpec), truck, truckSpheres,
-                    fh::carContactIsBox(truckSpec), contacts);
+                openhorizon::findCarContacts(car, carSpheres, openhorizon::carContactIsBox(carSpec), truck,
+                    truckSpheres, openhorizon::carContactIsBox(truckSpec), contacts);
                 if (!contacts.empty() && speedAtImpact == 0.0F) {
                     speedAtImpact = car.speed();
                     i = kStepsPerSecond * 57;
                 }
-                fh::resolveCarContacts(car, truck, contacts, settings.playerTorqueScale, settings.trafficTorqueScale,
-                    settings.carCarRestitution);
+                openhorizon::resolveCarContacts(car, truck, contacts, settings.playerTorqueScale,
+                    settings.trafficTorqueScale, settings.carCarRestitution);
                 truckSpeed = std::max(truckSpeed, truck.speed());
                 truckLowestUp = std::min(truckLowestUp, truck.up().y);
                 deepest = std::max(deepest, boxPenetration(car, truck));

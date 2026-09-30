@@ -9,7 +9,7 @@
 #include <cctype>
 #include <optional>
 
-namespace fh::particles {
+namespace openhorizon::particles {
 namespace {
 
 bool sameName(std::string_view a, std::string_view b)
@@ -305,4 +305,4 @@ void ParticleManager::stop(SimpleEmitterState& emitter)
     }
 }
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

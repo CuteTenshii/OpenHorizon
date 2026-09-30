@@ -13,7 +13,7 @@
 #include <span>
 #include <vector>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// Distance attenuation in the shape of the game's GlobalRolloffs.xml
 /// entries (minDist, maxDist, beginFadeToZeroDist, fadeToZeroDist):
@@ -204,4 +204,4 @@ private:
     float m_limiterGain = 1.0F;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

@@ -19,7 +19,7 @@ namespace {
 constexpr float kMph60 = 26.8224F;
 constexpr float kMph100 = 44.704F;
 constexpr float kQuarterMile = 402.336F;
-constexpr float kStep = 1.0F / fh::CarPhysics::kStepRate;
+constexpr float kStep = 1.0F / openhorizon::CarPhysics::kStepRate;
 
 struct Result {
     float to60 = NAN;
@@ -35,25 +35,25 @@ struct Result {
 /// 0x82DFD810 turns ABS, traction control and stability management on, and
 /// the test steps mark the car scripted (+0x1828), which skips traction
 /// control (0x82DF8630).
-void assistsLikeGameTests(fh::CarPhysics& car)
+void assistsLikeGameTests(openhorizon::CarPhysics& car)
 {
     car.assists().abs = true;
     car.assists().tractionControl = false;
     car.assists().stabilityControl = true;
 }
 
-void accelerationRun(const fh::CarSpec& spec, Result& result)
+void accelerationRun(const openhorizon::CarSpec& spec, Result& result)
 {
-    const fh::FlatGround ground;
-    fh::CarPhysics car(spec);
+    const openhorizon::FlatGround ground;
+    openhorizon::CarPhysics car(spec);
     assistsLikeGameTests(car);
     car.reset({0.0F, 0.0F, 0.0F}, 0.0F, ground);
-    fh::CarControls idle;
+    openhorizon::CarControls idle;
     for (int i = 0; i < 360; ++i) {
         car.step(idle, ground);
     }
     const glm::vec3 start = car.position();
-    fh::CarControls controls;
+    openhorizon::CarControls controls;
     controls.throttle = 1.0F;
     float time = 0.0F;
     float lastSpeed = 0.0F;
@@ -87,13 +87,13 @@ void accelerationRun(const fh::CarSpec& spec, Result& result)
     result.topSpeed = car.forwardSpeed();
 }
 
-void brakingRun(const fh::CarSpec& spec, Result& result)
+void brakingRun(const openhorizon::CarSpec& spec, Result& result)
 {
-    const fh::FlatGround ground;
-    fh::CarPhysics car(spec);
+    const openhorizon::FlatGround ground;
+    openhorizon::CarPhysics car(spec);
     assistsLikeGameTests(car);
     car.reset({0.0F, 0.0F, 0.0F}, 0.0F, ground);
-    fh::CarControls controls;
+    openhorizon::CarControls controls;
     controls.throttle = 1.0F;
     float time = 0.0F;
     while (car.forwardSpeed() < kMph60 && time < 60.0F) {
@@ -112,14 +112,14 @@ void brakingRun(const fh::CarSpec& spec, Result& result)
 
 /// Holds 60 mph on a widening circle and records the highest lateral
 /// acceleration the car sustains for a second.
-void skidpadRun(const fh::CarSpec& spec, Result& result)
+void skidpadRun(const openhorizon::CarSpec& spec, Result& result)
 {
-    const fh::FlatGround ground;
-    fh::CarPhysics car(spec);
+    const openhorizon::FlatGround ground;
+    openhorizon::CarPhysics car(spec);
     assistsLikeGameTests(car);
     car.assists().speedSensitiveSteering = false;
     car.reset({0.0F, 0.0F, 0.0F}, 0.0F, ground);
-    fh::CarControls controls;
+    openhorizon::CarControls controls;
     float time = 0.0F;
     while (car.forwardSpeed() < kMph60 && time < 60.0F) {
         controls.throttle = 1.0F;
@@ -129,7 +129,7 @@ void skidpadRun(const fh::CarSpec& spec, Result& result)
     float best = 0.0F;
     float windowSum = 0.0F;
     int windowCount = 0;
-    const int windowSteps = static_cast<int>(fh::CarPhysics::kStepRate);
+    const int windowSteps = static_cast<int>(openhorizon::CarPhysics::kStepRate);
     for (float steer = 0.05F; steer <= 1.0F; steer += 0.025F) {
         // Settle at this steering input, then average one second.
         for (int i = 0; i < windowSteps * 3; ++i) {
@@ -166,12 +166,12 @@ float relativeError(float ours, float reference)
     return (ours - reference) / reference;
 }
 
-void trace(const fh::CarSpec& spec)
+void trace(const openhorizon::CarSpec& spec)
 {
-    const fh::FlatGround ground;
-    fh::CarPhysics car(spec);
+    const openhorizon::FlatGround ground;
+    openhorizon::CarPhysics car(spec);
     car.reset({0.0F, 0.0F, 0.0F}, 0.0F, ground);
-    fh::CarControls controls;
+    openhorizon::CarControls controls;
     for (int i = 0; i < 360 * 12; ++i) {
         controls.throttle = i >= 360 ? 1.0F : 0.0F;
         car.step(controls, ground);
@@ -195,25 +195,25 @@ int main(int argc, char** argv)
         return 2;
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
-        const fh::Database db(vfs.readOrThrow("media/db/gamedb.slt"));
+        const openhorizon::Database db(vfs.readOrThrow("media/db/gamedb.slt"));
         std::vector<int> ids;
         const std::string which = argv[2];
         if (argc > 3 && std::string(argv[3]) == "--trace") {
             int id = std::atoi(which.c_str());
             if (id == 0) {
-                id = fh::carIdByMediaName(db, which);
+                id = openhorizon::carIdByMediaName(db, which);
             }
-            trace(fh::loadCarSpec(db, id, &vfs));
+            trace(openhorizon::loadCarSpec(db, id, &vfs));
             return 0;
         }
         if (which == "all") {
-            ids = fh::drivableCarIds(db);
+            ids = openhorizon::drivableCarIds(db);
         } else {
             int id = std::atoi(which.c_str());
             if (id == 0) {
-                id = fh::carIdByMediaName(db, which);
+                id = openhorizon::carIdByMediaName(db, which);
             }
             ids.push_back(id);
         }
@@ -222,7 +222,7 @@ int main(int argc, char** argv)
         double sums[6] = {};
         int counts[6] = {};
         for (int id : ids) {
-            fh::CarSpec spec = fh::loadCarSpec(db, id, &vfs);
+            openhorizon::CarSpec spec = openhorizon::loadCarSpec(db, id, &vfs);
             // The game's recorded figures leave out its in-game power trim.
             spec.gameTorqueScale = 1.0F;
             Result r;
@@ -253,7 +253,7 @@ int main(int argc, char** argv)
         std::printf("\n");
         return 0;
     } catch (const std::exception& e) {
-        fh::logError("{}", e.what());
+        openhorizon::logError("{}", e.what());
         return 1;
     }
 }

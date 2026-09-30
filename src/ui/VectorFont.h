@@ -12,11 +12,11 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// One corner of a glyph triangle. Glyphs are meshes covering their box
 /// (with a margin) whose corners carry curve coordinates: a point is inside
@@ -153,4 +153,4 @@ private:
     std::unordered_map<std::string, std::unique_ptr<VectorFont>> m_fonts;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh::render::post {
+namespace openhorizon::render::post {
 
 float filmic(const Filmic& k, float x)
 {
@@ -56,4 +56,4 @@ glm::vec4 vignetteTransform(float angleRadians, const glm::vec2& scale, float as
     return {c * scale.x * aspect, s * scale.x, -s * scale.y * aspect, c * scale.y};
 }
 
-} // namespace fh::render::post
+} // namespace openhorizon::render::post

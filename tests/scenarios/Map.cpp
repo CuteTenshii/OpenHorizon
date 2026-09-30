@@ -29,7 +29,7 @@
 #include <utility>
 #include <vector>
 
-namespace fh::test {
+namespace openhorizon::test {
 namespace {
 
 using Catch::Matchers::WithinAbs;
@@ -42,18 +42,18 @@ TEST_CASE_METHOD(GameScenario, "mapReplacesTheWorld", "[scenario][map]")
     CHECK(session.game().worldDrawn());
 
     const std::size_t sounds = session.game().uiSoundsPlayed().size();
-    session.press(fh::Button::Back);
+    session.press(openhorizon::Button::Back);
     CHECK(session.game().mapShown());
     session.run(1.0F, {});
     session.capture("map");
     CHECK(!session.game().worldDrawn());
     // The map pauses the game (pause_for_map) with the pause sound
     // (CWaitForPause) and plays its ambience loop.
-    CHECK(gameplayMix(session.game()) == fh::audio::MixSnapshotId::Paused);
+    CHECK(gameplayMix(session.game()) == openhorizon::audio::MixSnapshotId::Paused);
     CHECK(session.game().uiSoundPlaying("Map_AmbientBackgroundLoop"));
 
     // B is the map's EXIT MAP.
-    session.press(fh::Button::B);
+    session.press(openhorizon::Button::B);
     session.run(0.2F, {});
     CHECK(!session.game().mapShown());
     CHECK(session.game().worldDrawn());
@@ -61,7 +61,7 @@ TEST_CASE_METHOD(GameScenario, "mapReplacesTheWorld", "[scenario][map]")
     CHECK((playedSince(session.game(), sounds)
         == std::vector<std::string>{"Pause", "Map_AmbientBackgroundLoop", "Cancel"}));
     session.run(1.0F, {});
-    CHECK(gameplayMix(session.game()) == fh::audio::MixSnapshotId::FreeRoam);
+    CHECK(gameplayMix(session.game()) == openhorizon::audio::MixSnapshotId::FreeRoam);
 }
 
 // "Map road colours are the same (normally they're different depending on
@@ -73,18 +73,18 @@ TEST_CASE_METHOD(GameScenario, "drivenRoadsColourTheMap", "[scenario][map]")
 {
     // On colorado's way 33, the b road "road_094", at its first node and
     // facing its second, 20 m to the south.
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
     options.spawnHeading = 3.14159265F;
     Session session(options);
     CHECK(session.waitForCar());
     session.run(0.5F, {});
-    const fh::ui::Navigation* navigation = session.game().navigation();
+    const openhorizon::ui::Navigation* navigation = session.game().navigation();
     CHECK(navigation != nullptr);
     if (navigation == nullptr) {
         return;
     }
-    const fh::ui::NavFile& network = navigation->network();
+    const openhorizon::ui::NavFile& network = navigation->network();
     const auto drivenNodes = [&] {
         std::size_t count = 0;
         for (std::uint32_t node = 0; node < network.nodes.size(); ++node) {
@@ -102,13 +102,13 @@ TEST_CASE_METHOD(GameScenario, "drivenRoadsColourTheMap", "[scenario][map]")
     CHECK(node.has_value());
     if (node) {
         bool coloured = false;
-        for (const fh::ui::NavLink& link : network.nodes[*node].links) {
+        for (const openhorizon::ui::NavLink& link : network.nodes[*node].links) {
             const std::vector<float> ratios = navigation->coverage().wayRatios(link.way);
             coloured = coloured || std::find(ratios.begin(), ratios.end(), 1.0F) != ratios.end();
         }
         CHECK(coloured);
     }
-    session.press(fh::Button::Back);
+    session.press(openhorizon::Button::Back);
     session.run(3.0F, {.zoom = 1.0F});
     session.capture("map_driven");
 }
@@ -118,7 +118,7 @@ TEST_CASE_METHOD(GameScenario, "drivenRoadsColourTheMap", "[scenario][map]")
 /// times cursorSize * (0.75 + 0.25 * distance / cursorSizeDistance) /
 /// distance * viewport width / cursorAnarkSize, the viewport being the
 /// scene's 1280-unit wide MODEL_MAP_VIEWPORT.
-float expectedCursorWidth(const fh::ui::WorldMapTuning& tuning, float distance)
+float expectedCursorWidth(const openhorizon::ui::WorldMapTuning& tuning, float distance)
 {
     const float grow = 0.75F + 0.25F * distance / tuning.cursorSizeDistance;
     return 128.0F * tuning.cursorSize * grow / distance * 1280.0F / tuning.cursorAnarkSize;
@@ -129,12 +129,12 @@ float expectedCursorWidth(const fh::ui::WorldMapTuning& tuning, float distance)
 // about a tenth of the screen.
 TEST_CASE_METHOD(GameScenario, "mapCursorKeepsTheGameSize", "[scenario][map]")
 {
-    const fh::ui::WorldMapTuning tuning = fh::ui::WorldMapTuning::load(disc());
+    const openhorizon::ui::WorldMapTuning tuning = openhorizon::ui::WorldMapTuning::load(disc());
     Session session({});
     CHECK(session.waitForCar());
-    session.press(fh::Button::Back);
+    session.press(openhorizon::Button::Back);
     session.run(1.0F, {});
-    const fh::ui::WorldMap* map = session.game().worldMap();
+    const openhorizon::ui::WorldMap* map = session.game().worldMap();
     CHECK(map != nullptr);
     if (map == nullptr) {
         return;
@@ -154,25 +154,25 @@ TEST_CASE_METHOD(GameScenario, "mapCursorKeepsTheGameSize", "[scenario][map]")
 TEST_CASE_METHOD(GameScenario, "setRouteShowsTheItinerary", "[scenario][map]")
 {
     // On colorado's way 33, the b road "road_094", facing along it.
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
     options.spawnHeading = 3.14159265F;
     Session session(options);
     CHECK(session.waitForCar());
     session.run(0.5F, {});
-    const fh::ui::Navigation* navigation = session.game().navigation();
-    const fh::ui::WorldMap* map = session.game().worldMap();
+    const openhorizon::ui::Navigation* navigation = session.game().navigation();
+    const openhorizon::ui::WorldMap* map = session.game().worldMap();
     CHECK((navigation != nullptr && map != nullptr));
     if (navigation == nullptr || map == nullptr) {
         return;
     }
-    session.press(fh::Button::Back);
+    session.press(openhorizon::Button::Back);
     session.run(1.0F, {});
     // The cursor goes east until it rests on a marker at least 500 m from
     // the car.
     const glm::vec2 car = session.game().currentMapState().playerPosition;
     const auto onFarMarker = [&] {
-        const fh::ui::WorldMapMarker* marker = map->hovered();
+        const openhorizon::ui::WorldMapMarker* marker = map->hovered();
         return marker != nullptr && glm::length(marker->marker.position - car) > 500.0F;
     };
     for (int frame = 0; frame < 1200 && !onFarMarker(); ++frame) {
@@ -180,7 +180,7 @@ TEST_CASE_METHOD(GameScenario, "setRouteShowsTheItinerary", "[scenario][map]")
     }
     CHECK(onFarMarker());
     session.capture("route_before");
-    session.press(fh::Button::A);
+    session.press(openhorizon::Button::A);
     CHECK(map->waypoint().has_value());
     CHECK(navigation->destination().has_value());
     const std::vector<glm::vec2> route = navigation->route();
@@ -194,7 +194,7 @@ TEST_CASE_METHOD(GameScenario, "setRouteShowsTheItinerary", "[scenario][map]")
     CHECK(glm::length(route.front() - car) < 100.0F);
     // ...to the node nearest the waypoint.
     const std::optional<std::uint32_t> goal
-        = navigation->locator().nearestOnGround(*map->waypoint(), fh::ui::NavFilter::NoShortcutOrNone);
+        = navigation->locator().nearestOnGround(*map->waypoint(), openhorizon::ui::NavFilter::NoShortcutOrNone);
     CHECK((goal.has_value() && navigation->destination() == goal));
     if (goal) {
         const glm::vec3 end = navigation->network().nodes[*goal].position;
@@ -208,7 +208,7 @@ TEST_CASE_METHOD(GameScenario, "setRouteShowsTheItinerary", "[scenario][map]")
     session.capture("route_map");
 
     // Driving on, the route stays and the car's place moves along it.
-    session.press(fh::Button::B);
+    session.press(openhorizon::Button::B);
     session.run(6.0F, {.throttle = 0.6F});
     CHECK(navigation->destination().has_value());
     CHECK(!navigation->routeNodes().empty());
@@ -221,20 +221,20 @@ TEST_CASE_METHOD(GameScenario, "setRouteShowsTheItinerary", "[scenario][map]")
 // the route goes to that point's node; A again on it clears the route.
 TEST_CASE_METHOD(GameScenario, "setRouteOnARoadAwayFromMarkers", "[scenario][map]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
     options.spawnHeading = 3.14159265F;
     Session session(options);
     CHECK(session.waitForCar());
     session.run(0.5F, {});
-    const fh::ui::Navigation* navigation = session.game().navigation();
-    const fh::ui::WorldMap* map = session.game().worldMap();
+    const openhorizon::ui::Navigation* navigation = session.game().navigation();
+    const openhorizon::ui::WorldMap* map = session.game().worldMap();
     CHECK((navigation != nullptr && map != nullptr));
     if (navigation == nullptr || map == nullptr) {
         return;
     }
-    const std::vector<fh::ui::MapMarker> activities = fh::ui::loadActivityMarkers(disc(), "colorado");
-    session.press(fh::Button::Back);
+    const std::vector<openhorizon::ui::MapMarker> activities = openhorizon::ui::loadActivityMarkers(disc(), "colorado");
+    session.press(openhorizon::Button::Back);
     session.run(1.0F, {});
 
     // The cursor goes west until it is 800 m from the car with no marker
@@ -243,12 +243,12 @@ TEST_CASE_METHOD(GameScenario, "setRouteOnARoadAwayFromMarkers", "[scenario][map
     const auto clearOfMarkers = [&] {
         const glm::vec2 at = map->camera().cursor();
         const auto near = [&](glm::vec2 marker) { return glm::length(marker - at) < 400.0F; };
-        for (const fh::ui::MapMarker& marker : activities) {
+        for (const openhorizon::ui::MapMarker& marker : activities) {
             if (near(marker.position)) {
                 return false;
             }
         }
-        for (const fh::ui::WorldMapMarker& marker : session.game().currentMapState().markers) {
+        for (const openhorizon::ui::WorldMapMarker& marker : session.game().currentMapState().markers) {
             if (near(marker.marker.position)) {
                 return false;
             }
@@ -268,14 +268,15 @@ TEST_CASE_METHOD(GameScenario, "setRouteOnARoadAwayFromMarkers", "[scenario][map
     }
     // The target is the pick of the profile's road lines (a, b, dirt and
     // freeway ways, SnapSize 60 each) nearest the cursor.
-    const fh::ui::NavFile& nav = navigation->network();
-    std::optional<fh::ui::MapLinePick> best;
-    for (const fh::ui::NavWay& way : nav.ways) {
+    const openhorizon::ui::NavFile& nav = navigation->network();
+    std::optional<openhorizon::ui::MapLinePick> best;
+    for (const openhorizon::ui::NavWay& way : nav.ways) {
         const std::string_view type = way.tag("road_type");
         if (type != "a" && type != "b" && type != "dirt" && type != "freeway") {
             continue;
         }
-        const std::optional<fh::ui::MapLinePick> pick = fh::ui::pickMapLine(way.points, map->camera().cursor(), 60.0F);
+        const std::optional<openhorizon::ui::MapLinePick> pick
+            = openhorizon::ui::pickMapLine(way.points, map->camera().cursor(), 60.0F);
         if (pick && (!best || pick->distance < best->distance)) {
             best = pick;
         }
@@ -286,11 +287,11 @@ TEST_CASE_METHOD(GameScenario, "setRouteOnARoadAwayFromMarkers", "[scenario][map
     }
     session.capture("route_road_before");
 
-    session.press(fh::Button::A);
+    session.press(openhorizon::Button::A);
     CHECK(map->waypoint().has_value());
     CHECK(navigation->destination().has_value());
     const std::optional<std::uint32_t> goal
-        = navigation->locator().nearestOnGround(*target, fh::ui::NavFilter::NoShortcutOrNone);
+        = navigation->locator().nearestOnGround(*target, openhorizon::ui::NavFilter::NoShortcutOrNone);
     CHECK((goal.has_value() && navigation->destination() == goal));
     CHECK(map->targetNode() == goal);
     const std::vector<glm::vec2> route = navigation->route();
@@ -304,17 +305,17 @@ TEST_CASE_METHOD(GameScenario, "setRouteOnARoadAwayFromMarkers", "[scenario][map
     session.capture("route_road_map");
 
     // A on the destination's node clears it (CLEAR ROUTE).
-    session.press(fh::Button::A);
+    session.press(openhorizon::Button::A);
     CHECK(!map->waypoint().has_value());
     CHECK(!navigation->destination().has_value());
     CHECK(navigation->routeNodes().empty());
 }
 
 // A text the scene draws now, with some opacity.
-bool drawsText(const fh::ui::Presentation& scene, std::string_view text)
+bool drawsText(const openhorizon::ui::Presentation& scene, std::string_view text)
 {
-    const std::vector<fh::ui::DrawItem> items = scene.evaluate();
-    return std::any_of(items.begin(), items.end(), [&](const fh::ui::DrawItem& item) {
+    const std::vector<openhorizon::ui::DrawItem> items = scene.evaluate();
+    return std::any_of(items.begin(), items.end(), [&](const openhorizon::ui::DrawItem& item) {
         return item.isText && item.text.text == text && item.text.color.a > 0.0F;
     });
 }
@@ -324,9 +325,9 @@ bool drawsText(const fh::ui::Presentation& scene, std::string_view text)
 // Main/XP to the band after Main/WristbandLevel, and the car.
 TEST_CASE_METHOD(GameScenario, "mapShowsTheProfilesPlayerBar", "[scenario][map]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.profileDir = freshProfileDir("playerbar");
-    saveProfile(options.profileDir, [](fh::profile::Profile& profile) {
+    saveProfile(options.profileDir, [](openhorizon::profile::Profile& profile) {
         CHECK(profile.set("Main/Credits", std::uint64_t{1234567}));
         CHECK(profile.set("Main/XP", std::int64_t{500}));
         CHECK(profile.set("Main/WristbandLevel", std::int64_t{1}));
@@ -334,15 +335,15 @@ TEST_CASE_METHOD(GameScenario, "mapShowsTheProfilesPlayerBar", "[scenario][map]"
     Session session(options);
     CHECK(session.waitForCar());
     session.run(0.5F, {});
-    session.press(fh::Button::Back);
+    session.press(openhorizon::Button::Back);
     session.run(1.0F, {});
-    const fh::ui::WorldMap* map = session.game().worldMap();
+    const openhorizon::ui::WorldMap* map = session.game().worldMap();
     CHECK((map != nullptr && session.game().mapShown()));
     if (map == nullptr) {
         return;
     }
-    const fh::ui::Presentation& scene = map->scene();
-    const fh::ui::PlayerBar& bar = map->playerBar();
+    const openhorizon::ui::Presentation& scene = map->scene();
+    const openhorizon::ui::PlayerBar& bar = map->playerBar();
     const auto textOf = [&](int element) { return element >= 0 ? scene.text(element) : std::string(); };
     CHECK(bar.bound());
     CHECK(textOf(bar.creditsText()) == std::string("1,234,567 Cr"));
@@ -361,16 +362,16 @@ TEST_CASE_METHOD(GameScenario, "mapShowsTheProfilesPlayerBar", "[scenario][map]"
 // down as the car drives along the route.
 TEST_CASE_METHOD(GameScenario, "satNavShowsTheDistanceLeft", "[scenario][map]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = glm::vec2(-3748.15F, 1382.54F);
     options.spawnHeading = 3.14159265F;
     options.metric = true;
     Session session(options);
     CHECK(session.waitForCar());
     session.run(0.5F, {});
-    const fh::ui::Navigation* navigation = session.game().navigation();
-    const fh::ui::WorldMap* map = session.game().worldMap();
-    const fh::ui::Hud* hud = session.game().hud();
+    const openhorizon::ui::Navigation* navigation = session.game().navigation();
+    const openhorizon::ui::WorldMap* map = session.game().worldMap();
+    const openhorizon::ui::Hud* hud = session.game().hud();
     CHECK((navigation != nullptr && map != nullptr && hud != nullptr));
     if (navigation == nullptr || map == nullptr || hud == nullptr) {
         return;
@@ -378,7 +379,7 @@ TEST_CASE_METHOD(GameScenario, "satNavShowsTheDistanceLeft", "[scenario][map]")
     CHECK(!session.game().currentHudState().destinationDistance.has_value());
     // The car faces south along its road: the destination is that road
     // 800 m to the south, so the route runs ahead of the car.
-    session.press(fh::Button::Back);
+    session.press(openhorizon::Button::Back);
     session.run(1.0F, {});
     const glm::vec2 car = session.game().currentMapState().playerPosition;
     for (int frame = 0; frame < 1200 && car.y - map->camera().cursor().y < 800.0F; ++frame) {
@@ -386,8 +387,8 @@ TEST_CASE_METHOD(GameScenario, "satNavShowsTheDistanceLeft", "[scenario][map]")
     }
     session.run(0.5F, {});
     CHECK(map->hovered() == nullptr);
-    session.press(fh::Button::A);
-    session.press(fh::Button::B);
+    session.press(openhorizon::Button::A);
+    session.press(openhorizon::Button::B);
     session.run(0.5F, {});
     CHECK(navigation->destination().has_value());
 
@@ -399,7 +400,7 @@ TEST_CASE_METHOD(GameScenario, "satNavShowsTheDistanceLeft", "[scenario][map]")
         if (next >= route.size()) {
             return 0.0F;
         }
-        const fh::ui::NavFile& nav = navigation->network();
+        const openhorizon::ui::NavFile& nav = navigation->network();
         float distance = glm::length(session.game().playerCar().position() - nav.nodes[route[next]].position);
         for (std::size_t i = next + 1; i < route.size(); ++i) {
             distance += glm::length(nav.nodes[route[i]].position - nav.nodes[route[i - 1]].position);
@@ -437,4 +438,4 @@ TEST_CASE_METHOD(GameScenario, "satNavShowsTheDistanceLeft", "[scenario][map]")
 }
 
 } // namespace
-} // namespace fh::test
+} // namespace openhorizon::test

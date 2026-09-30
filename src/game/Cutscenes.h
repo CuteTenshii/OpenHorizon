@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Vfs;
 
@@ -262,4 +262,4 @@ private:
     std::optional<glm::mat4> targetTransform(const CutsceneCamera& camera, const CutsceneScene& scene) const;
 };
 
-} // namespace fh
+} // namespace openhorizon

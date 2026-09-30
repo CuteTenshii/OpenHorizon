@@ -1,6 +1,6 @@
 #include "Profile.h"
 
-namespace fh::profile {
+namespace openhorizon::profile {
 
 Profile::Profile(const ProfileSchema& schema)
     : m_bags(schema.bags())
@@ -26,4 +26,4 @@ bool Profile::set(std::string_view path, const PropertyValue& value)
     return true;
 }
 
-} // namespace fh::profile
+} // namespace openhorizon::profile

@@ -3,7 +3,7 @@
 #include "base/Log.h"
 #include "vfs/Vfs.h"
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 AudioLibrary::AudioLibrary(const Vfs& vfs)
     : m_vfs(vfs)
@@ -125,4 +125,4 @@ void AudioLibrary::clearSamples()
     m_samples.clear();
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

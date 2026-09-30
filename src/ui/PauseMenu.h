@@ -6,11 +6,11 @@
 #include <string>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// The entries the game's pause menu can list, numbered as the menu's
 /// builder (CPauseMenu, 0x827de1b0) tags them and its select handler
@@ -165,7 +165,7 @@ std::vector<PauseMenuEntry> pauseMenuEntries(const PauseMenuContext& context, Ui
 /// Construct with a current OpenGL 4.5 context.
 class PauseMenu {
 public:
-    /// Throws fh::DataError if a scene cannot be loaded.
+    /// Throws openhorizon::DataError if a scene cannot be loaded.
     explicit PauseMenu(const Vfs& vfs, const std::string& language = "en");
     ~PauseMenu();
     PauseMenu(const PauseMenu&) = delete;
@@ -200,4 +200,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

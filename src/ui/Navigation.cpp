@@ -14,7 +14,7 @@
 #include <string_view>
 #include <unordered_map>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -664,4 +664,4 @@ std::vector<glm::vec2> Navigation::route() const
     return points;
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

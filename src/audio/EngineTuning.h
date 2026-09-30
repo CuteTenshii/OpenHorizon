@@ -13,11 +13,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// The four physics values every audio curve of the tunings reads, each
 /// normalised to 0..1.
@@ -236,4 +236,4 @@ std::optional<LoopSource> resolveLoopIndex(std::uint32_t wavebankIndex, std::siz
 /// Empty if neither has it (two tunings on the disc name missing banks).
 std::string engineBankPath(const Vfs& vfs, std::string_view bankName);
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

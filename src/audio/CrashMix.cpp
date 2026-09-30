@@ -7,7 +7,7 @@
 
 #include <optional>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -52,4 +52,4 @@ bool CrashMix::update(float speed)
     return crashed;
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

@@ -34,13 +34,13 @@
 
 using Catch::Matchers::WithinAbs;
 
-using fh::test::gameDir;
+using openhorizon::test::gameDir;
 
 namespace {
 
-using fh::Bytes;
-namespace animated = fh::animated;
-namespace granny = fh::animated::granny;
+using openhorizon::Bytes;
+namespace animated = openhorizon::animated;
+namespace granny = openhorizon::animated::granny;
 
 /// Builds big-endian test data.
 struct Writer {
@@ -283,7 +283,7 @@ TEST_CASE("readsObjectSets", "[animated]")
     // Indices first in the GPU block, the vertices 4-byte aligned after.
     CHECK(batch.indexOffset == set.grannyOffset + 8);
     CHECK(batch.vertexOffset == batch.indexOffset + 8);
-    CHECK(fh::loadBe16(set.data.data() + batch.indexOffset + 4) == 2);
+    CHECK(openhorizon::loadBe16(set.data.data() + batch.indexOffset + 4) == 2);
 
     // A Granny block that does not leave the GPU block its size.
     Bytes wrong = objectSet(8);
@@ -386,9 +386,9 @@ const animated::AnimatedObjects* colorado()
         if (dir == nullptr) {
             return nullptr;
         }
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(dir);
-        const auto archive = vfs.archiveAt(fh::world::TrackPaths::of("colorado").archive);
+        const auto archive = vfs.archiveAt(openhorizon::world::TrackPaths::of("colorado").archive);
         if (!archive) {
             CHECK(false);
             return nullptr;
@@ -559,7 +559,7 @@ TEST_CASE("playsOnThePresentationClock", "[animated]")
 }
 
 /// Reads one file of media/animatedobjects through the engine's file system.
-std::optional<animated::AnimatedObject> packObject(const fh::Vfs& vfs, const std::string& path)
+std::optional<animated::AnimatedObject> packObject(const openhorizon::Vfs& vfs, const std::string& path)
 {
     Bytes data = vfs.readOrThrow(path);
     return animated::AnimatedObject::make(0, animated::readObjectSet(std::move(data), path), path);
@@ -568,7 +568,7 @@ std::optional<animated::AnimatedObject> packObject(const fh::Vfs& vfs, const std
 TEST_CASE("readsTheAnimatedObjectPack", "[animated]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     // A rigid vehicle, a skinned animal and a gameplay laser with its own
     // clips: one of each kind the pack holds.
@@ -588,11 +588,11 @@ TEST_CASE("readsTheAnimatedObjectPack", "[animated]")
 TEST_CASE("readsEveryAnimatedObject", "[animated][slow][.]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     int files = 0;
     for (const std::string& path : vfs.list("media/animatedobjects")) {
-        if (!fh::endsWithNoCase(path, ".pgeo")) {
+        if (!openhorizon::endsWithNoCase(path, ".pgeo")) {
             continue;
         }
         ++files;

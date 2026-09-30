@@ -8,7 +8,7 @@
 #include <memory>
 #include <string>
 
-namespace fh::test {
+namespace openhorizon::test {
 
 Window& requireGlContext()
 {
@@ -32,4 +32,4 @@ Window& requireGlContext()
     return *window;
 }
 
-} // namespace fh::test
+} // namespace openhorizon::test

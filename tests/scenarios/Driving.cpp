@@ -23,14 +23,14 @@
 #include <utility>
 #include <vector>
 
-namespace fh::test {
+namespace openhorizon::test {
 namespace {
 
 TEST_CASE_METHOD(GameScenario, "gentleLeftTurnFromStandstillDoesNotSpin", "[scenario][driving]")
 {
     // A player on a keyboard pulls away at full throttle and eases left: the
     // car must turn, not spin, with the assists on (the default).
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.race = "FR02";
     Session session(options);
     CHECK(session.waitForCar());
@@ -38,7 +38,7 @@ TEST_CASE_METHOD(GameScenario, "gentleLeftTurnFromStandstillDoesNotSpin", "[scen
     session.runUntil(30.0F, [&] { return !session.game().race() || session.game().race()->started(); });
     session.run(3.0F, {.throttle = 1.0F, .steer = -0.3F});
     session.capture("left_turn");
-    const fh::CarPhysics& car = session.game().playerCar();
+    const openhorizon::CarPhysics& car = session.game().playerCar();
     const float yawRate = glm::dot(car.angularVelocity(), car.up());
     const glm::vec3 velocity = car.velocity();
     const float bodySlip = glm::length(velocity) > 1.0F
@@ -50,7 +50,7 @@ TEST_CASE_METHOD(GameScenario, "gentleLeftTurnFromStandstillDoesNotSpin", "[scen
 
 TEST_CASE_METHOD(GameScenario, "chaseCameraStaysBehindInATurn", "[scenario][driving]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.race = "FR02";
     Session session(options);
     CHECK(session.waitForCar());
@@ -58,8 +58,8 @@ TEST_CASE_METHOD(GameScenario, "chaseCameraStaysBehindInATurn", "[scenario][driv
     session.run(4.0F, {.throttle = 0.6F});
     session.run(1.5F, {.throttle = 0.4F, .steer = -0.3F});
     session.capture("camera_turn");
-    const fh::CarPhysics& car = session.game().playerCar();
-    const fh::render::Camera& camera = session.game().camera();
+    const openhorizon::CarPhysics& car = session.game().playerCar();
+    const openhorizon::render::Camera& camera = session.game().camera();
     // The chase camera looks at the car from behind: its view heading stays
     // close to the car's heading through a gentle turn.
     const float view = headingOf(camera.target - camera.position);
@@ -80,7 +80,7 @@ struct WallHit {
 /// and measures how far it turns.
 WallHit driveIntoWall(glm::vec2 start, glm::vec2 target, float speed, float seconds, const std::string& name)
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = start;
     options.spawnHeading = std::atan2(target.x - start.x, target.y - start.y);
     options.startTime = 12.0F * 3600.0F;
@@ -98,7 +98,7 @@ WallHit driveIntoWall(glm::vec2 start, glm::vec2 target, float speed, float seco
             break;
         }
         previousSpeed = now;
-        const fh::CarPhysics& car = session.game().playerCar();
+        const openhorizon::CarPhysics& car = session.game().playerCar();
         session.run(kStep, {.throttle = now < speed ? 1.0F : 0.2F, .steer = steerTowards(car, target)});
     }
     if (!result.hit) {
@@ -111,7 +111,7 @@ WallHit driveIntoWall(glm::vec2 start, glm::vec2 target, float speed, float seco
         result.totalYaw += std::remainder(next - yaw, 2.0F * std::numbers::pi_v<float>);
         yaw = next;
     }
-    const fh::CarPhysics& car = session.game().playerCar();
+    const openhorizon::CarPhysics& car = session.game().playerCar();
     result.finalYawRate = glm::dot(car.angularVelocity(), car.up());
     session.capture(name);
     std::fprintf(stderr, "%s: hit at %.1f m/s, turned %.2f rad after, yaw rate %.2f rad/s at the end\n", name.c_str(),
@@ -156,13 +156,13 @@ TEST_CASE_METHOD(GameScenario, "wallImpactDoesNotSpinTheCar", "[scenario][drivin
 /// How deep `car`'s contact spheres reach into `other`'s bounding box (its
 /// maxdata.xml BoundingBox), metres: the overlap a player sees, whatever
 /// shapes stand in for the bodies.
-float boxPenetration(const fh::CarPhysics& car, const fh::CarPhysics& other)
+float boxPenetration(const openhorizon::CarPhysics& car, const openhorizon::CarPhysics& other)
 {
     const glm::mat4 toOther = glm::inverse(other.transform()) * car.transform();
     const glm::vec3 lo(other.spec().boundsMin[0], other.spec().boundsMin[1], other.spec().boundsMin[2]);
     const glm::vec3 hi(other.spec().boundsMax[0], other.spec().boundsMax[1], other.spec().boundsMax[2]);
     float deepest = 0.0F;
-    for (const fh::CarSpec::CollisionSphere& sphere : fh::carContactSpheres(car.spec())) {
+    for (const openhorizon::CarSpec::CollisionSphere& sphere : openhorizon::carContactSpheres(car.spec())) {
         const glm::vec3 centre(toOther * glm::vec4(sphere.centre[0], sphere.centre[1], sphere.centre[2], 1.0F));
         const glm::vec3 nearest = glm::clamp(centre, lo, hi);
         const float outside = glm::length(centre - nearest);
@@ -193,7 +193,7 @@ TEST_CASE_METHOD(GameScenario, "carDoesNotSinkIntoOrLaunchATruck", "[scenario][d
         {"truck_side_60", 0.0F, 60.0F / 3.6F},
     }};
     for (const Approach& approach : approaches) {
-        fh::GameOptions options;
+        openhorizon::GameOptions options;
         options.spawnAt = truckAt - glm::vec2(48.0F, 0.0F);
         options.spawnHeading = halfPi;
         options.startTime = 12.0F * 3600.0F;
@@ -203,12 +203,12 @@ TEST_CASE_METHOD(GameScenario, "carDoesNotSinkIntoOrLaunchATruck", "[scenario][d
         Session session(options);
         CHECK(session.waitForCar());
         session.run(1.0F, {});
-        const fh::CarPhysics* truck = session.game().parkedCar();
+        const openhorizon::CarPhysics* truck = session.game().parkedCar();
         CHECK(truck != nullptr);
         if (!truck) {
             continue;
         }
-        const fh::CarPhysics& car = session.game().playerCar();
+        const openhorizon::CarPhysics& car = session.game().playerCar();
         float speedAtImpact = 0.0F;
         for (float t = 0.0F; t < 20.0F && speedAtImpact == 0.0F; t += kStep) {
             const float speed = car.speed();
@@ -247,4 +247,4 @@ TEST_CASE_METHOD(GameScenario, "carDoesNotSinkIntoOrLaunchATruck", "[scenario][d
 }
 
 } // namespace
-} // namespace fh::test
+} // namespace openhorizon::test

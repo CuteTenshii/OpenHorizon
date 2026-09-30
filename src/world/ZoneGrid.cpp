@@ -5,7 +5,7 @@
 #include <limits>
 #include <numbers>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -89,4 +89,4 @@ int ZoneGrid::zoneAt(float x, float z) const
     return best <= m_radius ? zone : -1;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

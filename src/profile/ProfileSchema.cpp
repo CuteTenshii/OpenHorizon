@@ -13,7 +13,7 @@
 #include <unordered_set>
 #include <utility>
 
-namespace fh::profile {
+namespace openhorizon::profile {
 
 namespace {
 
@@ -376,4 +376,4 @@ Property* findProperty(std::vector<Property>& bags, std::string_view path)
     return const_cast<Property*>(findProperty(static_cast<const std::vector<Property>&>(bags), path));
 }
 
-} // namespace fh::profile
+} // namespace openhorizon::profile

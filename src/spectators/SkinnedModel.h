@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 /// A spectator mesh, `media/spectators/models/<model>_<pose>.skinbin`
 /// (big-endian). Layout, verified on all 40 files of the disc:
@@ -63,4 +63,4 @@ struct SkinnedModel {
 /// does not have the layout above or an index or level lies out of range.
 SkinnedModel parseSkinnedModel(ByteView data, const std::string& source);
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

@@ -2,5 +2,5 @@
 
 int main(int argc, char** argv)
 {
-    return fh::test::runTests(argc, argv);
+    return openhorizon::test::runTests(argc, argv);
 }

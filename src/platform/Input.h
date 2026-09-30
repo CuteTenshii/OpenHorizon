@@ -3,7 +3,7 @@
 #include <array>
 #include <cstdint>
 
-namespace fh {
+namespace openhorizon {
 
 /// Logical controls, named after the Xbox 360 pad the game was designed for.
 /// Keyboard and mouse map onto the same controls so game code reads one
@@ -103,4 +103,4 @@ struct InputState {
     }
 };
 
-} // namespace fh
+} // namespace openhorizon

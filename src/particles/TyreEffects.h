@@ -7,7 +7,7 @@
 #include <array>
 #include <cstddef>
 
-namespace fh::particles {
+namespace openhorizon::particles {
 
 class ParticleManager;
 class ParticleSystem;
@@ -103,4 +103,4 @@ private:
     std::array<ParticleSystem*, kTyreChannelCount> m_channels{};
 };
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

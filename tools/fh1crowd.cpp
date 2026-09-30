@@ -35,8 +35,8 @@
 
 namespace {
 
-namespace spectators = fh::spectators;
-namespace world = fh::world;
+namespace spectators = openhorizon::spectators;
+namespace world = openhorizon::world;
 
 constexpr float kFestivalRadius = 250.0F;
 constexpr float kStartRadius = 150.0F;
@@ -356,7 +356,7 @@ public:
             for (const world::RenderMesh::Part& part : mesh.parts) {
                 for (const world::RenderMesh::Material& material : part.materials) {
                     Kind kind = Kind::Surface;
-                    if (fh::iequals(material.name, "CrowdTERR")) {
+                    if (openhorizon::iequals(material.name, "CrowdTERR")) {
                         kind = Kind::CrowdArea;
                         ++m_crowdAreaChunks;
                     } else if (world::isNotSurface(mesh, material)) {
@@ -470,27 +470,28 @@ private:
 /// point carries the half-width of the drivable corridor.
 class RacingLines {
 public:
-    void load(const fh::Vfs& vfs, std::string_view track)
+    void load(const openhorizon::Vfs& vfs, std::string_view track)
     {
-        const std::string folder = std::format("media/aiopenworld/{}/ribbon_00", fh::toLower(track));
+        const std::string folder = std::format("media/aiopenworld/{}/ribbon_00", openhorizon::toLower(track));
         for (const std::string& path : vfs.list(folder)) {
-            if (!fh::endsWithNoCase(path, ".owt")) {
+            if (!openhorizon::endsWithNoCase(path, ".owt")) {
                 continue;
             }
-            const std::optional<fh::Bytes> data = vfs.read(path);
+            const std::optional<openhorizon::Bytes> data = vfs.read(path);
             if (!data || data->size() < kOwtHeaderBytes || std::memcmp(data->data(), "OWTM", 4) != 0) {
                 continue;
             }
-            const std::uint32_t count = fh::loadBe32(data->data() + 16);
+            const std::uint32_t count = openhorizon::loadBe32(data->data() + 16);
             if (kOwtHeaderBytes + static_cast<std::size_t>(count) * kOwtPointBytes > data->size()) {
                 continue;
             }
             const auto first = static_cast<std::uint32_t>(m_points.size());
             for (std::uint32_t i = 0; i < count; ++i) {
                 const std::uint8_t* p = data->data() + kOwtHeaderBytes + static_cast<std::size_t>(i) * kOwtPointBytes;
-                const float halfWidth = fh::loadBeF32(p + kOwtHalfWidthOffset);
-                m_points.push_back({{fh::loadBeF32(p), fh::loadBeF32(p + 4), fh::loadBeF32(p + 8)},
-                    std::isfinite(halfWidth) && halfWidth > 1.0F ? halfWidth : kDefaultHalfWidth, i + 1 < count});
+                const float halfWidth = openhorizon::loadBeF32(p + kOwtHalfWidthOffset);
+                m_points.push_back(
+                    {{openhorizon::loadBeF32(p), openhorizon::loadBeF32(p + 4), openhorizon::loadBeF32(p + 8)},
+                        std::isfinite(halfWidth) && halfWidth > 1.0F ? halfWidth : kDefaultHalfWidth, i + 1 < count});
             }
             for (std::uint32_t i = first; i < m_points.size(); ++i) {
                 m_grid[key(cell(m_points[i].position.x), cell(m_points[i].position.z))].push_back(i);
@@ -653,10 +654,10 @@ void printCheck(const char* label, const CheckResult& r)
     }
 }
 
-std::optional<glm::vec3> gameObjectPosition(const fh::Vfs& vfs, std::string_view track, std::string_view id)
+std::optional<glm::vec3> gameObjectPosition(const openhorizon::Vfs& vfs, std::string_view track, std::string_view id)
 {
     const std::optional<std::string> text
-        = vfs.readText(std::format("media/tracks/{}/ribbon_00/gameobjs.xml", fh::toLower(track)));
+        = vfs.readText(std::format("media/tracks/{}/ribbon_00/gameobjs.xml", openhorizon::toLower(track)));
     if (!text) {
         return std::nullopt;
     }
@@ -665,7 +666,7 @@ std::optional<glm::vec3> gameObjectPosition(const fh::Vfs& vfs, std::string_view
         return std::nullopt;
     }
     for (const pugi::xml_node node : doc.child("GameObjs").children()) {
-        if (fh::iequals(node.attribute("GameplayID").as_string(), id)) {
+        if (openhorizon::iequals(node.attribute("GameplayID").as_string(), id)) {
             const pugi::xml_node pos = node.child("Pos");
             return glm::vec3(
                 pos.attribute("x").as_float(), pos.attribute("y").as_float(), pos.attribute("z").as_float());
@@ -674,10 +675,10 @@ std::optional<glm::vec3> gameObjectPosition(const fh::Vfs& vfs, std::string_view
     return std::nullopt;
 }
 
-std::optional<glm::vec3> routeStart(const fh::Vfs& vfs, std::string_view track, int route)
+std::optional<glm::vec3> routeStart(const openhorizon::Vfs& vfs, std::string_view track, int route)
 {
-    const std::optional<std::string> text
-        = vfs.readText(std::format("media/tracks/{}/ribbon_00/trackroute{:03}.xml", fh::toLower(track), route));
+    const std::optional<std::string> text = vfs.readText(
+        std::format("media/tracks/{}/ribbon_00/trackroute{:03}.xml", openhorizon::toLower(track), route));
     if (!text) {
         return std::nullopt;
     }
@@ -695,7 +696,7 @@ std::optional<glm::vec3> routeStart(const fh::Vfs& vfs, std::string_view track, 
     return std::nullopt;
 }
 
-int validate(const fh::Vfs& vfs, std::string_view track, const spectators::CrowdSet& crowd)
+int validate(const openhorizon::Vfs& vfs, std::string_view track, const spectators::CrowdSet& crowd)
 {
     std::vector<std::pair<glm::vec2, float>> areas;
     std::vector<std::uint32_t> festivalPeople;
@@ -770,7 +771,7 @@ int main(int argc, char** argv)
         return usage();
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
         const std::string track = argv[2];
         const std::string command = argv[3];
@@ -802,7 +803,7 @@ int main(int argc, char** argv)
         }
         return usage();
     } catch (const std::exception& e) {
-        fh::logError("{}", e.what());
+        openhorizon::logError("{}", e.what());
         return 1;
     }
 }

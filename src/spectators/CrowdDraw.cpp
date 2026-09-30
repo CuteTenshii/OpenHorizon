@@ -4,7 +4,7 @@
 #include <cmath>
 #include <numbers>
 
-namespace fh::spectators::draw {
+namespace openhorizon::spectators::draw {
 
 namespace {
 
@@ -143,4 +143,4 @@ std::vector<std::uint32_t> clipTable(std::span<const std::uint32_t> clips, std::
     return table;
 }
 
-} // namespace fh::spectators::draw
+} // namespace openhorizon::spectators::draw

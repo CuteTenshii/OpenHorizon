@@ -32,7 +32,7 @@
 
 namespace {
 
-using namespace fh::audio;
+using namespace openhorizon::audio;
 
 /// Engine updates per second in renders and live playback, a game frame.
 constexpr int kUpdateRate = 60;
@@ -99,18 +99,18 @@ struct Options {
     }
 };
 
-std::vector<std::string> banksUnder(const fh::Vfs& vfs, const std::string& folder)
+std::vector<std::string> banksUnder(const openhorizon::Vfs& vfs, const std::string& folder)
 {
     std::vector<std::string> banks;
     for (const std::string& path : vfs.list(folder)) {
-        if (fh::endsWithNoCase(path, ".fsb")) {
+        if (openhorizon::endsWithNoCase(path, ".fsb")) {
             banks.push_back(path);
         }
     }
     return banks;
 }
 
-int listBanks(const fh::Vfs& vfs, const std::string& folder)
+int listBanks(const openhorizon::Vfs& vfs, const std::string& folder)
 {
     std::map<std::string, std::size_t> totals;
     std::size_t samples = 0;
@@ -137,14 +137,14 @@ int listBanks(const fh::Vfs& vfs, const std::string& folder)
     return 0;
 }
 
-int exportBank(const fh::Vfs& vfs, const std::string& path, const std::filesystem::path& outDir)
+int exportBank(const openhorizon::Vfs& vfs, const std::string& path, const std::filesystem::path& outDir)
 {
     const FsbBank bank = FsbBank::parse(vfs.readOrThrow(path), path);
     std::filesystem::create_directories(outDir);
     for (std::size_t i = 0; i < bank.size(); ++i) {
         const FsbSample& sample = bank.sample(i);
         std::string stem = sample.name;
-        if (fh::endsWithNoCase(stem, ".wav")) {
+        if (openhorizon::endsWithNoCase(stem, ".wav")) {
             stem.resize(stem.size() - 4);
         }
         std::replace_if(stem.begin(), stem.end(), [](char c) { return c == '/' || c == '\\' || c == ':'; }, '_');
@@ -166,7 +166,7 @@ struct CodecTally {
 
 /// Decodes every sample of every bank under `folder` on all cores and fails
 /// if any sample does not decode to its header's length.
-int verifyBanks(const fh::Vfs& vfs, const std::string& folder)
+int verifyBanks(const openhorizon::Vfs& vfs, const std::string& folder)
 {
     const std::vector<std::string> banks = banksUnder(vfs, folder);
     std::mutex mutex;
@@ -214,7 +214,7 @@ int verifyBanks(const fh::Vfs& vfs, const std::string& folder)
             errors.insert(errors.end(), localErrors.begin(), localErrors.end());
             const std::size_t done = ++finished;
             if (done % 100 == 0 || done == banks.size()) {
-                fh::logInfo("verify: {} of {} banks", done, banks.size());
+                openhorizon::logInfo("verify: {} of {} banks", done, banks.size());
             }
         }
     };
@@ -297,7 +297,7 @@ int describeEvent(AudioLibrary& library, const std::string& projectPath, const s
     const std::shared_ptr<const FevProject> project = library.project(projectPath);
     const FevEvent* event = project->findEvent(eventPath);
     if (!event) {
-        fh::logError("{} has no event '{}'", projectPath, eventPath);
+        openhorizon::logError("{} has no event '{}'", projectPath, eventPath);
         return 1;
     }
     std::printf("%s\n", std::format("{}: volume {} pitch {} priority {} max playbacks {} mode 0x{:x} distance {}..{}",
@@ -377,7 +377,7 @@ int playEvent(AudioLibrary& library, const std::string& projectPath, const std::
     const std::shared_ptr<const FevProject> project = library.project(projectPath);
     const FevEvent* event = project->findEvent(eventPath);
     if (!event) {
-        fh::logError("{} has no event '{}'", projectPath, eventPath);
+        openhorizon::logError("{} has no event '{}'", projectPath, eventPath);
         return 1;
     }
     const std::optional<std::string> wav = options.get("wav");
@@ -425,7 +425,7 @@ std::pair<float, float> sweepAt(float t, float length, float idle, float redline
     return {redline - (redline - idle) * fall, 0.0F};
 }
 
-int runEngine(const fh::Vfs& vfs, const std::string& car, const Options& options, bool live)
+int runEngine(const openhorizon::Vfs& vfs, const std::string& car, const Options& options, bool live)
 {
     const std::optional<std::string> wav = options.get("wav");
     if (!live && !wav) {
@@ -482,7 +482,7 @@ struct TyreStage {
     float combinedSlip;
 };
 
-int runTyres(const fh::Vfs& vfs, const Options& options)
+int runTyres(const openhorizon::Vfs& vfs, const Options& options)
 {
     const std::optional<std::string> wav = options.get("wav");
     if (!wav) {
@@ -555,7 +555,7 @@ int main(int argc, char** argv)
         return usage();
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
         const std::string command = argv[2];
         if (command == "list") {
@@ -588,7 +588,7 @@ int main(int argc, char** argv)
         }
         return usage();
     } catch (const std::exception& e) {
-        fh::logError("{}", e.what());
+        openhorizon::logError("{}", e.what());
         return 1;
     }
 }

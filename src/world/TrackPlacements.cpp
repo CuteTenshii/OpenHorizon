@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <limits>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -261,4 +261,4 @@ const Placement* TrackPlacements::placement(std::size_t draw) const
     return placement.has_value() ? &placement.value() : nullptr;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

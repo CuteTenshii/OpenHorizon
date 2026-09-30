@@ -9,7 +9,7 @@
 #include <string_view>
 #include <unordered_map>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// A linked GLSL program. Uniform locations are looked up once and cached.
 /// Programs go through the binary cache (GlProgram.h).
@@ -47,4 +47,4 @@ private:
     std::unordered_map<std::string, GLint> m_locations;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

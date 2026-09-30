@@ -12,11 +12,11 @@
 #include <string_view>
 #include <tuple>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// Loads sound banks and event projects through the game's file system and
 /// keeps them, and the samples decoded from them, for reuse. Thread-safe.
@@ -63,4 +63,4 @@ private:
     std::map<std::tuple<std::string, std::size_t, int>, std::shared_ptr<const PcmBuffer>> m_samples;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

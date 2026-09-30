@@ -14,7 +14,7 @@
 #include <format>
 #include <limits>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -297,4 +297,4 @@ float RacingLine::advance(float index, float metres) const
     return index + metres / std::max(spacing, 0.1F);
 }
 
-} // namespace fh
+} // namespace openhorizon

@@ -7,7 +7,7 @@
 #include <map>
 #include <utility>
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 namespace {
 
@@ -952,4 +952,4 @@ void RadioSequencer::update(float dt, float dialogueMeanSquare)
     }
 }
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

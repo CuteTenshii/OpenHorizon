@@ -12,7 +12,7 @@
 struct sqlite3;
 struct sqlite3_stmt;
 
-namespace fh {
+namespace openhorizon {
 
 /// One result row, with values looked up by column name. Names match without
 /// regard to case, as the game's own queries are written inconsistently.
@@ -73,4 +73,4 @@ private:
     Bytes m_image;
 };
 
-} // namespace fh
+} // namespace openhorizon

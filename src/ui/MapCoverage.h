@@ -8,11 +8,11 @@
 #include <string>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// The road discovery tunables (Activities/RoadDiscovery/* in
 /// media/gametunablesettings/globalregistry.xml; registered at 0x8328d228
@@ -155,4 +155,4 @@ private:
     bool m_enabled = true;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

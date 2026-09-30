@@ -8,7 +8,7 @@
 #include <format>
 #include <utility>
 
-namespace fh::carmodel {
+namespace openhorizon::carmodel {
 
 namespace {
 
@@ -189,4 +189,4 @@ std::string CarEffect::error(std::string_view technique) const
     return known == m_translated.end() ? std::string() : known->second.error;
 }
 
-} // namespace fh::carmodel
+} // namespace openhorizon::carmodel

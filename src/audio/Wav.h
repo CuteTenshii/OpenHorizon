@@ -6,7 +6,7 @@
 
 #include <filesystem>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 enum class WavFormat {
     /// 16-bit integer PCM; samples outside [-1, 1] are clamped.
@@ -23,4 +23,4 @@ Bytes encodeWav(const PcmBuffer& pcm, WavFormat format);
 /// written.
 void writeWav(const std::filesystem::path& path, const PcmBuffer& pcm, WavFormat format);
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Database;
 class Vfs;
@@ -101,4 +101,4 @@ private:
     std::size_t m_flashes = 0;
 };
 
-} // namespace fh
+} // namespace openhorizon

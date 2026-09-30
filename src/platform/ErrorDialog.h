@@ -4,7 +4,7 @@
 
 struct SDL_Window;
 
-namespace fh {
+namespace openhorizon {
 
 /// Shows `message` in the system's error box titled `title`, over `parent`
 /// when given (so it stays in front of a fullscreen game), and waits for
@@ -14,4 +14,4 @@ namespace fh {
 /// main thread.
 bool showErrorDialog(const std::string& title, const std::string& message, SDL_Window* parent = nullptr);
 
-} // namespace fh
+} // namespace openhorizon

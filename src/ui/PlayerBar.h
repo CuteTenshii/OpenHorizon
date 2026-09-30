@@ -8,12 +8,12 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Database;
 class Localisation;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 class Presentation;
 class UiRenderer;
@@ -149,4 +149,4 @@ private:
 /// languages were not read.
 std::string_view thousandsSeparatorId(bool metric);
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

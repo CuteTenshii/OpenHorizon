@@ -2,7 +2,7 @@
 
 #include "render/Gl.h"
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// The picture the game draws into: 16:9 whatever the window's shape, the
 /// largest that fits it, as the console always output 16:9. Everything of a
@@ -38,4 +38,4 @@ private:
     int m_windowHeight = 0;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

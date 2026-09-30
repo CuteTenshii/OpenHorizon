@@ -32,20 +32,20 @@
 #include <string_view>
 #include <vector>
 
-using fh::test::gameDir;
+using openhorizon::test::gameDir;
 
 namespace {
 
-using fh::profile::FlyerState;
-using fh::profile::GasStationState;
-using fh::profile::OtherState;
-using fh::profile::Profile;
-using fh::profile::ProfileSchema;
-using fh::profile::ProfileStore;
-using fh::profile::PropertyType;
-using fh::profile::PropertyValue;
-using fh::profile::RoadDiscoveryState;
-using fh::profile::SpeedCameraState;
+using openhorizon::profile::FlyerState;
+using openhorizon::profile::GasStationState;
+using openhorizon::profile::OtherState;
+using openhorizon::profile::Profile;
+using openhorizon::profile::ProfileSchema;
+using openhorizon::profile::ProfileStore;
+using openhorizon::profile::PropertyType;
+using openhorizon::profile::PropertyValue;
+using openhorizon::profile::RoadDiscoveryState;
+using openhorizon::profile::SpeedCameraState;
 using namespace std::string_literals;
 
 /// A fresh, empty folder for one test.
@@ -101,19 +101,19 @@ ProfileSchema schema()
 TEST_CASE("typeNamesAreTheGames", "[profile]")
 {
     // The table at 0x82154ee8: names, aliases and ids.
-    CHECK(fh::profile::propertyTypeFromName("Bool") == PropertyType::Bool);
-    CHECK(fh::profile::propertyTypeFromName("Byte") == PropertyType::UInt8);
-    CHECK(fh::profile::propertyTypeFromName("UInt") == PropertyType::UInt32);
-    CHECK(fh::profile::propertyTypeFromName("Int") == PropertyType::Int32);
-    CHECK(fh::profile::propertyTypeFromName("Float") == PropertyType::Float32);
-    CHECK(fh::profile::propertyTypeFromName("String") == PropertyType::StringWide);
-    CHECK(fh::profile::propertyTypeFromName("PropertyBag") == PropertyType::PropertyBag);
-    CHECK(!fh::profile::propertyTypeFromName("bool").has_value());
-    CHECK(!fh::profile::propertyTypeFromName("Double").has_value());
+    CHECK(openhorizon::profile::propertyTypeFromName("Bool") == PropertyType::Bool);
+    CHECK(openhorizon::profile::propertyTypeFromName("Byte") == PropertyType::UInt8);
+    CHECK(openhorizon::profile::propertyTypeFromName("UInt") == PropertyType::UInt32);
+    CHECK(openhorizon::profile::propertyTypeFromName("Int") == PropertyType::Int32);
+    CHECK(openhorizon::profile::propertyTypeFromName("Float") == PropertyType::Float32);
+    CHECK(openhorizon::profile::propertyTypeFromName("String") == PropertyType::StringWide);
+    CHECK(openhorizon::profile::propertyTypeFromName("PropertyBag") == PropertyType::PropertyBag);
+    CHECK(!openhorizon::profile::propertyTypeFromName("bool").has_value());
+    CHECK(!openhorizon::profile::propertyTypeFromName("Double").has_value());
     CHECK(static_cast<int>(PropertyType::UInt64) == 4);
     CHECK(static_cast<int>(PropertyType::Float64) == 10);
     CHECK(static_cast<int>(PropertyType::PropertyBag) == 15);
-    CHECK(fh::profile::propertyTypeName(PropertyType::UInt8) == std::string_view("UInt8"));
+    CHECK(openhorizon::profile::propertyTypeName(PropertyType::UInt8) == std::string_view("UInt8"));
 }
 
 TEST_CASE("schemaReadsBagsTypesAndDefaults", "[profile]")
@@ -121,7 +121,7 @@ TEST_CASE("schemaReadsBagsTypesAndDefaults", "[profile]")
     const ProfileSchema s = schema();
     CHECK(s.bags().size() == std::size_t{3});
     CHECK(s.valueCount() == std::size_t{14});
-    const fh::profile::Property* credits = s.find("Main/Credits");
+    const openhorizon::profile::Property* credits = s.find("Main/Credits");
     CHECK(credits != nullptr);
     CHECK((credits && credits->type == PropertyType::UInt32));
     CHECK((credits && credits->value == PropertyValue(std::uint64_t{500})));
@@ -177,15 +177,16 @@ TEST_CASE("valuesReadBackExactly", "[profile]")
 {
     for (const float number : {0.24F, 0.6F, 1.0F, 1e-7F, 123456.789F, -0.0F}) {
         const PropertyValue value = number;
-        const auto parsed = fh::profile::parseValue(PropertyType::Float32, fh::profile::formatValue(value));
+        const auto parsed
+            = openhorizon::profile::parseValue(PropertyType::Float32, openhorizon::profile::formatValue(value));
         CHECK((parsed && *parsed == value));
     }
     const PropertyValue big = std::numeric_limits<std::uint64_t>::max();
-    CHECK(fh::profile::parseValue(PropertyType::UInt64, fh::profile::formatValue(big)) == big);
-    CHECK(fh::profile::formatValue(PropertyValue(true)) == std::string("1"));
-    CHECK(!fh::profile::valueFits(PropertyType::UInt8, PropertyValue(std::uint64_t{300})));
-    CHECK(!fh::profile::valueFits(PropertyType::Int32, PropertyValue(std::uint64_t{3})));
-    CHECK(fh::profile::valueFits(PropertyType::Int16, PropertyValue(std::int64_t{-32768})));
+    CHECK(openhorizon::profile::parseValue(PropertyType::UInt64, openhorizon::profile::formatValue(big)) == big);
+    CHECK(openhorizon::profile::formatValue(PropertyValue(true)) == std::string("1"));
+    CHECK(!openhorizon::profile::valueFits(PropertyType::UInt8, PropertyValue(std::uint64_t{300})));
+    CHECK(!openhorizon::profile::valueFits(PropertyType::Int32, PropertyValue(std::uint64_t{3})));
+    CHECK(openhorizon::profile::valueFits(PropertyType::Int16, PropertyValue(std::int64_t{-32768})));
 }
 
 TEST_CASE("profileStartsFromTheDefaultsAndChecksTypes", "[profile]")
@@ -208,7 +209,8 @@ TEST_CASE("profileStartsFromTheDefaultsAndChecksTypes", "[profile]")
 }
 
 /// A property list, compared field by field, bags included.
-bool sameProperties(const std::vector<fh::profile::Property>& a, const std::vector<fh::profile::Property>& b)
+bool sameProperties(
+    const std::vector<openhorizon::profile::Property>& a, const std::vector<openhorizon::profile::Property>& b)
 {
     if (a.size() != b.size()) {
         return false;
@@ -309,7 +311,7 @@ Profile playedProfile(const ProfileSchema& s)
 /// The file's bytes with the checksum recomputed after an edit.
 std::string resealed(std::string bytes)
 {
-    const std::uint32_t crc = fh::profile::crc32(std::string_view(bytes).substr(0, bytes.size() - 4));
+    const std::uint32_t crc = openhorizon::profile::crc32(std::string_view(bytes).substr(0, bytes.size() - 4));
     for (std::size_t index = 0; index < 4; ++index) {
         bytes[bytes.size() - 4 + index] = static_cast<char>(crc >> (8 * index));
     }
@@ -328,8 +330,8 @@ std::string sealed(std::string_view body)
 TEST_CASE("checksumIsCrc32", "[profile]")
 {
     // The CRC-32 check value.
-    CHECK(fh::profile::crc32("123456789") == std::uint32_t{0xCBF43926});
-    CHECK(fh::profile::crc32("") == std::uint32_t{0});
+    CHECK(openhorizon::profile::crc32("123456789") == std::uint32_t{0xCBF43926});
+    CHECK(openhorizon::profile::crc32("") == std::uint32_t{0});
 }
 
 TEST_CASE("binaryLayoutIsTheDocumentedOne", "[profile]")
@@ -420,14 +422,14 @@ TEST_CASE("storeKeepsWhatTheSchemaDoesNotHave", "[profile]")
     </Profile>)");
     Profile written(other);
     // What a damaged value would hold; set() refuses it.
-    fh::profile::findProperty(written.bags(), "Main/MetaDiff")->value = std::uint64_t{999};
+    openhorizon::profile::findProperty(written.bags(), "Main/MetaDiff")->value = std::uint64_t{999};
     written.state.otherStates.push_back(
         OtherState{"speed_camera_09", "CSpeedCameraState", 2, {{"Discovered", PropertyType::Bool, true, {}}}});
     written.state.otherStates.push_back(playerState());
     written.state.flyers["flyer_002"] = FlyerState{false, true};
 
     const std::filesystem::path dir = scratch("unknown");
-    CHECK(fh::writeFileToDisk(dir / "ForzaProfile.bin", ProfileStore::serialize(written)));
+    CHECK(openhorizon::writeFileToDisk(dir / "ForzaProfile.bin", ProfileStore::serialize(written)));
     ProfileStore store(dir);
     const ProfileStore::LoadResult result = store.load(schema());
     CHECK(result.status == ProfileStore::LoadStatus::Loaded);
@@ -451,7 +453,7 @@ TEST_CASE("storeKeepsWhatTheSchemaDoesNotHave", "[profile]")
 
     // Bits past the road node count: that state is dropped, the rest read.
     const std::filesystem::path roads = scratch("roads");
-    CHECK(fh::writeFileToDisk(roads / "ForzaProfile.bin",
+    CHECK(openhorizon::writeFileToDisk(roads / "ForzaProfile.bin",
         sealed(
             // CRoadDiscovery in the table, no bags; a tree of one group of
             // one state: 40 nodes, but 64 bits set.
@@ -571,30 +573,30 @@ TEST_CASE("defaultDirectoryIsInTheUserDataFolder", "[profile]")
 {
     // The folder rules themselves are tst_base's; the profile goes in
     // `profile` inside whatever the Data folder is.
-    const char* variable = fh::userFolderVariable(fh::UserFolder::Data);
-    const std::optional<std::string> previous = fh::environmentVariable(variable);
+    const char* variable = openhorizon::userFolderVariable(openhorizon::UserFolder::Data);
+    const std::optional<std::string> previous = openhorizon::environmentVariable(variable);
     const std::filesystem::path dir = scratch("data-home");
-    fh::setEnvironmentVariable(variable, fh::pathToUtf8(dir));
-    CHECK(ProfileStore::defaultDirectory() == fh::userFolder(fh::UserFolder::Data) / "profile");
-    CHECK(fh::pathToUtf8(ProfileStore::defaultDirectory()).starts_with(fh::pathToUtf8(dir)));
+    openhorizon::setEnvironmentVariable(variable, openhorizon::pathToUtf8(dir));
+    CHECK(ProfileStore::defaultDirectory() == openhorizon::userFolder(openhorizon::UserFolder::Data) / "profile");
+    CHECK(openhorizon::pathToUtf8(ProfileStore::defaultDirectory()).starts_with(openhorizon::pathToUtf8(dir)));
     if (previous) {
-        fh::setEnvironmentVariable(variable, *previous);
+        openhorizon::setEnvironmentVariable(variable, *previous);
     } else {
-        fh::unsetEnvironmentVariable(variable);
+        openhorizon::unsetEnvironmentVariable(variable);
     }
 }
 
 TEST_CASE("discSchemaIsTheGamesLayout", "[profile]")
 {
     const char* dir = gameDir();
-    fh::Vfs vfs;
+    openhorizon::Vfs vfs;
     vfs.mountDisc(dir);
     const ProfileSchema s = ProfileSchema::load(vfs);
     std::vector<std::string> names;
-    for (const fh::profile::Property& bag : s.bags()) {
+    for (const openhorizon::profile::Property& bag : s.bags()) {
         names.push_back(bag.name);
         CHECK(bag.type == PropertyType::PropertyBag);
-        for (const fh::profile::Property& property : bag.children) {
+        for (const openhorizon::profile::Property& property : bag.children) {
             CHECK(property.type != PropertyType::PropertyBag);
         }
     }
@@ -607,7 +609,7 @@ TEST_CASE("discSchemaIsTheGamesLayout", "[profile]")
     CHECK((s.find("Main/Flags") && s.find("Main/Flags")->type == PropertyType::UInt64));
     CHECK((s.find("Main/Shifting") && s.find("Main/Shifting")->type == PropertyType::UInt8));
     CHECK((s.find("Options/Units") && s.find("Options/Units")->type == PropertyType::Int32));
-    const fh::profile::Property* deadzone = s.find("ControllerAdvancedOptions/SteeringAxisDeadzoneInside");
+    const openhorizon::profile::Property* deadzone = s.find("ControllerAdvancedOptions/SteeringAxisDeadzoneInside");
     CHECK((deadzone && deadzone->value == PropertyValue(0.24F)));
     CHECK((s.find("HeadTracking") && s.find("HeadTracking")->children.empty()));
 
@@ -639,8 +641,8 @@ public:
 
     void testRunStarting(const Catch::TestRunInfo& /*info*/) override
     {
-        fh::setEnvironmentVariable(fh::userFolderVariable(fh::UserFolder::Data),
-            fh::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-profile" / "data"));
+        openhorizon::setEnvironmentVariable(openhorizon::userFolderVariable(openhorizon::UserFolder::Data),
+            openhorizon::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-profile" / "data"));
     }
 };
 

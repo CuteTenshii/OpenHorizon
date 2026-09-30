@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-namespace fh::render::post {
+namespace openhorizon::render::post {
 
 /// The filmic tone curve of the final combine (pixel shader 0x821C8ABC and
 /// the vertex shader 0x821BD8C4 that evaluates it at the white point):
@@ -54,4 +54,4 @@ glm::mat4 colourTransform(
 /// picture's width over height.
 glm::vec4 vignetteTransform(float angleRadians, const glm::vec2& scale, float aspect);
 
-} // namespace fh::render::post
+} // namespace openhorizon::render::post

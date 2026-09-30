@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cstdlib>
 
-namespace fh::radio {
+namespace openhorizon::radio {
 
 namespace {
 
@@ -249,4 +249,4 @@ std::uint16_t stringIdKey(std::string_view id)
     return static_cast<std::uint16_t>(key);
 }
 
-} // namespace fh::radio
+} // namespace openhorizon::radio

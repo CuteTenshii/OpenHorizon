@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -536,4 +536,4 @@ void EngineSound::setVolume(float volume)
     }
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// Decoded audio: interleaved float samples in [-1, 1].
 struct PcmBuffer {
@@ -98,4 +98,4 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

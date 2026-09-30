@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Vfs;
 
@@ -70,4 +70,4 @@ private:
     std::optional<std::size_t> m_last;
 };
 
-} // namespace fh
+} // namespace openhorizon

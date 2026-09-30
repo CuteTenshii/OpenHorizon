@@ -10,7 +10,7 @@
 #include <cctype>
 #include <span>
 
-namespace fh::carmodel {
+namespace openhorizon::carmodel {
 
 namespace {
 
@@ -302,4 +302,4 @@ PartVariant partVariant(std::string_view partName)
     return result;
 }
 
-} // namespace fh::carmodel
+} // namespace openhorizon::carmodel

@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 namespace particles {
 class ParticleManager;
@@ -80,4 +80,4 @@ private:
     std::vector<Zone> m_zones;
 };
 
-} // namespace fh
+} // namespace openhorizon

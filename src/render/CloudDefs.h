@@ -10,11 +10,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// `media/realtimesky/clouddefs.xml`: named cloud sets, each giving the
 /// texture index of the four cloud layers, and transitions giving the time
@@ -237,4 +237,4 @@ CloudDome<FarCloudVertex> buildFarCloudDome();
 /// w = 1 and u = 0.5.
 CloudDome<CloseCloudVertex> buildCloseCloudDome();
 
-} // namespace fh::render
+} // namespace openhorizon::render

@@ -11,7 +11,7 @@
 
 namespace {
 
-void print(const fh::CarSpec& s)
+void print(const openhorizon::CarSpec& s)
 {
     std::printf("%d %s (%d)  class %d  PI %.3f\n", s.id, s.mediaName.c_str(), s.year, s.classId, s.performanceIndex);
     std::printf("  mass %.0f kg, front %.0f%%, wheelbase %.3f, track %.3f/%.3f, cg %.2f m\n", s.massKg,
@@ -40,7 +40,7 @@ void print(const fh::CarSpec& s)
     std::printf("  tyres %.0f/%.0fR%.0f (r %.3f) and %.0f/%.0fR%.0f (r %.3f), compound %s\n", s.frontTires.widthMm,
         s.frontTires.aspect, s.frontTires.rimDiameterIn, s.frontTires.radius(), s.rearTires.widthMm,
         s.rearTires.aspect, s.rearTires.rimDiameterIn, s.rearTires.radius(), s.compound.name.c_str());
-    const auto axle = [](const char* name, const fh::AxleSuspension& a) {
+    const auto axle = [](const char* name, const openhorizon::AxleSuspension& a) {
         std::printf("  %s: ride %.3f, spring %.0f N/m, damp %.0f/%.0f, bar %.0f Nm/rad, camber %.1f\n", name,
             a.rideHeight, a.springRate, a.bumpDamping, a.reboundDamping, a.antiRollStiffness, a.staticCamberDeg);
     };
@@ -62,30 +62,30 @@ int main(int argc, char** argv)
         return 2;
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
-        const fh::Database db(vfs.readOrThrow("media/db/gamedb.slt"));
+        const openhorizon::Database db(vfs.readOrThrow("media/db/gamedb.slt"));
         const std::string which = argv[2];
         if (which == "all") {
             int failed = 0;
-            for (int id : fh::drivableCarIds(db)) {
+            for (int id : openhorizon::drivableCarIds(db)) {
                 try {
-                    print(fh::loadCarSpec(db, id, &vfs));
+                    print(openhorizon::loadCarSpec(db, id, &vfs));
                 } catch (const std::exception& e) {
                     ++failed;
-                    fh::logError("car {}: {}", id, e.what());
+                    openhorizon::logError("car {}: {}", id, e.what());
                 }
             }
             return failed == 0 ? 0 : 1;
         }
         int id = std::atoi(which.c_str());
         if (id == 0) {
-            id = fh::carIdByMediaName(db, which);
+            id = openhorizon::carIdByMediaName(db, which);
         }
-        print(fh::loadCarSpec(db, id, &vfs));
+        print(openhorizon::loadCarSpec(db, id, &vfs));
         return 0;
     } catch (const std::exception& e) {
-        fh::logError("{}", e.what());
+        openhorizon::logError("{}", e.what());
         return 1;
     }
 }

@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <chrono>
 
-namespace fh {
+namespace openhorizon {
 
 Title::Title(Window& window, const std::filesystem::path& gameDir)
     : m_window(window)
@@ -78,4 +78,4 @@ bool Title::frame(const InputState& controls, float dt)
     return m_started;
 }
 
-} // namespace fh
+} // namespace openhorizon

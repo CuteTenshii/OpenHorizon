@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class GameObjects;
 namespace render {
 class WorldRenderer;
@@ -78,4 +78,4 @@ private:
     std::vector<Group> m_groups;
 };
 
-} // namespace fh
+} // namespace openhorizon

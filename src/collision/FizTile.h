@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace fh::collision {
+namespace openhorizon::collision {
 
 /// Flag bits of FizTriangle::flags. Every triangle has an even value; the
 /// meanings are inferred from which triangles carry each bit, as the code
@@ -183,4 +183,4 @@ FizTile parseFizTile(ByteView data, const std::string& source);
 /// Unpacks a vertex normal stored as FizTile documents.
 glm::vec3 unpackFizNormal(std::uint32_t packed);
 
-} // namespace fh::collision
+} // namespace openhorizon::collision

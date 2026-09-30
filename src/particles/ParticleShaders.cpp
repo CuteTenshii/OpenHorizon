@@ -1,6 +1,6 @@
 #include "ParticleShaders.h"
 
-namespace fh::particles::glsl {
+namespace openhorizon::particles::glsl {
 
 const char* const kVertex = R"(#version 450 core
 // One particle record, filled by ParticleRenderer as the game fills its
@@ -244,4 +244,4 @@ void main()
 }
 )";
 
-} // namespace fh::particles::glsl
+} // namespace openhorizon::particles::glsl

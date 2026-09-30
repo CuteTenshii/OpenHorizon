@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -449,4 +449,4 @@ GLuint linkProgram(std::string_view name, std::string_view vertex, std::string_v
     return ProgramBuild(name, vertex, fragment).finish();
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

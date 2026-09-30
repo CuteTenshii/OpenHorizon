@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -458,4 +458,4 @@ CarAudioTuning CarAudioTuning::load(const Vfs& vfs, std::string_view carMedia, i
     return car;
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

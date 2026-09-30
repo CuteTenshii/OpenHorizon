@@ -27,7 +27,7 @@
 /// kind 4 makes the class with vtable 0x82002954, kind 5 the one with
 /// vtable 0x82002A04), and the class's body parser (vtable slot 30) reads
 /// the rest.
-namespace fh::animated {
+namespace openhorizon::animated {
 
 /// The kinds of procedural set this module reads.
 inline constexpr std::uint32_t kObjectSetKind = 4;
@@ -221,4 +221,4 @@ AnimatedObjectSet readObjectSet(Bytes data, const std::string& source);
 /// have the layout above.
 AnimatedPlacementSet readPlacementSet(ByteView data, const std::string& source);
 
-} // namespace fh::animated
+} // namespace openhorizon::animated

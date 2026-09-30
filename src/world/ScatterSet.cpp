@@ -4,7 +4,7 @@
 #include <array>
 #include <cstring>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -251,4 +251,4 @@ ScatterSet readScatterSet(ByteView data)
     return set;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

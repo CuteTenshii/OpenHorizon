@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Vfs;
 
@@ -59,4 +59,4 @@ struct TrafficConfig {
     const Settings* find(std::string_view name) const;
 };
 
-} // namespace fh
+} // namespace openhorizon

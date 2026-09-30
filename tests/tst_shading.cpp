@@ -38,7 +38,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using namespace fh;
+using namespace openhorizon;
 
 constexpr std::uint32_t kDxt1 = 0x12;
 constexpr std::uint32_t kDxt5 = 0x14;
@@ -49,7 +49,7 @@ constexpr std::uint32_t kSwap8In16 = 1U << 6;
 std::unique_ptr<Vfs> disc()
 {
     auto vfs = std::make_unique<Vfs>();
-    vfs->mountDisc(pathFromUtf8(fh::test::gameDir()));
+    vfs->mountDisc(pathFromUtf8(openhorizon::test::gameDir()));
     return vfs;
 }
 

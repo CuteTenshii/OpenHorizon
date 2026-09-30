@@ -40,7 +40,7 @@
 
 namespace {
 
-namespace carmodel = fh::carmodel;
+namespace carmodel = openhorizon::carmodel;
 using carmodel::CarMesh;
 using carmodel::CarModel;
 
@@ -65,18 +65,18 @@ int usage()
     return 2;
 }
 
-const char* formatName(fh::world::TextureSurface::Format format)
+const char* formatName(openhorizon::world::TextureSurface::Format format)
 {
     switch (format) {
-    case fh::world::TextureSurface::Format::Dxt1:
+    case openhorizon::world::TextureSurface::Format::Dxt1:
         return "DXT1";
-    case fh::world::TextureSurface::Format::Dxt3:
+    case openhorizon::world::TextureSurface::Format::Dxt3:
         return "DXT3";
-    case fh::world::TextureSurface::Format::Dxt5:
+    case openhorizon::world::TextureSurface::Format::Dxt5:
         return "DXT5";
-    case fh::world::TextureSurface::Format::Bc5:
+    case openhorizon::world::TextureSurface::Format::Bc5:
         return "BC5";
-    case fh::world::TextureSurface::Format::Rgba8:
+    case openhorizon::world::TextureSurface::Format::Rgba8:
         return "RGBA8";
     }
     return "?";
@@ -120,7 +120,7 @@ std::string vec(const glm::vec3& v)
 }
 
 /// The collision box of `physics/maxdata.xml`, in car space.
-std::optional<std::pair<glm::vec3, glm::vec3>> maxDataBox(const fh::Vfs& vfs, const std::string& car)
+std::optional<std::pair<glm::vec3, glm::vec3>> maxDataBox(const openhorizon::Vfs& vfs, const std::string& car)
 {
     const std::optional<std::string> text = vfs.readText(std::format("media/cars/{}/physics/maxdata.xml", car));
     if (!text) {
@@ -140,7 +140,7 @@ std::optional<std::pair<glm::vec3, glm::vec3>> maxDataBox(const fh::Vfs& vfs, co
             box.attribute("MaxX").as_float(), box.attribute("MaxY").as_float(), box.attribute("MaxZ").as_float())};
 }
 
-void report(const fh::Vfs& vfs, const CarModel& model)
+void report(const openhorizon::Vfs& vfs, const CarModel& model)
 {
     std::printf("car %s, wheel %s\n", model.mediaName.c_str(), model.wheelMediaName.c_str());
     std::printf("files:\n");
@@ -274,8 +274,8 @@ void writeObj(const CarModel& model, const std::filesystem::path& path)
             const glm::vec3 p = mesh.position(batch, v);
             const std::uint8_t* raw
                 = mesh.vertices.data() + range.byteOffset + std::size_t{v} * carmodel::carbin::kVertexStride;
-            const float u = static_cast<float>(fh::loadBe16(raw + 8)) / 65535.0F;
-            const float t = static_cast<float>(fh::loadBe16(raw + 10)) / 65535.0F;
+            const float u = static_cast<float>(openhorizon::loadBe16(raw + 8)) / 65535.0F;
+            const float t = static_cast<float>(openhorizon::loadBe16(raw + 10)) / 65535.0F;
             obj << std::format("v {:.5f} {:.5f} {:.5f}\nvt {:.5f} {:.5f}\n", p.x, p.y, -p.z,
                 batch.uv0.x + batch.uv0.y * u, 1.0F - (batch.uv0.z + batch.uv0.w * t));
         }
@@ -293,11 +293,11 @@ void writeObj(const CarModel& model, const std::filesystem::path& path)
     }
 
     for (std::size_t t = 0; t < model.textures.size(); ++t) {
-        const fh::world::TextureMipChain& chain = model.textures[t].chain;
+        const openhorizon::world::TextureMipChain& chain = model.textures[t].chain;
         if (chain.levels.empty()) {
             continue;
         }
-        const fh::world::RgbaImage image = fh::world::decodeSurface(chain.level(0));
+        const openhorizon::world::RgbaImage image = openhorizon::world::decodeSurface(chain.level(0));
         xds::Image png;
         png.width = static_cast<std::uint32_t>(image.width);
         png.height = static_cast<std::uint32_t>(image.height);
@@ -310,9 +310,9 @@ void writeObj(const CarModel& model, const std::filesystem::path& path)
         "wrote %s, %s and %zu textures\n", path.string().c_str(), mtlPath.string().c_str(), model.textures.size());
 }
 
-int loadAll(const fh::Vfs& vfs, const fh::Database& db, bool textures)
+int loadAll(const openhorizon::Vfs& vfs, const openhorizon::Database& db, bool textures)
 {
-    const std::vector<fh::Row> cars
+    const std::vector<openhorizon::Row> cars
         = db.query("SELECT MediaName FROM Data_Car WHERE IsDrivable = 1 ORDER BY MediaName");
     carmodel::CarModelOptions options;
     options.textures = textures;
@@ -320,7 +320,7 @@ int loadAll(const fh::Vfs& vfs, const fh::Database& db, bool textures)
     int withWarnings = 0;
     std::size_t triangles = 0;
     const auto start = std::chrono::steady_clock::now();
-    for (const fh::Row& row : cars) {
+    for (const openhorizon::Row& row : cars) {
         const std::string name = row.text("MediaName");
         try {
             const CarModel model = CarModel::load(vfs, &db, name, options);
@@ -349,14 +349,14 @@ int loadAll(const fh::Vfs& vfs, const fh::Database& db, bool textures)
 
 /// Factory colour `sequence` of the car, linear RGB, as the game picks it
 /// (Combo_Colors, RGB packed 0xRRGGBB in sRGB).
-std::optional<std::pair<glm::vec3, bool>> factoryPaint(const fh::Database& db, std::string_view mediaName)
+std::optional<std::pair<glm::vec3, bool>> factoryPaint(const openhorizon::Database& db, std::string_view mediaName)
 {
-    const std::optional<fh::Row> car
+    const std::optional<openhorizon::Row> car
         = db.queryOne("SELECT Id FROM Data_Car WHERE lower(MediaName) = lower(?)", {std::string(mediaName)});
     if (!car) {
         return std::nullopt;
     }
-    const std::optional<fh::Row> paint
+    const std::optional<openhorizon::Row> paint
         = db.queryOne("SELECT RGB, Metallic FROM Combo_Colors WHERE Ordinal = ? ORDER BY Sequence LIMIT 1",
             {std::to_string(car->i("Id"))});
     if (!paint) {
@@ -390,31 +390,32 @@ bool savePng(const std::filesystem::path& path, int width, int height)
 
 /// Draws the car standing at the world origin, facing north, from six
 /// directions, lit by colorado's time of day, and saves each view.
-int renderViews(
-    const fh::Vfs& vfs, const fh::Database* db, const CarModel& model, const std::string& prefix, float minutes)
+int renderViews(const openhorizon::Vfs& vfs, const openhorizon::Database* db, const CarModel& model,
+    const std::string& prefix, float minutes)
 {
     constexpr int kWidth = 1280;
     constexpr int kHeight = 720;
-    fh::WindowOptions windowOptions;
+    openhorizon::WindowOptions windowOptions;
     windowOptions.title = "fh1carmodel";
     windowOptions.width = kWidth;
     windowOptions.height = kHeight;
     windowOptions.vsync = false;
     windowOptions.hidden = true;
-    fh::Window window(windowOptions);
+    openhorizon::Window window(windowOptions);
 
-    fh::TimeOfDay timeOfDay(fh::TimeOfDayCurves::load(vfs, "colorado"));
+    openhorizon::TimeOfDay timeOfDay(openhorizon::TimeOfDayCurves::load(vfs, "colorado"));
     timeOfDay.setSeconds(minutes * 60.0F);
     // Colorado's post-processing outside every zone at that time, with the
     // exposure adapted to this one frame.
-    fh::PostProcessing post = fh::PostProcessing::load(vfs, "colorado");
+    openhorizon::PostProcessing post = openhorizon::PostProcessing::load(vfs, "colorado");
     post.update(std::nullopt, 0.0F, timeOfDay.curves(), timeOfDay.minutes());
     timeOfDay.setFog(post.fog());
-    const fh::render::PostFrame postFrame = post.frame(static_cast<float>(kWidth) / static_cast<float>(kHeight), true);
+    const openhorizon::render::PostFrame postFrame
+        = post.frame(static_cast<float>(kWidth) / static_cast<float>(kHeight), true);
 
-    fh::render::FrameRenderer frameRenderer;
-    fh::render::CarRenderer car(model);
-    fh::render::CarPose pose;
+    openhorizon::render::FrameRenderer frameRenderer;
+    openhorizon::render::CarRenderer car(model);
+    openhorizon::render::CarPose pose;
     for (std::size_t w = 0; w < model.wheels.size() && w < pose.hubs.size(); ++w) {
         pose.hubs[w] = model.wheels[w].centre;
     }
@@ -427,22 +428,22 @@ int renderViews(
         // Stand the car on flat ground as the game's physics holds it, so
         // body and wheels sit at their ride height: the pose Game::carPose
         // takes from the settled model.
-        if (const std::optional<fh::Row> row
+        if (const std::optional<openhorizon::Row> row
             = db->queryOne("SELECT Id FROM Data_Car WHERE lower(MediaName) = lower(?)", {model.mediaName})) {
-            const fh::CarSpec spec = fh::loadCarSpec(*db, row->i("Id"), &vfs);
-            fh::CarPhysics physics(spec);
-            const fh::FlatGround ground;
+            const openhorizon::CarSpec spec = openhorizon::loadCarSpec(*db, row->i("Id"), &vfs);
+            openhorizon::CarPhysics physics(spec);
+            const openhorizon::FlatGround ground;
             physics.reset(glm::vec3(0.0F), 0.0F, ground);
             constexpr int kSettleSteps = 360 * 4;
-            fh::CarControls controls;
+            openhorizon::CarControls controls;
             controls.handbrake = 1.0F;
             for (int i = 0; i < kSettleSteps; ++i) {
                 physics.step(controls, ground);
             }
             pose.body = physics.transform();
             const glm::mat4 toCar = glm::inverse(pose.body);
-            for (std::size_t w = 0; w < fh::CarPhysics::kWheels; ++w) {
-                const fh::CarPhysics::WheelState& wheel = physics.wheels()[w];
+            for (std::size_t w = 0; w < openhorizon::CarPhysics::kWheels; ++w) {
+                const openhorizon::CarPhysics::WheelState& wheel = physics.wheels()[w];
                 pose.hubs[w] = glm::vec3(toCar * glm::vec4(wheel.hubWorld, 1.0F));
                 pose.steer[w] = wheel.steerAngle;
                 pose.spin[w] = wheel.spinAngle;
@@ -460,11 +461,11 @@ int renderViews(
         View{"rear", {0.0F, 0.15F, -1.0F}}, View{"front34", {-0.8F, 0.3F, 0.8F}}, View{"rear34", {0.8F, 0.3F, -0.8F}},
         View{"top", {0.0F, 1.0F, 0.05F}}};
     for (const View& view : views) {
-        fh::render::Camera camera;
+        openhorizon::render::Camera camera;
         camera.fov = 0.36F;
         camera.target = centre;
         camera.position = centre + glm::normalize(view.direction) * 8.5F;
-        fh::render::FrameParams frame;
+        openhorizon::render::FrameParams frame;
         frame.view = camera.view();
         frame.projection = camera.projection(static_cast<float>(kWidth) / static_cast<float>(kHeight));
         frame.cameraPosition = camera.position;
@@ -528,10 +529,10 @@ int main(int argc, char** argv)
         }
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
-        const std::optional<fh::Bytes> image = vfs.read("media/db/gamedb.slt");
-        std::optional<fh::Database> db;
+        const std::optional<openhorizon::Bytes> image = vfs.read("media/db/gamedb.slt");
+        std::optional<openhorizon::Database> db;
         if (image) {
             db.emplace(*image);
         }

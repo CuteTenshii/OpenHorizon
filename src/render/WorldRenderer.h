@@ -27,7 +27,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// The light, sky and fog of one moment, in the terms of the game's own
 /// shaders (all colours linear RGB, in the scene's HDR units):
@@ -662,4 +662,4 @@ private:
     Stats m_stats;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

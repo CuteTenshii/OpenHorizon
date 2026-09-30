@@ -3,11 +3,11 @@
 #include <string>
 #include <string_view>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// When a crash takes over the mix: the CrashData element of
 /// media/audio/audiomixersnapshots.xml's DynamicsData, which the snapshot
@@ -53,4 +53,4 @@ private:
     float m_previousMph = 0.0F;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

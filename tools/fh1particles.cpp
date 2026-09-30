@@ -33,7 +33,7 @@
 
 namespace {
 
-namespace particles = fh::particles;
+namespace particles = openhorizon::particles;
 
 int usage()
 {
@@ -82,7 +82,7 @@ const char* typeName(particles::ParticleType t)
     return "?";
 }
 
-int list(const fh::Vfs& vfs)
+int list(const openhorizon::Vfs& vfs)
 {
     const particles::ParticleManager manager = particles::ParticleManager::load(vfs);
     std::printf("%-40s %-28s %-10s %-9s %6s %8s %6s %-8s %s\n", "system", "effect", "shape", "type", "budget", "qty/s",
@@ -102,7 +102,7 @@ int list(const fh::Vfs& vfs)
     return 0;
 }
 
-int show(const fh::Vfs& vfs, const std::string& name)
+int show(const openhorizon::Vfs& vfs, const std::string& name)
 {
     const std::string path = particles::effectPath(name);
     const std::optional<std::string> text = vfs.readText(path);
@@ -183,7 +183,7 @@ int show(const fh::Vfs& vfs, const std::string& name)
     return 0;
 }
 
-int surfaces(const fh::Vfs& vfs)
+int surfaces(const openhorizon::Vfs& vfs)
 {
     const particles::SurfaceEffectTable table = particles::SurfaceEffectTable::load(vfs);
     for (std::size_t id = 0; id < table.surfaces().size(); ++id) {
@@ -230,26 +230,28 @@ struct Options {
 
 /// Draws the manager's particles from `eye` towards `target` under
 /// colorado's lighting at the options' time and saves the frame.
-int drawScene(const fh::Vfs& vfs, const particles::ParticleManager& manager, particles::ParticleRenderer& renderer,
-    const glm::vec3& eye, const glm::vec3& target, const Options& options, const std::string& out)
+int drawScene(const openhorizon::Vfs& vfs, const particles::ParticleManager& manager,
+    particles::ParticleRenderer& renderer, const glm::vec3& eye, const glm::vec3& target, const Options& options,
+    const std::string& out)
 {
     constexpr int kWidth = 960;
     constexpr int kHeight = 540;
-    fh::TimeOfDay timeOfDay(fh::TimeOfDayCurves::load(vfs, "colorado"));
+    openhorizon::TimeOfDay timeOfDay(openhorizon::TimeOfDayCurves::load(vfs, "colorado"));
     timeOfDay.setSeconds(options.minutes * 60.0F);
     // Colorado's post-processing outside every zone at that time, with the
     // exposure adapted to this one frame.
-    fh::PostProcessing post = fh::PostProcessing::load(vfs, "colorado");
+    openhorizon::PostProcessing post = openhorizon::PostProcessing::load(vfs, "colorado");
     post.update(std::nullopt, 0.0F, timeOfDay.curves(), timeOfDay.minutes());
     timeOfDay.setFog(post.fog());
-    const fh::render::PostFrame postFrame = post.frame(static_cast<float>(kWidth) / static_cast<float>(kHeight), true);
+    const openhorizon::render::PostFrame postFrame
+        = post.frame(static_cast<float>(kWidth) / static_cast<float>(kHeight), true);
 
-    fh::render::FrameRenderer frameRenderer;
-    fh::render::Camera camera;
+    openhorizon::render::FrameRenderer frameRenderer;
+    openhorizon::render::Camera camera;
     camera.position = eye;
     camera.target = target;
     camera.fov = 0.7F;
-    fh::render::FrameParams frame;
+    openhorizon::render::FrameParams frame;
     frame.view = camera.view();
     frame.projection = camera.projection(static_cast<float>(kWidth) / static_cast<float>(kHeight));
     frame.cameraPosition = camera.position;
@@ -279,9 +281,9 @@ int drawScene(const fh::Vfs& vfs, const particles::ParticleManager& manager, par
     return 0;
 }
 
-fh::WindowOptions windowOptions()
+openhorizon::WindowOptions windowOptions()
 {
-    fh::WindowOptions options;
+    openhorizon::WindowOptions options;
     options.title = "fh1particles";
     options.width = 960;
     options.height = 540;
@@ -290,7 +292,7 @@ fh::WindowOptions windowOptions()
     return options;
 }
 
-int render(const fh::Vfs& vfs, const std::string& systemName, const std::string& out, const Options& options)
+int render(const openhorizon::Vfs& vfs, const std::string& systemName, const std::string& out, const Options& options)
 {
     particles::ParticleManager manager = particles::ParticleManager::load(vfs);
     particles::ParticleSystem* system = manager.find(systemName);
@@ -309,12 +311,12 @@ int render(const fh::Vfs& vfs, const std::string& systemName, const std::string&
         manager.update(kDt);
     }
     std::printf("%s: %zu particles after %d frames\n", systemName.c_str(), system->size(), frames);
-    const fh::Window window(windowOptions());
+    const openhorizon::Window window(windowOptions());
     particles::ParticleRenderer renderer(vfs);
     return drawScene(vfs, manager, renderer, glm::vec3(3.0F, 1.5F, 3.0F), glm::vec3(0.0F, 0.6F, 0.0F), options, out);
 }
 
-int tyres(const fh::Vfs& vfs, const std::string& surfaceName, const std::string& out, const Options& options)
+int tyres(const openhorizon::Vfs& vfs, const std::string& surfaceName, const std::string& out, const Options& options)
 {
     particles::ParticleManager manager = particles::ParticleManager::load(vfs);
     particles::SurfaceEffectTable table = particles::SurfaceEffectTable::load(vfs);
@@ -365,7 +367,7 @@ int tyres(const fh::Vfs& vfs, const std::string& surfaceName, const std::string&
         }
     }
     std::printf("%s: %zu particles after %d frames\n", surfaceName.c_str(), total, frames);
-    const fh::Window window(windowOptions());
+    const openhorizon::Window window(windowOptions());
     particles::ParticleRenderer renderer(vfs);
     return drawScene(vfs, manager, renderer, glm::vec3(4.5F, 1.6F, -6.0F), glm::vec3(0.0F, 0.6F, -1.5F), options, out);
 }
@@ -405,7 +407,7 @@ int main(int argc, char** argv)
         return usage();
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
         const std::string_view command = argv[2];
         if (command == "list") {
@@ -423,7 +425,7 @@ int main(int argc, char** argv)
         }
         return usage();
     } catch (const std::exception& e) {
-        fh::logError("{}", e.what());
+        openhorizon::logError("{}", e.what());
         return 1;
     }
 }

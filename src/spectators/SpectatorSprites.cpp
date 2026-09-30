@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 namespace {
 
@@ -96,4 +96,4 @@ SpriteMetrics measureSprites(const world::RgbaImage& atlas, const std::vector<fl
     return metrics;
 }
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

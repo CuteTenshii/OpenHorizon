@@ -5,7 +5,7 @@
 #include <charconv>
 #include <unordered_set>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -83,4 +83,4 @@ std::optional<std::uint32_t> numberBefore(std::string_view text, char prefix, st
     return number;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

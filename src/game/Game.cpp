@@ -20,7 +20,7 @@
 #include <string_view>
 #include <thread>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -3289,4 +3289,4 @@ int Game::run()
     return 0;
 }
 
-} // namespace fh
+} // namespace openhorizon

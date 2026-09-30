@@ -10,7 +10,7 @@
 #include <cmath>
 #include <limits>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -232,4 +232,4 @@ bool EventInstance::isPlaying() const
     });
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

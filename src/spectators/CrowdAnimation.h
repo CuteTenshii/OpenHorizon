@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 /// A bone of a spectator skeleton. The bind pose has no rotation: every
 /// bone's frame is parallel to the model's, so a bone's bind transform is a
@@ -137,4 +137,4 @@ void samplePose(const AnimationClip& clip, float time, std::span<BonePose> out);
 void skinMatrices(
     const Skeleton& animated, const Skeleton& bind, std::span<const BonePose> pose, std::span<glm::mat4> out);
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

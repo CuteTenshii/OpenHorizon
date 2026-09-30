@@ -6,7 +6,7 @@
 #include <bit>
 #include <format>
 
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 namespace {
 
@@ -539,4 +539,4 @@ Effect parseEffect(ByteView data, const std::string& source)
     return effect;
 }
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// Attribute names the runtime evaluates, as hashes.
 namespace attr {
@@ -356,4 +356,4 @@ private:
     mutable std::optional<State> m_state;
 };
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

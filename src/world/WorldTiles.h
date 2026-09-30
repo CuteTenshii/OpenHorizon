@@ -21,7 +21,7 @@ namespace lzx {
 class ZipArchive;
 } // namespace lzx
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// Which event props (Placement::eventProp) a WorldTileGrid includes; other
 /// chunks are always included.
@@ -229,4 +229,4 @@ bool isNotSurface(const RenderMesh& mesh, const RenderMesh::Material& material);
 TileMesh buildTileMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
     const std::vector<std::uint32_t>& chunks, const TrackTextures* textures = nullptr);
 
-} // namespace fh::world
+} // namespace openhorizon::world

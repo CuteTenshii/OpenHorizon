@@ -6,7 +6,7 @@
 #include <cstring>
 #include <numbers>
 
-namespace fh::spectators {
+namespace openhorizon::spectators {
 
 namespace {
 
@@ -236,4 +236,4 @@ LegacyCrowdFile parseLegacyCrowdFile(ByteView data, const std::string& source)
     return file;
 }
 
-} // namespace fh::spectators
+} // namespace openhorizon::spectators

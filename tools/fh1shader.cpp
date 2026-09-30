@@ -16,7 +16,7 @@
 
 namespace {
 
-namespace xenos = fh::xenos;
+namespace xenos = openhorizon::xenos;
 
 int usage()
 {
@@ -33,7 +33,7 @@ void print(const std::string& text)
     std::fwrite(text.data(), 1, text.size(), stdout);
 }
 
-int list(const fh::Vfs& vfs)
+int list(const openhorizon::Vfs& vfs)
 {
     std::size_t total = 0;
     for (const std::string& path : xenos::listEffects(vfs)) {
@@ -46,7 +46,7 @@ int list(const fh::Vfs& vfs)
             total += effect.shaders.size();
             print(std::format("{}  techniques {}  vertex {}  pixel {}\n", path, effect.techniques.size(), vertex,
                 effect.shaders.size() - vertex));
-        } catch (const fh::DataError& e) {
+        } catch (const openhorizon::DataError& e) {
             print(std::format("{}  error: {}\n", path, e.what()));
         }
     }
@@ -72,7 +72,7 @@ void printEffectSummary(const xenos::Effect& effect)
     }
 }
 
-int disassemble(const fh::Vfs& vfs, const std::string& path)
+int disassemble(const openhorizon::Vfs& vfs, const std::string& path)
 {
     const xenos::Effect effect = xenos::parseEffect(vfs.readOrThrow(path), path);
     printEffectSummary(effect);
@@ -82,7 +82,7 @@ int disassemble(const fh::Vfs& vfs, const std::string& path)
     return 0;
 }
 
-int glsl(const fh::Vfs& vfs, const std::string& path)
+int glsl(const openhorizon::Vfs& vfs, const std::string& path)
 {
     const xenos::Effect effect = xenos::parseEffect(vfs.readOrThrow(path), path);
     for (const xenos::Technique& technique : effect.techniques) {
@@ -110,7 +110,7 @@ int glsl(const fh::Vfs& vfs, const std::string& path)
                 }
                 print("//// vertex shader\n" + program.vertexGlsl);
                 print("//// fragment shader\n" + program.fragmentGlsl + "\n");
-            } catch (const fh::DataError& e) {
+            } catch (const openhorizon::DataError& e) {
                 print(std::format("//// error: {}\n", e.what()));
             }
         }
@@ -118,7 +118,7 @@ int glsl(const fh::Vfs& vfs, const std::string& path)
     return 0;
 }
 
-int check(const fh::Vfs& vfs)
+int check(const openhorizon::Vfs& vfs)
 {
     const std::vector<std::string> paths = xenos::listEffects(vfs);
     const xenos::CheckReport report = xenos::checkEffects(vfs, paths);
@@ -136,7 +136,7 @@ int main(int argc, char** argv)
         return usage();
     }
     try {
-        fh::Vfs vfs;
+        openhorizon::Vfs vfs;
         vfs.mountDisc(argv[1]);
         const std::string command = argv[2];
         if (command == "list") {
@@ -156,7 +156,7 @@ int main(int argc, char** argv)
         }
         return usage();
     } catch (const std::exception& e) {
-        fh::logError("{}", e.what());
+        openhorizon::logError("{}", e.what());
         return 1;
     }
 }

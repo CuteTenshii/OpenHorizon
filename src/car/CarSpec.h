@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Database;
 class Vfs;
@@ -438,4 +438,4 @@ std::vector<int> drivableCarIds(const Database& db);
 /// -1.
 int carIdByMediaName(const Database& db, const std::string& mediaName);
 
-} // namespace fh
+} // namespace openhorizon

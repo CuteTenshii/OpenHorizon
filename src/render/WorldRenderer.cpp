@@ -15,7 +15,7 @@
 #include <string_view>
 #include <tuple>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -1661,4 +1661,4 @@ void WorldRenderer::drawCubePass(const FrameParams& frame, const glm::mat4& view
     m_boundTextures.fill(0);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

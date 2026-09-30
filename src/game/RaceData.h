@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Database;
 class Localisation;
@@ -111,4 +111,4 @@ struct RacingLine {
     float advance(float index, float metres) const;
 };
 
-} // namespace fh
+} // namespace openhorizon

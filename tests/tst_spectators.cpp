@@ -32,8 +32,8 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using fh::Bytes;
-namespace sp = fh::spectators;
+using openhorizon::Bytes;
+namespace sp = openhorizon::spectators;
 
 /// Builds big-endian test data.
 struct Writer {
@@ -691,7 +691,7 @@ TEST_CASE("spritesChooseCellsByViewAngle", "[spectators]")
     // Between 90 and 135 degrees the six views keep the side cell.
     CHECK(sp::chooseSprite(layout, 12, true, facing, origin, {10.0F, 0.0F, -9.0F}).view == sp::SpriteView::SeatedSide);
 
-    fh::world::RgbaImage atlas;
+    openhorizon::world::RgbaImage atlas;
     atlas.width = 128;
     atlas.height = 128;
     atlas.rgba.assign(static_cast<std::size_t>(atlas.width * atlas.height) * 4, 0);
@@ -833,7 +833,7 @@ TEST_CASE("crowdSetLoadsFromADisc", "[spectators]")
 
     // Held by pointer so it can close the archive before the folder goes:
     // Windows refuses to delete a file that is still open.
-    auto vfs = std::make_unique<fh::Vfs>();
+    auto vfs = std::make_unique<openhorizon::Vfs>();
     vfs->mountDisc(root);
     const sp::CrowdSet crowd = sp::CrowdSet::load(*vfs, "testtrack");
     CHECK(crowd.groups().size() == std::size_t{3});
@@ -902,8 +902,8 @@ TEST_CASE("crowdSetLoadsFromADisc", "[spectators]")
 
 TEST_CASE("coloradoCrowd", "[spectators]")
 {
-    const char* gameDir = fh::test::gameDir();
-    fh::Vfs vfs;
+    const char* gameDir = openhorizon::test::gameDir();
+    openhorizon::Vfs vfs;
     vfs.mountDisc(gameDir);
     const sp::CrowdSet crowd = sp::CrowdSet::load(vfs, "colorado");
     CHECK(crowd.groups().size() == std::size_t{1783});

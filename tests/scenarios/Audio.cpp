@@ -23,29 +23,30 @@
 #include <utility>
 #include <vector>
 
-namespace fh::test {
+namespace openhorizon::test {
 namespace {
 
 // A race drives under the Race mix (exterior_race before start_race in the
 // race flows) and goes back to FreeRoam when it is left.
 TEST_CASE_METHOD(GameScenario, "raceUsesTheRaceMix", "[scenario][audio]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.race = "FR02";
     Session session(options);
     CHECK(session.waitForCar());
     session.run(0.5F, {});
-    CHECK(gameplayMix(session.game()) == fh::audio::MixSnapshotId::Race);
+    CHECK(gameplayMix(session.game()) == openhorizon::audio::MixSnapshotId::Race);
 }
 
 /// The collision events started since `before` of them had been.
-std::vector<fh::audio::CollisionSounds::Started> collisionsSince(const fh::GameplaySounds& sounds, std::size_t before)
+std::vector<openhorizon::audio::CollisionSounds::Started> collisionsSince(
+    const openhorizon::GameplaySounds& sounds, std::size_t before)
 {
     const auto& all = sounds.collisions().started();
     return {all.begin() + static_cast<std::ptrdiff_t>(std::min(before, all.size())), all.end()};
 }
 
-void printCollisions(const char* name, const std::vector<fh::audio::CollisionSounds::Started>& started)
+void printCollisions(const char* name, const std::vector<openhorizon::audio::CollisionSounds::Started>& started)
 {
     for (const auto& event : started) {
         std::fprintf(stderr, "%s: %s at %.1f mph (car %.1f mph)%s\n", name, event.event.c_str(),
@@ -60,23 +61,23 @@ void printCollisions(const char* name, const std::vector<fh::audio::CollisionSou
 // much speed at once takes the mix to the Crash snapshot.
 TEST_CASE_METHOD(GameScenario, "wallImpactPlaysTheCollisionSounds", "[scenario][audio]")
 {
-    using Slot = fh::audio::CollisionSoundTable::Slot;
+    using Slot = openhorizon::audio::CollisionSoundTable::Slot;
     const glm::vec2 target(-3898.0F, 1046.0F);
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = target - glm::vec2(68.0F, 0.0F);
     options.spawnHeading = std::numbers::pi_v<float> * 0.5F;
     options.startTime = 12.0F * 3600.0F;
     Session session(options);
     CHECK(session.waitForCar());
     session.run(1.0F, {});
-    fh::Game& game = session.game();
-    const fh::GameplaySounds* sounds = game.gameplaySounds();
+    openhorizon::Game& game = session.game();
+    const openhorizon::GameplaySounds* sounds = game.gameplaySounds();
     CHECK(sounds != nullptr);
     if (!sounds) {
         return;
     }
     const std::size_t before = sounds->collisions().started().size();
-    const fh::CarPhysics& car = game.playerCar();
+    const openhorizon::CarPhysics& car = game.playerCar();
     float speedAtImpact = 0.0F;
     for (float t = 0.0F; t < 20.0F && speedAtImpact == 0.0F; t += kStep) {
         const float speed = car.forwardSpeed();
@@ -86,8 +87,8 @@ TEST_CASE_METHOD(GameScenario, "wallImpactPlaysTheCollisionSounds", "[scenario][
         }
     }
     CHECK(speedAtImpact > 0.0F);
-    const fh::audio::SnapshotMixer* mix = game.mixSnapshots();
-    CHECK((mix && mix->current(fh::audio::MixGroup::Impact) == fh::audio::MixSnapshotId::Crash));
+    const openhorizon::audio::SnapshotMixer* mix = game.mixSnapshots();
+    CHECK((mix && mix->current(openhorizon::audio::MixGroup::Impact) == openhorizon::audio::MixSnapshotId::Crash));
     session.run(0.2F, {});
     session.capture("wall_impact_sounds");
     const auto started = collisionsSince(*sounds, before);
@@ -110,10 +111,10 @@ TEST_CASE_METHOD(GameScenario, "wallImpactPlaysTheCollisionSounds", "[scenario][
 // the two cars' body materials.
 TEST_CASE_METHOD(GameScenario, "carImpactPlaysTheCollisionSounds", "[scenario][audio]")
 {
-    using Slot = fh::audio::CollisionSoundTable::Slot;
+    using Slot = openhorizon::audio::CollisionSoundTable::Slot;
     const glm::vec2 truckAt(-3920.0F, 1046.0F);
     const float halfPi = std::numbers::pi_v<float> * 0.5F;
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.spawnAt = truckAt - glm::vec2(48.0F, 0.0F);
     options.spawnHeading = halfPi;
     options.startTime = 12.0F * 3600.0F;
@@ -123,14 +124,14 @@ TEST_CASE_METHOD(GameScenario, "carImpactPlaysTheCollisionSounds", "[scenario][a
     Session session(options);
     CHECK(session.waitForCar());
     session.run(1.0F, {});
-    fh::Game& game = session.game();
-    const fh::GameplaySounds* sounds = game.gameplaySounds();
+    openhorizon::Game& game = session.game();
+    const openhorizon::GameplaySounds* sounds = game.gameplaySounds();
     CHECK((sounds != nullptr && game.parkedCar() != nullptr));
     if (!sounds || !game.parkedCar()) {
         return;
     }
     const std::size_t before = sounds->collisions().started().size();
-    const fh::CarPhysics& car = game.playerCar();
+    const openhorizon::CarPhysics& car = game.playerCar();
     float speedAtImpact = 0.0F;
     for (float t = 0.0F; t < 20.0F && speedAtImpact == 0.0F; t += kStep) {
         const float speed = car.speed();
@@ -157,4 +158,4 @@ TEST_CASE_METHOD(GameScenario, "carImpactPlaysTheCollisionSounds", "[scenario][a
 }
 
 } // namespace
-} // namespace fh::test
+} // namespace openhorizon::test

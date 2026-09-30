@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace fh::particles {
+namespace openhorizon::particles {
 
 /// The random number generator the game's particle code draws from.
 ///
@@ -42,4 +42,4 @@ private:
     std::uint32_t m_seed;
 };
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

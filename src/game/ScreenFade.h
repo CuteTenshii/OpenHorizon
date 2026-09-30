@@ -5,7 +5,7 @@
 #include <optional>
 #include <string_view>
 
-namespace fh {
+namespace openhorizon {
 
 class Vfs;
 
@@ -33,4 +33,4 @@ std::optional<FadeOptions> loadStateFade(const Vfs& vfs, std::string_view stateI
 /// between, shaped by the curve (0x829004A0: S is (1 - cos(pi x)) / 2).
 float fadeInOpacity(const FadeOptions& fade, float elapsed);
 
-} // namespace fh
+} // namespace openhorizon

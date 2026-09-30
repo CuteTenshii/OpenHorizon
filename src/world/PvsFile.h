@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// The tables of a track's PVS file (`Ribbon_00/<Track>_00.pvs`, magic
 /// "FPVS", big-endian) that the world needs. At 0x20 the file has a u32 zone
@@ -38,4 +38,4 @@ struct PvsTables {
 /// layout.
 PvsTables readPvs(ByteView pvs);
 
-} // namespace fh::world
+} // namespace openhorizon::world

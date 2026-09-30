@@ -12,7 +12,7 @@
 
 #include <algorithm>
 
-namespace fh {
+namespace openhorizon {
 
 namespace {
 
@@ -167,4 +167,4 @@ void GameplaySounds::stopAll()
     m_flashPlaying.clear();
 }
 
-} // namespace fh
+} // namespace openhorizon

@@ -7,11 +7,11 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 /// The volume categories a mixer snapshot sets, in the executable's order:
 /// the name table its static initialiser builds at 0x83284C70, which the
@@ -252,4 +252,4 @@ private:
     std::vector<Fader> m_faders;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

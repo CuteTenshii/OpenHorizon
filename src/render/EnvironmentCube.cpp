@@ -5,7 +5,7 @@
 #include <span>
 #include <stdexcept>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -298,4 +298,4 @@ void EnvironmentCube::buildMips()
     glEnable(GL_CULL_FACE);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

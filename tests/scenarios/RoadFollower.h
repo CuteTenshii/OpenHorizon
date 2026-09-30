@@ -18,7 +18,7 @@
 #include <optional>
 #include <vector>
 
-namespace fh::test {
+namespace openhorizon::test {
 
 /// Drives along the road network: follows a way to its end and there takes
 /// the way through the end node that turns least, as a driver cruising the
@@ -26,7 +26,7 @@ namespace fh::test {
 /// discovering them.
 class RoadFollower {
 public:
-    explicit RoadFollower(const fh::ui::Navigation& navigation)
+    explicit RoadFollower(const openhorizon::ui::Navigation& navigation)
         : m_navigation(navigation)
     {
     }
@@ -34,9 +34,9 @@ public:
     /// Controls for this frame, with the previous frame's keys and buttons
     /// as held before, so a press is seen once; they put the car back on
     /// the road when it has been stuck for a while.
-    fh::InputState controls(const fh::CarPhysics& car)
+    openhorizon::InputState controls(const openhorizon::CarPhysics& car)
     {
-        fh::InputState input = steer(car);
+        openhorizon::InputState input = steer(car);
         input.previousKeys = m_previous.keys;
         input.previousButtons = m_previous.buttons;
         m_previous = input;
@@ -48,21 +48,21 @@ private:
     static constexpr float kLookahead = 18.0F;
     static constexpr float kCruise = 22.0F;
 
-    fh::InputState steer(const fh::CarPhysics& car)
+    openhorizon::InputState steer(const openhorizon::CarPhysics& car)
     {
-        fh::InputState input;
+        openhorizon::InputState input;
         const glm::vec3 position = car.position();
         const glm::vec2 ground(position.x, position.z);
         const glm::vec2 forward(car.forward().x, car.forward().z);
         m_stuck = car.speed() < 1.0F ? m_stuck + kStep : 0.0F;
         if (m_stuck > 4.0F) {
-            input.keys[static_cast<std::size_t>(fh::Key::R)] = true;
+            input.keys[static_cast<std::size_t>(openhorizon::Key::R)] = true;
             m_stuck = 0.0F;
             m_way.reset();
             return input;
         }
         if (!m_way && !start(position, forward)) {
-            input.axes[static_cast<std::size_t>(fh::Axis::RightTrigger)] = 0.3F;
+            input.axes[static_cast<std::size_t>(openhorizon::Axis::RightTrigger)] = 0.3F;
             return input;
         }
         // A point ahead on the road to steer at.
@@ -73,9 +73,9 @@ private:
         const float steer = std::clamp(error * 1.5F, -1.0F, 1.0F);
         const float target = kCruise * (1.0F - 0.6F * std::min(std::abs(error), 1.0F));
         const float speed = car.speed();
-        input.axes[static_cast<std::size_t>(fh::Axis::LeftX)] = steer;
-        input.axes[static_cast<std::size_t>(fh::Axis::RightTrigger)] = speed < target ? 0.7F : 0.0F;
-        input.axes[static_cast<std::size_t>(fh::Axis::LeftTrigger)] = speed > target + 4.0F ? 0.5F : 0.0F;
+        input.axes[static_cast<std::size_t>(openhorizon::Axis::LeftX)] = steer;
+        input.axes[static_cast<std::size_t>(openhorizon::Axis::RightTrigger)] = speed < target ? 0.7F : 0.0F;
+        input.axes[static_cast<std::size_t>(openhorizon::Axis::LeftTrigger)] = speed > target + 4.0F ? 0.5F : 0.0F;
         return input;
     }
 
@@ -86,7 +86,7 @@ private:
     bool start(const glm::vec3& position, glm::vec2 forward)
     {
         const std::optional<std::uint32_t> node
-            = m_navigation.locator().nearest(position, fh::ui::NavFilter::NoShortcutOrNone);
+            = m_navigation.locator().nearest(position, openhorizon::ui::NavFilter::NoShortcutOrNone);
         if (!node) {
             return false;
         }
@@ -97,11 +97,12 @@ private:
     /// `direction`, other than `from`.
     bool turnAt(std::uint32_t node, glm::vec2 direction, std::optional<std::uint32_t> from)
     {
-        const fh::ui::NavFile& network = m_navigation.network();
+        const openhorizon::ui::NavFile& network = m_navigation.network();
         float best = -2.0F;
         bool found = false;
-        for (const fh::ui::NavLink& link : network.nodes[node].links) {
-            if (link.way == from || !m_navigation.locator().acceptsWay(link.way, fh::ui::NavFilter::NoShortcutOrNone)) {
+        for (const openhorizon::ui::NavLink& link : network.nodes[node].links) {
+            if (link.way == from
+                || !m_navigation.locator().acceptsWay(link.way, openhorizon::ui::NavFilter::NoShortcutOrNone)) {
                 continue;
             }
             const std::vector<glm::vec2>& points = network.ways[link.way].points;
@@ -129,7 +130,7 @@ private:
 
     void advance()
     {
-        const fh::ui::NavWay& way = m_navigation.network().ways[*m_way];
+        const openhorizon::ui::NavWay& way = m_navigation.network().ways[*m_way];
         const long next = static_cast<long>(m_index) + m_step;
         if (next >= 0 && next < static_cast<long>(way.points.size())) {
             m_index = static_cast<std::size_t>(next);
@@ -147,12 +148,12 @@ private:
         }
     }
 
-    const fh::ui::Navigation& m_navigation;
+    const openhorizon::ui::Navigation& m_navigation;
     std::optional<std::uint32_t> m_way;
     std::size_t m_index = 0;
     int m_step = 1;
     float m_stuck = 0.0F;
-    fh::InputState m_previous;
+    openhorizon::InputState m_previous;
 };
 
-} // namespace fh::test
+} // namespace openhorizon::test

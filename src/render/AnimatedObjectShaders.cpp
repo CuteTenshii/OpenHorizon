@@ -2,7 +2,7 @@
 
 #include <format>
 
-namespace fh::render::animatedglsl {
+namespace openhorizon::render::animatedglsl {
 
 namespace {
 
@@ -287,4 +287,4 @@ std::string fragmentSource(const Variant& variant)
     return defines(variant) + kBlocks + kFragmentBody;
 }
 
-} // namespace fh::render::animatedglsl
+} // namespace openhorizon::render::animatedglsl

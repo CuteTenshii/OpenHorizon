@@ -9,7 +9,7 @@
 struct SDL_Window;
 struct SDL_Gamepad;
 
-namespace fh {
+namespace openhorizon {
 
 struct WindowOptions {
     std::string title = "Forza Horizon";
@@ -88,4 +88,4 @@ private:
     bool m_fullscreen = false;
 };
 
-} // namespace fh
+} // namespace openhorizon

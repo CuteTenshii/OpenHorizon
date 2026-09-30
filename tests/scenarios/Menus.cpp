@@ -28,19 +28,19 @@
 #include <utility>
 #include <vector>
 
-namespace fh::test {
+namespace openhorizon::test {
 namespace {
 
 using Catch::Matchers::WithinAbs;
 
 /// Runs the title screen at the scenarios' fixed step with `button` held
 /// for one frame, then released.
-bool titleFrames(fh::Title& title, float seconds, std::optional<fh::Button> button = std::nullopt)
+bool titleFrames(openhorizon::Title& title, float seconds, std::optional<openhorizon::Button> button = std::nullopt)
 {
-    std::array<bool, static_cast<std::size_t>(fh::Button::Count)> previous{};
+    std::array<bool, static_cast<std::size_t>(openhorizon::Button::Count)> previous{};
     bool started = false;
     for (float t = 0.0F; t < seconds; t += kStep) {
-        fh::InputState input;
+        openhorizon::InputState input;
         input.previousButtons = previous;
         if (button && t == 0.0F) {
             input.buttons[static_cast<std::size_t>(*button)] = true;
@@ -53,19 +53,19 @@ bool titleFrames(fh::Title& title, float seconds, std::optional<fh::Button> butt
 
 TEST_CASE_METHOD(GameScenario, "titleScreenWaitsForStart", "[scenario][menus]")
 {
-    fh::Title title(window(), gameDir());
+    openhorizon::Title title(window(), gameDir());
     CHECK(!titleFrames(title, 3.0F));
     CHECK(title.screen().hasMovie());
     CHECK(title.screen().musicPlaying());
     CHECK(title.screen().pressStartText() == "PRESS START");
 
     // B is polled on the title and does nothing.
-    CHECK(!titleFrames(title, 0.5F, fh::Button::B));
+    CHECK(!titleFrames(title, 0.5F, openhorizon::Button::B));
     // Past the 53 s idle the screen fades out and comes straight back.
     CHECK(!titleFrames(title, 60.0F));
     CHECK(title.screen().isShown());
 
-    CHECK(titleFrames(title, kStep, fh::Button::Start));
+    CHECK(titleFrames(title, kStep, openhorizon::Button::Start));
     CHECK(!title.screen().musicPlaying());
     // CSplash's cues on entering and on Start (both silent "Blank" events).
     CHECK(played(title.screen().soundsPlayed(), "PressStartSlideOn"));
@@ -79,14 +79,14 @@ TEST_CASE_METHOD(GameScenario, "titleScreenWaitsForStart", "[scenario][menus]")
 // turns the radio down, and the pause screen plays its sounds.
 TEST_CASE_METHOD(GameScenario, "pauseMenuStopsTheGame", "[scenario][menus]")
 {
-    using fh::audio::MixCategory;
-    using fh::audio::MixSnapshotId;
+    using openhorizon::audio::MixCategory;
+    using openhorizon::audio::MixSnapshotId;
     Session session({});
     // Free roam loads under the Loading mix and drives under FreeRoam.
     CHECK(gameplayMix(session.game()) == MixSnapshotId::Loading);
     CHECK(session.waitForCar());
     session.run(3.0F, {.throttle = 1.0F});
-    fh::Game& game = session.game();
+    openhorizon::Game& game = session.game();
     CHECK(gameplayMix(game) == MixSnapshotId::FreeRoam);
     CHECK_THAT(game.audioCategoryVolume(MixCategory::FocusCar), WithinAbs(0.35, 1e-4));
     CHECK(game.playerEngineGain() > 0.0F);
@@ -99,7 +99,7 @@ TEST_CASE_METHOD(GameScenario, "pauseMenuStopsTheGame", "[scenario][menus]")
     const glm::vec3 target = game.camera().target;
     const std::size_t sounds = game.uiSoundsPlayed().size();
 
-    session.press(fh::Button::Start);
+    session.press(openhorizon::Button::Start);
     CHECK(game.pauseShown());
     session.run(3.0F, {.throttle = 1.0F});
     session.capture("pause");
@@ -121,7 +121,7 @@ TEST_CASE_METHOD(GameScenario, "pauseMenuStopsTheGame", "[scenario][menus]")
 
     // B is the help bar's RESUME: the menu's back sound, then the pause
     // screen's own as it goes, and FreeRoam comes back.
-    session.press(fh::Button::B);
+    session.press(openhorizon::Button::B);
     CHECK(!game.pauseShown());
     CHECK((playedSince(game, sounds) == std::vector<std::string>{"Pause", "Cancel", "UnPause"}));
     session.run(1.0F, {});
@@ -136,44 +136,44 @@ TEST_CASE_METHOD(GameScenario, "pauseMenuStopsTheGame", "[scenario][menus]")
 // and B on the map comes back to the pause screen (enterBack).
 TEST_CASE_METHOD(GameScenario, "pauseMenuMapKeepsTheGamePaused", "[scenario][menus]")
 {
-    using fh::audio::MixSnapshotId;
+    using openhorizon::audio::MixSnapshotId;
     Session session({});
     CHECK(session.waitForCar());
     session.run(1.0F, {});
-    fh::Game& game = session.game();
+    openhorizon::Game& game = session.game();
     const std::size_t sounds = game.uiSoundsPlayed().size();
-    session.press(fh::Button::Start);
-    const fh::ui::PauseMenu* menu = game.pauseMenu();
+    session.press(openhorizon::Button::Start);
+    const openhorizon::ui::PauseMenu* menu = game.pauseMenu();
     CHECK(menu != nullptr);
     if (menu == nullptr) {
         return;
     }
-    CHECK(session.focusPauseItem(fh::ui::PauseItem::Map));
-    session.press(fh::Button::A);
+    CHECK(session.focusPauseItem(openhorizon::ui::PauseItem::Map));
+    session.press(openhorizon::Button::A);
     CHECK(game.mapShown());
     session.run(0.5F, {});
     CHECK(gameplayMix(game) == MixSnapshotId::Paused);
     CHECK(game.uiSoundPlaying("Map_AmbientBackgroundLoop"));
-    session.press(fh::Button::B);
+    session.press(openhorizon::Button::B);
     CHECK(game.pauseShown());
     CHECK(!game.uiSoundPlaying("Map_AmbientBackgroundLoop"));
     CHECK(gameplayMix(game) == MixSnapshotId::Paused);
     CHECK((playedSince(game, sounds)
         == std::vector<std::string>{"Pause", "Accept", "UnPause", "Map_AmbientBackgroundLoop", "Cancel", "Pause"}));
-    session.press(fh::Button::B);
+    session.press(openhorizon::Button::B);
     session.run(1.0F, {});
     CHECK(gameplayMix(game) == MixSnapshotId::FreeRoam);
 }
 
 /// Every shown pause entry's text ends inside its brush stroke.
-void checkPauseEntriesFit(const fh::Game& game)
+void checkPauseEntriesFit(const openhorizon::Game& game)
 {
-    const fh::ui::PauseMenu* menu = game.pauseMenu();
+    const openhorizon::ui::PauseMenu* menu = game.pauseMenu();
     CHECK(menu != nullptr);
     if (menu == nullptr) {
         return;
     }
-    const std::vector<fh::ui::PauseEntryExtent> extents = menu->entryExtents();
+    const std::vector<openhorizon::ui::PauseEntryExtent> extents = menu->entryExtents();
     CHECK(extents.size() == menu->entries().size());
     for (std::size_t i = 0; i < extents.size() && i < menu->entries().size(); ++i) {
         if (extents[i].textRight > extents[i].strokeRight) {
@@ -192,7 +192,7 @@ TEST_CASE_METHOD(GameScenario, "pauseMenuEntriesFitTheirBars", "[scenario][menus
     Session session({});
     CHECK(session.waitForCar());
     session.run(1.0F, {});
-    session.press(fh::Button::Start);
+    session.press(openhorizon::Button::Start);
     for (const auto& [width, height] : {std::pair{1600, 900}, std::pair{1920, 1080}, std::pair{2560, 1440}}) {
         window().setSize(width, height);
         session.run(1.0F, {});
@@ -201,7 +201,7 @@ TEST_CASE_METHOD(GameScenario, "pauseMenuEntriesFitTheirBars", "[scenario][menus
         session.capture(std::format("pause_{}x{}", width, height));
     }
     // The focused entry plays its own slide (FOCUSBELOW) with the pink bar.
-    session.press(fh::Button::DpadDown);
+    session.press(openhorizon::Button::DpadDown);
     session.run(1.0F, {});
     CHECK(session.game().pauseMenu()->focus() == 1);
     checkPauseEntriesFit(session.game());
@@ -213,11 +213,11 @@ TEST_CASE_METHOD(GameScenario, "pauseMenuEntriesFitTheirBars", "[scenario][menus
 /// fits its pill to the logo and text, so every pill ends the same way past
 /// its text, and the bar (0x8289e100) starts each button 34 units after
 /// the text before it.
-void checkHelpBarFits(const std::vector<fh::ui::HelpButtonExtent>& extents, std::size_t shown)
+void checkHelpBarFits(const std::vector<openhorizon::ui::HelpButtonExtent>& extents, std::size_t shown)
 {
     CHECK(extents.size() == shown);
     for (std::size_t i = 0; i < extents.size(); ++i) {
-        const fh::ui::HelpButtonExtent& button = extents[i];
+        const openhorizon::ui::HelpButtonExtent& button = extents[i];
         const float margin = button.pillRight - button.textRight;
         const float firstMargin = extents.front().pillRight - extents.front().textRight;
         if (std::abs(margin - firstMargin) >= 0.5F || !std::isfinite(margin)) {
@@ -248,25 +248,25 @@ TEST_CASE_METHOD(GameScenario, "helpBarsFitTheirTexts", "[scenario][menus]")
     Session session({});
     CHECK(session.waitForCar());
     session.run(0.5F, {});
-    session.press(fh::Button::Back);
+    session.press(openhorizon::Button::Back);
     for (const auto& [width, height] : {std::pair{1920, 1080}, std::pair{2560, 1440}}) {
         window().setSize(width, height);
         session.run(1.0F, {});
-        const fh::ui::WorldMap* map = session.game().worldMap();
+        const openhorizon::ui::WorldMap* map = session.game().worldMap();
         CHECK((map != nullptr && session.game().mapShown()));
         if (map != nullptr) {
             checkHelpBarFits(map->helpExtents(), 4);
         }
         session.capture(std::format("help_map_{}x{}", width, height));
     }
-    session.press(fh::Button::B);
+    session.press(openhorizon::Button::B);
     session.run(1.0F, {});
-    session.press(fh::Button::Start);
+    session.press(openhorizon::Button::Start);
     for (const auto& [width, height] : {std::pair{1920, 1080}, std::pair{2560, 1440}}) {
         window().setSize(width, height);
         session.run(1.0F, {});
         CHECK(session.game().pauseShown());
-        if (const fh::ui::PauseMenu* menu = session.game().pauseMenu()) {
+        if (const openhorizon::ui::PauseMenu* menu = session.game().pauseMenu()) {
             checkHelpBarFits(menu->helpExtents(), 2);
         }
         session.capture(std::format("help_pause_{}x{}", width, height));
@@ -292,11 +292,11 @@ TEST_CASE_METHOD(GameScenario, "freeRoamDrawsTheGamesHud", "[scenario][menus]")
 // raceline.xds); the plain overlay is left to the debug view.
 TEST_CASE_METHOD(GameScenario, "raceDrawsOnlyTheGamesHud", "[scenario][menus]")
 {
-    fh::GameOptions options;
+    openhorizon::GameOptions options;
     options.race = "FR02";
     Session session(options);
     CHECK(session.waitForCar());
-    fh::Game& game = session.game();
+    openhorizon::Game& game = session.game();
     session.run(1.5F, {});
     session.capture("race_countdown");
     CHECK(game.hudDrawn());
@@ -306,12 +306,12 @@ TEST_CASE_METHOD(GameScenario, "raceDrawsOnlyTheGamesHud", "[scenario][menus]")
     session.capture("race_hud");
     CHECK(game.hudDrawn());
     CHECK(game.overlayVerticesDrawn() == 0);
-    const std::vector<fh::DrivingLine::Vertex>& line = game.drivingLineDrawn();
+    const std::vector<openhorizon::DrivingLine::Vertex>& line = game.drivingLineDrawn();
     CHECK(!line.empty());
     CHECK(std::any_of(line.begin(), line.end(), [](const auto& v) { return v.colour[3] > 0; }));
 
     // The pause flow hides the line (disable_racing_line in pause.xml).
-    session.press(fh::Button::Start);
+    session.press(openhorizon::Button::Start);
     CHECK(game.pauseShown());
     CHECK(game.drivingLineDrawn().empty());
 }
@@ -325,8 +325,8 @@ TEST_CASE_METHOD(GameScenario, "promptWithoutAnIconShowsTheDefaultIcon", "[scena
     // The session provides the OpenGL context the HUD draws with.
     Session session({});
     CHECK(session.waitForCar());
-    fh::ui::Hud hud(disc(), "colorado");
-    fh::ui::HudState state;
+    openhorizon::ui::Hud hud(disc(), "colorado");
+    openhorizon::ui::HudState state;
     state.dt = kStep;
     state.prompt = "MEDIA CENTER";
     state.promptTitle = "HORIZON OUTPOST";
@@ -353,14 +353,14 @@ TEST_CASE_METHOD(GameScenario, "promptWithoutAnIconShowsTheDefaultIcon", "[scena
 TEST_CASE_METHOD(GameScenario, "loadingScreenStaysUntilTheStartIsReady", "[scenario][menus]")
 {
     Session session({});
-    fh::Game& game = session.game();
+    openhorizon::Game& game = session.game();
     // Up from the first frame, before any has run.
     CHECK(game.loadingStatus().screenShown);
     // While track effects link, the screen says so in place of PLEASE WAIT.
     bool compilingShown = false;
     for (float t = 0.0F; t < 180.0F && game.loadingStatus().screenShown; t += kStep) {
         session.run(kStep, {});
-        const fh::Game::LoadingStatus during = game.loadingStatus();
+        const openhorizon::Game::LoadingStatus during = game.loadingStatus();
         if (!compilingShown && during.screenShown && during.programsPending > 0
             && during.message.starts_with("Compiling shaders ")) {
             compilingShown = true;
@@ -368,7 +368,7 @@ TEST_CASE_METHOD(GameScenario, "loadingScreenStaysUntilTheStartIsReady", "[scena
         }
     }
     CHECK(compilingShown);
-    const fh::Game::LoadingStatus status = game.loadingStatus();
+    const openhorizon::Game::LoadingStatus status = game.loadingStatus();
     CHECK(!status.screenShown);
     CHECK(status.pendingJobs == std::size_t{0});
     CHECK(status.nearbyWorldReady);
@@ -385,4 +385,4 @@ TEST_CASE_METHOD(GameScenario, "loadingScreenStaysUntilTheStartIsReady", "[scena
 }
 
 } // namespace
-} // namespace fh::test
+} // namespace openhorizon::test

@@ -19,12 +19,12 @@
 #include <utility>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Database;
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::carmodel {
+namespace openhorizon::carmodel {
 
 enum class Corner : std::uint8_t { FrontLeft, FrontRight, RearLeft, RearRight };
 
@@ -267,4 +267,4 @@ CarBin loadCarBin(const Vfs& vfs, std::string_view path, CarBin::Kind kind);
 /// RGBA8 with its swizzle. Throws DataError on failure.
 world::TextureMipChain decodeXdsTexture(ByteView data);
 
-} // namespace fh::carmodel
+} // namespace openhorizon::carmodel

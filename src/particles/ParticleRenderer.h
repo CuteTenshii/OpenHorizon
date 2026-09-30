@@ -11,11 +11,11 @@
 #include <string>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::particles {
+namespace openhorizon::particles {
 
 class ParticleManager;
 class ParticleSystem;
@@ -108,4 +108,4 @@ private:
     GLint uniform(const char* name);
 };
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

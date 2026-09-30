@@ -13,7 +13,7 @@
 #include <cstring>
 #include <format>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -274,4 +274,4 @@ CubeTexture loadTrackCube(const lzx::ZipArchive& archive, std::uint32_t id)
     return cube;
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

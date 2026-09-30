@@ -21,7 +21,7 @@
 #include <optional>
 #include <unordered_map>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -1000,4 +1000,4 @@ void Hud::draw(const HudState& state, int width, int height)
     impl.renderer.end();
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

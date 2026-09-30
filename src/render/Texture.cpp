@@ -6,7 +6,7 @@
 #include <cmath>
 #include <utility>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -134,4 +134,4 @@ Texture Texture::solid(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint
     return fromRgba(1, 1, texel, false, false);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

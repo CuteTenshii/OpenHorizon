@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// Immediate-mode drawing on top of the scene with a system font: 3D lines,
 /// 2D text and rectangles for the debug view. What the player sees comes
@@ -83,4 +83,4 @@ private:
     std::vector<QuadVertex> m_quads;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

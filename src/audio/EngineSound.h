@@ -13,11 +13,11 @@
 #include <string>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 class AudioDevice;
 class AudioLibrary;
@@ -171,4 +171,4 @@ private:
     bool m_backfireQueued = false;
 };
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

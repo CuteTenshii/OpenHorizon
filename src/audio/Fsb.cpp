@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -279,4 +279,4 @@ bool FsbBank::sampleHasName(std::size_t index, std::string_view name) const
     return have.size() >= kNameLength - 1 && startsWithNoCase(baseName(name), have);
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

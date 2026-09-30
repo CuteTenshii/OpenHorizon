@@ -2,7 +2,7 @@ include(Catch)
 
 # What every test program shares: the Catch2 session, which keeps the
 # game's error boxes closed and picks SDL's offscreen drivers, and
-# fh::test::gameDir(), which skips a case when there is no disc.
+# openhorizon::test::gameDir(), which skips a case when there is no disc.
 add_library(fh1testsupport STATIC support/TestSupport.h support/TestSupport.cpp)
 target_compile_options(fh1testsupport PRIVATE ${FH1N_WARNINGS})
 target_include_directories(fh1testsupport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
 }
 
@@ -38,7 +38,7 @@ class Vfs;
 /// and checked against every scene on the disc; the `.bsg` layout was
 /// established from the data alone. Fields the code does not use and whose
 /// meaning was not established are skipped and documented as such.
-namespace fh::ui {
+namespace openhorizon::ui {
 
 /// Anark's name hash: `h = h * 0x1003F + c` over the name's bytes (as signed
 /// chars) and its terminating NUL, keeping the low 27 bits. Attribute keys
@@ -474,4 +474,4 @@ struct SceneFiles {
 /// under media/ui/textures with the extension replaced by .xds, lower case.
 std::string texturePathForScene(std::string_view scenePath);
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

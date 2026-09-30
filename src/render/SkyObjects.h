@@ -6,11 +6,11 @@
 
 #include <cstddef>
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::render {
+namespace openhorizon::render {
 
 struct FrameParams;
 
@@ -77,4 +77,4 @@ private:
     std::size_t m_starCount = 0;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

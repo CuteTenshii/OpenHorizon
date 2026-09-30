@@ -5,7 +5,7 @@
 #include <limits>
 #include <numbers>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -288,4 +288,4 @@ void ShadowCascades::update(const ShadowCamera& camera, const glm::vec3& lightDi
     }
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

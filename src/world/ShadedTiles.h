@@ -19,7 +19,7 @@ namespace lzx {
 class ZipArchive;
 } // namespace lzx
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// Geometry of a set of chunks for the game's own track shaders: one batch
 /// per surface (effect, textures and material constants), whose vertices keep
@@ -130,4 +130,4 @@ struct ShadedMesh {
 ShadedMesh buildShadedMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
     const std::vector<std::uint32_t>& chunks, const TrackShaders& shaders, const TrackTextures* textures);
 
-} // namespace fh::world
+} // namespace openhorizon::world

@@ -16,7 +16,7 @@
 #include <system_error>
 #include <vector>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -416,4 +416,4 @@ void Overlay::flush(const glm::mat4& viewProjection, int width, int height)
     glBindVertexArray(0);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

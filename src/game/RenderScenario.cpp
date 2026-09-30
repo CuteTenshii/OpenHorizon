@@ -8,7 +8,7 @@
 #include <format>
 #include <string>
 
-namespace fh {
+namespace openhorizon {
 
 RenderScenario RenderScenario::parse(std::string_view xml)
 {
@@ -47,4 +47,4 @@ RenderScenario RenderScenario::stacked(const Vfs& vfs, std::string_view top)
     return scenario;
 }
 
-} // namespace fh
+} // namespace openhorizon

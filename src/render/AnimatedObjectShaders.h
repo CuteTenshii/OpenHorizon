@@ -29,7 +29,7 @@
 ///  - the deferred headlight term (pixel bool b100), whose buffer this
 ///    renderer has not (as for the track effects);
 ///  - the depth-only variants, as the passes that draw them were not traced.
-namespace fh::render::animatedglsl {
+namespace openhorizon::render::animatedglsl {
 
 /// Uniform and storage bindings of the programs.
 inline constexpr unsigned kFrameBinding = 4;
@@ -54,4 +54,4 @@ struct Variant {
 std::string vertexSource(const Variant& variant);
 std::string fragmentSource(const Variant& variant);
 
-} // namespace fh::render::animatedglsl
+} // namespace openhorizon::render::animatedglsl

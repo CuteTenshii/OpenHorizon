@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -250,4 +250,4 @@ std::size_t ScatterPass::draw(const Mesh& mesh, const std::function<const Textur
     return triangles;
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

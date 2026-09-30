@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 namespace {
 
@@ -491,4 +491,4 @@ void PostProcess::run(GLuint scene, int width, int height, GLuint output, const 
     glBindVertexArray(0);
 }
 
-} // namespace fh::render
+} // namespace openhorizon::render

@@ -10,7 +10,7 @@
 
 #include <algorithm>
 
-namespace fh::ui {
+namespace openhorizon::ui {
 
 namespace {
 
@@ -160,4 +160,4 @@ bool UiSounds::isPlaying(std::string_view name) const
     });
 }
 
-} // namespace fh::ui
+} // namespace openhorizon::ui

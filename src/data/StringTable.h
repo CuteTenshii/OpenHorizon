@@ -8,7 +8,7 @@
 #include <string_view>
 #include <unordered_map>
 
-namespace fh {
+namespace openhorizon {
 
 class Vfs;
 
@@ -54,4 +54,4 @@ private:
     std::unordered_map<std::string, std::optional<StringTable>> m_tables;
 };
 
-} // namespace fh
+} // namespace openhorizon

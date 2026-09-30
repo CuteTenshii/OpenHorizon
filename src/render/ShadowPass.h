@@ -9,7 +9,7 @@
 #include <array>
 #include <cstddef>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// The game's sun shadows on the GPU: the shadow maps, a depth pass of the
 /// screen and the screen-space shadow mask the scene's effects sample as
@@ -190,4 +190,4 @@ private:
     Timings m_timings;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

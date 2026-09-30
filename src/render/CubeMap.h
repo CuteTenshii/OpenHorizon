@@ -4,11 +4,11 @@
 
 #include <cstddef>
 
-namespace fh::world {
+namespace openhorizon::world {
 struct CubeTexture;
-} // namespace fh::world
+} // namespace openhorizon::world
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// A cube texture on the GPU, every level of every face uploaded as the
 /// game stores it (DXT blocks stay compressed).
@@ -34,4 +34,4 @@ private:
     std::size_t m_bytes = 0;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

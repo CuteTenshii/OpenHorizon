@@ -16,7 +16,7 @@
 #include <mutex>
 #include <thread>
 
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 namespace {
 
@@ -225,4 +225,4 @@ std::string formatReport(const CheckReport& report)
     return out;
 }
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh::collision {
+namespace openhorizon::collision {
 
 /// A track's collision grid: `Ribbon_NN/<Track>_track_NN.col`, the index of
 /// the `<id>.fiz` tiles in the track's bin.zip. It is the header of a pack
@@ -102,4 +102,4 @@ private:
     std::vector<std::int32_t> m_tileOfCell;
 };
 
-} // namespace fh::collision
+} // namespace openhorizon::collision

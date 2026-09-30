@@ -8,7 +8,7 @@
 #include <fstream>
 #include <string_view>
 
-namespace fh::audio {
+namespace openhorizon::audio {
 
 namespace {
 
@@ -75,4 +75,4 @@ void writeWav(const std::filesystem::path& path, const PcmBuffer& pcm, WavFormat
     }
 }
 
-} // namespace fh::audio
+} // namespace openhorizon::audio

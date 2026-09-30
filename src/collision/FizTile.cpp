@@ -5,7 +5,7 @@
 #include <cmath>
 #include <limits>
 
-namespace fh::collision {
+namespace openhorizon::collision {
 
 namespace {
 
@@ -226,4 +226,4 @@ FizTile parseFizTile(ByteView data, const std::string& source)
     return tile;
 }
 
-} // namespace fh::collision
+} // namespace openhorizon::collision

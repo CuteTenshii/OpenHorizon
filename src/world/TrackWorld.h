@@ -19,11 +19,11 @@ namespace lzx {
 class ZipArchive;
 } // namespace lzx
 
-namespace fh {
+namespace openhorizon {
 class Vfs;
-} // namespace fh
+} // namespace openhorizon
 
-namespace fh::world {
+namespace openhorizon::world {
 
 /// Game paths of a track's world files, for a track folder name such as
 /// "colorado".
@@ -66,4 +66,4 @@ struct TrackWorld {
         const std::atomic<bool>* cancel = nullptr);
 };
 
-} // namespace fh::world
+} // namespace openhorizon::world

@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <span>
 
-namespace fh::render {
+namespace openhorizon::render {
 
 /// The camera the shadows are fitted around: world position and axes, near
 /// plane and the tangents of the half field of view, as the shadow manager
@@ -192,4 +192,4 @@ private:
     bool m_first = true;
 };
 
-} // namespace fh::render
+} // namespace openhorizon::render

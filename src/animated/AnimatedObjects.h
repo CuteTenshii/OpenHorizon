@@ -17,7 +17,7 @@ namespace lzx {
 class ZipArchive;
 } // namespace lzx
 
-namespace fh::animated {
+namespace openhorizon::animated {
 
 /// An animated object ready to play: its set, its Granny file, and for each
 /// animation, entry and bone the transform track that moves the bone.
@@ -190,4 +190,4 @@ private:
     int m_missingObjects = 0;
 };
 
-} // namespace fh::animated
+} // namespace openhorizon::animated

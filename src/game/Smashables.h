@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class Vfs;
 
@@ -121,4 +121,4 @@ private:
     std::unordered_map<std::uint64_t, std::vector<std::size_t>> m_cells;
 };
 
-} // namespace fh
+} // namespace openhorizon

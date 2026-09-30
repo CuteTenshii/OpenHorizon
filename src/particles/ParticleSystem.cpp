@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace fh::particles {
+namespace openhorizon::particles {
 namespace {
 
 /// The executable's float constants for pi and pi/2 (0x82000D24,
@@ -519,4 +519,4 @@ void ParticleSystem::update(float dt, float rateScale)
     m_count -= expired;
 }
 
-} // namespace fh::particles
+} // namespace openhorizon::particles

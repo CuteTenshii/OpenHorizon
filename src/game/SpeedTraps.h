@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fh {
+namespace openhorizon {
 
 class ActivityCatalogue;
 class GameObjects;
@@ -96,4 +96,4 @@ private:
     std::optional<SpeedTrapPass> m_last;
 };
 
-} // namespace fh
+} // namespace openhorizon

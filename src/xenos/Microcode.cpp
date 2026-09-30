@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-namespace fh::xenos {
+namespace openhorizon::xenos {
 
 namespace {
 
@@ -684,4 +684,4 @@ Program decodeProgram(ShaderStage stage, std::span<const std::uint32_t> words)
     return program;
 }
 
-} // namespace fh::xenos
+} // namespace openhorizon::xenos

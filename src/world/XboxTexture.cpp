@@ -9,7 +9,7 @@
 #include <limits>
 #include <utility>
 
-namespace fh::world {
+namespace openhorizon::world {
 
 namespace {
 
@@ -508,4 +508,4 @@ TextureSurface readCaffSurface(ByteView data)
         data.subspan(headerSize + dataSize, gpuSize), formatWord, width, height, MipLayout::Packed);
 }
 
-} // namespace fh::world
+} // namespace openhorizon::world

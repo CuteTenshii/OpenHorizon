@@ -156,7 +156,7 @@
     X(PFNGLMAKETEXTUREHANDLERESIDENTARBPROC, glMakeTextureHandleResidentARB)                                           \
     X(PFNGLMAKETEXTUREHANDLENONRESIDENTARBPROC, glMakeTextureHandleNonResidentARB)
 
-namespace fh::gl {
+namespace openhorizon::gl {
 
 #define FH_GL_DECLARE(type, name) extern type name;
 FH_GL_FUNCTIONS(FH_GL_DECLARE)
@@ -170,7 +170,7 @@ using ProcLoader = void* (*)(const char* name);
 /// lacks stay null.
 const char* load(ProcLoader loader);
 
-} // namespace fh::gl
+} // namespace openhorizon::gl
 
 // Renderer code calls the unqualified names.
-using namespace fh::gl;
+using namespace openhorizon::gl;

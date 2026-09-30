@@ -45,7 +45,7 @@
 /// 0, and the readers below find members by name. The root object is
 /// Granny's file info, whose Models and Animations are what the game uses;
 /// the files hold no Granny meshes (the geometry is the set's own).
-namespace fh::animated::granny {
+namespace openhorizon::animated::granny {
 
 /// A Granny transform: position, orientation and a 3x3 scale and shear,
 /// each present when its flag is set.
@@ -213,4 +213,4 @@ FileInfo readFileInfo(ByteView data, const std::string& source);
 /// animations (0x82EC49E4).
 void worldPose(const Model& model, const std::vector<Transform>& locals, std::vector<glm::mat4>& world);
 
-} // namespace fh::animated::granny
+} // namespace openhorizon::animated::granny
