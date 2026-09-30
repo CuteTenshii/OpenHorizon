@@ -365,9 +365,9 @@ struct CarSpec {
     float fullThrottleTorque(float rpm) const;
 };
 
-/// Car-to-car collision settings from `media/physics/physicssettings.ini`,
-/// as the game binds them (loader at 0x82CA0CE0, defaults set by the
-/// constructor at 0x82E08010, used where a key is absent).
+/// Collision settings from `media/physics/physicssettings.ini`, as the game
+/// binds them (loader at 0x82CA0CE0, defaults set by the constructor at
+/// 0x82E08010, used where a key is absent).
 ///
 /// The disc's file spells one key "CarCarResitution", which does not match
 /// the name the executable binds ("CarCarRestitution"), so the game keeps
@@ -380,11 +380,51 @@ struct CollisionSettings {
     float raceCarTorqueScale = 0.3F;
     float raceCarTorqueScaleInRace = 0.2F;
     float raceCarTorqueScaleVsTrafficInRace = 0.2F;
+    /// Car against the static world. The physics world copies these into
+    /// itself every step (0x82E09BC0) and the contact response (0x82DD2750)
+    /// reads them there; see carWorldTorqueScaleAt() and frictionBlendAt().
+    float carWorldTorqueScale = 0.2F;
+    float lowSpeedCarWorldTorqueScale = 1.0F;
+    float collisionLowSpeedMph = 20.0F;
+    float collisionHighSpeedMph = 50.0F;
+    float frictionLowSpeedMph = 10.0F;
+    float frictionHighSpeedMph = 30.0F;
+
+    /// The share of a world contact's impulse that turns a car moving at
+    /// `speed` m/s: LowSpeedCarWorldTorqueScale up to CollisionLowSpeedMph,
+    /// CarWorldTorqueScale from CollisionHighSpeedMph, linear between
+    /// (0x82DD2750, on the length of the body's velocity).
+    float carWorldTorqueScaleAt(float speed) const;
+    /// Where a car moving at `speed` m/s sits between a surface pair's
+    /// LowSpeedFrictionCoefficient (0) and FrictionCoefficient (1): 0 up to
+    /// FrictionLowSpeedMph, 1 from FrictionHighSpeedMph, linear between
+    /// (0x82E04258, which passes it to the pair lookup at 0x82E0B890).
+    float frictionBlendAt(float speed) const;
 };
 
 /// Reads the collision settings; keys the file does not give keep the
 /// executable's defaults.
 CollisionSettings loadCollisionSettings(const Vfs& vfs);
+
+/// Spheres in car space that stand in for the body against the world, sized
+/// from its bounding box (maxdata.xml): a row of touching spheres down each
+/// side at bumper height and two near the roof, so walls and rollovers are
+/// caught. They are not the game's shapes, which have not been traced.
+std::vector<CarSpec::CollisionSphere> worldContactSpheres(const CarSpec& spec);
+
+/// Spheres in car space for contacts between cars: the body spheres of
+/// maxdata.xml (flags 2), or, where it lists none (as for the box truck
+/// KEN_T440_12, whose four spheres carry flags 3), rows like those of
+/// worldContactSpheres() but twice as dense and closed at both ends, which
+/// meet another such car's box.
+std::vector<CarSpec::CollisionSphere> carContactSpheres(const CarSpec& spec);
+
+/// Whether a car meets other cars with its maxdata.xml BoundingBox rather
+/// than with spheres: those that list no body spheres. The stand-in rows
+/// of carContactSpheres() sit above the ride height, which on a truck
+/// (0.53 m for KEN_T440_12) leaves room for a car's nose below them; the
+/// box reaches the ground as the file gives it.
+bool carContactIsBox(const CarSpec& spec);
 
 /// Reads the stock specification of car `carId` (`Data_Car.Id`) from the
 /// game database, and the body dimensions from the car's own archive when

@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <format>
+#include <iterator>
 #include <string_view>
 #include <utility>
 
@@ -347,9 +348,111 @@ CollisionSettings loadCollisionSettings(const Vfs& vfs)
             settings.raceCarTorqueScaleInRace = value;
         } else if (key == "Collision\\RaceCarTorqueScaleVsTrafficInRace") {
             settings.raceCarTorqueScaleVsTrafficInRace = value;
+        } else if (key == "Collision\\CarWorldTorqueScale") {
+            settings.carWorldTorqueScale = value;
+        } else if (key == "Collision\\LowSpeedCarWorldTorqueScale") {
+            settings.lowSpeedCarWorldTorqueScale = value;
+        } else if (key == "Collision\\CollisionLowSpeedMph") {
+            settings.collisionLowSpeedMph = value;
+        } else if (key == "Collision\\CollisionHighSpeedMph") {
+            settings.collisionHighSpeedMph = value;
+        } else if (key == "Collision\\FrictionLowSpeedMph") {
+            settings.frictionLowSpeedMph = value;
+        } else if (key == "Collision\\FrictionHighSpeedMph") {
+            settings.frictionHighSpeedMph = value;
         }
     });
     return settings;
+}
+
+namespace {
+
+/// Where `mph` sits from `low` (0) to `high` (1), clamped, as the game
+/// computes both collision blends: (mph - low) / (high - low).
+float speedBlend(float speed, float low, float high)
+{
+    // The game converts with its own m/s-to-mph constant (0x82005AE8,
+    // splatted into 0x8359F1B0 at 0x8328FEC0).
+    constexpr float kMetresPerSecondToMph = 2.2369F;
+    if (high <= low) {
+        return speed * kMetresPerSecondToMph >= high ? 1.0F : 0.0F;
+    }
+    return std::clamp((speed * kMetresPerSecondToMph - low) / (high - low), 0.0F, 1.0F);
+}
+
+} // namespace
+
+float CollisionSettings::carWorldTorqueScaleAt(float speed) const
+{
+    const float t = speedBlend(speed, collisionLowSpeedMph, collisionHighSpeedMph);
+    return lowSpeedCarWorldTorqueScale + t * (carWorldTorqueScale - lowSpeedCarWorldTorqueScale);
+}
+
+float CollisionSettings::frictionBlendAt(float speed) const
+{
+    return speedBlend(speed, frictionLowSpeedMph, frictionHighSpeedMph);
+}
+
+namespace {
+
+/// Stand-in spheres from the model's bounds: a row down each side at bumper
+/// height, neighbours `spacing` radii apart at most (and at least four a
+/// side), and two near the roof; with `ends`, rows across the front and the
+/// back as well, as dense.
+std::vector<CarSpec::CollisionSphere> standInSpheres(const CarSpec& spec, float spacing, bool ends)
+{
+    std::vector<CarSpec::CollisionSphere> spheres;
+    const float halfWidth = (spec.boundsMax[0] - spec.boundsMin[0]) * 0.5F;
+    const float lowRadius = std::min(halfWidth, 0.45F);
+    const float lowY = std::max(spec.boundsMin[1], 0.0F) + std::max(spec.front.rideHeight, 0.1F) + lowRadius;
+    const float roofRadius = std::min(halfWidth * 0.8F, 0.4F);
+    const float roofY = spec.boundsMax[1] - roofRadius;
+    const float firstZ = spec.boundsMin[2] + lowRadius;
+    const float lastZ = spec.boundsMax[2] - lowRadius;
+    const float x = std::max(0.0F, halfWidth - lowRadius);
+    const int steps = std::max(4, static_cast<int>(std::ceil((lastZ - firstZ) / (spacing * lowRadius))) + 1);
+    for (int i = 0; i < steps; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(steps - 1);
+        const float z = firstZ + t * (lastZ - firstZ);
+        spheres.push_back({{-x, lowY, z}, lowRadius, 0});
+        spheres.push_back({{x, lowY, z}, lowRadius, 0});
+    }
+    const int across = static_cast<int>(std::ceil(2.0F * x / (spacing * lowRadius)));
+    for (int i = 1; ends && i < across; ++i) {
+        const float cx = -x + 2.0F * x * static_cast<float>(i) / static_cast<float>(across);
+        spheres.push_back({{cx, lowY, firstZ}, lowRadius, 0});
+        spheres.push_back({{cx, lowY, lastZ}, lowRadius, 0});
+    }
+    for (const float z : {spec.boundsMin[2] * 0.35F, spec.boundsMax[2] * 0.1F}) {
+        spheres.push_back({{0.0F, roofY, z}, roofRadius, 0});
+    }
+    return spheres;
+}
+
+} // namespace
+
+std::vector<CarSpec::CollisionSphere> worldContactSpheres(const CarSpec& spec)
+{
+    // Neighbours touch, so no pole or wall edge passes between them.
+    return standInSpheres(spec, 2.0F, false);
+}
+
+bool carContactIsBox(const CarSpec& spec)
+{
+    return std::none_of(spec.collisionSpheres.begin(), spec.collisionSpheres.end(),
+        [](const CarSpec::CollisionSphere& sphere) { return sphere.flags == 2; });
+}
+
+std::vector<CarSpec::CollisionSphere> carContactSpheres(const CarSpec& spec)
+{
+    std::vector<CarSpec::CollisionSphere> spheres;
+    std::copy_if(spec.collisionSpheres.begin(), spec.collisionSpheres.end(), std::back_inserter(spheres),
+        [](const CarSpec::CollisionSphere& sphere) { return sphere.flags == 2; });
+    // Against another car's spheres the rows overlap by half and close the
+    // front and the back, so the dips between neighbours stay shallower
+    // than the other car's spheres and a bumper cannot sink between them,
+    // as it did into a truck.
+    return spheres.empty() ? standInSpheres(spec, 1.0F, true) : spheres;
 }
 
 float SampledCurve::operator()(float input) const
