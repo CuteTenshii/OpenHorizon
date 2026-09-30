@@ -40,11 +40,11 @@ namespace {
 
 constexpr std::string_view kChildArgument = "--crash-child";
 /// Where the test reporter writes the arguments it was started with.
-constexpr const char* kReportOutVariable = "FH1_TST_CRASH_REPORT_OUT";
+constexpr const char* kReportOutVariable = "OPENHORIZON_TST_CRASH_REPORT_OUT";
 
 std::filesystem::path scratchFolder()
 {
-    return std::filesystem::temp_directory_path() / std::format("fh1-tst-crash-{}", openhorizon::processId());
+    return std::filesystem::temp_directory_path() / std::format("openhorizon-tst-crash-{}", openhorizon::processId());
 }
 
 std::string readFile(const std::filesystem::path& path)
@@ -139,7 +139,7 @@ std::pair<ChildEnd, std::string> crash(std::string_view kind, bool withReporter 
 {
     const std::filesystem::path folder = scratchFolder() / kind;
     std::filesystem::create_directories(folder);
-    const std::filesystem::path log = folder / "fh1.log";
+    const std::filesystem::path log = folder / "openhorizon.log";
     const ChildEnd end = runChild(
         {std::string(kChildArgument), std::string(kind), openhorizon::pathToUtf8(log), withReporter ? "1" : "0"});
     return {end, readFile(log)};
@@ -179,7 +179,7 @@ TEST_CASE("null_write_logs_the_signal_and_a_backtrace", "[crash]")
     checkEndedWithSignal(end, 0, 0xC0000005UL);
     checkReport(log, "exception 0xc0000005 (EXCEPTION_ACCESS_VIOLATION)");
     CHECK(log.find("writing address 0x0000000000000000") != std::string::npos);
-    CHECK(std::filesystem::is_regular_file(scratchFolder() / "null" / "fh1.dmp"));
+    CHECK(std::filesystem::is_regular_file(scratchFolder() / "null" / "openhorizon.dmp"));
 #else
     checkEndedWithSignal(end, SIGSEGV, 0);
     checkReport(log, "signal 11 (SIGSEGV), code 1, address 0x0");
@@ -238,7 +238,7 @@ TEST_CASE("crash_starts_the_reporter_with_the_log_and_the_message", "[crash]")
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
-    const std::string logPath = openhorizon::pathToUtf8(scratchFolder() / "exception" / "fh1.log");
+    const std::string logPath = openhorizon::pathToUtf8(scratchFolder() / "exception" / "openhorizon.log");
     CHECK(arguments == "--crash-report=" + logPath + "\n--crash-detail=boom from tst_crash\n");
 }
 
@@ -246,34 +246,34 @@ TEST_CASE("crash_dialog_text_names_the_log", "[crash]")
 {
     const std::filesystem::path folder = scratchFolder() / "text";
     std::filesystem::create_directories(folder);
-    const std::filesystem::path log = folder / "fh1.log";
+    const std::filesystem::path log = folder / "openhorizon.log";
     const std::string logName = openhorizon::pathToUtf8(log);
     CHECK(openhorizon::crashDialogText({log, ""})
-        == "Forza Horizon has stopped unexpectedly.\n\n"
+        == "OpenHorizon has stopped unexpectedly.\n\n"
            "It ran into a problem it could not recover from.\n\n"
            "The log file records what happened:\n"
             + logName + "\n\nPlease attach it to your bug report.");
     CHECK(openhorizon::crashDialogText({log, "media/x.xml: cannot open"})
-        == "Forza Horizon has stopped unexpectedly.\n\n"
+        == "OpenHorizon has stopped unexpectedly.\n\n"
            "media/x.xml: cannot open\n\n"
            "The log file records what happened:\n"
             + logName + "\n\nPlease attach it to your bug report.");
 
     // A dump is named only when there is one.
     const std::filesystem::path dump = openhorizon::crashDumpPath(log);
-    CHECK(dump == folder / "fh1.dmp");
+    CHECK(dump == folder / "openhorizon.dmp");
     std::filesystem::remove(dump);
     CHECK(openhorizon::crashDialogText({log, ""}, dump).find("dump") == std::string::npos);
     std::ofstream(dump) << "MDMP";
     CHECK(openhorizon::crashDialogText({log, ""}, dump)
-        == "Forza Horizon has stopped unexpectedly.\n\n"
+        == "OpenHorizon has stopped unexpectedly.\n\n"
            "It ran into a problem it could not recover from.\n\n"
            "The log file records what happened:\n"
             + logName + "\n\nA crash dump was saved next to it:\n" + openhorizon::pathToUtf8(dump)
             + "\n\nPlease attach both files to your bug report.");
 
     CHECK(openhorizon::crashDialogText({{}, ""})
-        == "Forza Horizon has stopped unexpectedly.\n\n"
+        == "OpenHorizon has stopped unexpectedly.\n\n"
            "It ran into a problem it could not recover from.\n\n"
            "No log file could be written for this run.");
 }
@@ -281,10 +281,10 @@ TEST_CASE("crash_dialog_text_names_the_log", "[crash]")
 TEST_CASE("startup_and_data_error_texts", "[crash]")
 {
     CHECK(openhorizon::startupErrorText("No game folder is set.", "Start the game with --game.")
-        == "Forza Horizon could not start.\n\nNo game folder is set.\n\nStart the game with --game.");
-    const std::filesystem::path log = openhorizon::pathFromUtf8("/home/player/fh1.log");
+        == "OpenHorizon could not start.\n\nNo game folder is set.\n\nStart the game with --game.");
+    const std::filesystem::path log = openhorizon::pathFromUtf8("/home/player/openhorizon.log");
     CHECK(openhorizon::gameDataErrorText("media/db/gamedb.slt: cannot open", log)
-        == "Forza Horizon has stopped because it could not read one of the game's files.\n\n"
+        == "OpenHorizon has stopped because it could not read one of the game's files.\n\n"
            "media/db/gamedb.slt: cannot open\n\n"
            "Check that the game folder holds a complete copy of the disc.\n\n"
            "The log file records what happened:\n"
@@ -298,18 +298,19 @@ TEST_CASE("startup_and_data_error_texts", "[crash]")
 
 TEST_CASE("crash_report_arguments", "[crash]")
 {
-    const std::vector<std::string> report = {"fh1", "--crash-report=/tmp/fh1.log", "--crash-detail=a \"quoted\" line"};
+    const std::vector<std::string> report
+        = {"openhorizon", "--crash-report=/tmp/openhorizon.log", "--crash-detail=a \"quoted\" line"};
     const std::optional<openhorizon::CrashReport> parsed = openhorizon::parseCrashReportArguments(report);
     CHECK(parsed.has_value());
     if (parsed) {
-        CHECK(parsed->logPath == openhorizon::pathFromUtf8("/tmp/fh1.log"));
+        CHECK(parsed->logPath == openhorizon::pathFromUtf8("/tmp/openhorizon.log"));
         CHECK(parsed->detail == "a \"quoted\" line");
     }
-    const std::vector<std::string> plain = {"fh1", "--crash-report="};
+    const std::vector<std::string> plain = {"openhorizon", "--crash-report="};
     CHECK(openhorizon::parseCrashReportArguments(plain).has_value());
-    const std::vector<std::string> game = {"fh1", "--game", "/disc", "--crash-report=/tmp/fh1.log"};
+    const std::vector<std::string> game = {"openhorizon", "--game", "/disc", "--crash-report=/tmp/openhorizon.log"};
     CHECK(!openhorizon::parseCrashReportArguments(game).has_value());
-    const std::vector<std::string> none = {"fh1"};
+    const std::vector<std::string> none = {"openhorizon"};
     CHECK(!openhorizon::parseCrashReportArguments(none).has_value());
 }
 

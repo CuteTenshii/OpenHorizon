@@ -12,7 +12,7 @@ struct SDL_Gamepad;
 namespace openhorizon {
 
 struct WindowOptions {
-    std::string title = "Forza Horizon";
+    std::string title = "OpenHorizon";
     int width = 1280;
     int height = 720;
     bool fullscreen = false;

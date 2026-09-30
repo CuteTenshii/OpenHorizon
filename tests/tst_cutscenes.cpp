@@ -1,7 +1,7 @@
 // The race cutscenes as the game plays them: the files a session loads,
 // the race-specific lookup, the clock and its looping, the triggers the
 // flows wait on, the cuts' fades and the keyed cameras. On synthetic
-// cutscenes, and on the disc's when FH1_GAME_DIR names it.
+// cutscenes, and on the disc's when OPENHORIZON_GAME_DIR names it.
 
 #include "support/TestSupport.h"
 

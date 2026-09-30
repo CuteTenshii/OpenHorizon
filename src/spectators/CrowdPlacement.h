@@ -36,7 +36,7 @@ struct PlacedSpectator {
     /// the person looks along (sin h, 0, cos h), h = heading / 255 of a turn
     /// (the game's decoder, 0x82EB99E0, whose sine and cosine are 0x82420E30
     /// and 0x8242EBA8). Verified against the racing lines: of the standing
-    /// people with one within 30 m, 93-95% face it (fh1crowd validate).
+    /// people with one within 30 m, 93-95% face it (openhorizon-crowd validate).
     float headingRadians() const;
 };
 

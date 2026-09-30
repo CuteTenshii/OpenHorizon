@@ -1,7 +1,7 @@
 // Car physics checks that need no world: the real cars from the disc driven
 // on a flat or tilted plane, for the behaviours players notice first (a car
 // holding still, recovering from a slide, steering the same both ways).
-// They need the disc and skip without FH1_GAME_DIR; fh1cartest covers the
+// They need the disc and skip without OPENHORIZON_GAME_DIR; openhorizon-cartest covers the
 // performance figures.
 
 #include "support/TestSupport.h"

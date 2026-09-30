@@ -1,5 +1,5 @@
 // The player's profile: the schema reader (ForzaProfile.sch) on synthetic
-// XML and on the disc's schema when FH1_GAME_DIR names it, and the profile
+// XML and on the disc's schema when OPENHORIZON_GAME_DIR names it, and the profile
 // store's file (round trip, atomic replacement, format version, damaged
 // files). Every file
 // goes to a folder under the temporary directory; XDG_DATA_HOME points
@@ -51,7 +51,7 @@ using namespace std::string_literals;
 /// A fresh, empty folder for one test.
 std::filesystem::path scratch(std::string_view name)
 {
-    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "fh1-tst-profile" / name;
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "openhorizon-tst-profile" / name;
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
     return dir;
@@ -642,7 +642,7 @@ public:
     void testRunStarting(const Catch::TestRunInfo& /*info*/) override
     {
         openhorizon::setEnvironmentVariable(openhorizon::userFolderVariable(openhorizon::UserFolder::Data),
-            openhorizon::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-profile" / "data"));
+            openhorizon::pathToUtf8(std::filesystem::temp_directory_path() / "openhorizon-tst-profile" / "data"));
     }
 };
 

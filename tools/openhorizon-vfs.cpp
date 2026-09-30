@@ -14,9 +14,9 @@ namespace {
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1vfs DISC list FOLDER\n"
-        "       fh1vfs DISC cat PATH\n"
-        "       fh1vfs DISC extract PATH OUTFILE\n");
+        "usage: openhorizon-vfs DISC list FOLDER\n"
+        "       openhorizon-vfs DISC cat PATH\n"
+        "       openhorizon-vfs DISC extract PATH OUTFILE\n");
     return 2;
 }
 

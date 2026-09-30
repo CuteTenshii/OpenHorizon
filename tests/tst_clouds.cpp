@@ -1,6 +1,6 @@
 // The realtime sky's cloud data: clouddefs.xml, the cloud curves with the
 // parameter block's defaults, the texture scrolling and turning, the lowest
-// sky height and the two domes, on synthetic data and, when FH1_GAME_DIR
+// sky height and the two domes, on synthetic data and, when OPENHORIZON_GAME_DIR
 // names an extracted disc, on the disc's files and Colorado's curves.
 
 #include "support/GlContext.h"

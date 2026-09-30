@@ -1,4 +1,4 @@
-add_library(fh1ui STATIC
+add_library(openhorizon_ui STATIC
     AnarkFormats.cpp
     AnarkFormats.h
     EventScreens.cpp
@@ -36,20 +36,17 @@ add_library(fh1ui STATIC
     WorldMap.cpp
     WorldMap.h
 )
-target_compile_options(fh1ui PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1ui PUBLIC fh1base fh1platform fh1data xds::xds glm::glm)
+target_compile_options(openhorizon_ui PRIVATE ${OPENHORIZON_WARNINGS})
+target_link_libraries(openhorizon_ui PUBLIC openhorizon_base openhorizon_platform openhorizon_data xds::xds glm::glm)
 # The front end's movies are ASF files, which libavformat demuxes.
-target_link_libraries(fh1ui PUBLIC fh1audio FH1N::avformat FH1N::avcodec)
+target_link_libraries(openhorizon_ui PUBLIC openhorizon_audio OpenHorizon::avformat OpenHorizon::avcodec)
 
-if(FH1N_BUILD_TOOLS)
-    # The library owns the target name, so the tool's target has its own and
-    # only its output file is called fh1ui.
-    add_executable(fh1ui_tool ../../tools/fh1ui.cpp)
-    set_target_properties(fh1ui_tool PROPERTIES OUTPUT_NAME fh1ui)
-    target_compile_options(fh1ui_tool PRIVATE ${FH1N_WARNINGS})
-    target_link_libraries(fh1ui_tool PRIVATE fh1ui)
+if(OPENHORIZON_BUILD_TOOLS)
+    add_executable(openhorizon-ui ../../tools/openhorizon-ui.cpp)
+    target_compile_options(openhorizon-ui PRIVATE ${OPENHORIZON_WARNINGS})
+    target_link_libraries(openhorizon-ui PRIVATE openhorizon_ui)
 
-    add_executable(fh1menu ../../tools/fh1menu.cpp)
-    target_compile_options(fh1menu PRIVATE ${FH1N_WARNINGS})
-    target_link_libraries(fh1menu PRIVATE fh1ui)
+    add_executable(openhorizon-menu ../../tools/openhorizon-menu.cpp)
+    target_compile_options(openhorizon-menu PRIVATE ${OPENHORIZON_WARNINGS})
+    target_link_libraries(openhorizon-menu PRIVATE openhorizon_ui)
 endif()

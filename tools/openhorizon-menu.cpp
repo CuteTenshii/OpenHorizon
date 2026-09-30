@@ -50,14 +50,15 @@ using namespace openhorizon::ui;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1menu DISC contracts SCENE [--names FILE]\n"
-        "       fh1menu DISC pause OUT.png [--race] [--steps KEYS] [--size WxH] [--time S]\n"
-        "       fh1menu DISC loading OUT.png [--group NAME] [--seed N] [--size WxH] [--time S]\n"
-        "       fh1menu DISC map OUT.png [--track NAME] [--at X,Z] [--heading DEG] [--move DX,DY --move-time S]\n"
+        "usage: openhorizon-menu DISC contracts SCENE [--names FILE]\n"
+        "       openhorizon-menu DISC pause OUT.png [--race] [--steps KEYS] [--size WxH] [--time S]\n"
+        "       openhorizon-menu DISC loading OUT.png [--group NAME] [--seed N] [--size WxH] [--time S]\n"
+        "       openhorizon-menu DISC map OUT.png [--track NAME] [--at X,Z] [--heading DEG] [--move DX,DY --move-time "
+        "S]\n"
         "                                [--zoom Z --zoom-time S] [--steps KEYS] [--size WxH] [--time S]\n"
         "                                [--player-bar CREDITS,XP,BAND,CAR]\n"
-        "       fh1menu DISC title OUT.png [--steps KEYS] [--size WxH] [--time S] [--wav OUT.wav]\n"
-        "       fh1menu DISC event SCREEN OUT.png --event ID [--place N] [--steps KEYS] [--size WxH]\n"
+        "       openhorizon-menu DISC title OUT.png [--steps KEYS] [--size WxH] [--time S] [--wav OUT.wav]\n"
+        "       openhorizon-menu DISC event SCREEN OUT.png --event ID [--place N] [--steps KEYS] [--size WxH]\n"
         "                                [--time S]\n"
         "  DISC       the extracted disc (its root or its media folder)\n"
         "  SCENE      a scene under media/ui/scenes/ui4 without extension, such as 925_pause_menu\n"
@@ -245,12 +246,12 @@ private:
 openhorizon::WindowOptions hiddenWindow()
 {
     openhorizon::WindowOptions options;
-    options.title = "fh1menu";
+    options.title = "openhorizon-menu";
     options.width = 64;
     options.height = 64;
     options.hidden = true;
     options.vsync = false;
-    options.glDebug = std::getenv("FH1_GL_DEBUG") != nullptr;
+    options.glDebug = std::getenv("OPENHORIZON_GL_DEBUG") != nullptr;
     return options;
 }
 
@@ -907,7 +908,7 @@ int main(int argc, char** argv)
         }
         return usage();
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "fh1menu: %s\n", e.what());
+        std::fprintf(stderr, "openhorizon-menu: %s\n", e.what());
         return 1;
     }
 }

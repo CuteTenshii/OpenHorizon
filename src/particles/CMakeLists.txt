@@ -1,4 +1,4 @@
-add_library(fh1particles STATIC
+add_library(openhorizon_particles STATIC
     Effect.cpp
     Effect.h
     GameRandom.h
@@ -17,13 +17,12 @@ add_library(fh1particles STATIC
     TyreEffects.cpp
     TyreEffects.h
 )
-target_include_directories(fh1particles PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_compile_options(fh1particles PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1particles PUBLIC fh1base fh1platform fh1world glm::glm)
+target_include_directories(openhorizon_particles PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_compile_options(openhorizon_particles PRIVATE ${OPENHORIZON_WARNINGS})
+target_link_libraries(openhorizon_particles PUBLIC openhorizon_base openhorizon_platform openhorizon_world glm::glm)
 
-if(FH1N_BUILD_TOOLS)
-    add_executable(fh1particles_tool ../../tools/fh1particles.cpp)
-    set_target_properties(fh1particles_tool PROPERTIES OUTPUT_NAME fh1particles)
-    target_compile_options(fh1particles_tool PRIVATE ${FH1N_WARNINGS})
-    target_link_libraries(fh1particles_tool PRIVATE fh1particles fh1engine xds::xds)
+if(OPENHORIZON_BUILD_TOOLS)
+    add_executable(openhorizon-particles ../../tools/openhorizon-particles.cpp)
+    target_compile_options(openhorizon-particles PRIVATE ${OPENHORIZON_WARNINGS})
+    target_link_libraries(openhorizon-particles PRIVATE openhorizon_particles openhorizon_engine xds::xds)
 endif()

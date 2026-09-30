@@ -79,8 +79,8 @@ public:
     static constexpr std::string_view kFileName = "ForzaProfile.bin";
     static constexpr std::string_view kMagic = "FH1P";
 
-    /// `profile` in the Data user folder: `~/.local/share/fh1-native/profile`
-    /// on Linux, `%LOCALAPPDATA%\fh1-native\profile` on Windows (see
+    /// `profile` in the Data user folder: `~/.local/share/openhorizon/profile`
+    /// on Linux, `%LOCALAPPDATA%\OpenHorizon\profile` on Windows (see
     /// openhorizon::UserFolder); one profile per user of the machine.
     static std::filesystem::path defaultDirectory();
 

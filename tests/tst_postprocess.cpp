@@ -1,7 +1,7 @@
 // The post-processing: the template, zone and TrackSettings readers, the
 // zone blend, the colour grading tables and the maths of the final combine,
 // against the executable's formulas; the GPU chain on a uniform picture in
-// an offscreen context; and Colorado's files when FH1_GAME_DIR is set.
+// an offscreen context; and Colorado's files when OPENHORIZON_GAME_DIR is set.
 #include "support/GlContext.h"
 #include "support/TestSupport.h"
 
@@ -757,7 +757,7 @@ public:
     void testRunStarting(const Catch::TestRunInfo& /*info*/) override
     {
         openhorizon::setEnvironmentVariable(openhorizon::userFolderVariable(openhorizon::UserFolder::Cache),
-            openhorizon::pathToUtf8(std::filesystem::temp_directory_path() / "fh1-tst-postprocess-cache"));
+            openhorizon::pathToUtf8(std::filesystem::temp_directory_path() / "openhorizon-tst-postprocess-cache"));
     }
 };
 

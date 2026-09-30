@@ -1,6 +1,6 @@
 // The game mode's activities: the catalogue read from the disc, and the
 // rules of the speed traps, the Horizon outposts and the set dressing of
-// activation zones, on synthetic data and on Colorado when FH1_GAME_DIR
+// activation zones, on synthetic data and on Colorado when OPENHORIZON_GAME_DIR
 // names the disc.
 
 #include "support/TestSupport.h"

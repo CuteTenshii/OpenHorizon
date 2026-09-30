@@ -58,7 +58,7 @@ void print(const openhorizon::CarSpec& s)
 int main(int argc, char** argv)
 {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: fh1carspec DISC CAR_ID|MEDIA_NAME|all\n");
+        std::fprintf(stderr, "usage: openhorizon-carspec DISC CAR_ID|MEDIA_NAME|all\n");
         return 2;
     }
     try {

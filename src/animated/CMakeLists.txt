@@ -1,4 +1,4 @@
-add_library(fh1animated STATIC
+add_library(openhorizon_animated STATIC
     AnimatedObjects.cpp
     AnimatedObjects.h
     AnimatedSets.cpp
@@ -6,6 +6,6 @@ add_library(fh1animated STATIC
     Granny.cpp
     Granny.h
 )
-target_include_directories(fh1animated PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_compile_options(fh1animated PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1animated PUBLIC fh1base fh1world glm::glm)
+target_include_directories(openhorizon_animated PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_compile_options(openhorizon_animated PRIVATE ${OPENHORIZON_WARNINGS})
+target_link_libraries(openhorizon_animated PUBLIC openhorizon_base openhorizon_world glm::glm)

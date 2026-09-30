@@ -32,11 +32,11 @@ jobs:
 
       # Tools build too, since no test would catch a broken one.
       # There is no game data here: every test that needs the disc skips itself
-      # without FH1_GAME_DIR, and the GL cases skip when no context can be made.
+      # without OPENHORIZON_GAME_DIR, and the GL cases skip when no context can be made.
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DFH1N_BUILD_TESTS=ON -DFH1N_BUILD_TOOLS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+          -DOPENHORIZON_BUILD_TESTS=ON -DOPENHORIZON_BUILD_TOOLS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
@@ -91,7 +91,7 @@ jobs:
       # CMake honours the setting only under policy CMP0141.
       - name: Configure
         run: >
-          cmake --preset windows-release -DFH1N_BUILD_TESTS=ON -DFH1N_BUILD_TOOLS=ON
+          cmake --preset windows-release -DOPENHORIZON_BUILD_TESTS=ON -DOPENHORIZON_BUILD_TOOLS=ON
           -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DCMAKE_POLICY_DEFAULT_CMP0141=NEW -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded

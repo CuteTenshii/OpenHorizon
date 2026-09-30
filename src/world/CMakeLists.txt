@@ -1,4 +1,4 @@
-add_library(fh1world STATIC
+add_library(openhorizon_world STATIC
     Archive.cpp
     Archive.h
     PvsFile.cpp
@@ -30,14 +30,11 @@ add_library(fh1world STATIC
     ZoneGrid.cpp
     ZoneGrid.h
 )
-target_compile_options(fh1world PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1world PUBLIC fh1base fh1xenos xds::xds glm::glm Threads::Threads)
+target_compile_options(openhorizon_world PRIVATE ${OPENHORIZON_WARNINGS})
+target_link_libraries(openhorizon_world PUBLIC openhorizon_base openhorizon_xenos xds::xds glm::glm Threads::Threads)
 
-if(FH1N_BUILD_TOOLS)
-    # The library already owns the target name, so the tool's target has its own
-    # and only its output file is called fh1world.
-    add_executable(fh1world_tool ../../tools/fh1world.cpp)
-    set_target_properties(fh1world_tool PROPERTIES OUTPUT_NAME fh1world)
-    target_compile_options(fh1world_tool PRIVATE ${FH1N_WARNINGS})
-    target_link_libraries(fh1world_tool PRIVATE fh1world)
+if(OPENHORIZON_BUILD_TOOLS)
+    add_executable(openhorizon-world ../../tools/openhorizon-world.cpp)
+    target_compile_options(openhorizon-world PRIVATE ${OPENHORIZON_WARNINGS})
+    target_link_libraries(openhorizon-world PRIVATE openhorizon_world)
 endif()

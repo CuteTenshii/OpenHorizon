@@ -12,9 +12,9 @@ namespace openhorizon::test {
 
 const char* gameDir()
 {
-    const char* dir = std::getenv("FH1_GAME_DIR");
+    const char* dir = std::getenv("OPENHORIZON_GAME_DIR");
     if (dir == nullptr || *dir == '\0') {
-        SKIP("FH1_GAME_DIR is not set");
+        SKIP("OPENHORIZON_GAME_DIR is not set");
     }
     return dir;
 }

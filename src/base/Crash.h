@@ -9,7 +9,7 @@
 
 namespace openhorizon {
 
-/// Starts fh1 as the crash reporter rather than the game: `fh1
+/// Starts openhorizon as the crash reporter rather than the game: `openhorizon
 /// --crash-report=LOG [--crash-detail=TEXT]` shows the crash message box
 /// for the log at LOG and exits. The crashed process starts it, see
 /// installCrashHandlers.
@@ -18,7 +18,7 @@ inline constexpr std::string_view kCrashDetailArgument = "--crash-detail=";
 
 /// Set (to anything) to keep every error box closed: the test scripts and
 /// the test harness set it, so a crashing test never waits on a click.
-inline constexpr const char* kNoCrashDialogVariable = "FH1_NO_CRASH_DIALOG";
+inline constexpr const char* kNoCrashDialogVariable = "OPENHORIZON_NO_CRASH_DIALOG";
 
 struct CrashHandlerOptions {
     /// The log the report names; the crash lines themselves go through the
@@ -26,7 +26,7 @@ struct CrashHandlerOptions {
     /// error. Empty when no log file could be opened.
     std::filesystem::path logPath;
     /// The program started after a crash as `reporter --crash-report=LOG
-    /// [--crash-detail=TEXT]`, normally fh1 itself; empty to start none
+    /// [--crash-detail=TEXT]`, normally openhorizon itself; empty to start none
     /// (tests, no display, see errorDialogsAllowed).
     std::filesystem::path reporter;
     /// Where Windows writes a minidump of the crashed process
@@ -64,7 +64,7 @@ struct CrashHandlerOptions {
 /// options and installs nothing twice.
 void installCrashHandlers(const CrashHandlerOptions& options);
 
-/// `fh1.dmp` next to `logPath`: the Windows minidump, kept beside the log
+/// `openhorizon.dmp` next to `logPath`: the Windows minidump, kept beside the log
 /// so a bug report gathers both from one folder.
 std::filesystem::path crashDumpPath(const std::filesystem::path& logPath);
 

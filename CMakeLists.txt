@@ -9,7 +9,7 @@ if(POLICY CMP0174)
     cmake_policy(SET CMP0174 NEW)
 endif()
 
-project(fh1native VERSION 0.1.0 LANGUAGES C CXX)
+project(OpenHorizon VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,15 +22,15 @@ endif()
 
 # The game alone by default: tests and tools add about forty programs and
 # need Catch2 and shaderc.
-option(FH1N_BUILD_TESTS "Build the unit tests and the scenarios" OFF)
-option(FH1N_BUILD_TOOLS "Build the command-line inspection tools" OFF)
+option(OPENHORIZON_BUILD_TESTS "Build the unit tests and the scenarios" OFF)
+option(OPENHORIZON_BUILD_TOOLS "Build the command-line inspection tools" OFF)
 
 # Every test program and tool links the whole engine with debug info, so the
 # linker is a large share of a rebuild; mold does it several times faster
 # than GNU ld. Builds without it fall back to the compiler's default linker.
 if(NOT MSVC)
-    find_program(FH1N_MOLD mold)
-    if(FH1N_MOLD)
+    find_program(OPENHORIZON_MOLD mold)
+    if(OPENHORIZON_MOLD)
         add_link_options(-fuse-ld=mold)
     else()
         message(STATUS "mold not found: linking with the compiler's default linker")
@@ -89,29 +89,29 @@ endif()
 # variables, system installs have pkg-config files.
 find_package(FFMPEG QUIET)
 if(FFMPEG_FOUND AND FFMPEG_libavformat_FOUND AND FFMPEG_libavcodec_FOUND)
-    add_library(fh1n_ffmpeg INTERFACE)
-    target_include_directories(fh1n_ffmpeg INTERFACE ${FFMPEG_INCLUDE_DIRS})
-    target_link_directories(fh1n_ffmpeg INTERFACE ${FFMPEG_LIBRARY_DIRS})
-    target_link_libraries(fh1n_ffmpeg INTERFACE ${FFMPEG_LIBRARIES})
-    add_library(FH1N::avcodec ALIAS fh1n_ffmpeg)
-    add_library(FH1N::avformat ALIAS fh1n_ffmpeg)
+    add_library(openhorizon_ffmpeg INTERFACE)
+    target_include_directories(openhorizon_ffmpeg INTERFACE ${FFMPEG_INCLUDE_DIRS})
+    target_link_directories(openhorizon_ffmpeg INTERFACE ${FFMPEG_LIBRARY_DIRS})
+    target_link_libraries(openhorizon_ffmpeg INTERFACE ${FFMPEG_LIBRARIES})
+    add_library(OpenHorizon::avcodec ALIAS openhorizon_ffmpeg)
+    add_library(OpenHorizon::avformat ALIAS openhorizon_ffmpeg)
 else()
     if(NOT PKG_CONFIG_FOUND)
         message(FATAL_ERROR "FFmpeg not found: install its development files (with pkg-config) or use vcpkg")
     endif()
-    pkg_check_modules(FH1N_AVCODEC REQUIRED IMPORTED_TARGET libavcodec libavutil)
-    pkg_check_modules(FH1N_AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
-    add_library(FH1N::avcodec ALIAS PkgConfig::FH1N_AVCODEC)
-    add_library(FH1N::avformat ALIAS PkgConfig::FH1N_AVFORMAT)
+    pkg_check_modules(OPENHORIZON_AVCODEC REQUIRED IMPORTED_TARGET libavcodec libavutil)
+    pkg_check_modules(OPENHORIZON_AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
+    add_library(OpenHorizon::avcodec ALIAS PkgConfig::OPENHORIZON_AVCODEC)
+    add_library(OpenHorizon::avformat ALIAS PkgConfig::OPENHORIZON_AVFORMAT)
 endif()
 
 if(MSVC)
     # /permissive- for standard conformance, /utf-8 because the sources are
     # UTF-8 (the overlay's glyph list, the tests' names), /Zc:__cplusplus
     # so the macro reports C++20 as the headers expect.
-    set(FH1N_WARNINGS /W4 /permissive- /utf-8 /Zc:__cplusplus)
+    set(OPENHORIZON_WARNINGS /W4 /permissive- /utf-8 /Zc:__cplusplus)
 else()
-    set(FH1N_WARNINGS -Wall -Wextra -Wpedantic -Wshadow)
+    set(OPENHORIZON_WARNINGS -Wall -Wextra -Wpedantic -Wshadow)
 endif()
 if(WIN32)
     # windows.h otherwise defines min and max as macros, which break
@@ -126,33 +126,33 @@ endif()
 
 add_subdirectory(src)
 
-if(FH1N_BUILD_TESTS)
+if(OPENHORIZON_BUILD_TESTS)
     find_package(Catch2 3 REQUIRED CONFIG)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-# Every Windows executable carries cmake/fh1-native.manifest, which makes
+# Every Windows executable carries cmake/openhorizon.manifest, which makes
 # UTF-8 the process code page, so text read from the command line, the
 # environment or narrow-string file APIs is UTF-8 as on Linux. MSVC merges
 # a .manifest source into the one its linker writes.
 if(MSVC)
-    function(fh1n_add_manifests directory)
+    function(openhorizon_add_manifests directory)
         get_property(targets DIRECTORY ${directory} PROPERTY BUILDSYSTEM_TARGETS)
         foreach(target IN LISTS targets)
             get_target_property(type ${target} TYPE)
             if(type STREQUAL "EXECUTABLE")
-                target_sources(${target} PRIVATE ${CMAKE_SOURCE_DIR}/cmake/fh1-native.manifest)
+                target_sources(${target} PRIVATE ${CMAKE_SOURCE_DIR}/cmake/openhorizon.manifest)
             endif()
         endforeach()
         get_property(subdirectories DIRECTORY ${directory} PROPERTY SUBDIRECTORIES)
         foreach(subdirectory IN LISTS subdirectories)
-            fh1n_add_manifests(${subdirectory})
+            openhorizon_add_manifests(${subdirectory})
         endforeach()
     endfunction()
-    fh1n_add_manifests(${CMAKE_SOURCE_DIR}/src)
-    if(FH1N_BUILD_TESTS)
-        fh1n_add_manifests(${CMAKE_SOURCE_DIR}/tests)
+    openhorizon_add_manifests(${CMAKE_SOURCE_DIR}/src)
+    if(OPENHORIZON_BUILD_TESTS)
+        openhorizon_add_manifests(${CMAKE_SOURCE_DIR}/tests)
     endif()
 endif()
 
@@ -162,18 +162,18 @@ endif()
 # file in the compilation database.
 find_program(CLANG_FORMAT clang-format)
 find_program(RUN_CLANG_TIDY run-clang-tidy)
-file(GLOB_RECURSE FH1N_SOURCES CONFIGURE_DEPENDS
+file(GLOB_RECURSE OPENHORIZON_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/src/*.cpp ${CMAKE_SOURCE_DIR}/src/*.h
     ${CMAKE_SOURCE_DIR}/tools/*.cpp
     ${CMAKE_SOURCE_DIR}/tests/*.cpp ${CMAKE_SOURCE_DIR}/tests/*.h)
 if(CLANG_FORMAT)
     add_custom_target(format
-        COMMAND ${CLANG_FORMAT} -i ${FH1N_SOURCES}
+        COMMAND ${CLANG_FORMAT} -i ${OPENHORIZON_SOURCES}
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         COMMENT "Formatting sources with clang-format"
         VERBATIM)
     add_custom_target(format-check
-        COMMAND ${CLANG_FORMAT} --dry-run --Werror ${FH1N_SOURCES}
+        COMMAND ${CLANG_FORMAT} --dry-run --Werror ${OPENHORIZON_SOURCES}
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         COMMENT "Checking source formatting"
         VERBATIM)

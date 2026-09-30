@@ -1,6 +1,6 @@
 // Tests of the pause menu, the full-screen map and the title screen: the
 // text wrapping, the map camera and the title prompt's timing on values
-// built here, and, when FH1_GAME_DIR names an extracted disc, the pause
+// built here, and, when OPENHORIZON_GAME_DIR names an extracted disc, the pause
 // menu's entries for free roam and races with their texts from the string
 // tables, the structure of the scenes the screens bind, the map's tunables
 // and cursor area, and the title's movie and music. The loading screen's
@@ -922,7 +922,10 @@ public:
     void testRunEnded(const Catch::TestRunStats& /*stats*/) override { std::filesystem::remove_all(folder()); }
 
 private:
-    static std::filesystem::path folder() { return std::filesystem::temp_directory_path() / "fh1-tst-menu-cache"; }
+    static std::filesystem::path folder()
+    {
+        return std::filesystem::temp_directory_path() / "openhorizon-tst-menu-cache";
+    }
 };
 
 } // namespace

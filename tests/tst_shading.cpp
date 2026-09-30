@@ -1,7 +1,7 @@
 // The track's shading inputs: the Xbox 360 cube texture decoder (XPR2 cube
 // maps and CAFF cube textures), the TrackSettings.xml values the track
 // effects read, and the scene constants computed from them and from the
-// time of day. Synthetic data always; the disc's files when FH1_GAME_DIR
+// time of day. Synthetic data always; the disc's files when OPENHORIZON_GAME_DIR
 // names an extracted disc.
 
 #include "support/TestSupport.h"
@@ -45,7 +45,7 @@ constexpr std::uint32_t kDxt5 = 0x14;
 /// Byte order 1 (8 in 16) in the format word, as the disc's cubes have it.
 constexpr std::uint32_t kSwap8In16 = 1U << 6;
 
-/// The disc; the case skips when FH1_GAME_DIR is not set.
+/// The disc; the case skips when OPENHORIZON_GAME_DIR is not set.
 std::unique_ptr<Vfs> disc()
 {
     auto vfs = std::make_unique<Vfs>();

@@ -47,10 +47,10 @@ using carmodel::CarModel;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1carmodel DISC CAR [--obj OUT.obj] [--no-textures] [--all-parts] [--in-race-lods]\n"
+        "usage: openhorizon-carmodel DISC CAR [--obj OUT.obj] [--no-textures] [--all-parts] [--in-race-lods]\n"
         "                            [--no-cockpit]\n"
         "                            [--render PREFIX [--time HH:MM]]\n"
-        "       fh1carmodel DISC --all [--textures]\n"
+        "       openhorizon-carmodel DISC --all [--textures]\n"
         "  DISC         the extracted disc (its root or its media folder)\n"
         "  CAR          a folder of media/cars, such as alf_8c_08\n"
         "  --obj        also write OUT.obj, OUT.mtl and PNG textures beside them;\n"
@@ -396,7 +396,7 @@ int renderViews(const openhorizon::Vfs& vfs, const openhorizon::Database* db, co
     constexpr int kWidth = 1280;
     constexpr int kHeight = 720;
     openhorizon::WindowOptions windowOptions;
-    windowOptions.title = "fh1carmodel";
+    windowOptions.title = "openhorizon-carmodel";
     windowOptions.width = kWidth;
     windowOptions.height = kHeight;
     windowOptions.vsync = false;
@@ -477,7 +477,7 @@ int renderViews(const openhorizon::Vfs& vfs, const openhorizon::Database* db, co
         frameRenderer.finish(postFrame);
         const std::string path = std::format("{}_{}.png", prefix, view.name);
         if (!savePng(path, kWidth, kHeight)) {
-            std::fprintf(stderr, "fh1carmodel: cannot write %s\n", path.c_str());
+            std::fprintf(stderr, "openhorizon-carmodel: cannot write %s\n", path.c_str());
             return 1;
         }
         std::printf("wrote %s\n", path.c_str());
@@ -538,7 +538,7 @@ int main(int argc, char** argv)
         }
         if (target == "--all") {
             if (!db) {
-                std::fprintf(stderr, "fh1carmodel: media/db/gamedb.slt is missing\n");
+                std::fprintf(stderr, "openhorizon-carmodel: media/db/gamedb.slt is missing\n");
                 return 1;
             }
             return loadAll(vfs, *db, textures);
@@ -557,7 +557,7 @@ int main(int argc, char** argv)
             return renderViews(vfs, db ? &*db : nullptr, model, *renderPrefix, renderMinutes);
         }
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "fh1carmodel: %s\n", e.what());
+        std::fprintf(stderr, "openhorizon-carmodel: %s\n", e.what());
         return 1;
     }
     return 0;

@@ -53,10 +53,10 @@ constexpr std::size_t kOffRoadSamples = 20;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1fiz DISC TRACK stats\n"
-        "       fh1fiz DISC TRACK at X,Z\n"
-        "       fh1fiz DISC TRACK --obj OUT.obj X,Z RADIUS\n"
-        "       fh1fiz DISC TRACK validate\n"
+        "usage: openhorizon-fiz DISC TRACK stats\n"
+        "       openhorizon-fiz DISC TRACK at X,Z\n"
+        "       openhorizon-fiz DISC TRACK --obj OUT.obj X,Z RADIUS\n"
+        "       openhorizon-fiz DISC TRACK validate\n"
         "  DISC      the extracted disc (its root or its media folder)\n"
         "  TRACK     a folder of media/tracks, such as colorado\n"
         "  stats     decode every tile; counts, surfaces and failures\n"
@@ -359,7 +359,7 @@ int exportObj(const TrackCollision& collision, const std::filesystem::path& out,
         vertex += 3;
     }
     if (!obj || !mtl) {
-        std::fprintf(stderr, "fh1fiz: could not write %s\n", out.string().c_str());
+        std::fprintf(stderr, "openhorizon-fiz: could not write %s\n", out.string().c_str());
         return 1;
     }
     std::printf("wrote %zu triangles to %s and %s\n", faces.size(), out.string().c_str(),
@@ -562,7 +562,7 @@ int validate(const openhorizon::Vfs& vfs, std::string_view track, const TrackCol
     std::fprintf(stderr, "loading the render world...\n");
     const std::optional<openhorizon::world::TrackWorld> world = openhorizon::world::TrackWorld::load(vfs, track);
     if (!world) {
-        std::fprintf(stderr, "fh1fiz: the render world could not be loaded\n");
+        std::fprintf(stderr, "openhorizon-fiz: the render world could not be loaded\n");
         return 1;
     }
     const openhorizon::world::WorldTileGrid grid(world->index, kRenderTileSize);
@@ -685,7 +685,7 @@ int main(int argc, char** argv)
         }
         return usage();
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "fh1fiz: %s\n", e.what());
+        std::fprintf(stderr, "openhorizon-fiz: %s\n", e.what());
         return 1;
     }
 }

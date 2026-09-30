@@ -8,7 +8,7 @@
 namespace openhorizon {
 
 /// The player's settings, from `settings.ini` in the Config user folder
-/// (`~/.config/fh1-native` on Linux, `%APPDATA%\fh1-native` on Windows; see
+/// (`~/.config/openhorizon` on Linux, `%APPDATA%\OpenHorizon` on Windows; see
 /// UserFolder): `key = value` lines of UTF-8, `#` comments. Command-line
 /// options override them.
 class Settings {

@@ -1,6 +1,6 @@
 // Tests of the spectator formats: parsers on data built here in the layouts
 // the headers document, a small crowd loaded from a disc written to a
-// temporary folder, and, when FH1_GAME_DIR names an extracted disc, the crowd
+// temporary folder, and, when OPENHORIZON_GAME_DIR names an extracted disc, the crowd
 // of Colorado.
 
 #include "support/TestSupport.h"
@@ -799,7 +799,7 @@ TEST_CASE("sessionsChooseGroups", "[spectators]")
 TEST_CASE("crowdSetLoadsFromADisc", "[spectators]")
 {
     const std::filesystem::path root
-        = std::filesystem::temp_directory_path() / std::format("fh1_spectators_test_{}", std::rand());
+        = std::filesystem::temp_directory_path() / std::format("openhorizon_spectators_test_{}", std::rand());
     std::filesystem::remove_all(root);
     writeText(root / "media" / "zipmanifest.xml",
         R"(<ZipFiles><Zip version="1" path="game:\media\tracks\testtrack\bin.zip" priority="10" /></ZipFiles>)");

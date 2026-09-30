@@ -46,17 +46,17 @@ std::vector<std::string> commandLineArguments(int argc, char** argv);
 /// call more than once.
 void raiseOpenFileLimit();
 
-/// The kinds of file fh1-native keeps for the player, each in a folder of
+/// The kinds of file OpenHorizon keeps for the player, each in a folder of
 /// its own:
 ///
-/// | Kind   | Holds          | Linux (XDG base directories)          | Windows                          |
-/// |--------|----------------|---------------------------------------|----------------------------------|
-/// | Config | settings.ini   | `$XDG_CONFIG_HOME`, `~/.config`       | `%APPDATA%\fh1-native`           |
-/// | Data   | profile/       | `$XDG_DATA_HOME`, `~/.local/share`    | `%LOCALAPPDATA%\fh1-native`      |
-/// | State  | fh1.log        | `$XDG_STATE_HOME`, `~/.local/state`   | `%LOCALAPPDATA%\fh1-native\logs` |
-/// | Cache  | shaders/       | `$XDG_CACHE_HOME`, `~/.cache`         | `%LOCALAPPDATA%\fh1-native\cache`|
+/// | Kind   | Holds           | Linux (XDG base directories)        | Windows                            |
+/// |--------|-----------------|-------------------------------------|------------------------------------|
+/// | Config | settings.ini    | `$XDG_CONFIG_HOME`, `~/.config`     | `%APPDATA%\OpenHorizon`            |
+/// | Data   | profile/        | `$XDG_DATA_HOME`, `~/.local/share`  | `%LOCALAPPDATA%\OpenHorizon`       |
+/// | State  | openhorizon.log | `$XDG_STATE_HOME`, `~/.local/state` | `%LOCALAPPDATA%\OpenHorizon\logs`  |
+/// | Cache  | shaders/        | `$XDG_CACHE_HOME`, `~/.cache`       | `%LOCALAPPDATA%\OpenHorizon\cache` |
 ///
-/// On Linux the folder is `fh1-native` inside the XDG base directory. On
+/// On Linux the folder is `openhorizon` inside the XDG base directory. On
 /// Windows settings roam with the account (the Roaming AppData folder)
 /// while everything bulky or machine-specific stays local.
 enum class UserFolder { Config, Data, State, Cache };

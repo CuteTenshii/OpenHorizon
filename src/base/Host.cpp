@@ -32,7 +32,11 @@ namespace openhorizon {
 
 namespace {
 
-constexpr std::string_view kFolderName = "fh1-native";
+#ifdef _WIN32
+constexpr std::string_view kFolderName = "OpenHorizon";
+#else
+constexpr std::string_view kFolderName = "openhorizon";
+#endif
 
 #ifdef _WIN32
 

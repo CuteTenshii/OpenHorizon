@@ -39,12 +39,13 @@ using namespace openhorizon::ui;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1ui DISC fonts\n"
-        "       fh1ui DISC scene PATH [--attributes]\n"
-        "       fh1ui DISC glyphs OUT.png [--font FACE] [--size PX]\n"
-        "       fh1ui DISC texture PATH OUT.png\n"
-        "       fh1ui DISC string ID [LANGUAGE]\n"
-        "       fh1ui DISC render OUT.png [--race] [--sprint] [--countdown S] [--prompt] [--prompt-title TEXT]\n"
+        "usage: openhorizon-ui DISC fonts\n"
+        "       openhorizon-ui DISC scene PATH [--attributes]\n"
+        "       openhorizon-ui DISC glyphs OUT.png [--font FACE] [--size PX]\n"
+        "       openhorizon-ui DISC texture PATH OUT.png\n"
+        "       openhorizon-ui DISC string ID [LANGUAGE]\n"
+        "       openhorizon-ui DISC render OUT.png [--race] [--sprint] [--countdown S] [--prompt] [--prompt-title "
+        "TEXT]\n"
         "                                 [--assists]\n"
         "                                 [--size WxH] [--time S] [--rpm R] [--rpm-rate R]\n"
         "                                 [--speed S] [--metric] [--at X,Z] [--heading DEG]\n"
@@ -277,12 +278,12 @@ private:
 openhorizon::WindowOptions hiddenWindow()
 {
     openhorizon::WindowOptions options;
-    options.title = "fh1ui";
+    options.title = "openhorizon-ui";
     options.width = 64;
     options.height = 64;
     options.hidden = true;
     options.vsync = false;
-    options.glDebug = std::getenv("FH1_GL_DEBUG") != nullptr;
+    options.glDebug = std::getenv("OPENHORIZON_GL_DEBUG") != nullptr;
     return options;
 }
 
@@ -700,7 +701,7 @@ int main(int argc, char** argv)
         }
         return usage();
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "fh1ui: %s\n", e.what());
+        std::fprintf(stderr, "openhorizon-ui: %s\n", e.what());
         return 1;
     }
 }

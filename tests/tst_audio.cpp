@@ -1,6 +1,6 @@
 // Tests of the audio layer: the FSB and FEV readers on files built here in
 // the layouts the headers document, the DSP, mixer and engine-sound logic on
-// synthetic signals, and, when FH1_GAME_DIR names an extracted disc, a few
+// synthetic signals, and, when OPENHORIZON_GAME_DIR names an extracted disc, a few
 // banks of every kind (every bank as a slow test), every project and every
 // engine tuning on it.
 

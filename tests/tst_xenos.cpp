@@ -1,6 +1,6 @@
 // Tests of the Xenos shader library: hand-assembled microcode decoded,
 // disassembled, translated and compiled; an effect container built here in
-// the documented layout; and, when FH1_GAME_DIR names an extracted disc,
+// the documented layout; and, when OPENHORIZON_GAME_DIR names an extracted disc,
 // effects of the game translated and compiled (every one as a slow test).
 
 #include "support/TestSupport.h"

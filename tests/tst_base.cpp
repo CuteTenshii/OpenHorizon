@@ -34,7 +34,7 @@ const std::string kUnicodeName = "caf\xc3\xa9 \xe3\x83\x95\xe3\x82\xa9\xe3\x83\x
 
 std::filesystem::path scratch(const std::string& name)
 {
-    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "fh1-tst-base" / name;
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "openhorizon-tst-base" / name;
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
     return dir;
@@ -188,7 +188,7 @@ TEST_CASE("missingFilesThrowWithTheirName", "[base]")
 
 TEST_CASE("environmentVariablesCarryUtf8", "[base]")
 {
-    const char* name = "FH1_TST_BASE_VARIABLE";
+    const char* name = "OPENHORIZON_TST_BASE_VARIABLE";
     const SavedVariable saved(name);
     openhorizon::unsetEnvironmentVariable(name);
     CHECK(!openhorizon::environmentVariable(name));
@@ -217,6 +217,12 @@ TEST_CASE("xdgBaseDirectoryFollowsTheRules", "[base]")
     CHECK(openhorizon::xdgBaseDirectory("relative", "also/relative", ".cache").empty());
 }
 
+#ifdef _WIN32
+constexpr const char* kFolderName = "OpenHorizon";
+#else
+constexpr const char* kFolderName = "openhorizon";
+#endif
+
 TEST_CASE("userFoldersFollowTheirVariables", "[base]")
 {
     const std::filesystem::path base = scratch("folders") / openhorizon::pathFromUtf8(kUnicodeName);
@@ -226,17 +232,17 @@ TEST_CASE("userFoldersFollowTheirVariables", "[base]")
         const SavedVariable saved(variable);
         openhorizon::setEnvironmentVariable(variable, openhorizon::pathToUtf8(base));
         const std::filesystem::path folder = openhorizon::userFolder(kind);
-        CHECK(folder.native().starts_with((base / "fh1-native").native()));
+        CHECK(folder.native().starts_with((base / kFolderName).native()));
     }
 #ifdef _WIN32
     const SavedVariable roaming("APPDATA");
     const SavedVariable local("LOCALAPPDATA");
     openhorizon::setEnvironmentVariable("APPDATA", openhorizon::pathToUtf8(base / "Roaming"));
     openhorizon::setEnvironmentVariable("LOCALAPPDATA", openhorizon::pathToUtf8(base / "Local"));
-    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Config) == base / "Roaming" / "fh1-native");
-    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Data) == base / "Local" / "fh1-native");
-    CHECK(openhorizon::userFolder(openhorizon::UserFolder::State) == base / "Local" / "fh1-native" / "logs");
-    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Cache) == base / "Local" / "fh1-native" / "cache");
+    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Config) == base / "Roaming" / "OpenHorizon");
+    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Data) == base / "Local" / "OpenHorizon");
+    CHECK(openhorizon::userFolder(openhorizon::UserFolder::State) == base / "Local" / "OpenHorizon" / "logs");
+    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Cache) == base / "Local" / "OpenHorizon" / "cache");
     // A relative value falls back to the known folder rather than the
     // working directory.
     openhorizon::setEnvironmentVariable("LOCALAPPDATA", "relative");
@@ -251,10 +257,10 @@ TEST_CASE("userFoldersFollowTheirVariables", "[base]")
         openhorizon::unsetEnvironmentVariable(variable);
     }
     openhorizon::setEnvironmentVariable("HOME", openhorizon::pathToUtf8(base));
-    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Config) == base / ".config" / "fh1-native");
-    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Data) == base / ".local/share" / "fh1-native");
-    CHECK(openhorizon::userFolder(openhorizon::UserFolder::State) == base / ".local/state" / "fh1-native");
-    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Cache) == base / ".cache" / "fh1-native");
+    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Config) == base / ".config" / "openhorizon");
+    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Data) == base / ".local/share" / "openhorizon");
+    CHECK(openhorizon::userFolder(openhorizon::UserFolder::State) == base / ".local/state" / "openhorizon");
+    CHECK(openhorizon::userFolder(openhorizon::UserFolder::Cache) == base / ".cache" / "openhorizon");
     openhorizon::unsetEnvironmentVariable("HOME");
     CHECK(openhorizon::userFolder(openhorizon::UserFolder::Cache).empty());
 #endif
@@ -271,7 +277,7 @@ TEST_CASE("settingsAndLogLiveInTheirUserFolders", "[base]")
         openhorizon::userFolderVariable(openhorizon::UserFolder::State), openhorizon::pathToUtf8(base / "state"));
     CHECK(openhorizon::Settings::defaultPath()
         == openhorizon::userFolder(openhorizon::UserFolder::Config) / "settings.ini");
-    CHECK(openhorizon::defaultLogPath() == openhorizon::userFolder(openhorizon::UserFolder::State) / "fh1.log");
+    CHECK(openhorizon::defaultLogPath() == openhorizon::userFolder(openhorizon::UserFolder::State) / "openhorizon.log");
 
     // A game folder named in UTF-8 survives a save and a load.
     const std::string gameDir = openhorizon::pathToUtf8(base / "disc");
@@ -334,7 +340,7 @@ public:
     void testRunEnded(const Catch::TestRunStats& /*stats*/) override
     {
         std::error_code ignored;
-        std::filesystem::remove_all(std::filesystem::temp_directory_path() / "fh1-tst-base", ignored);
+        std::filesystem::remove_all(std::filesystem::temp_directory_path() / "openhorizon-tst-base", ignored);
     }
 };
 

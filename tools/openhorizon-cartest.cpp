@@ -191,7 +191,7 @@ void trace(const openhorizon::CarSpec& spec)
 int main(int argc, char** argv)
 {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: fh1cartest DISC CAR_ID|MEDIA_NAME|all\n");
+        std::fprintf(stderr, "usage: openhorizon-cartest DISC CAR_ID|MEDIA_NAME|all\n");
         return 2;
     }
     try {

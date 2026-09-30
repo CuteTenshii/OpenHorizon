@@ -29,7 +29,7 @@ std::filesystem::path Settings::defaultPath()
 {
     const std::filesystem::path folder = userFolder(UserFolder::Config);
     if (folder.empty()) {
-        return std::filesystem::path("fh1-native-settings.ini");
+        return std::filesystem::path("openhorizon-settings.ini");
     }
     return folder / "settings.ini";
 }

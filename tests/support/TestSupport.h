@@ -2,7 +2,7 @@
 
 namespace openhorizon::test {
 
-/// The extracted disc FH1_GAME_DIR names. When it names none, skips the
+/// The extracted disc OPENHORIZON_GAME_DIR names. When it names none, skips the
 /// test case that asks: the tests that need the disc run only where it is.
 const char* gameDir();
 

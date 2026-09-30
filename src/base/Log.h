@@ -19,8 +19,8 @@ LogLevel logLevel();
 /// be opened; logging to standard error carries on either way.
 bool openLogFile(const std::filesystem::path& path);
 
-/// `fh1.log` in the State user folder: `~/.local/state/fh1-native` on
-/// Linux, `%LOCALAPPDATA%\fh1-native\logs` on Windows (see UserFolder).
+/// `openhorizon.log` in the State user folder: `~/.local/state/openhorizon` on
+/// Linux, `%LOCALAPPDATA%\OpenHorizon\logs` on Windows (see UserFolder).
 std::filesystem::path defaultLogPath();
 
 /// The open log file's descriptor (a C runtime descriptor on Windows), or

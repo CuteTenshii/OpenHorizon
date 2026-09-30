@@ -1,6 +1,6 @@
 // Tests of the world formats: pure functions and parsers on data built here
 // in the layouts the headers document, a small world written to a real
-// archive, and, when FH1_GAME_DIR names an extracted disc, Colorado itself.
+// archive, and, when OPENHORIZON_GAME_DIR names an extracted disc, Colorado itself.
 
 #include "support/TestSupport.h"
 

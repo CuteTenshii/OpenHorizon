@@ -67,10 +67,10 @@ public:
         const std::filesystem::path temp = std::filesystem::temp_directory_path();
         // Not the player's shader cache; this folder persists between runs,
         // so later runs also exercise the cached path.
-        setEnvironmentVariable(userFolderVariable(UserFolder::Cache), pathToUtf8(temp / "fh1-scenarios-cache"));
+        setEnvironmentVariable(userFolderVariable(UserFolder::Cache), pathToUtf8(temp / "openhorizon-scenarios-cache"));
         // Nor the player's own profile: every Session names its own folder,
         // and this catches any game made without one.
-        setEnvironmentVariable(userFolderVariable(UserFolder::Data), pathToUtf8(temp / "fh1-scenarios-data"));
+        setEnvironmentVariable(userFolderVariable(UserFolder::Data), pathToUtf8(temp / "openhorizon-scenarios-data"));
     }
 
     void testCaseStarting(const Catch::TestCaseInfo& info) override
@@ -78,7 +78,7 @@ public:
         std::string name = info.name;
         std::replace_if(
             name.begin(), name.end(), [](char c) { return c == '/' || c == '\\' || c == ':' || c == ' '; }, '_');
-        openLogFile(std::filesystem::temp_directory_path() / "fh1-scenarios-logs" / (name + ".log"));
+        openLogFile(std::filesystem::temp_directory_path() / "openhorizon-scenarios-logs" / (name + ".log"));
     }
 };
 
@@ -118,7 +118,7 @@ Window& window()
 
 std::filesystem::path freshProfileDir(std::string_view name)
 {
-    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "fh1-scenarios-profiles" / name;
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "openhorizon-scenarios-profiles" / name;
     std::filesystem::remove_all(dir);
     return dir;
 }
@@ -195,7 +195,7 @@ bool Session::focusPauseItem(ui::PauseItem item)
 
 void Session::capture(const std::string& name)
 {
-    const char* dir = std::getenv("FH1_CAPTURE_DIR");
+    const char* dir = std::getenv("OPENHORIZON_CAPTURE_DIR");
     if (dir != nullptr && *dir != '\0') {
         m_game->saveScreenshot(pathFromUtf8(dir) / pathFromUtf8(name + ".png"));
     }

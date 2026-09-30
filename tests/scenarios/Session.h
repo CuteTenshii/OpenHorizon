@@ -36,7 +36,7 @@ namespace openhorizon::test {
 /// The game runs at a fixed 60 Hz so every run of a scenario is the same.
 inline constexpr float kStep = 1.0F / 60.0F;
 
-/// The fixture of every scenario: it skips the case when FH1_GAME_DIR is
+/// The fixture of every scenario: it skips the case when OPENHORIZON_GAME_DIR is
 /// not set or the machine has no OpenGL context for the game, as on a CI
 /// runner without a GPU.
 class GameScenario {
@@ -120,7 +120,7 @@ public:
     /// entries. Returns whether the focus is on it.
     bool focusPauseItem(ui::PauseItem item);
 
-    /// Saves the last frame when FH1_CAPTURE_DIR asks for screenshots.
+    /// Saves the last frame when OPENHORIZON_CAPTURE_DIR asks for screenshots.
     void capture(const std::string& name);
 
 private:

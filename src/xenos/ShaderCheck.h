@@ -14,7 +14,7 @@ class Vfs;
 }
 
 /// Validation of generated GLSL with the glslang front end (through
-/// shaderc), without a GL context. Kept out of the fh1xenos library so the
+/// shaderc), without a GL context. Kept out of the openhorizon_xenos library so the
 /// engine does not link shaderc.
 namespace openhorizon::xenos {
 

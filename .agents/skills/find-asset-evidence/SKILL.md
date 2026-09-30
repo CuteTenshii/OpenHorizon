@@ -7,7 +7,7 @@ description: Find which game file, scene element, XML entry, gamedb row or strin
 
 The project rule: every asset use and value comes from the game's data or its code. When neither gives it, the feature leaves it out and says so. A plausible stand-in is a bug, even if it looks fine in a screenshot.
 
-The disc is `$FH1_GAME_DIR` (if unset, the `game` key in `~/.config/fh1-native/settings.ini`). Machine paths for the executable image and notes are in `AGENTS.local.md`. The tools are built into `build/src/` and `build/src/<module>/`; build them first (`cmake -S . -B build -DFH1N_BUILD_TOOLS=ON`, then `cmake --build build`).
+The disc is `$OPENHORIZON_GAME_DIR` (if unset, the `game` key in `~/.config/openhorizon/settings.ini`). Machine paths for the executable image and notes are in `AGENTS.local.md`. The tools are built into `build/src/` and `build/src/<module>/`; build them first (`cmake -S . -B build -DOPENHORIZON_BUILD_TOOLS=ON`, then `cmake --build build`).
 
 ## 1. Say what you are looking for
 
@@ -18,24 +18,24 @@ Write down the question before you search: "which texture is the minimap's playe
 Everything is searched through the engine's own VFS, which mounts loose files and every archive in `media/zipmanifest.xml` (`media/ui.zip` becomes `media/ui/...`):
 
 ```sh
-build/src/fh1vfs "$FH1_GAME_DIR" list media/ui | grep -i map
-build/src/fh1vfs "$FH1_GAME_DIR" cat media/audio/audiomixersnapshots.xml | less
-build/src/fh1vfs "$FH1_GAME_DIR" extract PATH "$SCRATCH/out.bin"
+build/src/openhorizon-vfs "$OPENHORIZON_GAME_DIR" list media/ui | grep -i map
+build/src/openhorizon-vfs "$OPENHORIZON_GAME_DIR" cat media/audio/audiomixersnapshots.xml | less
+build/src/openhorizon-vfs "$OPENHORIZON_GAME_DIR" extract PATH "$SCRATCH/out.bin"
 ```
 
 Where things usually live:
 
 | What | Where | Tool |
 |---|---|---|
-| HUD, menus, map, loading screens | `media/ui/scenes/ui4/*` scenes | `build/src/ui/fh1ui DISC scene NAME [--attributes]`, `build/src/ui/fh1menu DISC contracts SCENE [--names FILE]` |
-| UI textures and fonts | paths named by the scene | `fh1ui DISC texture PATH OUT.png`, `fh1ui DISC fonts` |
-| Text | `media/stringtables/<lang>.zip` | `fh1ui DISC string ID` (for `IDS_*` ids); database `_&N` references go through `Localisation::resolve` with the table named after the database table |
-| Cars, events, upgrades, tunables | `media/db/gamedb.slt` | `sqlite3 "$FH1_GAME_DIR/media/db/gamedb.slt"`, `build/src/fh1carspec DISC CAR` |
-| Track data, time of day, routes | `media/tracks/<track>/` | `build/src/world/fh1world DISC TRACK --at X,Z` |
-| Effects | `media/effects/` | `build/src/particles/fh1particles DISC list\|show\|surfaces` |
-| Shaders | `media/shaders/*.fxobj` | `build/src/xenos/fh1shader DISC list\|dis\|glsl PATH` |
-| Audio banks and events | `media/audio/` | `build/src/audio/fh1audio` |
-| Collision and surfaces | `.fiz`, `surfaceTypes.xml` | `build/src/collision/fh1fiz` |
+| HUD, menus, map, loading screens | `media/ui/scenes/ui4/*` scenes | `build/src/ui/openhorizon-ui DISC scene NAME [--attributes]`, `build/src/ui/openhorizon-menu DISC contracts SCENE [--names FILE]` |
+| UI textures and fonts | paths named by the scene | `openhorizon-ui DISC texture PATH OUT.png`, `openhorizon-ui DISC fonts` |
+| Text | `media/stringtables/<lang>.zip` | `openhorizon-ui DISC string ID` (for `IDS_*` ids); database `_&N` references go through `Localisation::resolve` with the table named after the database table |
+| Cars, events, upgrades, tunables | `media/db/gamedb.slt` | `sqlite3 "$OPENHORIZON_GAME_DIR/media/db/gamedb.slt"`, `build/src/openhorizon-carspec DISC CAR` |
+| Track data, time of day, routes | `media/tracks/<track>/` | `build/src/world/openhorizon-world DISC TRACK --at X,Z` |
+| Effects | `media/effects/` | `build/src/particles/openhorizon-particles DISC list\|show\|surfaces` |
+| Shaders | `media/shaders/*.fxobj` | `build/src/xenos/openhorizon-shader DISC list\|dis\|glsl PATH` |
+| Audio banks and events | `media/audio/` | `build/src/audio/openhorizon-audio` |
+| Collision and surfaces | `.fiz`, `surfaceTypes.xml` | `build/src/collision/openhorizon-fiz` |
 
 Search broadly with `list` plus `grep -i`, and look in the XML with `cat`. For gamedb, start with `.tables` and `.schema TABLE`, then query. Don't read table names and assume what the columns mean.
 
@@ -43,7 +43,7 @@ Search broadly with `list` plus `grep -i`, and look in the XML with `cat`. For g
 
 Having a file is not the same as knowing how it is used. A texture named `arrow` might not be the one drawn, a colour might be multiplied by another, a scene element might be hidden by a state. To settle it:
 
-- **Scene contracts and handlers:** `fh1menu DISC contracts SCENE` shows the behaviour elements, their parameters and which events each handles. Names appear as hashes; pass the executable's strings (`strings -n 3 IMAGE > "$SCRATCH/names.txt"`, then `--names "$SCRATCH/names.txt"`) to resolve them.
+- **Scene contracts and handlers:** `openhorizon-menu DISC contracts SCENE` shows the behaviour elements, their parameters and which events each handles. Names appear as hashes; pass the executable's strings (`strings -n 3 IMAGE > "$SCRATCH/names.txt"`, then `--names "$SCRATCH/names.txt"`) to resolve them.
 - **The executable:** find the file name or a key string in the image, follow the `lis`/`addi` pair that loads its address to the code, and disassemble that range (the command is in AGENTS.md). This is how you learn units, multipliers, which of several candidates is picked, and the conditions under which something shows.
 - **Reference screenshots from the user:** use them to compare against, never as the source. Match what you derived to them; do not tune values until they match.
 

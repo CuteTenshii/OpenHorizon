@@ -1,6 +1,6 @@
 // Tests of the collision formats and queries: tiles, indexes and surface
 // tables built here in the layouts the headers document, and, when
-// FH1_GAME_DIR names an extracted disc, Colorado's own collision.
+// OPENHORIZON_GAME_DIR names an extracted disc, Colorado's own collision.
 
 #include "support/TestSupport.h"
 

@@ -38,11 +38,12 @@ namespace particles = openhorizon::particles;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1particles DISC list\n"
-        "       fh1particles DISC show EFFECT\n"
-        "       fh1particles DISC surfaces\n"
-        "       fh1particles DISC render SYSTEM OUT.png [--seconds S] [--time HH:MM]\n"
-        "       fh1particles DISC tyres SURFACE OUT.png [--seconds S] [--speed M/S] [--slide X] [--time HH:MM]\n"
+        "usage: openhorizon-particles DISC list\n"
+        "       openhorizon-particles DISC show EFFECT\n"
+        "       openhorizon-particles DISC surfaces\n"
+        "       openhorizon-particles DISC render SYSTEM OUT.png [--seconds S] [--time HH:MM]\n"
+        "       openhorizon-particles DISC tyres SURFACE OUT.png [--seconds S] [--speed M/S] [--slide X] [--time "
+        "HH:MM]\n"
         "  list      the systems of DefaultTrack.xml and their effects\n"
         "  show      every parameter of one effect file (name without .xml)\n"
         "  surfaces  the tyre effect weights of each surface type\n"
@@ -107,7 +108,7 @@ int show(const openhorizon::Vfs& vfs, const std::string& name)
     const std::string path = particles::effectPath(name);
     const std::optional<std::string> text = vfs.readText(path);
     if (!text) {
-        std::fprintf(stderr, "fh1particles: %s not found\n", path.c_str());
+        std::fprintf(stderr, "openhorizon-particles: %s not found\n", path.c_str());
         return 1;
     }
     if (particles::isCompositeName(name)) {
@@ -271,7 +272,7 @@ int drawScene(const openhorizon::Vfs& vfs, const particles::ParticleManager& man
     renderer.draw(manager, pf);
     frameRenderer.finish(postFrame);
     if (!savePng(out, kWidth, kHeight)) {
-        std::fprintf(stderr, "fh1particles: cannot write %s\n", out.c_str());
+        std::fprintf(stderr, "openhorizon-particles: cannot write %s\n", out.c_str());
         return 1;
     }
     std::printf("wrote %s: %zu particles drawn\n", out.c_str(), renderer.lastDrawn());
@@ -284,7 +285,7 @@ int drawScene(const openhorizon::Vfs& vfs, const particles::ParticleManager& man
 openhorizon::WindowOptions windowOptions()
 {
     openhorizon::WindowOptions options;
-    options.title = "fh1particles";
+    options.title = "openhorizon-particles";
     options.width = 960;
     options.height = 540;
     options.vsync = false;
@@ -297,7 +298,7 @@ int render(const openhorizon::Vfs& vfs, const std::string& systemName, const std
     particles::ParticleManager manager = particles::ParticleManager::load(vfs);
     particles::ParticleSystem* system = manager.find(systemName);
     if (system == nullptr) {
-        std::fprintf(stderr, "fh1particles: no system %s in DefaultTrack.xml\n", systemName.c_str());
+        std::fprintf(stderr, "openhorizon-particles: no system %s in DefaultTrack.xml\n", systemName.c_str());
         return 1;
     }
     constexpr float kDt = 1.0F / 30.0F;
@@ -322,7 +323,7 @@ int tyres(const openhorizon::Vfs& vfs, const std::string& surfaceName, const std
     particles::SurfaceEffectTable table = particles::SurfaceEffectTable::load(vfs);
     const std::optional<std::size_t> surface = table.idOf(surfaceName);
     if (!surface) {
-        std::fprintf(stderr, "fh1particles: no surface %s\n", surfaceName.c_str());
+        std::fprintf(stderr, "openhorizon-particles: no surface %s\n", surfaceName.c_str());
         return 1;
     }
     particles::TyreEffects effects(manager, std::move(table));

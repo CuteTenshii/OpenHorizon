@@ -29,9 +29,9 @@ namespace {
 
 void printUsage()
 {
-    std::printf("usage: fh1 [options]\n"
+    std::printf("usage: openhorizon [options]\n"
                 "\n"
-                "  --game DIR         extracted disc (holding media/), or set FH1_GAME_DIR,\n"
+                "  --game DIR         extracted disc (holding media/), or set OPENHORIZON_GAME_DIR,\n"
                 "                     or 'game = DIR' in %s\n"
                 "  --width W --height H --fullscreen\n"
                 "  --log FILE         write the full log there (default %s)\n"
@@ -110,7 +110,7 @@ int main(int argc, char** argv)
 
     std::filesystem::path logPath = openhorizon::defaultLogPath();
     std::string gameDir = settings.get("game", "");
-    if (std::optional<std::string> env = openhorizon::environmentVariable("FH1_GAME_DIR")) {
+    if (std::optional<std::string> env = openhorizon::environmentVariable("OPENHORIZON_GAME_DIR")) {
         gameDir = std::move(*env);
     }
     for (std::size_t i = 1; i < arguments.size(); ++i) {

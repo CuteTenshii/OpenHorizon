@@ -1,6 +1,6 @@
 // Particle effects: the effect file reader, the tyre effect table, the
 // particle simulation and the tyre effect rules on synthetic data, and with
-// FH1_GAME_DIR set, every effect of the disc.
+// OPENHORIZON_GAME_DIR set, every effect of the disc.
 
 #include "support/TestSupport.h"
 

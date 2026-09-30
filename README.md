@@ -1,4 +1,4 @@
-# fh1-native-x64
+# OpenHorizon
 
 A native reimplementation of Forza Horizon (Xbox 360, 2012) for Linux and Windows, written in C++20 from scratch. It reads the game's own files from your copy of the disc at runtime. It does not recompile or emulate the Xbox 360 executable: the engine, the car simulation and the game rules are new code, built from the game's data and from studying how the original uses it.
 
@@ -12,7 +12,7 @@ The repository contains no game data.
 | World | Colorado streams around the car, and each model and prop is drawn by the game's own rule: the camera's zone lists it and its distance lies in its level-of-detail band. The track's surfaces, props and procedural trees, bushes and rocks are drawn with the game's own shaders, translated from the Xbox 360's GPU code. Animated objects (wind turbines, fairground rides, balloons, farm machines) play, and the festival and race crowds stand and cheer. |
 | Lighting | Sun, moon, stars, sky and clouds follow the track's time-of-day curves. Sun shadows use the game's cached levels and near cascades. The game's post-processing runs: adaptive exposure, bloom, filmic tone curve, grading tables, vignettes and the post-processing zones. |
 | Cars | All 176 drivable cars load their physics from `gamedb.slt` and their models from the disc, drawn with the game's car shaders and reflecting a live environment cube map. |
-| Driving | A 360 Hz vehicle simulation, steered through the game's own stick shaping. Against the performance figures the game recorded for every car, the median errors are 5.0% for cornering grip, 5.4% for the quarter mile, 6.1% for braking and 8.2% for top speed (see `fh1cartest`). |
+| Driving | A 360 Hz vehicle simulation, steered through the game's own stick shaping. Against the performance figures the game recorded for every car, the median errors are 5.0% for cornering grip, 5.4% for the quarter mile, 6.1% for braking and 8.2% for top speed (see `openhorizon-cartest`). |
 | Collision | The game's collision meshes, with a surface type per triangle, plus walls, invisible barriers and the race's barriers. Cars hit the world and each other as the game's contact response does, and breakable props come apart. |
 | Sound | Engines, tyres, impacts and scrapes, smashed props, the speed trap shutter, menu sounds and the radio stations, mixed through the game's snapshots (pause, loading, race, crash). |
 | Menus and HUD | Drawn from the game's own UI scenes: the title screen, loading screens with tips, the HUD with its minimap and rev dial, the pause menu, and the full map with roads coloured by type, discovered roads, routes, the sat-nav and the player bar. |
@@ -43,10 +43,10 @@ cmake --build --preset windows-release
 Tests and tools are off by default. To build and run them:
 
 ```powershell
-cmake --preset windows-release -DFH1N_BUILD_TESTS=ON -DFH1N_BUILD_TOOLS=ON
+cmake --preset windows-release -DOPENHORIZON_BUILD_TESTS=ON -DOPENHORIZON_BUILD_TOOLS=ON
 cmake --build --preset windows-release
 ctest --preset windows-release
-$env:FH1_GAME_DIR = "D:\path\to\extracted\disc"; ctest --preset windows-release   # also the checks against real data
+$env:OPENHORIZON_GAME_DIR = "D:\path\to\extracted\disc"; ctest --preset windows-release   # also the checks against real data
 ```
 
 The first configure also downloads lzx and xds with git, so git must be on the path (the Visual Studio installer offers Git for Windows as a component). Visual Studio can also open the folder directly and offers the same presets. The executables land in `build-windows\src` with the DLLs they need copied next to them.
@@ -80,10 +80,10 @@ cmake --build build
 Tests and tools are off by default:
 
 ```sh
-cmake -S . -B build -G Ninja -DFH1N_BUILD_TESTS=ON -DFH1N_BUILD_TOOLS=ON
+cmake -S . -B build -G Ninja -DOPENHORIZON_BUILD_TESTS=ON -DOPENHORIZON_BUILD_TOOLS=ON
 cmake --build build
 ctest --test-dir build -j 8
-FH1_GAME_DIR=/path/to/extracted/disc ctest --test-dir build -j 8   # also the checks against real data
+OPENHORIZON_GAME_DIR=/path/to/extracted/disc ctest --test-dir build -j 8   # also the checks against real data
 scripts/run-tests.sh                                                # all of it offscreen, scenarios included
 ```
 
@@ -92,24 +92,24 @@ Contributing, testing and the git hooks: see [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Run
 
 ```sh
-./build/src/fh1 --game /path/to/extracted/disc
+./build/src/openhorizon --game /path/to/extracted/disc
 ```
 
-On Windows, `build-windows\src\fh1.exe --game D:\path\to\extracted\disc`.
+On Windows, `build-windows\src\openhorizon.exe --game D:\path\to\extracted\disc`.
 
 The folder is the disc root (holding `default.xex` and `media`) or the `media` folder itself. It is remembered in the settings file (see below), so later starts need no options. The other options are the window size (`--width`, `--height`, `--fullscreen`) and `--log`. Choices without a menu yet are settings in the same file: `car = ALF_8C_08` (a media name), `manual = true` for a manual gearbox, `metric = false` for miles per hour, `debug = true` for a verbose console.
 
-Each run writes its full log, debug messages included, to `fh1.log`, replacing the previous one; `--log FILE` writes it elsewhere. Attach it to bug reports. If the game crashes, the log ends with what went wrong and a backtrace, and a message box says where the log is. On Windows the game also saves a minidump, `fh1.dmp`, next to the log: attach both.
+Each run writes its full log, debug messages included, to `openhorizon.log`, replacing the previous one; `--log FILE` writes it elsewhere. Attach it to bug reports. If the game crashes, the log ends with what went wrong and a backtrace, and a message box says where the log is. On Windows the game also saves a minidump, `openhorizon.dmp`, next to the log: attach both.
 
 Where the game keeps its files:
 
 | File | Linux | Windows |
 |------|-------|---------|
-| Settings (`settings.ini`) | `~/.config/fh1-native` (`$XDG_CONFIG_HOME`) | `%APPDATA%\fh1-native` |
-| Saved profile (`profile`) | `~/.local/share/fh1-native` (`$XDG_DATA_HOME`) | `%LOCALAPPDATA%\fh1-native` |
-| Log (`fh1.log`) | `~/.local/state/fh1-native` (`$XDG_STATE_HOME`) | `%LOCALAPPDATA%\fh1-native\logs` |
-| Crash dump (`fh1.dmp`) | none: the system keeps core dumps (`coredumpctl`) | `%LOCALAPPDATA%\fh1-native\logs` |
-| Shader cache (`shaders`) | `~/.cache/fh1-native` (`$XDG_CACHE_HOME`) | `%LOCALAPPDATA%\fh1-native\cache` |
+| Settings (`settings.ini`) | `~/.config/openhorizon` (`$XDG_CONFIG_HOME`) | `%APPDATA%\OpenHorizon` |
+| Saved profile (`profile`) | `~/.local/share/openhorizon` (`$XDG_DATA_HOME`) | `%LOCALAPPDATA%\OpenHorizon` |
+| Log (`openhorizon.log`) | `~/.local/state/openhorizon` (`$XDG_STATE_HOME`) | `%LOCALAPPDATA%\OpenHorizon\logs` |
+| Crash dump (`openhorizon.dmp`) | none: the system keeps core dumps (`coredumpctl`) | `%LOCALAPPDATA%\OpenHorizon\logs` |
+| Shader cache (`shaders`) | `~/.cache/openhorizon` (`$XDG_CACHE_HOME`) | `%LOCALAPPDATA%\OpenHorizon\cache` |
 
 ### Controls
 
@@ -136,23 +136,23 @@ The pad follows the game's default controller layout.
 
 ## Tools
 
-Built with `-DFH1N_BUILD_TOOLS=ON`, next to the game in `build/src` and its module folders.
+Built with `-DOPENHORIZON_BUILD_TOOLS=ON`, next to the game in `build/src` and its module folders.
 
 | Tool | Does |
 |------|------|
-| `fh1vfs` | The game's file system as the engine sees it: list, print or extract any file. |
-| `fh1carspec` | The physics specification read for a car, or for all of them. |
-| `fh1cartest` | Runs cars through the game's performance tests and compares with its recorded results. |
-| `fh1carmodel` | Loads a car's models and reports parts, materials, textures and wheels; exports OBJ. |
-| `fh1world` | Loads a track's world as the streamer does; `--sizes` measures the whole map. |
-| `fh1fiz` | The track's collision meshes: statistics, surfaces at a point, OBJ export. |
-| `fh1shader` | Lists, disassembles and translates the game's compiled shaders. |
-| `fh1particles` | The game's particle effects and the tyre effects per surface, with offscreen renders. |
-| `fh1crowd` | A track's crowd: what was read, who stands where, checks against the ground. |
-| `fh1audio` | Sound banks and FMOD events; renders a car's engine and tyre sounds. |
-| `fh1radio` | The radio's stations, tracks and DJ lines; renders a station offline. |
-| `fh1ui` | UI fonts, scene trees and textures; renders the HUD for sample states. |
-| `fh1menu` | A scene's contracts and handlers; renders the menus, map and loading screen. |
+| `openhorizon-vfs` | The game's file system as the engine sees it: list, print or extract any file. |
+| `openhorizon-carspec` | The physics specification read for a car, or for all of them. |
+| `openhorizon-cartest` | Runs cars through the game's performance tests and compares with its recorded results. |
+| `openhorizon-carmodel` | Loads a car's models and reports parts, materials, textures and wheels; exports OBJ. |
+| `openhorizon-world` | Loads a track's world as the streamer does; `--sizes` measures the whole map. |
+| `openhorizon-fiz` | The track's collision meshes: statistics, surfaces at a point, OBJ export. |
+| `openhorizon-shader` | Lists, disassembles and translates the game's compiled shaders. |
+| `openhorizon-particles` | The game's particle effects and the tyre effects per surface, with offscreen renders. |
+| `openhorizon-crowd` | A track's crowd: what was read, who stands where, checks against the ground. |
+| `openhorizon-audio` | Sound banks and FMOD events; renders a car's engine and tyre sounds. |
+| `openhorizon-radio` | The radio's stations, tracks and DJ lines; renders a station offline. |
+| `openhorizon-ui` | UI fonts, scene trees and textures; renders the HUD for sample states. |
+| `openhorizon-menu` | A scene's contracts and handlers; renders the menus, map and loading screen. |
 
 ## Layout
 
@@ -175,7 +175,7 @@ Built with `-DFH1N_BUILD_TOOLS=ON`, next to the game in `build/src` and its modu
 | `src/profile` | The saved profile and its schema. |
 | `src/game` | Free roam, races, AI drivers, traffic, activities, time of day. |
 | `src/platform` | Window, OpenGL context and input (SDL3). |
-| `src/app` | The `fh1` executable. |
+| `src/app` | The `openhorizon` executable. |
 | `tools`, `tests` | Command-line tools and tests. |
 
 ## Coordinates

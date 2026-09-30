@@ -7,9 +7,9 @@
 // "perf" and stays out of the pre-push run and of the scenarios run
 // without a filter.
 //
-// It doubles as the profiling tool: with FH1_PERF_SIZE=WxH and
-// FH1_PERF_SECONDS it drives at another size or for longer, and with
-// FH1_PERF_SERIALISE=1 it makes the CPU wait for the GPU at the end of each
+// It doubles as the profiling tool: with OPENHORIZON_PERF_SIZE=WxH and
+// OPENHORIZON_PERF_SECONDS it drives at another size or for longer, and with
+// OPENHORIZON_PERF_SERIALISE=1 it makes the CPU wait for the GPU at the end of each
 // part, which shows how much GPU time each part needs beyond sending its
 // commands (the per-part GPU timestamps alone also count the GPU's idle
 // time while the CPU is still sending them).
@@ -47,10 +47,10 @@ namespace {
 using Part = openhorizon::render::FrameStats::Part;
 using PartTimes = openhorizon::render::FrameStats::PartTimes;
 
-/// Width and height from FH1_PERF_SIZE ("1920x1080"), or `fallback`.
+/// Width and height from OPENHORIZON_PERF_SIZE ("1920x1080"), or `fallback`.
 std::array<int, 2> perfSize(std::array<int, 2> fallback)
 {
-    const char* text = std::getenv("FH1_PERF_SIZE");
+    const char* text = std::getenv("OPENHORIZON_PERF_SIZE");
     std::array<int, 2> size{};
     if (text != nullptr && std::sscanf(text, "%dx%d", &size[0], &size[1]) == 2 && size[0] > 0 && size[1] > 0) {
         return size;
@@ -60,13 +60,13 @@ std::array<int, 2> perfSize(std::array<int, 2> fallback)
 
 float perfSeconds(float fallback)
 {
-    const char* text = std::getenv("FH1_PERF_SECONDS");
+    const char* text = std::getenv("OPENHORIZON_PERF_SECONDS");
     return text != nullptr && std::atof(text) > 0.0 ? static_cast<float>(std::atof(text)) : fallback;
 }
 
 bool perfSerialised()
 {
-    const char* text = std::getenv("FH1_PERF_SERIALISE");
+    const char* text = std::getenv("OPENHORIZON_PERF_SERIALISE");
     return text != nullptr && *text != '\0' && *text != '0';
 }
 

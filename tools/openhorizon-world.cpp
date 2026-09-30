@@ -37,7 +37,7 @@ constexpr std::size_t kSampleTextures = 32;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1world DISC TRACK [--at X,Z | --sizes [THREADS]]\n"
+        "usage: openhorizon-world DISC TRACK [--at X,Z | --sizes [THREADS]]\n"
         "  DISC     the extracted disc (its root or its media folder)\n"
         "  TRACK    a folder of media/tracks, such as colorado\n"
         "  --at     world X and Z to build the 3x3 tiles around; the map centre\n"

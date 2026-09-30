@@ -26,11 +26,11 @@ using namespace openhorizon::radio;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1radio DISC stations [--lang LANG]\n"
-        "       fh1radio DISC tracks STATION\n"
-        "       fh1radio DISC wav NAME OUT [--vo LANG]\n"
-        "       fh1radio DISC simulate STATION MINUTES [--seed N] [--vo LANG]\n"
-        "       fh1radio DISC render STATION SECONDS OUT [--seed N] [--vo LANG]\n"
+        "usage: openhorizon-radio DISC stations [--lang LANG]\n"
+        "       openhorizon-radio DISC tracks STATION\n"
+        "       openhorizon-radio DISC wav NAME OUT [--vo LANG]\n"
+        "       openhorizon-radio DISC simulate STATION MINUTES [--seed N] [--vo LANG]\n"
+        "       openhorizon-radio DISC render STATION SECONDS OUT [--seed N] [--vo LANG]\n"
         "\n"
         "STATION is a name from RadioSystem.xml (Radio1) or an index. NAME is a\n"
         "music or voice sound name (R1_BlueMonday, R1_Ident_01). LANG is a voice\n"

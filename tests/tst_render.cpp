@@ -234,7 +234,7 @@ public:
 
     void testRunStarting(const Catch::TestRunInfo& /*info*/) override
     {
-        cacheHome() = std::filesystem::temp_directory_path() / "fh1-tst-render-cache";
+        cacheHome() = std::filesystem::temp_directory_path() / "openhorizon-tst-render-cache";
         std::filesystem::remove_all(cacheHome());
         openhorizon::setEnvironmentVariable(
             openhorizon::userFolderVariable(openhorizon::UserFolder::Cache), openhorizon::pathToUtf8(cacheHome()));

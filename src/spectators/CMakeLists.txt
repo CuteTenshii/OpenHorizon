@@ -1,4 +1,4 @@
-add_library(fh1spectators STATIC
+add_library(openhorizon_spectators STATIC
     CrowdAnimation.cpp
     CrowdAnimation.h
     CrowdDraw.cpp
@@ -14,11 +14,11 @@ add_library(fh1spectators STATIC
     SpectatorSprites.cpp
     SpectatorSprites.h
 )
-target_compile_options(fh1spectators PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1spectators PUBLIC fh1base fh1world glm::glm)
+target_compile_options(openhorizon_spectators PRIVATE ${OPENHORIZON_WARNINGS})
+target_link_libraries(openhorizon_spectators PUBLIC openhorizon_base openhorizon_world glm::glm)
 
-if(FH1N_BUILD_TOOLS)
-    add_executable(fh1crowd ../../tools/fh1crowd.cpp)
-    target_compile_options(fh1crowd PRIVATE ${FH1N_WARNINGS})
-    target_link_libraries(fh1crowd PRIVATE fh1spectators)
+if(OPENHORIZON_BUILD_TOOLS)
+    add_executable(openhorizon-crowd ../../tools/openhorizon-crowd.cpp)
+    target_compile_options(openhorizon-crowd PRIVATE ${OPENHORIZON_WARNINGS})
+    target_link_libraries(openhorizon-crowd PRIVATE openhorizon_spectators)
 endif()

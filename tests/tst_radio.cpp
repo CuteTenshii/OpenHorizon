@@ -2,7 +2,7 @@
 // RadioSystem and sound bank info readers, the sequencer's flow on a small
 // synthetic station set, progressive MPEG decoding of an encoded tone,
 // sync points in FSB headers and the mixer's stream voices; and, when
-// FH1_GAME_DIR names an extracted disc, the real radio data, its banks and
+// OPENHORIZON_GAME_DIR names an extracted disc, the real radio data, its banks and
 // a mixed render.
 
 #include "support/TestSupport.h"

@@ -570,7 +570,7 @@ std::filesystem::path ProfileStore::defaultDirectory()
 {
     const std::filesystem::path folder = userFolder(UserFolder::Data);
     if (folder.empty()) {
-        return std::filesystem::path("fh1-native-profile");
+        return std::filesystem::path("openhorizon-profile");
     }
     return folder / "profile";
 }

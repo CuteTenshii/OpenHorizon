@@ -1,6 +1,6 @@
 // Tests of the animated objects: the kind-4 and kind-5 procedural sets and
 // Granny curve sampling on data built here in the layouts the headers
-// document, and, when FH1_GAME_DIR names an extracted disc, Colorado's
+// document, and, when OPENHORIZON_GAME_DIR names an extracted disc, Colorado's
 // windmills, wind turbines and ferris wheel and the media/animatedobjects
 // pack.
 

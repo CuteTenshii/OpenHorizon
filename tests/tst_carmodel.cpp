@@ -1,6 +1,6 @@
 // Tests of the car model reader: the carbin parser and vertex decoding on
 // files built here in the layout CarBin documents, the name rules, and, when
-// FH1_GAME_DIR names an extracted disc, a few real cars.
+// OPENHORIZON_GAME_DIR names an extracted disc, a few real cars.
 
 #include "support/TestSupport.h"
 

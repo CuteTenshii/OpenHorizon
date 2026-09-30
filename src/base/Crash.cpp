@@ -272,7 +272,8 @@ void writeMinidump(EXCEPTION_POINTERS* pointers)
     const BOOL written = MiniDumpWriteDump(
         GetCurrentProcess(), GetCurrentProcessId(), file, type, pointers ? &exception : nullptr, nullptr, nullptr);
     CloseHandle(file);
-    writeCrashLine(written ? "minidump written next to the log (fh1.dmp)" : "the minidump could not be written");
+    writeCrashLine(
+        written ? "minidump written next to the log (openhorizon.dmp)" : "the minidump could not be written");
 }
 
 void launchReporter(std::string_view detail)
@@ -711,7 +712,7 @@ std::filesystem::path crashDumpPath(const std::filesystem::path& logPath)
         return {};
     }
     std::filesystem::path path = logPath;
-    path.replace_filename("fh1.dmp");
+    path.replace_filename("openhorizon.dmp");
     return path;
 }
 
@@ -756,7 +757,7 @@ std::optional<CrashReport> parseCrashReportArguments(std::span<const std::string
 
 std::string crashDialogText(const CrashReport& report, const std::filesystem::path& dumpPath)
 {
-    std::string text = "Forza Horizon has stopped unexpectedly.\n\n";
+    std::string text = "OpenHorizon has stopped unexpectedly.\n\n";
     text += report.detail.empty() ? "It ran into a problem it could not recover from." : report.detail;
     if (report.logPath.empty()) {
         text += "\n\nNo log file could be written for this run.";
@@ -774,7 +775,7 @@ std::string crashDialogText(const CrashReport& report, const std::filesystem::pa
 
 std::string gameDataErrorText(std::string_view detail, const std::filesystem::path& logPath)
 {
-    std::string text = std::format("Forza Horizon has stopped because it could not read one of the game's files.\n\n"
+    std::string text = std::format("OpenHorizon has stopped because it could not read one of the game's files.\n\n"
                                    "{}\n\n"
                                    "Check that the game folder holds a complete copy of the disc.",
         detail);
@@ -786,7 +787,7 @@ std::string gameDataErrorText(std::string_view detail, const std::filesystem::pa
 
 std::string startupErrorText(std::string_view problem, std::string_view fix)
 {
-    return std::format("Forza Horizon could not start.\n\n{}\n\n{}", problem, fix);
+    return std::format("OpenHorizon could not start.\n\n{}\n\n{}", problem, fix);
 }
 
 ExceptionDescription describeException(const std::exception_ptr& error)

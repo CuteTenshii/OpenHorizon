@@ -59,10 +59,10 @@ constexpr float kAreaHeightSlack = 2.0F;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1crowd DISC TRACK stats\n"
-        "       fh1crowd DISC TRACK at X,Z RADIUS\n"
-        "       fh1crowd DISC TRACK --obj OUT.obj X,Z RADIUS\n"
-        "       fh1crowd DISC TRACK validate\n"
+        "usage: openhorizon-crowd DISC TRACK stats\n"
+        "       openhorizon-crowd DISC TRACK at X,Z RADIUS\n"
+        "       openhorizon-crowd DISC TRACK --obj OUT.obj X,Z RADIUS\n"
+        "       openhorizon-crowd DISC TRACK validate\n"
         "  DISC   the extracted disc (its root or its media folder)\n"
         "  TRACK  a folder of media/tracks, such as colorado\n");
     return 2;

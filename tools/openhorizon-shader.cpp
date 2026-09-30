@@ -21,10 +21,10 @@ namespace xenos = openhorizon::xenos;
 int usage()
 {
     std::fprintf(stderr,
-        "usage: fh1shader DISC list\n"
-        "       fh1shader DISC dis PATH\n"
-        "       fh1shader DISC glsl PATH\n"
-        "       fh1shader DISC check\n");
+        "usage: openhorizon-shader DISC list\n"
+        "       openhorizon-shader DISC dis PATH\n"
+        "       openhorizon-shader DISC glsl PATH\n"
+        "       openhorizon-shader DISC check\n");
     return 2;
 }
 

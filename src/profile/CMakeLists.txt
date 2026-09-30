@@ -1,4 +1,4 @@
-add_library(fh1profile STATIC
+add_library(openhorizon_profile STATIC
     Profile.cpp
     Profile.h
     ProfileSchema.cpp
@@ -6,6 +6,6 @@ add_library(fh1profile STATIC
     ProfileStore.cpp
     ProfileStore.h
 )
-target_compile_options(fh1profile PRIVATE ${FH1N_WARNINGS})
-# fh1base provides the VFS the schema is read through, and logging.
-target_link_libraries(fh1profile PUBLIC fh1base pugixml::pugixml)
+target_compile_options(openhorizon_profile PRIVATE ${OPENHORIZON_WARNINGS})
+# openhorizon_base provides the VFS the schema is read through, and logging.
+target_link_libraries(openhorizon_profile PUBLIC openhorizon_base pugixml::pugixml)

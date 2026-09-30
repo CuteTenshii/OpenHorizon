@@ -1,6 +1,6 @@
 // Tests of the UI layer: the Anark scene readers (presentation, scene graph
 // and render data), the vector font reader and the scene runtime on data
-// built here in the documented layouts, and, when FH1_GAME_DIR names an
+// built here in the documented layouts, and, when OPENHORIZON_GAME_DIR names an
 // extracted disc, every scene, digital gauge and font on it plus the HUD
 // scene's structure. Nothing here needs an OpenGL context.
 

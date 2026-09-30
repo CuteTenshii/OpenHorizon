@@ -1,4 +1,4 @@
-add_library(fh1collision STATIC
+add_library(openhorizon_collision STATIC
     CollisionIndex.cpp
     CollisionIndex.h
     FizTile.cpp
@@ -8,11 +8,11 @@ add_library(fh1collision STATIC
     TrackCollision.cpp
     TrackCollision.h
 )
-target_compile_options(fh1collision PRIVATE ${FH1N_WARNINGS})
-target_link_libraries(fh1collision PUBLIC fh1base fh1world glm::glm Threads::Threads)
+target_compile_options(openhorizon_collision PRIVATE ${OPENHORIZON_WARNINGS})
+target_link_libraries(openhorizon_collision PUBLIC openhorizon_base openhorizon_world glm::glm Threads::Threads)
 
-if(FH1N_BUILD_TOOLS)
-    add_executable(fh1fiz ../../tools/fh1fiz.cpp)
-    target_compile_options(fh1fiz PRIVATE ${FH1N_WARNINGS})
-    target_link_libraries(fh1fiz PRIVATE fh1collision)
+if(OPENHORIZON_BUILD_TOOLS)
+    add_executable(openhorizon-fiz ../../tools/openhorizon-fiz.cpp)
+    target_compile_options(openhorizon-fiz PRIVATE ${OPENHORIZON_WARNINGS})
+    target_link_libraries(openhorizon-fiz PRIVATE openhorizon_collision)
 endif()

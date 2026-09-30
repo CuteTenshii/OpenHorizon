@@ -14,8 +14,8 @@ namespace openhorizon::render {
 /// (glGetProgramBinary) so a second start skips compiling.
 ///
 /// The cache lives in `shaders` in the Cache user folder:
-/// `~/.cache/fh1-native/shaders` on Linux (under `$XDG_CACHE_HOME` when that
-/// is an absolute path), `%LOCALAPPDATA%\fh1-native\cache\shaders` on
+/// `~/.cache/openhorizon/shaders` on Linux (under `$XDG_CACHE_HOME` when that
+/// is an absolute path), `%LOCALAPPDATA%\OpenHorizon\cache\shaders` on
 /// Windows (see openhorizon::UserFolder). An entry is keyed by the two sources and
 /// the driver's GL_VENDOR, GL_RENDERER and GL_VERSION, so a driver update or
 /// a changed shader never loads a stale binary. When the driver refuses a

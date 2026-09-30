@@ -87,9 +87,9 @@ std::filesystem::path defaultLogPath()
 {
     const std::filesystem::path folder = userFolder(UserFolder::State);
     if (folder.empty()) {
-        return std::filesystem::temp_directory_path() / "fh1-native" / "fh1.log";
+        return std::filesystem::temp_directory_path() / "openhorizon" / "openhorizon.log";
     }
-    return folder / "fh1.log";
+    return folder / "openhorizon.log";
 }
 
 bool openLogFile(const std::filesystem::path& path)
