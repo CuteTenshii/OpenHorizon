@@ -55,8 +55,10 @@ namespace fh::world {
 /// Verified in the executable, the distances (CProceduralModels'
 /// visibility, 0x82EE1D00): an instance takes block `byte95 >> 1` of its
 /// group (the block's address is the blocks' start plus
-/// `(byte95 << 4) & ~31`); the camera's distance d is the 3D distance to the
-/// closest point of the box of the instance's cell; the group is culled
+/// `(byte95 << 4) & ~31`); the loader (0x82ED6318) makes one cell per
+/// instance whose byte 95 is even, holding the world box of the instance's
+/// transformed mesh bounds, and draws no instance whose byte 95 is odd; the
+/// camera's distance d is the 3D distance to the closest point of that box; the group is culled
 /// beyond its draw distance (+60), the instance beyond E2, and it draws the
 /// level of slot 0 below E0, slot 1 below E1 and slot 2 beyond, each slot
 /// taking the highest used level at or below it. All of them are scaled by
@@ -64,8 +66,7 @@ namespace fh::world {
 /// 0x8246E2D4). In a sample of 20,074 instances of Colorado, byte 95 is
 /// not 0 in 30% and E2 is below the group's draw distance in 6%. Not applied: the fade
 /// over F at each level's ends and the distance fade the foliage effects
-/// take from FadeValues (see ScatterPass), and the per-cell rather than
-/// per-instance distance.
+/// take from FadeValues (see ScatterPass).
 struct ScatterSet {
     struct Instance {
         /// Index into `meshDraws`.

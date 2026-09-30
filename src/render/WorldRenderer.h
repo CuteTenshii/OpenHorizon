@@ -170,14 +170,15 @@ void setSceneLighting(Shader& shader, const SceneLighting& lighting);
 /// worst). What is drawn is picked chunk by chunk every frame, as the game
 /// does for each draw (0x824701B8): a chunk is drawn while the camera's
 /// zone lists it and the camera's 3D distance to its bounds lies in its
-/// band. The game measures to the draw's oriented box and to the box of a
-/// procedural copy's cell; the chunk's world bounds stand in for both, so
-/// levels switch a little nearer than in the game. The scene pass also
-/// leaves out the chunks of a tile outside the view. Not applied: the
-/// game's scaling of the second level's end by the field of view
-/// (0x82470D18), whose input was not traced, and the cross-fades of the
-/// procedural copies (see ScatterPass); the zone-file models themselves
-/// switch levels without a fade in the game too.
+/// band. The game measures to the draw's oriented box, and for a
+/// procedural copy to the world box of its transformed mesh bounds (one
+/// cell per copy, 0x82ED6318), as the chunk's world bounds are; for the
+/// zone-file draws the world bounds make levels switch a little nearer. The
+/// scene pass also leaves out the chunks of a tile outside the view. Not
+/// applied: the game's scaling of the second level's end by the field of
+/// view (0x82470D18), whose input was not traced, and the cross-fades of
+/// the procedural copies (see ScatterPass); the zone-file models
+/// themselves switch levels without a fade in the game too.
 ///
 /// Where the driver has bindless textures (see TrackPrograms), a draw binds
 /// nothing between the batches of one tile: every texture a visible tile

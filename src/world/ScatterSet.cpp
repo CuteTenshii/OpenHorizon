@@ -46,7 +46,7 @@ constexpr std::uint32_t kMaxExtra = 4096;
 constexpr std::uint32_t kMaxPathLength = 1024;
 constexpr std::uint32_t kMaxBlocks = 16;
 /// The byte of an instance that picks its block of distances: block
-/// `byte >> 1` of the group (see ScatterSet).
+/// `byte >> 1` of the group, and no copy at all when odd (see ScatterSet).
 constexpr std::size_t kInstanceBlockSelector = 95;
 
 /// Bounds-checked reads at absolute offsets.
@@ -220,7 +220,12 @@ ScatterSet readScatterSet(ByteView data)
                 throw DataError("instance {} of the set is not valid", i);
             }
             r.need(record + kInstanceBlockSelector, 1);
-            const std::uint32_t block = data[record + kInstanceBlockSelector] >> 1U;
+            const std::uint8_t selector = data[record + kInstanceBlockSelector];
+            // The game makes no cell for such a copy, so never draws it.
+            if ((selector & 1U) != 0) {
+                continue;
+            }
+            const std::uint32_t block = selector >> 1U;
             if (block >= group.blocks) {
                 throw DataError("instance {} of the set picks block {} of {}", i, block, group.blocks);
             }

@@ -448,6 +448,8 @@ struct TestScatterInstance {
     std::array<glm::vec3, 3> axes{glm::vec3(1, 0, 0), glm::vec3(0, 1, 0), glm::vec3(0, 0, 1)};
     /// The group's block of distances it takes (byte 95 holds twice it).
     std::uint8_t block = 0;
+    /// Added to byte 95: 1 marks a copy the game does not draw.
+    std::uint8_t selector = 0;
 };
 
 struct TestScatterGroup {
@@ -561,7 +563,7 @@ Bytes scatterFile(const std::string& name, const std::vector<TestScatterMesh>& m
             w.u8(0);
             w.u8(0);
             w.u8(0);
-            w.u8(static_cast<std::uint8_t>(instance.block * 2));
+            w.u8(static_cast<std::uint8_t>(instance.block * 2 + instance.selector));
         }
         for (const std::array<float, 3>& ends : group.blocks) {
             for (const float v : {ends[0], ends[1], ends[2], 150.0F, 300.0F, 2500.0F, ends[2], 5.0F}) {
@@ -902,9 +904,12 @@ TEST(readsScatterSets)
     paths.mesh = 1;
     paths.instances = {upright};
     paths.blocks = {{50.0F, 100.0F, 220.0F}};
+    // Byte 95 odd: the game makes no cell for the copy and never draws it.
+    TestScatterInstance uncelled = upright;
+    uncelled.selector = 1;
     TestScatterGroup bushes;
     bushes.mesh = 2;
-    bushes.instances = {upright};
+    bushes.instances = {upright, uncelled};
     bushes.drawDistance = 100.0F;
     bushes.blocks = {{50.0F, 70.0F, 150.0F}};
     const Bytes data = scatterFile("Models_Ungrouped_1706", {tree, pathNamed, bush}, {trees, paths, bushes});
@@ -1428,6 +1433,32 @@ TEST(loadsColorado)
     CHECK_NEAR(static_cast<double>(ungatedCopies), 128600.0, 500.0);
     CHECK_EQ(freeRoamSets, std::size_t{56});
     CHECK_EQ(freeRoamCopies, std::size_t{385});
+    // "They're spawning when I am next to them": the festival's metal
+    // barriers around the free-roam start are copies of an ungated set, so
+    // free roam shows them, and their own blocks end them at 60 m (290 of
+    // the 308) or 100 m (18), where the game culls each copy (0x82EE1D00;
+    // its distance scale is 1 while driving, 0x8246E2D4). The event-gated
+    // barrier sets list only race routes.
+    std::size_t barrierSets = 0;
+    for (const world::ScatterSet& set : colorado.placements->scatterSets()) {
+        if (set.name != "Models_Ungrouped_1464") {
+            continue;
+        }
+        ++barrierSets;
+        CHECK(!set.eventProp);
+        std::size_t toSixty = 0;
+        std::size_t toHundred = 0;
+        for (const world::ScatterSet::Instance& instance : set.instances) {
+            if (instance.mesh != 5) {
+                continue;
+            }
+            toSixty += instance.placement.ranges == std::array<float, 3>{20.0F, 40.0F, 60.0F} ? 1 : 0;
+            toHundred += instance.placement.ranges == std::array<float, 3>{50.0F, 70.0F, 100.0F} ? 1 : 0;
+        }
+        CHECK_EQ(toSixty, std::size_t{290});
+        CHECK_EQ(toHundred, std::size_t{18});
+    }
+    CHECK_EQ(barrierSets, std::size_t{1});
     const world::WorldIndex& index = colorado.index;
     CHECK_NEAR(static_cast<double>(index.placedCount() - index.scatteredCount()), 48000.0, 1000.0);
     // The 100 discount signs, one placed chunk each.
