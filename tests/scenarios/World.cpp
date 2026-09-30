@@ -48,7 +48,9 @@ double worldPassMs(Session& session)
     int frames = 0;
     for (float t = 0.0F; t < 1.0F; t += kStep) {
         session.run(kStep, {});
-
+        seconds += session.game()
+                       .frameStats()
+                       .gpuFrameSeconds()[static_cast<std::size_t>(fh::render::FrameStats::Part::DrawWorld)];
         ++frames;
     }
     return seconds * 1000.0 / frames;
