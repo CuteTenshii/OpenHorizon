@@ -409,6 +409,25 @@ void Game::drawLoading()
     m_window.swapBuffers();
 }
 
+void Game::loadCrowd()
+{
+    try {
+        const auto start = std::chrono::steady_clock::now();
+        // The files decode off this thread; the upload needs the GL context.
+        m_crowd = loadWhileDrawing([this] {
+            return std::make_unique<spectators::CrowdSet>(spectators::CrowdSet::load(m_vfs, m_options.track));
+        });
+        m_crowdRenderer = std::make_unique<render::CrowdRenderer>(*m_crowd);
+        logInfo("crowd: ready in {:.1f} s",
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+    } catch (const std::exception& e) {
+        logWarning("crowd: {}; no crowds", e.what());
+        m_crowdRenderer.reset();
+        m_crowd.reset();
+    }
+    drawLoading();
+}
+
 void Game::loadWorld()
 {
     if (m_loading) {
@@ -477,6 +496,7 @@ void Game::loadWorld()
     }
     m_hiddenChunks.assign(m_world->index.chunks().size(), false);
     drawLoading();
+    loadCrowd();
 
     m_objects = GameObjects::load(m_vfs, m_options.track);
     m_timeOfDay.emplace(TimeOfDayCurves::load(m_vfs, m_options.track));
@@ -1286,6 +1306,12 @@ void Game::startRace(const RaceEvent& event)
     // free roam's, as loading the race's route does (0x82662448).
     m_collision->setActiveRoute(event.routeId);
     m_worldRenderer->setEventRoute(event.routeId);
+    // The race's crowds join those always shown (spectators::CrowdSession:
+    // the sets tagged with the event or listing its route; inferred from the
+    // sets' tags and routes, the game's gate for them was not traced).
+    if (m_crowdRenderer) {
+        m_crowdRenderer->setSession(spectators::CrowdSession::raceOn(event.horizonId, event.routeId));
+    }
     const RaceRoute& grid = m_race->route();
 
     // The player takes the grid slot the event names, the back of the grid
@@ -1366,6 +1392,9 @@ void Game::endRace(bool toFreeRoam)
     // Free roam loads route 0 again (missions.xml load_freeroam_route,
     // 0x8298D2D8).
     m_worldRenderer->setEventRoute(render::WorldRenderer::kFreeRoamRoute);
+    if (m_crowdRenderer) {
+        m_crowdRenderer->setSession(spectators::CrowdSession::freeRoam());
+    }
     player().ai.reset();
     player().physics->assists().speedSensitiveSteering = true;
     m_drivingLine.reset();
@@ -3108,6 +3137,11 @@ bool Game::frame(const InputState& controls, float dt)
             m_frame->begin(m_present.width(), m_present.height());
             m_worldRenderer->draw(frame);
             m_frameStats->mark(Part::DrawWorld);
+            if (m_crowdRenderer) {
+                m_crowdRenderer->setShadowMask(m_shadowPass->mask());
+                m_crowdRenderer->draw(frame, m_world->settings ? &*m_world->settings : nullptr);
+            }
+            m_frameStats->mark(Part::DrawCrowd);
             drawAnimatedObjects(frame);
             m_frameStats->mark(Part::DrawAnimated);
             drawVehicles(frame);

@@ -34,6 +34,8 @@ public:
         DrawWorld,
         /// The animated objects: posing them and drawing them.
         DrawAnimated,
+        /// The crowds: their models and sprites (CrowdRenderer).
+        DrawCrowd,
         DrawCars,
         /// The sky and the sun, moon and stars drawn with it.
         DrawSky,

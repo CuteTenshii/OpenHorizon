@@ -19,6 +19,7 @@
 #include "particles/ParticleManager.h"
 #include "platform/Input.h"
 #include "platform/Window.h"
+#include "render/CrowdRenderer.h"
 #include "render/EnvironmentCube.h"
 #include "render/FrameStats.h"
 #include "render/Gl.h"
@@ -1977,6 +1978,113 @@ TEST(ferrisWheelTurnsAndStopsWhilePaused)
     // The festival's ferris wheel (set __R00G00076), seen across its Z axis
     // (0.990, 0, -0.139), about which it turns.
     checkAnimatedObject({-1084.47F, -1.51F, -614.58F}, {-0.990F, 0.139F}, 150.0F, "animated_ferris");
+}
+
+// Free roam starts at the festival, among its crowds: the people near the
+// camera are drawn as models, the rest as sprites, and their clips move on
+// with the game's clock and stop while it is paused.
+TEST(festivalCrowdIsDrawnAndAnimated)
+{
+    if (!gameDir()) {
+        return;
+    }
+    Session session({});
+    CHECK(session.waitForCar());
+    session.run(1.0F, {});
+    fh::Game& game = session.game();
+    const fh::render::CrowdRenderer* crowd = game.crowdRenderer();
+    CHECK(crowd != nullptr);
+    if (crowd == nullptr) {
+        return;
+    }
+    const fh::render::CrowdRenderer::Stats& stats = crowd->stats();
+    std::fprintf(stderr,
+        "festival crowd: models %zu %zu %zu %zu, walkers %zu, %zu sets in view, %zu sprites in %zu sets\n",
+        stats.models[0], stats.models[1], stats.models[2], stats.models[3], stats.walkers, stats.visibleSets,
+        stats.spriteInstances, stats.spriteSets);
+    CHECK(stats.modelTotal() > 0);
+    // The level bands cap the finer levels (5 and 10 people) and the queue
+    // holds 500.
+    CHECK(stats.models[0] <= 5 && stats.models[1] <= 10);
+    CHECK(stats.modelTotal() <= 500);
+    CHECK(stats.spriteInstances > 1000);
+    session.capture("crowd_festival_near");
+
+    // A second of play moves the clips on by the game's 30 frames, give or
+    // take one where the second's ends fall.
+    std::uint64_t before = crowd->ticksApplied();
+    session.run(1.0F, {});
+    CHECK(crowd->ticksApplied() - before >= 29 && crowd->ticksApplied() - before <= 31);
+    session.press(fh::Button::Start);
+    CHECK(game.pauseShown());
+    session.run(0.1F, {});
+    before = crowd->ticksApplied();
+    session.run(1.0F, {});
+    CHECK_EQ(crowd->ticksApplied(), before);
+    session.press(fh::Button::B);
+    session.run(1.0F, {});
+    CHECK(crowd->ticksApplied() > before + 25);
+}
+
+// From 300 m behind free roam's start, looking the same way, the
+// festival's crowd shows as sprites.
+TEST(festivalCrowdFromAfarIsSprites)
+{
+    if (!gameDir()) {
+        return;
+    }
+    // Free roam starts at (-836.6, -250.6) heading -63 degrees.
+    const float heading = -63.0F * std::numbers::pi_v<float> / 180.0F;
+    fh::GameOptions options;
+    options.spawnAt = glm::vec2(-836.6F, -250.6F) - 300.0F * glm::vec2(std::sin(heading), std::cos(heading));
+    options.spawnHeading = heading;
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(1.0F, {});
+    const fh::render::CrowdRenderer* crowd = session.game().crowdRenderer();
+    CHECK(crowd != nullptr);
+    if (crowd == nullptr) {
+        return;
+    }
+    std::fprintf(stderr, "festival from afar: %zu models, %zu sprites in %zu sets\n", crowd->stats().modelTotal(),
+        crowd->stats().spriteInstances, crowd->stats().spriteSets);
+    CHECK(crowd->stats().spriteInstances > 1000);
+    CHECK(crowd->stats().spriteSets > 0);
+    session.capture("crowd_festival_far");
+}
+
+// A race brings out its own crowds: FR04's grid is lined with the sets
+// tagged FR04 or listing its route, 108.
+TEST(raceCrowdShowsAtTheStart)
+{
+    if (!gameDir()) {
+        return;
+    }
+    fh::GameOptions options;
+    options.race = "FR04";
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(1.0F, {});
+    fh::Game& game = session.game();
+    const fh::render::CrowdRenderer* crowd = game.crowdRenderer();
+    CHECK(crowd != nullptr && game.race() != nullptr);
+    if (crowd == nullptr || game.race() == nullptr) {
+        return;
+    }
+    const fh::render::CrowdRenderer::Stats& stats = crowd->stats();
+    std::fprintf(stderr, "FR04 start: %zu event sets in view of %zu, %zu models, %zu sprites\n", stats.visibleEventSets,
+        stats.visibleSets, stats.modelTotal(), stats.spriteInstances);
+    CHECK_EQ(game.race()->event().routeId, 108);
+    CHECK(stats.visibleEventSets > 0);
+    CHECK(stats.modelTotal() > 0);
+    session.capture("crowd_race_start_near");
+    // Far along the grid, once the race is on and the car has left the
+    // start behind.
+    for (float t = 0.0F; t < 30.0F && !game.race()->started(); t += kStep) {
+        session.run(kStep, {});
+    }
+    session.run(8.0F, {.throttle = 1.0F});
+    session.capture("crowd_race_start_far");
 }
 
 } // namespace

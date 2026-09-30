@@ -38,6 +38,7 @@
 #include "radio/Radio.h"
 #include "render/AnimatedObjectRenderer.h"
 #include "render/CarRenderer.h"
+#include "render/CrowdRenderer.h"
 #include "render/CubeMap.h"
 #include "render/DrivingLineRenderer.h"
 #include "render/EnvironmentCube.h"
@@ -182,6 +183,8 @@ public:
     float animationTime() const { return m_time; }
     /// The world renderer, or nullptr before the world is loaded.
     const render::WorldRenderer* worldRenderer() const { return m_worldRenderer.get(); }
+    /// The crowds' renderer, or nullptr when the crowd could not be loaded.
+    const render::CrowdRenderer* crowdRenderer() const { return m_crowdRenderer.get(); }
     /// The sun shadows' passes and the maps' placement (see drawShadows()).
     const render::ShadowPass* shadowPass() const { return m_shadowPass.get(); }
     /// The dynamic environment cube the cars reflect; null on a track that
@@ -273,6 +276,9 @@ private:
     };
 
     void loadWorld();
+    /// Loads the track's crowds behind the loading screen and uploads them;
+    /// without them the game runs on with no crowds.
+    void loadCrowd();
     /// Where free roam starts: the CPlaceCar of the free-roam flow's
     /// "place_car_post_credits" state, if the file has it.
     std::optional<std::pair<glm::vec3, float>> freeRoamStart() const;
@@ -431,6 +437,9 @@ private:
     std::size_t m_overlayVertices = 0;
     int m_lastPhysicsSteps = 0;
     std::unique_ptr<render::WorldRenderer> m_worldRenderer;
+    /// The track's crowds and their renderer (loadCrowd()).
+    std::unique_ptr<spectators::CrowdSet> m_crowd;
+    std::unique_ptr<render::CrowdRenderer> m_crowdRenderer;
     /// Lines and text in a system font for the debug view; what the player
     /// sees otherwise comes from the game's scenes.
     std::unique_ptr<render::Overlay> m_overlay;
