@@ -19,6 +19,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "base/Host.h"
 #include "car/CarPhysics.h"
 #include "game/Game.h"
 #include "platform/Input.h"
@@ -81,7 +82,18 @@ struct Drive {
     /// CPU drawing time of each frame, shadows to menus.
     std::vector<double> drawing;
     float metres = 0.0F;
+    /// Resident memory once the player drives, halfway and at the end.
+    std::optional<openhorizon::ProcessMemory> loaded;
+    std::optional<openhorizon::ProcessMemory> halfway;
+    std::optional<openhorizon::ProcessMemory> end;
 };
+
+constexpr double kMiB = 1024.0 * 1024.0;
+
+double mebibytes(std::uint64_t bytes)
+{
+    return static_cast<double>(bytes) / kMiB;
+}
 
 double drawingSeconds(const PartTimes& parts)
 {
@@ -121,6 +133,11 @@ void report(const Drive& drive, int width, int height)
         cpuTotal * 1000.0 / frames, frames / cpuTotal, drawingSeconds(drive.cpu) * 1000.0 / frames,
         percentile(drive.drawing, 0.5) * 1000.0, percentile(drive.drawing, 0.95) * 1000.0,
         percentile(drive.drawing, 1.0) * 1000.0);
+    if (drive.loaded && drive.halfway && drive.end) {
+        std::fprintf(stderr, "  resident %.0f MiB loaded, %.0f MiB halfway, %.0f MiB at the end, %.0f MiB at most\n",
+            mebibytes(drive.loaded->resident), mebibytes(drive.halfway->resident), mebibytes(drive.end->resident),
+            mebibytes(drive.end->peakResident));
+    }
 }
 
 /// Loads free roam at `width` x `height`, lets it settle and drives the
@@ -135,6 +152,7 @@ std::optional<Drive> drive(int width, int height, float seconds)
         std::fprintf(stderr, "free roam did not start\n");
         return std::nullopt;
     }
+    const std::optional<openhorizon::ProcessMemory> loaded = openhorizon::processMemory();
     RoadFollower follower(*game.navigation());
     const auto step = [&](bool timed, Drive& result) {
         const glm::vec3 before = game.playerCar().position();
@@ -156,6 +174,7 @@ std::optional<Drive> drive(int width, int height, float seconds)
         return true;
     };
     Drive result;
+    result.loaded = loaded;
     // Up to speed, with the traffic and the tiles around the start loaded.
     for (float t = 0.0F; t < 5.0F; t += kStep) {
         if (!step(false, result)) {
@@ -164,12 +183,38 @@ std::optional<Drive> drive(int width, int height, float seconds)
     }
     std::fprintf(stderr, "timing %.0f s of driving\n", static_cast<double>(seconds));
     for (float t = 0.0F; t < seconds; t += kStep) {
+        if (!result.halfway && t >= seconds * 0.5F) {
+            result.halfway = openhorizon::processMemory();
+        }
         if (!step(true, result)) {
             return std::nullopt;
         }
     }
+    result.end = openhorizon::processMemory();
     report(result, width, height);
     return result;
+}
+
+// Free roam at 1600x900: about 15 percent over the worst measured run (1333 MiB
+// loaded, 1855 MiB peak), 30 percent for the growth over the drive's second half.
+constexpr double kLoadedBudgetMiB = 1536.0;
+constexpr double kPeakBudgetMiB = 2150.0;
+constexpr double kGrowthBudgetMiB = 192.0;
+constexpr float kMemoryDriveSeconds = 90.0F;
+
+// Hidden from a plain run: the peak must be this drive's, so it needs a process of its own.
+TEST_CASE_METHOD(GameScenario, "freeRoamMemoryStaysInBudget", "[scenario][perf][.]")
+{
+    const std::optional<Drive> result = drive(1600, 900, kMemoryDriveSeconds);
+    window().setSize(640, 360);
+    CHECK(result.has_value());
+    if (!result || !result->loaded || !result->halfway || !result->end) {
+        SKIP("the system does not report resident memory");
+    }
+    CHECK(result->metres > 500.0F);
+    CHECK(mebibytes(result->loaded->resident) <= kLoadedBudgetMiB);
+    CHECK(mebibytes(result->end->peakResident) <= kPeakBudgetMiB);
+    CHECK(mebibytes(result->end->resident) - mebibytes(result->halfway->resident) <= kGrowthBudgetMiB);
 }
 
 // The budget for the CPU's drawing of a frame (world, cars, sky, glass,
@@ -199,6 +244,38 @@ TEST_CASE_METHOD(GameScenario, "freeRoamDrawingStaysInBudget", "[scenario][perf]
         const double drawingMedian = percentile(result->drawing, 0.5) * 1000.0;
         CHECK(drawingMedian <= kDrawingBudgetMs);
     }
+}
+
+// Games closed in one process give back what they held: 50 percent over the
+// worst measured gap (61 MiB) between the first and third closed game.
+constexpr double kSessionLeakBudgetMiB = 96.0;
+
+TEST_CASE_METHOD(GameScenario, "closedGamesGiveTheirMemoryBack", "[scenario][perf][.]")
+{
+    std::vector<double> afterClose;
+    for (int session = 0; session < 3; ++session) {
+        {
+            openhorizon::GameOptions options;
+            options.gameDir = openhorizon::pathFromUtf8(gameDir());
+            options.profileDir = freshProfileDir("perf_close");
+            openhorizon::Game game(window(), options);
+            for (float t = 0.0F; t < 120.0F && !game.inControl(); t += kStep) {
+                CHECK(game.frame({}, kStep));
+            }
+            CHECK(game.inControl());
+            for (float t = 0.0F; t < 5.0F; t += kStep) {
+                CHECK(game.frame({}, kStep));
+            }
+        }
+        openhorizon::releaseFreedMemory();
+        const std::optional<openhorizon::ProcessMemory> memory = openhorizon::processMemory();
+        if (!memory) {
+            SKIP("the system does not report resident memory");
+        }
+        afterClose.push_back(mebibytes(memory->resident));
+        std::fprintf(stderr, "game %d closed: %.0f MiB resident\n", session + 1, afterClose.back());
+    }
+    CHECK(afterClose.back() - afterClose.front() <= kSessionLeakBudgetMiB);
 }
 
 // Each traffic spawn reloads its model and effects; their passes still link once.
