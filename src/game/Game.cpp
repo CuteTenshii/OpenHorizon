@@ -1,5 +1,6 @@
 #include "Game.h"
 
+#include "base/Host.h"
 #include "base/Log.h"
 #include "particles/ParticleEmitters.h"
 #include "render/Gl.h"
@@ -161,6 +162,7 @@ Game::Game(Window& window, const GameOptions& options)
     : m_window(window)
     , m_options(options)
 {
+    configureAllocator();
     m_vfs.mountDisc(options.gameDir);
     // The loading screen comes first and stays up through everything below
     // (see "Loading" further down).
@@ -802,6 +804,9 @@ void Game::updateLoading(float dt)
             "refused, {:.0f} ms building them",
         std::chrono::duration<double>(std::chrono::steady_clock::now() - m_loadStart).count(), shaders.fromCache,
         shaders.compiled, shaders.rejected, std::chrono::duration<double, std::milli>(shaders.time).count());
+    // Loading built and freed far more than it keeps (translations, file
+    // contents, the loading screen's music).
+    releaseFreedMemory();
 }
 
 bool Game::inControl() const

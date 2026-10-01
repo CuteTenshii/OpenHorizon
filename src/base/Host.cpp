@@ -18,14 +18,19 @@
 
 #include <knownfolders.h>
 #include <objbase.h>
+#include <psapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #else
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <fstream>
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
+#if defined(__GLIBC__)
+#include <malloc.h>
 #endif
 
 namespace openhorizon {
@@ -188,6 +193,57 @@ std::uint32_t processId()
     return static_cast<std::uint32_t>(GetCurrentProcessId());
 #else
     return static_cast<std::uint32_t>(::getpid());
+#endif
+}
+
+std::optional<ProcessMemory> processMemory()
+{
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS counters{};
+    counters.cb = sizeof counters;
+    if (!K32GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof counters)) {
+        return std::nullopt;
+    }
+    return ProcessMemory{counters.WorkingSetSize, counters.PeakWorkingSetSize};
+#else
+    std::ifstream status("/proc/self/status");
+    if (!status) {
+        return std::nullopt;
+    }
+    ProcessMemory memory;
+    bool resident = false;
+    bool peak = false;
+    std::string line;
+    while (std::getline(status, line)) {
+        // "VmRSS:     123456 kB"
+        const auto kilobytes = [&line] { return std::strtoull(line.c_str() + line.find(':') + 1, nullptr, 10) * 1024; };
+        if (line.starts_with("VmRSS:")) {
+            memory.resident = kilobytes();
+            resident = true;
+        } else if (line.starts_with("VmHWM:")) {
+            memory.peakResident = kilobytes();
+            peak = true;
+        }
+    }
+    if (!resident || !peak) {
+        return std::nullopt;
+    }
+    return memory;
+#endif
+}
+
+void configureAllocator()
+{
+#if defined(__GLIBC__)
+    constexpr int kMmapThreshold = 128 * 1024;
+    mallopt(M_MMAP_THRESHOLD, kMmapThreshold);
+#endif
+}
+
+void releaseFreedMemory()
+{
+#if defined(__GLIBC__)
+    malloc_trim(0);
 #endif
 }
 

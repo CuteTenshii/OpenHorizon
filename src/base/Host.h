@@ -37,6 +37,22 @@ std::filesystem::path currentExecutablePath();
 /// it is `argv` as given.
 std::vector<std::string> commandLineArguments(int argc, char** argv);
 
+/// Resident memory in bytes, now and at its peak (VmRSS and VmHWM on Linux,
+/// the working set on Windows).
+struct ProcessMemory {
+    std::uint64_t resident = 0;
+    std::uint64_t peakResident = 0;
+};
+/// Nothing when the system will not say.
+std::optional<ProcessMemory> processMemory();
+
+/// Pins glibc's mmap threshold at 128 KB, which it otherwise raises to 32 MB,
+/// so freed streaming buffers leave the arenas. Call once, before the threads start.
+void configureAllocator();
+
+/// Hands freed pages back to the system (malloc_trim); walks the whole heap, so not per frame.
+void releaseFreedMemory();
+
 /// Raises the number of files the process may hold open at once to what
 /// the game's file system needs: a disc mounts 524 archives, and each stays
 /// open once read. The Windows C runtime allows 512 stdio streams unless
