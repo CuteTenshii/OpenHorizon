@@ -1082,6 +1082,54 @@ FarTierReading readFarTier(openhorizon::Game& game)
     return reading;
 }
 
+/// Chunks of the tiles within `reach` of the camera that the game's rule
+/// wants drawn (see StreamingProbe) but whose tile's mesh does not hold.
+std::size_t wantedNotResident(const openhorizon::render::WorldRenderer& world, const glm::vec3& camera, float reach)
+{
+    const openhorizon::world::WorldTileGrid& grid = world.grid();
+    const auto& chunks = grid.index().chunks();
+    const openhorizon::world::ZoneGrid* zones = grid.index().zoneGrid();
+    const int zone = zones != nullptr ? zones->zoneAt(camera.x, camera.z) : -1;
+    std::size_t missing = 0;
+    for (std::size_t t = 0; t < grid.tiles().size(); ++t) {
+        const openhorizon::world::WorldTileGrid::Tile& tile = grid.tiles()[t];
+        if (grid.distanceTo(tile, camera.x, camera.z) > reach) {
+            continue;
+        }
+        const std::vector<std::uint32_t>& resident = world.drawnChunks(t);
+        for (const std::uint32_t c : tile.chunks) {
+            const openhorizon::world::WorldChunk& chunk = chunks[c];
+            const float distance = glm::length(camera - glm::clamp(camera, chunk.boundsMin, chunk.boundsMax));
+            if (distance >= chunk.bandStart && distance < chunk.bandEnd && chunk.visibleFrom(zone)
+                && std::ranges::find(resident, c) == resident.end()) {
+                ++missing;
+            }
+        }
+    }
+    return missing;
+}
+
+// Chunks the camera is within the bands of reach their tile, however many textures stream.
+TEST_CASE_METHOD(GameScenario, "everyWantedChunkReachesItsTile", "[scenario][world]")
+{
+    openhorizon::GameOptions options;
+    options.spawnAt = glm::vec2(4374.65F, 751.4F);
+    options.spawnHeading = -0.37F;
+    options.startTime = 18.75F * 3600.0F;
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(12.0F, {});
+    const openhorizon::render::WorldRenderer* world = session.game().worldRenderer();
+    CHECK(world != nullptr);
+    if (world == nullptr) {
+        return;
+    }
+    const std::size_t missing = wantedNotResident(*world, session.game().camera().position, 2000.0F);
+    std::fprintf(stderr, "wanted chunks not resident: %zu (textures %.0f MiB, %zu jobs pending)\n", missing,
+        static_cast<double>(world->stats().textureBytes) / (1024.0 * 1024.0), world->stats().pendingJobs);
+    CHECK(missing == std::size_t{0});
+}
+
 // Past their models, procedural copies go on as far-tier cards (to 2500 m for
 // trees, 500 m for barriers): every card in view the game's rule shows is drawn.
 TEST_CASE_METHOD(GameScenario, "farTierDrawsTheForestsAndBarriers", "[scenario][world]")

@@ -777,6 +777,13 @@ void WorldRenderer::update(const glm::vec3& camera)
             continue;
         }
         if (!texturesReady(*tile.pending)) {
+            // Only drawn meshes mark textures in use; asking each frame reloads
+            // what eviction took from a waiting build and keeps the rest.
+            const float distance = m_grid.distanceTo(
+                m_grid.tiles()[static_cast<std::size_t>(&tile - m_tiles.data())], camera.x, camera.z);
+            for (const std::uint32_t id : tile.pending->textureIds()) {
+                requestTexture(id, distance);
+            }
             continue;
         }
         tile.mesh = tile.pending->empty() ? nullptr : upload(*tile.pending);
