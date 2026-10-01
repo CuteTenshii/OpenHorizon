@@ -1024,5 +1024,107 @@ TEST_CASE_METHOD(GameScenario, "festivalFlagsKeepTheirSize", "[scenario][world]"
     CHECK(covered == std::size_t{0});
 }
 
+/// What the far tier (render::BillboardRenderer) should show and shows.
+struct FarTierReading {
+    /// Cards in view, on a set the loaded route shows, fully faded in by
+    /// their shaders' rule.
+    std::size_t expected = 0;
+    /// Of those, the ones beyond their models' end: only their card shows
+    /// the copy there.
+    std::size_t beyondModels = 0;
+    /// Of those, the ones handed to the GPU with their texture in.
+    std::size_t drawn = 0;
+};
+
+FarTierReading readFarTier(openhorizon::Game& game)
+{
+    FarTierReading reading;
+    const openhorizon::world::TrackWorld* world = game.trackWorld();
+    const openhorizon::render::BillboardRenderer* renderer = game.billboardRenderer();
+    const openhorizon::render::WorldRenderer* worldRenderer = game.worldRenderer();
+    if (world == nullptr || !world->placements || renderer == nullptr || worldRenderer == nullptr) {
+        return reading;
+    }
+    const openhorizon::render::Camera& camera = game.camera();
+    const glm::mat4 viewProjection = camera.projection(16.0F / 9.0F) * camera.view();
+    const int route = worldRenderer->eventRoute();
+    constexpr float kZoom = openhorizon::render::BillboardRenderer::kZoomCompensation;
+    const std::vector<openhorizon::world::ScatterSet>& sets = world->placements->scatterSets();
+    for (std::size_t s = 0; s < sets.size(); ++s) {
+        const openhorizon::world::ScatterSet& set = sets[s];
+        const bool onRoute = set.eventRoutes.empty()
+            || std::ranges::find(set.eventRoutes, static_cast<std::uint8_t>(route)) != set.eventRoutes.end();
+        if (set.eventProp && !(route >= 0 && set.eventTag.empty() && onRoute)) {
+            continue;
+        }
+        for (std::size_t c = 0; c < set.billboards.size(); ++c) {
+            const openhorizon::world::ScatterSet::Billboard& card = set.billboards[c];
+            // The types drawn, and colours that need no objTintColour.
+            if ((card.type != 0 && card.type != 1 && card.type != 4 && card.type != 5) || !(card.colour.w > 0.5F)) {
+                continue;
+            }
+            const float distance = glm::length(camera.position - card.position);
+            const float fadeStart = card.fadeStart * kZoom;
+            const float fromNear = distance - card.nearEnd * kZoom + 2.0F * fadeStart;
+            const bool fadedIn = fadeStart > 0.0F ? fromNear >= fadeStart : fromNear > 0.0F;
+            const bool fullyIn
+                = distance <= card.farEnd * kZoom - openhorizon::render::BillboardRenderer::kFadeOutWidth;
+            const glm::vec4 clip = viewProjection * glm::vec4(card.position, 1.0F);
+            const bool inView = clip.w > 0.0F && std::abs(clip.x) < clip.w && std::abs(clip.y) < clip.w;
+            if (!fadedIn || !fullyIn || !inView) {
+                continue;
+            }
+            ++reading.expected;
+            reading.beyondModels += distance >= card.nearEnd ? 1 : 0;
+            reading.drawn += renderer->setDrawn(s) && renderer->cardTextureReady(s, c) ? 1 : 0;
+        }
+    }
+    return reading;
+}
+
+// Past their models, procedural copies go on as far-tier cards (to 2500 m for
+// trees, 500 m for barriers): every card in view the game's rule shows is drawn.
+TEST_CASE_METHOD(GameScenario, "farTierDrawsTheForestsAndBarriers", "[scenario][world]")
+{
+    struct Spot {
+        const char* name;
+        glm::vec2 at;
+        float heading;
+        /// Cards past their models the spot must show at the least: the
+        /// point of the tier there.
+        std::size_t beyondModels;
+    };
+    const std::array spots{
+        Spot{"far_tier_reservoir_hills", {2002.0F, -2156.0F}, 2.31F, 100},
+        Spot{"far_tier_festival_barriers", {-640.0F, -200.0F}, -1.5708F, 100},
+        Spot{"far_tier_red_rock", {-5464.0F, -3021.0F}, -1.99F, 20},
+    };
+    for (const Spot& spot : spots) {
+        openhorizon::GameOptions options;
+        options.spawnAt = spot.at;
+        options.spawnHeading = spot.heading;
+        options.startTime = 18.75F * 3600.0F;
+        Session session(options);
+        CHECK(session.waitForCar());
+        const openhorizon::render::BillboardRenderer* renderer = session.game().billboardRenderer();
+        CHECK(renderer != nullptr);
+        if (renderer == nullptr) {
+            continue;
+        }
+        for (float t = 0.0F; t < 30.0F && !renderer->texturesSettled(); t += kStep) {
+            session.run(kStep, {});
+        }
+        session.run(2.0F, {});
+        const FarTierReading reading = readFarTier(session.game());
+        std::fprintf(stderr,
+            "%s: %zu cards in view to show, %zu past their models, %zu drawn (%zu sets, %zu cards handed over)\n",
+            spot.name, reading.expected, reading.beyondModels, reading.drawn, renderer->stats().sets,
+            renderer->stats().cards);
+        CHECK(reading.beyondModels >= spot.beyondModels);
+        CHECK(reading.drawn == reading.expected);
+        session.capture(spot.name);
+    }
+}
+
 } // namespace
 } // namespace openhorizon::test

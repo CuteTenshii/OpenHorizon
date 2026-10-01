@@ -11,8 +11,8 @@ namespace openhorizon::render {
 namespace {
 
 constexpr std::array kPartNames{"simulation", "physics", "streaming", "shadows", "environment cube", "world",
-    "animated objects", "crowd", "cars", "sky", "glass", "driving line", "particles", "tonemap", "HUD", "menus",
-    "present"};
+    "billboards", "animated objects", "crowd", "cars", "sky", "glass", "driving line", "particles", "tonemap", "HUD",
+    "menus", "present"};
 static_assert(kPartNames.size() == FrameStats::kParts);
 
 bool drawing(std::size_t part)

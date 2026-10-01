@@ -82,6 +82,7 @@
     X(PFNGLDRAWARRAYSINSTANCEDPROC, glDrawArraysInstanced)                                                             \
     X(PFNGLMULTIDRAWELEMENTSINDIRECTPROC, glMultiDrawElementsIndirect)                                                 \
     X(PFNGLMULTIDRAWELEMENTSPROC, glMultiDrawElements)                                                                 \
+    X(PFNGLMULTIDRAWARRAYSPROC, glMultiDrawArrays)                                                                     \
     X(PFNGLCREATESHADERPROC, glCreateShader)                                                                           \
     X(PFNGLDELETESHADERPROC, glDeleteShader)                                                                           \
     X(PFNGLSHADERSOURCEPROC, glShaderSource)                                                                           \

@@ -449,6 +449,7 @@ void Game::loadWorld()
     logInfo("world: {} chunks indexed in {:.1f} s", m_world->index.chunks().size(),
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     m_worldRenderer = std::make_unique<render::WorldRenderer>(*m_world, *m_jobs);
+    m_billboardRenderer = std::make_unique<render::BillboardRenderer>(*m_world, *m_jobs);
     loadEnvironmentCubes();
     drawLoading();
     m_collision = std::make_unique<physics::WorldCollision>(*m_world, *m_jobs, m_vfs, m_options.track);
@@ -3191,6 +3192,9 @@ bool Game::frame(const InputState& controls, float dt)
         if (m_animatedRenderer) {
             m_animatedRenderer->update();
         }
+        if (m_billboardRenderer) {
+            m_billboardRenderer->update();
+        }
         if (m_clouds) {
             // The clouds drift on the frame's real time (inferred; see
             // render::CloudMotion).
@@ -3229,6 +3233,11 @@ bool Game::frame(const InputState& controls, float dt)
             m_frame->begin(m_present.width(), m_present.height());
             m_worldRenderer->draw(frame);
             m_frameStats->mark(Part::DrawWorld);
+            if (m_billboardRenderer) {
+                m_billboardRenderer->setShadowMask(m_shadowPass->mask());
+                m_billboardRenderer->draw(frame, m_worldRenderer->eventRoute());
+            }
+            m_frameStats->mark(Part::DrawBillboards);
             if (m_crowdRenderer) {
                 m_crowdRenderer->setShadowMask(m_shadowPass->mask());
                 m_crowdRenderer->draw(frame, m_world->settings ? &*m_world->settings : nullptr);

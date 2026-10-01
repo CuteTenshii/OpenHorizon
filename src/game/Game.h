@@ -40,6 +40,7 @@
 #include "profile/ProfileStore.h"
 #include "radio/Radio.h"
 #include "render/AnimatedObjectRenderer.h"
+#include "render/BillboardRenderer.h"
 #include "render/CarRenderer.h"
 #include "render/CrowdRenderer.h"
 #include "render/CubeMap.h"
@@ -194,6 +195,8 @@ public:
     float animationTime() const { return m_time; }
     /// The world renderer, or nullptr before the world is loaded.
     const render::WorldRenderer* worldRenderer() const { return m_worldRenderer.get(); }
+    /// The loaded track's world; null before it loads.
+    const world::TrackWorld* trackWorld() const { return m_world ? &*m_world : nullptr; }
     /// The crowds' renderer, or nullptr when the crowd could not be loaded.
     const render::CrowdRenderer* crowdRenderer() const { return m_crowdRenderer.get(); }
     /// The sun shadows' passes and the maps' placement (see drawShadows()).
@@ -253,6 +256,8 @@ public:
     }
     /// Their renderer, with what the last frame drew; null without them.
     const render::AnimatedObjectRenderer* animatedObjectRenderer() const { return m_animatedRenderer.get(); }
+    /// The far tier of the procedural copies; null when the world has none.
+    const render::BillboardRenderer* billboardRenderer() const { return m_billboardRenderer.get(); }
     /// The flares of the free-roam event starts' activation zones.
     const ActivationFlares& activationFlares() const { return m_activationFlares; }
     /// Times the profile has been written since the game started.
@@ -516,6 +521,7 @@ private:
     std::unique_ptr<particles::ParticleRenderer> m_particleRenderer;
     std::optional<animated::AnimatedObjects> m_animatedObjects;
     std::unique_ptr<render::AnimatedObjectRenderer> m_animatedRenderer;
+    std::unique_ptr<render::BillboardRenderer> m_billboardRenderer;
     /// The presentation clock (m_time) when the animated objects last
     /// advanced.
     float m_animatedClock = 0.0F;

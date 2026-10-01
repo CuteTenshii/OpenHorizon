@@ -129,6 +129,10 @@ add_library(openhorizon_engine STATIC
     render/AnimatedObjectRenderer.h
     render/AnimatedObjectShaders.cpp
     render/AnimatedObjectShaders.h
+    render/BillboardRenderer.cpp
+    render/BillboardRenderer.h
+    render/BillboardShaders.cpp
+    render/BillboardShaders.h
     render/CarRenderer.cpp
     render/CarRenderer.h
     render/CloudDefs.cpp

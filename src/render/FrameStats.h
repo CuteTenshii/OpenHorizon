@@ -32,6 +32,8 @@ public:
         /// their mip chain (EnvironmentCube).
         DrawEnvironmentCube,
         DrawWorld,
+        /// The far tier of the procedural copies (BillboardRenderer).
+        DrawBillboards,
         /// The animated objects: posing them and drawing them.
         DrawAnimated,
         /// The crowds: their models and sprites (CrowdRenderer).
