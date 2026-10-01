@@ -44,6 +44,7 @@ public:
     XenosProgram(const xenos::ShaderProgramSource& source, std::string name, bool squareOutput = false);
 
     const std::string& name() const { return m_name; }
+    /// The pass's bindings; its GLSL is released once the program links.
     const xenos::ShaderProgramSource& source() const { return m_source; }
     GLuint id() const { return m_shader.id(); }
 

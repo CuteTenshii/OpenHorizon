@@ -10,8 +10,13 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <exception>
+#include <functional>
 #include <map>
+#include <memory>
 #include <optional>
+#include <string>
 #include <tuple>
 #include <utility>
 
@@ -212,45 +217,49 @@ void applyBlend(const std::optional<carmodel::CarPass::Blend>& blend, bool trans
 
 } // namespace
 
-/// Compiled programs shared by every car on the GL thread, by translated
-/// source.
+/// Programs shared by every car on the GL thread, by CarPass::identity: each
+/// spawn reloads its effect, so keying by the translation relinks per car.
 class CarProgramCache {
 public:
-    std::shared_ptr<XenosProgram> get(const std::shared_ptr<const carmodel::CarPass>& source, const std::string& name)
+    std::shared_ptr<XenosProgram> get(const carmodel::CarPass& source, const std::string& name)
     {
-        if (const auto known = m_programs.find(source.get()); known != m_programs.end()) {
+        if (const auto known = m_programs.find(source.identity); known != m_programs.end()) {
             return known->second;
         }
         std::shared_ptr<XenosProgram> program;
         try {
             // Written as the pixel shader writes it: the scene target holds
             // square-root colour as the game's does (see FrameRenderer).
-            program = std::make_shared<XenosProgram>(source->program, name);
+            program = std::make_shared<XenosProgram>(source.program, name);
         } catch (const std::exception& e) {
             logWarning("car shader {}: {}", name, e.what());
         }
-        m_sources.push_back(source);
-        m_programs.emplace(source.get(), program);
+        m_programs.emplace(source.identity, program);
         return program;
     }
 
+    std::size_t size() const { return m_programs.size(); }
+
 private:
-    /// Keeps the sources alive so their addresses stay unique keys.
-    std::vector<std::shared_ptr<const carmodel::CarPass>> m_sources;
-    std::map<const carmodel::CarPass*, std::shared_ptr<XenosProgram>> m_programs;
+    std::map<std::string, std::shared_ptr<XenosProgram>, std::less<>> m_programs;
 };
 
 namespace {
 
 /// The cache lives while any car renderer does, so its programs go before
 /// the GL context.
-std::shared_ptr<CarProgramCache> programCache()
+std::weak_ptr<CarProgramCache>& sharedCache()
 {
     static std::weak_ptr<CarProgramCache> shared;
-    std::shared_ptr<CarProgramCache> cache = shared.lock();
+    return shared;
+}
+
+std::shared_ptr<CarProgramCache> programCache()
+{
+    std::shared_ptr<CarProgramCache> cache = sharedCache().lock();
     if (!cache) {
         cache = std::make_shared<CarProgramCache>();
-        shared = cache;
+        sharedCache() = cache;
     }
     return cache;
 }
@@ -312,7 +321,7 @@ CarRenderer::CarRenderer(const carmodel::CarModel& model)
                 for (const auto& source : model.effect->passes(batch.technique)) {
                     Pass pass;
                     pass.blend = source->blend;
-                    pass.program = m_cache->get(source, batch.technique);
+                    pass.program = m_cache->get(*source, batch.technique);
                     if (!pass.program) {
                         passes.clear();
                         break;
@@ -752,6 +761,12 @@ std::string CarRenderer::casterTechnique(const CarMesh::Batch& batch, CarMesh::N
     return "shadowMap";
 }
 
+std::size_t CarRenderer::programsLinked()
+{
+    const std::shared_ptr<CarProgramCache> cache = sharedCache().lock();
+    return cache ? cache->size() : 0;
+}
+
 std::vector<CarRenderer::Pass> CarRenderer::casterPasses(const carmodel::CarModel& model, const std::string& technique)
 {
     std::vector<Pass> passes;
@@ -760,7 +775,7 @@ std::vector<CarRenderer::Pass> CarRenderer::casterPasses(const carmodel::CarMode
     }
     for (const auto& source : model.effect->passes(technique)) {
         Pass pass;
-        pass.program = m_cache->get(source, technique);
+        pass.program = m_cache->get(*source, technique);
         if (!pass.program) {
             return {};
         }

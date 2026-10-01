@@ -22,6 +22,8 @@ namespace openhorizon::carmodel {
 /// One pass of a car technique, translated.
 struct CarPass {
     xenos::ShaderProgramSource program;
+    /// Effect path, technique and pass index: the same translation across reloads of the effect.
+    std::string identity;
     /// The pixel shader writes the square root of its colour to target 0
     /// (the effects' `sqrt oC0` ending). The game's scene target keeps it so
     /// and its post-processing squares what it reads (0x821C8238), so a

@@ -165,6 +165,7 @@ std::vector<std::shared_ptr<const CarPass>> CarEffect::passes(std::string_view t
                 }
                 auto translated = std::make_shared<CarPass>();
                 translated->program = xenos::buildProgram(m_effect, pass);
+                translated->identity = std::format("{}|{}|{}", m_path, technique, p);
                 if (pass.pixelShader >= 0) {
                     translated->squareRootOutput
                         = writesSquareRoot(m_effect.shaders[static_cast<std::size_t>(pass.pixelShader)]);

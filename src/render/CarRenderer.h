@@ -102,6 +102,8 @@ public:
     /// shadowMap_FocusCar variant, chosen by flag bits whose source was not
     /// traced.
     static std::string casterTechnique(const carmodel::CarMesh::Batch& batch, carmodel::CarMesh::NodeKind node);
+    /// Programs linked for the car passes, shared by every live car renderer.
+    static std::size_t programsLinked();
 
 private:
     /// The constants fillConstants() sets on every draw.

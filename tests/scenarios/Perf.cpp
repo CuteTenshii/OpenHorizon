@@ -201,5 +201,20 @@ TEST_CASE_METHOD(GameScenario, "freeRoamDrawingStaysInBudget", "[scenario][perf]
     }
 }
 
+// Each traffic spawn reloads its model and effects; their passes still link once.
+TEST_CASE_METHOD(GameScenario, "carProgramsAreLinkedOnceHoweverOftenAModelLoads", "[scenario][memory]")
+{
+    const char* dir = gameDir();
+    openhorizon::Vfs vfs;
+    vfs.mountDisc(dir);
+    const openhorizon::render::CarRenderer first(openhorizon::carmodel::CarModel::load(vfs, nullptr, "ALF_8C_08"));
+    const std::size_t linked = openhorizon::render::CarRenderer::programsLinked();
+    CHECK(linked > 0);
+    for (int spawn = 0; spawn < 3; ++spawn) {
+        const openhorizon::render::CarRenderer again(openhorizon::carmodel::CarModel::load(vfs, nullptr, "ALF_8C_08"));
+        CHECK(openhorizon::render::CarRenderer::programsLinked() == linked);
+    }
+}
+
 } // namespace
 } // namespace openhorizon::test

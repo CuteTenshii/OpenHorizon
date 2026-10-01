@@ -48,6 +48,9 @@ XenosProgram::XenosProgram(const xenos::ShaderProgramSource& source, std::string
         m_source.fragmentGlsl = squareColourOutput(m_source.fragmentGlsl);
     }
     m_shader = Shader(m_name, m_source.vertexGlsl, m_source.fragmentGlsl);
+    // The driver holds the linked program; the GLSL text is not needed again.
+    std::string().swap(m_source.vertexGlsl);
+    std::string().swap(m_source.fragmentGlsl);
     for (std::size_t i = 0; i < m_source.constants.size(); ++i) {
         m_byName[m_source.constants[i].name].push_back(static_cast<std::uint32_t>(i));
     }

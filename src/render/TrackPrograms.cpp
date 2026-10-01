@@ -674,6 +674,13 @@ const TrackPrograms::Program* TrackPrograms::adopt(std::uint32_t effect, Program
         glNamedBufferStorage(program->defaults, static_cast<GLsizeiptr>(bytes.size()), bytes.data(), 0);
         m_programs[effect] = std::move(program);
         ++m_compiled;
+        {
+            // The driver holds the program; an empty source frees the GLSL and
+            // keeps source() from translating the effect again.
+            static const auto linked = std::make_shared<const Source>();
+            const std::lock_guard lock(m_mutex);
+            m_sources[effect] = linked;
+        }
         return m_programs[effect].get();
     } catch (const std::exception& e) {
         logWarning("track effect {} does not link: {}", name, e.what());
