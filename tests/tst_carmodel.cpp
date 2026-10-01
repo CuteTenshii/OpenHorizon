@@ -16,7 +16,10 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -463,9 +466,16 @@ TEST_CASE("realCarsLoad", "[carmodel]")
     CHECK(alfa.mesh.triangleCount() > 150000);
     CHECK(alfa.wheels.size() == std::size_t{4});
     CHECK(alfa.mesh.vertices.size() % carmodel::carbin::kVertexStride == std::size_t{0});
-    // The collision box of maxdata.xml, less the door mirrors.
-    CHECK_THAT(alfa.mesh.boundsMin.y, WithinAbs(-0.030, 0.02));
-    CHECK_THAT(alfa.mesh.boundsMax.y, WithinAbs(1.228, 0.02));
+    // maxdata.xml's collision box, less the door mirrors, raised by the ride heights.
+    const float averageRide = (alfa.frontRideHeight + alfa.rearRideHeight) * 0.5F;
+    float bodyBottom = std::numeric_limits<float>::max();
+    for (const carmodel::CarModel::Part& part : alfa.parts) {
+        if (part.used && part.source == carmodel::ModelSource::Exterior) {
+            bodyBottom = std::min(bodyBottom, part.boundsMin.y);
+        }
+    }
+    CHECK_THAT(bodyBottom, WithinAbs(-0.030 + averageRide, 0.02));
+    CHECK_THAT(alfa.mesh.boundsMax.y, WithinAbs(1.228 + averageRide, 0.02));
     CHECK_THAT(alfa.mesh.boundsMin.z, WithinAbs(-2.167, 0.02));
     CHECK_THAT(alfa.mesh.boundsMax.z, WithinAbs(2.200, 0.02));
     CHECK(!alfa.textures.empty());
@@ -475,6 +485,29 @@ TEST_CASE("realCarsLoad", "[carmodel]")
     for (const carmodel::WheelMount& wheel : alfa.wheels) {
         CHECK_THAT(std::abs(wheel.centre.z), WithinAbs(2.654 / 2.0, 0.01));
         CHECK((wheel.radius > 0.3F && wheel.radius < 0.4F));
+    }
+    // The stock springs' ride heights lift the body so each tyre clears its arch.
+    CHECK_THAT(alfa.frontRideHeight, WithinAbs(0.1386, 1e-4));
+    CHECK_THAT(alfa.rearRideHeight, WithinAbs(0.1246, 1e-4));
+    for (const carmodel::WheelMount& wheel : alfa.wheels) {
+        float archBottom = std::numeric_limits<float>::max();
+        for (const carmodel::CarMesh::Batch& batch : alfa.mesh.batches) {
+            if (alfa.mesh.nodes[batch.node].kind != carmodel::CarMesh::NodeKind::Body) {
+                continue;
+            }
+            for (std::uint32_t v = 0; v < alfa.mesh.ranges[batch.range].count; ++v) {
+                const glm::vec3 p = alfa.mesh.position(batch, v);
+                if (std::abs(p.z - wheel.centre.z) < 0.03F && std::abs(p.x) > 0.8F && p.x * wheel.centre.x > 0.0F
+                    && p.y > wheel.centre.y) {
+                    archBottom = std::min(archBottom, p.y);
+                }
+            }
+        }
+        const float tyreTop = wheel.centre.y + wheel.radius;
+        std::fprintf(
+            stderr, "corner %d: tyre top %.3f, arch %.3f\n", static_cast<int>(wheel.corner), tyreTop, archBottom);
+        CHECK(archBottom > tyreTop);
+        CHECK(archBottom - tyreTop < 0.1F);
     }
     // Every batch draws with a technique of the car effect, and the
     // samplers it reads find their files.

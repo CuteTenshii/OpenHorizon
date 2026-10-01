@@ -7,6 +7,7 @@
 #include <glm/common.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/mat3x3.hpp>
 #include <pugixml.hpp>
 #include <xds/xds.h>
 
@@ -37,13 +38,14 @@ constexpr const char* kCarEffect = "media/shaders/cars/shaders_v16.fxobj";
 /// Wheel models with a smaller tyre radius are stand-ins, metres.
 constexpr float kMinWheelRadius = 0.15F;
 
-/// Where a part's vertices go: car = origin + scale · (vertex - centre),
-/// with X negated afterwards when mirrored, for a vertex in car space (the
-/// file's Z negated).
+/// Where a part's vertices go: car = origin + rotation · (scale · (vertex -
+/// centre)), with X negated before the rotation when mirrored, for a vertex
+/// in car space (the file's Z negated).
 struct Placement {
     glm::vec3 origin{0.0F};
     glm::vec3 centre{0.0F};
     glm::vec3 scale{1.0F};
+    glm::mat3 rotation{1.0F};
     bool mirror = false;
 
     glm::vec3 point(const glm::vec3& p) const
@@ -52,7 +54,7 @@ struct Placement {
         if (mirror) {
             q.x = -q.x;
         }
-        return origin + q;
+        return origin + rotation * q;
     }
 
     /// File space to car space.
@@ -60,7 +62,7 @@ struct Placement {
     {
         const glm::mat4 flipZ = glm::scale(glm::mat4(1.0F), glm::vec3(1.0F, 1.0F, -1.0F));
         const glm::vec3 mirrorScale(mirror ? -scale.x : scale.x, scale.y, scale.z);
-        return glm::translate(glm::mat4(1.0F), origin) * glm::scale(glm::mat4(1.0F), mirrorScale)
+        return glm::translate(glm::mat4(1.0F), origin) * glm::mat4(rotation) * glm::scale(glm::mat4(1.0F), mirrorScale)
             * glm::translate(glm::mat4(1.0F), -centre) * flipZ;
     }
 };
@@ -153,6 +155,10 @@ struct Chassis {
     float frontTrack = 1.6F;
     float rearTrack = 1.6F;
     glm::vec3 wheelbaseCentre{0.0F};
+    /// FrontStockRideHeight and RearStockRideHeight: how far the ground lies
+    /// below `wheelbaseCentre` at each axle.
+    float frontRideHeight = 0.0F;
+    float rearRideHeight = 0.0F;
 };
 
 std::optional<Chassis> readChassis(const Vfs& vfs, const std::string& folder)
@@ -173,6 +179,8 @@ std::optional<Chassis> readChassis(const Vfs& vfs, const std::string& folder)
     chassis.wheelbase = misc.attribute("Wheelbase").as_float(chassis.wheelbase);
     chassis.frontTrack = misc.attribute("FrontTrackOuter").as_float(chassis.frontTrack);
     chassis.rearTrack = misc.attribute("RearTrackOuter").as_float(chassis.rearTrack);
+    chassis.frontRideHeight = misc.attribute("FrontStockRideHeight").as_float();
+    chassis.rearRideHeight = misc.attribute("RearStockRideHeight").as_float();
     const pugi::xml_node centre = misc.child("BottomCenterWheelbasePos");
     chassis.wheelbaseCentre = glm::vec3(
         centre.attribute("x").as_float(), centre.attribute("y").as_float(), centre.attribute("z").as_float());
@@ -184,12 +192,54 @@ struct TyreSize {
     float width = 0.0F;
 };
 
-/// Stock wheel and tyre sizes from the database.
+/// Where the stock body stands (0x827051E0): the wheelbase's bottom centre and
+/// the ride height down to the ground at each axle.
+struct Stance {
+    glm::vec3 bottomCentre{0.0F};
+    float frontRideHeight = 0.0F;
+    float rearRideHeight = 0.0F;
+};
+
+/// Stock wheel and tyre sizes, and the body's stance, from the database.
 struct CarRow {
     std::string wheelMediaName;
     std::optional<TyreSize> front;
     std::optional<TyreSize> rear;
+    std::optional<Stance> stance;
 };
+
+/// Data_CarBody's bottom centre (Z negated) and stock ride heights, the latter
+/// replaced by the stock springs' DefRideHeight (0x82705A24-0x82705CA4).
+std::optional<Stance> readStance(const Database& db, int carId)
+{
+    const std::optional<Row> body = db.queryOne(
+        "SELECT DCB.* FROM List_UpgradeCarBody LUCB INNER JOIN Data_CarBody DCB ON (DCB.Id = LUCB.CarBodyID) "
+        "WHERE LUCB.Ordinal = ? ORDER BY LUCB.IsStock DESC, LUCB.Level ASC LIMIT 1",
+        {std::to_string(carId)});
+    if (!body) {
+        return std::nullopt;
+    }
+    Stance stance;
+    stance.bottomCentre = glm::vec3(body->f("BottomCenterWheelbasePosx"), body->f("BottomCenterWheelbasePosy"),
+        -body->f("BottomCenterWheelbasePosZ"));
+    stance.frontRideHeight = body->f("ModelFrontStockRideHeight");
+    stance.rearRideHeight = body->f("ModelRearStockRideHeight");
+    const std::optional<Row> springs
+        = db.queryOne("SELECT FrontSpringDamperPhysicsID, RearSpringDamperPhysicsID FROM List_UpgradeSpringDamper "
+                      "WHERE Ordinal = ? ORDER BY IsStock DESC, Level ASC LIMIT 1",
+            {std::to_string(carId)});
+    if (springs) {
+        const auto rideHeight = [&db](int id, float fallback) {
+            const std::optional<Row> row
+                = db.queryOne("SELECT DefRideHeight FROM List_SpringDamperPhysics WHERE SpringDamperPhysicsID = ?",
+                    {std::to_string(id)});
+            return row ? row->f("DefRideHeight", fallback) : fallback;
+        };
+        stance.frontRideHeight = rideHeight(springs->i("FrontSpringDamperPhysicsID"), stance.frontRideHeight);
+        stance.rearRideHeight = rideHeight(springs->i("RearSpringDamperPhysicsID"), stance.rearRideHeight);
+    }
+    return stance;
+}
 
 CarRow readCarRow(const Database& db, std::string_view mediaName)
 {
@@ -215,6 +265,7 @@ CarRow readCarRow(const Database& db, std::string_view mediaName)
     if (wheel) {
         row.wheelMediaName = wheel->text("MediaName");
     }
+    row.stance = readStance(db, car->i("Id"));
     return row;
 }
 
@@ -796,15 +847,19 @@ CarModel CarModel::load(const Vfs& vfs, const Database* db, std::string_view med
         return context;
     };
 
-    // Models are centred on their own box; BottomCenterWheelbasePos (car
-    // space) is where the wheelbase centre on the ground lies in the model
-    // once Z is flipped, so subtracting it moves the origin there. Verified:
-    // it brings the exteriors closer to their collision boxes (the 1968
-    // Beetle's floor from 0.158 m below the ground up to it), and the wheel
-    // arch openings of the Aston Martin DB5, Jaguar E-type and Audi R8 onto
-    // the axles at half the wheelbase either side.
+    // As 0x82706048-0x827061A4: forward along (0, front - rear ride height,
+    // wheelbase), moved by (0, average ride height, 0) - bottom centre.
+    Stance stance{chassis.wheelbaseCentre, chassis.frontRideHeight, chassis.rearRideHeight};
+    if (row.stance) {
+        stance = *row.stance;
+    }
+    model.frontRideHeight = stance.frontRideHeight;
+    model.rearRideHeight = stance.rearRideHeight;
+    const glm::vec3 forward
+        = glm::normalize(glm::vec3(0.0F, stance.frontRideHeight - stance.rearRideHeight, chassis.wheelbase));
     Placement body;
-    body.origin = -chassis.wheelbaseCentre;
+    body.rotation = glm::mat3(glm::vec3(1.0F, 0.0F, 0.0F), glm::cross(forward, glm::vec3(1.0F, 0.0F, 0.0F)), forward);
+    body.origin = glm::vec3(0.0F, (stance.frontRideHeight + stance.rearRideHeight) * 0.5F, 0.0F) - stance.bottomCentre;
     builder.beginNode(
         CarMesh::NodeKind::Body, std::nullopt, glm::vec3(0.0F), body, *exterior, carTextures(exteriorIsLod0));
     const std::vector<bool> stock = stockParts(*exterior);

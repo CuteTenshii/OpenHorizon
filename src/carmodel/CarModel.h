@@ -190,11 +190,15 @@ struct CarModelOptions {
 /// Batches name their technique, textures and parameters as the game does:
 /// see techniqueName(), CarTextureTable and ShaderSettings.
 ///
-/// Wheel centres come from `physics/maxdata.xml`, the fit being ours and not
-/// the game's (whose hub placement was not found) (Misc: Wheelbase,
-/// FrontTrackOuter, RearTrackOuter, BottomCenterWheelbasePos): Z at half
-/// the wheelbase either side, X at half the outer track less half the tyre
-/// width, Y at the tyre radius. Tyre sizes come from Data_Car
+/// The body stands as 0x827051E0 places it: its ground, the ride heights below
+/// the wheelbase's bottom centre, on the origin, pitched by their difference.
+/// Ride heights: the stock springs' DefRideHeight, else Data_CarBody's; bottom
+/// centre: BottomCenterWheelbasePos with Z negated (maxdata.xml without a database).
+///
+/// Wheel centres come from `physics/maxdata.xml` (Misc: Wheelbase,
+/// FrontTrackOuter, RearTrackOuter): Z at half the wheelbase either side, X
+/// at half the outer track less half the tyre width, Y at the tyre radius, as
+/// 0x827051E0 does (its CarTrackOffsets and StaticCamber are not applied). Tyre sizes come from Data_Car
 /// (Front/RearTireWidthMM, TireAspect, WheelDiameterIN) when a database is
 /// given, and the wheel is scaled to them; otherwise the model's own size is
 /// kept. The exterior's own `wheel` part (the stock rim without tyre, at the
@@ -229,6 +233,9 @@ struct CarModel {
     std::vector<std::string> files;
     std::vector<Part> parts;
     std::vector<WheelMount> wheels;
+    /// Metres from the ground up to the wheelbase's bottom centre at each axle.
+    float frontRideHeight = 0.0F;
+    float rearRideHeight = 0.0F;
     CarMesh mesh;
     std::vector<Texture> textures;
     /// The effect the batches' techniques belong to, with those techniques
