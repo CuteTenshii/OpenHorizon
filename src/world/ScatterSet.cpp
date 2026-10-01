@@ -1,8 +1,11 @@
 #include "ScatterSet.h"
 
+#include <glm/geometric.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <string>
 
 namespace openhorizon::world {
 
@@ -48,6 +51,33 @@ constexpr std::uint32_t kMaxBlocks = 16;
 /// The byte of an instance that picks its block of distances: block
 /// `byte >> 1` of the group, and no copy at all when odd (see ScatterSet).
 constexpr std::size_t kInstanceBlockSelector = 95;
+constexpr std::size_t kBoundsMinOffset = 0x10;
+constexpr std::size_t kBoundsMaxOffset = 0x20;
+constexpr std::size_t kBillboardReachOffset = 0x38;
+// The far tier's fields (see ScatterSet).
+constexpr std::size_t kGroupTexture = 0;
+constexpr std::size_t kGroupSecondTexture = 4;
+constexpr std::size_t kGroupUFirst = 8;
+constexpr std::size_t kGroupUSecond = 12;
+constexpr std::size_t kGroupVFoot = 16;
+constexpr std::size_t kGroupVTop = 20;
+constexpr std::size_t kGroupWidth = 24;
+constexpr std::size_t kGroupHeight = 28;
+constexpr std::size_t kGroupColourScale = 32;
+constexpr std::size_t kGroupType = 36;
+constexpr std::size_t kGroupInstanceColour = 40;
+constexpr std::size_t kGroupAlwaysDrawn = 76;
+constexpr std::size_t kInstanceColour = 64;
+constexpr std::size_t kInstanceGroundNormal = 80;
+constexpr std::size_t kInstanceBakedLight = 92;
+constexpr std::size_t kBlockFarEnd = 20;
+constexpr std::int32_t kNoTexture = -1;
+/// Half the card's width is taken (0x82000D38).
+constexpr float kHalf = 0.5F;
+/// The near end of a copy whose byte 95 is odd (0x82000CA8).
+constexpr float kUncelledNearEnd = -1000.0F;
+/// Byte colours become unit ones (1/255 at 0x82000D2C).
+constexpr float kByteScale = 1.0F / 255.0F;
 
 /// Bounds-checked reads at absolute offsets.
 class Reader {
@@ -70,10 +100,34 @@ public:
     }
     float f32(std::size_t offset) const { return std::bit_cast<float>(u32(offset)); }
     glm::vec3 vec3(std::size_t offset) const { return {f32(offset), f32(offset + 4), f32(offset + 8)}; }
+    std::int32_t i32(std::size_t offset) const { return static_cast<std::int32_t>(u32(offset)); }
 
 private:
     ByteView m_data;
 };
+
+/// Stands in for the game's random edge swap, so every load looks the same.
+bool mirrored(const std::string& setName, std::uint32_t copy)
+{
+    std::uint32_t hash = 2166136261U;
+    const auto mix = [&hash](std::uint8_t byte) {
+        hash ^= byte;
+        hash *= 16777619U;
+    };
+    for (const char c : setName) {
+        mix(static_cast<std::uint8_t>(c));
+    }
+    for (int shift = 0; shift < 32; shift += 8) {
+        mix(static_cast<std::uint8_t>(copy >> shift));
+    }
+    return (hash & 1U) != 0;
+}
+
+glm::vec3 normalised(const glm::vec3& v)
+{
+    const float length = glm::length(v);
+    return length > 0.0F ? v / length : v;
+}
 
 std::size_t alignUp(std::size_t offset, std::size_t alignment)
 {
@@ -179,7 +233,18 @@ ScatterSet readScatterSet(ByteView data)
     for (const std::uint32_t length : pathLengths) {
         offset += length;
     }
-    offset = alignUp(offset, 4) + static_cast<std::size_t>(extraCount) * kExtraBytes;
+    offset = alignUp(offset, 4);
+    for (std::uint32_t e = 0; e < extraCount; ++e) {
+        const std::size_t entry = offset + static_cast<std::size_t>(e) * kExtraBytes;
+        if (r.u32(entry + 4) != 0) {
+            throw DataError("texture entry {} of the set carries data whose layout is not known", e);
+        }
+        set.textureRecords.push_back(r.u32(entry));
+    }
+    offset += static_cast<std::size_t>(extraCount) * kExtraBytes;
+    set.boundsMin = r.vec3(kBoundsMinOffset);
+    set.boundsMax = r.vec3(kBoundsMaxOffset);
+    set.billboardReach = r.f32(kBillboardReachOffset);
     const std::uint32_t groupCount = r.u32(offset + kGroupCountInPreamble);
     offset += kGroupPreambleBytes;
     if (groupCount > kMaxGroups) {
@@ -192,23 +257,118 @@ ScatterSet readScatterSet(ByteView data)
         std::uint32_t count = 0;
         std::uint32_t blocks = 0;
         float drawDistance = 0.0F;
+        std::size_t record = 0;
+        std::int32_t texture = kNoTexture;
+        std::int32_t secondTexture = kNoTexture;
+        std::uint32_t type = 0;
+        std::uint32_t alwaysDrawn = 0;
+        /// The first group merged with this one, and the merge's fade start.
+        std::uint32_t lead = 0;
+        float fadeStart = 0.0F;
     };
     std::vector<Group> groups(groupCount);
     for (std::uint32_t g = 0; g < groupCount; ++g) {
         const std::size_t entry = offset + static_cast<std::size_t>(g) * kGroupBytes;
-        groups[g] = {r.u32(entry + kGroupMesh), r.u32(entry + kGroupCount), r.u32(entry + kGroupBlocks),
-            r.f32(entry + kGroupDrawDistance)};
-        if (groups[g].mesh >= meshCount || groups[g].blocks > kMaxBlocks) {
+        Group& group = groups[g];
+        group.mesh = r.u32(entry + kGroupMesh);
+        group.count = r.u32(entry + kGroupCount);
+        group.blocks = r.u32(entry + kGroupBlocks);
+        group.drawDistance = r.f32(entry + kGroupDrawDistance);
+        group.record = entry;
+        group.texture = r.i32(entry + kGroupTexture);
+        group.secondTexture = r.i32(entry + kGroupSecondTexture);
+        group.type = r.u32(entry + kGroupType);
+        group.alwaysDrawn = r.u32(entry + kGroupAlwaysDrawn);
+        if (group.mesh >= meshCount || group.blocks > kMaxBlocks) {
             throw DataError("group {} of the set is not valid", g);
+        }
+    }
+    // The groups the loader merges into one far-tier batch, and the
+    // smallest draw distance among them (0x82ED6624-0x82ED66F8).
+    for (std::uint32_t g = 0; g < groupCount; ++g) {
+        Group& group = groups[g];
+        group.lead = g;
+        for (std::uint32_t h = 0; h < g; ++h) {
+            const Group& other = groups[h];
+            if (other.texture == group.texture && other.secondTexture == group.secondTexture && other.type == group.type
+                && other.alwaysDrawn == group.alwaysDrawn) {
+                group.lead = other.lead;
+                break;
+            }
+        }
+    }
+    for (Group& group : groups) {
+        Group& lead = groups[group.lead];
+        if (group.alwaysDrawn == 0 && group.drawDistance > 0.0F
+            && (lead.fadeStart <= 0.0F || group.drawDistance < lead.fadeStart)) {
+            lead.fadeStart = group.drawDistance;
         }
     }
     offset = alignUp(offset + static_cast<std::size_t>(groupCount) * kGroupBytes, 16);
 
+    std::uint32_t copyNumber = 0;
     for (const Group& group : groups) {
         const std::size_t instances = offset;
         const std::size_t blocks = offset + static_cast<std::size_t>(group.count) * kInstanceBytes;
         r.need(instances, static_cast<std::size_t>(group.count) * kInstanceBytes + group.blocks * kBlockBytes);
         offset = blocks + static_cast<std::size_t>(group.blocks) * kBlockBytes;
+        if (group.texture >= 0 && static_cast<std::size_t>(group.texture) < set.textureRecords.size()) {
+            const Group& lead = groups[group.lead];
+            const std::size_t g = group.record;
+            const float colourScale = r.f32(lead.record + kGroupColourScale);
+            const bool instanceColour = r.u32(g + kGroupInstanceColour) != 0;
+            for (std::uint32_t i = 0; i < group.count; ++i, ++copyNumber) {
+                const std::size_t record = instances + static_cast<std::size_t>(i) * kInstanceBytes;
+                r.need(record, kInstanceBytes);
+                const std::uint8_t selector = data[record + kInstanceBlockSelector];
+                const std::uint32_t block = selector >> 1U;
+                if (block >= group.blocks) {
+                    throw DataError("instance {} of the set picks block {} of {}", i, block, group.blocks);
+                }
+                const std::size_t distances = blocks + static_cast<std::size_t>(block) * kBlockBytes;
+                const glm::vec3 xAxis = r.vec3(record);
+                const glm::vec3 yAxis = r.vec3(record + kAxisStride);
+                const glm::vec3 zAxis = r.vec3(record + 2 * kAxisStride);
+                ScatterSet::Billboard card;
+                card.position = r.vec3(record + kInstancePosition);
+                card.up = normalised(yAxis);
+                card.across = normalised(xAxis);
+                card.groundNormal = r.vec3(record + kInstanceGroundNormal);
+                card.halfWidth = r.f32(g + kGroupWidth) * glm::length(zAxis) * kHalf;
+                card.height = r.f32(g + kGroupHeight) * glm::length(yAxis);
+                card.nearEnd = (selector & 1U) != 0 ? kUncelledNearEnd : r.f32(distances + 8);
+                card.fadeStart = lead.fadeStart;
+                card.farEnd = r.f32(distances + kBlockFarEnd);
+                const float uFirst = r.f32(g + kGroupUFirst);
+                const float uSecond = r.f32(g + kGroupUSecond);
+                // Types 4 and 5 keep the edges, 1 and 3 swap them, 0 and 2 at
+                // random (0x82ED6CE8-0x82ED6D18).
+                bool swapped = group.type == 1 || group.type == 3;
+                if (group.type == 0 || group.type == 2) {
+                    swapped = mirrored(set.name, copyNumber);
+                }
+                card.uMinus = swapped ? uFirst : uSecond;
+                card.uPlus = swapped ? uSecond : uFirst;
+                card.vFoot = r.f32(g + kGroupVFoot);
+                card.vTop = r.f32(g + kGroupVTop);
+                card.uStep = uSecond - uFirst;
+                if (instanceColour) {
+                    const glm::vec4 own{r.f32(record + kInstanceColour), r.f32(record + kInstanceColour + 4),
+                        r.f32(record + kInstanceColour + 8), r.f32(record + kInstanceColour + 12)};
+                    card.colour = glm::vec4(glm::vec3(own) * colourScale, 1.0F - own.w);
+                } else {
+                    card.colour = glm::vec4(glm::vec3(colourScale * kHalf), 1.0F);
+                }
+                card.bakedLight = glm::vec3(data[record + kInstanceBakedLight], data[record + kInstanceBakedLight + 1],
+                                      data[record + kInstanceBakedLight + 2])
+                    * kByteScale;
+                card.texture = static_cast<std::uint32_t>(group.texture);
+                card.type = group.type;
+                set.billboards.push_back(card);
+            }
+        } else {
+            copyNumber += group.count;
+        }
         const int meshLevels = levels[group.mesh];
         if (meshLevels == 0 || group.count == 0 || !(group.drawDistance > 0.0F)) {
             continue;

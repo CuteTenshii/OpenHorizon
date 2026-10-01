@@ -354,6 +354,7 @@ TrackTextures TrackTextures::load(ByteView pvs, const lzx::ZipArchive& archive)
     for (std::size_t record = 0; record < tables.textureIds.size(); ++record) {
         textures.m_records.insert_or_assign(tables.textureIds[record], static_cast<std::uint32_t>(record));
     }
+    textures.m_recordIds = std::move(tables.textureIds);
     const auto& entries = archive.entries();
 
     const std::vector<std::size_t> shaders = distinctEntries(archive, ".fxobj");
@@ -391,6 +392,14 @@ TrackTextures TrackTextures::load(ByteView pvs, const lzx::ZipArchive& archive)
 const std::vector<std::uint32_t>* TrackTextures::objectTextures(std::uint32_t object) const
 {
     return object < m_objects.size() ? &m_objects[object] : nullptr;
+}
+
+std::optional<std::uint32_t> TrackTextures::recordTexture(std::uint32_t record) const
+{
+    if (record >= m_recordIds.size()) {
+        return std::nullopt;
+    }
+    return m_recordIds[record];
 }
 
 const ShaderLayout* TrackTextures::shader(std::string_view path) const

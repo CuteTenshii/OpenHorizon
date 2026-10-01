@@ -141,6 +141,8 @@ public:
     /// has no such object.
     const std::vector<std::uint32_t>* objectTextures(std::uint32_t object) const;
     std::size_t objectCount() const { return m_objects.size(); }
+    /// The texture id of PVS texture record `record`, which procedural sets address.
+    std::optional<std::uint32_t> recordTexture(std::uint32_t record) const;
 
     /// Layout of the shader at `path` as written in a render model, such as
     /// "shaders\track\h_diff_1.fx"; nullptr if the archive lacks it.
@@ -183,6 +185,8 @@ private:
     std::vector<std::vector<std::uint32_t>> m_objects;
     /// Texture id to texture record number.
     std::unordered_map<std::uint32_t, std::uint32_t> m_records;
+    /// Texture id of each texture record.
+    std::vector<std::uint32_t> m_recordIds;
     std::unordered_map<std::string, ShaderLayout> m_shaders;
     /// Texture record number to its copy in a bundle pack.
     std::unordered_map<std::uint32_t, BundleLocation> m_bundled;

@@ -33,6 +33,7 @@
 #include <bit>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <initializer_list>
 #include <optional>
@@ -490,6 +491,9 @@ template <typename Batch> bool runsCoverBatches(const std::vector<Batch>& batche
     }
     return true;
 }
+
+/// The first texture record scatterFile() writes, big-endian.
+constexpr std::array<std::uint8_t, 4> kFirstTextureRecord{0x00, 0x00, 0x4C, 0x80};
 
 /// A procedural placement set in the layout ScatterSet documents.
 Bytes scatterFile(const std::string& name, const std::vector<TestScatterMesh>& meshes,
@@ -955,6 +959,35 @@ TEST_CASE("readsScatterSets", "[world]")
         CHECK(set.instances[2].placement.ranges == (std::array<float, 3>{100.0F, -1.0F, -1.0F}));
     }
 
+    // Every copy of a group naming a texture entry gets a card.
+    CHECK(set.textureRecords == (std::vector<std::uint32_t>{0x4C80, 0x4C81}));
+    CHECK(set.billboardReach == 2500.0F);
+    CHECK(set.billboards.size() == std::size_t{5});
+    if (set.billboards.size() == 5) {
+        const world::ScatterSet::Billboard& card = set.billboards[0];
+        CHECK(card.position == turned.position);
+        CHECK(card.up == glm::vec3(0.0F, 1.0F, 0.0F));
+        CHECK(card.across == glm::vec3(0.0F, 0.0F, -1.0F));
+        CHECK(card.groundNormal == glm::vec3(0.0F, 1.0F, 0.0F));
+        // Half the width by the Z axis's length, the height by the Y axis's.
+        CHECK_THAT(card.halfWidth, WithinAbs(1.5, 1e-6));
+        CHECK_THAT(card.height, WithinAbs(3.385, 1e-5));
+        // Block 1's third and fifth distances; the merged groups' smallest draw distance.
+        CHECK(card.nearEnd == 220.0F);
+        CHECK(card.farEnd == 2500.0F);
+        CHECK(card.fadeStart == 100.0F);
+        CHECK(((card.uPlus == 0.5F && card.uMinus == 1.0F) || (card.uPlus == 1.0F && card.uMinus == 0.5F)));
+        CHECK(card.uStep == 0.5F);
+        CHECK(card.vFoot == 0.5F);
+        CHECK(card.vTop == 0.0F);
+        // The copy's colour scaled by +32, and one less its w.
+        CHECK(card.colour == glm::vec4(0.5F, 0.5F, 0.5F, 1.0F));
+        CHECK(card.texture == 0U);
+        CHECK(card.type == 0U);
+        CHECK(set.billboards[1].nearEnd == 60.0F);
+        CHECK(set.billboards[4].nearEnd == -1000.0F);
+    }
+
     Bytes wrongSize = data;
     ++wrongSize[0x4B];
     CHECK_THROWS_AS(world::readScatterSet(wrongSize), std::exception);
@@ -966,6 +999,16 @@ TEST_CASE("readsScatterSets", "[world]")
     Bytes empty(0x104, 0);
     std::copy_n("OEGP", 4, empty.begin());
     CHECK_THROWS_AS(world::readScatterSet(empty), std::exception);
+    // A texture entry with data of its own, whose layout is not known.
+    Bytes entryData = data;
+    const auto entries = static_cast<std::size_t>(
+        std::search(entryData.begin(), entryData.end(), std::begin(kFirstTextureRecord), std::end(kFirstTextureRecord))
+        - entryData.begin());
+    CHECK(entries + 8 <= entryData.size());
+    if (entries + 8 <= entryData.size()) {
+        entryData[entries + 7] = 1;
+        CHECK_THROWS_AS(world::readScatterSet(entryData), std::exception);
+    }
     Bytes truncated(data.begin(), data.end() - 200);
     Writer patch{truncated};
     patch.patch32(0x48, static_cast<std::uint32_t>(truncated.size()));
@@ -1476,8 +1519,34 @@ TEST_CASE("loadsColorado", "[world]")
         }
         CHECK(toSixty == std::size_t{290});
         CHECK(toHundred == std::size_t{18});
+        // Cards of the barrier atlas (record 19586) from 60 m out to 500 m.
+        std::size_t barrierCards = 0;
+        for (const world::ScatterSet::Billboard& card : set.billboards) {
+            if (card.texture != 5 || card.type != 4) {
+                continue;
+            }
+            ++barrierCards;
+            CHECK(set.textureRecords[card.texture] == 19586U);
+            CHECK(card.fadeStart == 60.0F);
+            CHECK(card.farEnd == 500.0F);
+        }
+        CHECK(barrierCards == std::size_t{308 + 37});
     }
     CHECK(barrierSets == std::size_t{1});
+    // 169,168 of the 174,803 copies have a card; 1,616 take objTintColour (w at or below 0.5).
+    std::size_t cards = 0;
+    std::size_t plainColours = 0;
+    for (const world::ScatterSet& set : colorado.placements->scatterSets()) {
+        cards += set.billboards.size();
+        for (const world::ScatterSet::Billboard& card : set.billboards) {
+            plainColours += card.colour.w > 0.5F ? 1 : 0;
+        }
+    }
+    CHECK(cards == std::size_t{169168});
+    CHECK(cards - plainColours == std::size_t{1616});
+    // The atlases the records name: the barrier sections and the trees.
+    CHECK(colorado.textures->recordTexture(19586) == std::optional<std::uint32_t>(0x500D));
+    CHECK(colorado.textures->recordTexture(19588) == std::optional<std::uint32_t>(0x500F));
     const world::WorldIndex& index = colorado.index;
     CHECK_THAT(static_cast<double>(index.placedCount() - index.scatteredCount()), WithinAbs(48000.0, 1000.0));
     // The 100 discount signs, one placed chunk each.

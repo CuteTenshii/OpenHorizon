@@ -2,6 +2,8 @@
 
 #include "TrackPlacements.h"
 
+#include <glm/vec4.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -67,6 +69,17 @@ namespace openhorizon::world {
 /// not 0 in 30% and E2 is below the group's draw distance in 6%. Not applied: the fade
 /// over F at each level's ends and the distance fade the foliage effects
 /// take from FadeValues (see ScatterPass).
+///
+/// Far tier (verified, loader 0x82ED6318): each copy is also a card from its
+/// group's draw distance out to its block's fifth distance (+20). Group: +0
+/// texture entry (-1 none), +4 second entry, +8/+12 u of the edges, +16/+20 v
+/// of foot and top, +24/+28 width and height, +32 colour scale, +36 type, +40
+/// colour from the copy (+64..+76) instead of 0.5. Set entries at 0x40: a PVS
+/// texture record and 0. Groups sharing +0, +4, +36 and +76 merge, with the
+/// smallest draw distance as fade start (0x82ED66C8). Types 0 and 2 swap the
+/// edges at random (0x82DBE490), 1 and 3 always; a hash of the copy stands in
+/// for the random. Header 0x38: the largest +20, past which the set is skipped
+/// (0x82EE1F04); +0x10/+0x20 its box.
 struct ScatterSet {
     struct Instance {
         /// Index into `meshDraws`.
@@ -90,6 +103,44 @@ struct ScatterSet {
     /// for meshes named by a source path.
     std::vector<std::vector<std::uint32_t>> meshDraws;
     std::vector<Instance> instances;
+
+    /// One copy's card in the far tier, in world coordinates.
+    struct Billboard {
+        glm::vec3 position{0.0F};
+        /// The copy's Y axis, normalised: the card's up.
+        glm::vec3 up{0.0F};
+        /// The copy's X axis, normalised: the normal of cards that don't turn.
+        glm::vec3 across{0.0F};
+        /// The copy's ground normal, which lights the cards that turn.
+        glm::vec3 groundNormal{0.0F};
+        float halfWidth = 0.0F;
+        float height = 0.0F;
+        /// The block's third distance, the group's fade start, the fifth distance.
+        float nearEnd = 0.0F;
+        float fadeStart = 0.0F;
+        float farEnd = 0.0F;
+        /// u of the edge on the side axis's side and of the opposite edge, v of
+        /// foot and top, and the rectangle's width in u (the step to the next picture).
+        float uPlus = 0.0F;
+        float uMinus = 0.0F;
+        float vFoot = 0.0F;
+        float vTop = 0.0F;
+        float uStep = 0.0F;
+        /// Colour; w above 0.5 takes it as it is.
+        glm::vec4 colour{0.0F};
+        glm::vec3 bakedLight{0.0F};
+        /// Index into textureRecords.
+        std::uint32_t texture = 0;
+        /// The group's type (+36), which picks the shaders.
+        std::uint32_t type = 0;
+    };
+    /// PVS texture records of the set's texture entries.
+    std::vector<std::uint32_t> textureRecords;
+    std::vector<Billboard> billboards;
+    /// The set's box and the distance beyond which none of its cards shows.
+    glm::vec3 boundsMin{0.0F};
+    glm::vec3 boundsMax{0.0F};
+    float billboardReach = 0.0F;
 };
 
 /// Bytes at the start of a procedural set that scatterSetKind() reads.
