@@ -215,6 +215,7 @@ bool Session::step(const Hold& hold, std::optional<Button> button)
     input.axes[static_cast<std::size_t>(Axis::LeftX)] = hold.steer;
     input.axes[static_cast<std::size_t>(Axis::RightY)] = hold.zoom;
     input.axes[static_cast<std::size_t>(Axis::LeftY)] = hold.cursorY;
+    input.axes[static_cast<std::size_t>(Axis::RightX)] = hold.lookX;
     if (button) {
         input.buttons[static_cast<std::size_t>(*button)] = true;
     }

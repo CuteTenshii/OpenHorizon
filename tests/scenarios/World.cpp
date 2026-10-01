@@ -1174,5 +1174,45 @@ TEST_CASE_METHOD(GameScenario, "farTierDrawsTheForestsAndBarriers", "[scenario][
     }
 }
 
+// The player's car at dusk, seen from the side: lit towards the sun, reflecting the cube.
+TEST_CASE_METHOD(GameScenario, "playerCarLooksAsTheGameDrawsIt", "[scenario][world]")
+{
+    openhorizon::GameOptions options;
+    options.startTime = 18.5F * 3600.0F;
+    Session session(options);
+    CHECK(session.waitForCar());
+    session.run(3.0F, {});
+    // The right stick two thirds over turns the chase view a quarter turn
+    // (0.75 pi at full lock), onto the car's side.
+    Hold side;
+    side.lookX = 2.0F / 3.0F;
+    session.run(1.5F, side);
+    session.capture("car_look_side");
+
+    const openhorizon::Game& game = session.game();
+    const openhorizon::render::CarRenderer* car = game.playerCarModel();
+    const openhorizon::render::EnvironmentCube* cube = game.environmentCube();
+    CHECK((car != nullptr && cube != nullptr));
+    if (car == nullptr || cube == nullptr) {
+        return;
+    }
+    // Paint and glass sample the cube at reflectionScaler 1 and are lit towards the sun.
+    CHECK(car->boundTexture("envSampler") == cube->texture());
+    for (const char* technique : {"body", "window", "frontwindow"}) {
+        const std::optional<glm::vec4> scaler = car->drawnPixelConstant(technique, "reflectionScaler");
+        const std::optional<glm::vec4> light = car->drawnPixelConstant(technique, "psLightDirWS");
+        CHECK((scaler.has_value() && light.has_value()));
+        if (scaler && light) {
+            std::fprintf(stderr, "%s: reflectionScaler %.2f, psLightDirWS (%.3f, %.3f, %.3f)\n", technique, scaler->x,
+                light->x, light->y, light->z);
+            CHECK(*scaler == glm::vec4(1.0F));
+            CHECK_THAT(glm::length(glm::vec3(*light)), WithinAbs(1.0, 1e-3));
+        }
+    }
+    // The rims and their tyres are both drawn.
+    CHECK(car->drewMaterial("rim", false));
+    CHECK(car->drewMaterial("tire", false));
+}
+
 } // namespace
 } // namespace openhorizon::test

@@ -93,6 +93,11 @@ public:
     /// The texture the draws bind to sampler `sampler`, from the first pass
     /// sampling it; 0 when none does or it is left empty.
     GLuint boundTexture(std::string_view sampler) const;
+    /// Pixel constant `name` as the last draw() filled it for the first batch of
+    /// `technique`; nothing when none was drawn or its passes lack it.
+    std::optional<glm::vec4> drawnPixelConstant(std::string_view technique, std::string_view name) const;
+    /// Whether the last opaque or translucent draw() drew material `material`.
+    bool drewMaterial(std::string_view material, bool translucent) const;
     /// The shadow map technique of a batch, as the car's render item
     /// builder (0x82E637A0) picks it: none for the motion blur meshes and
     /// the materials that cast no shadow (carmodel::castsNoShadow()),
@@ -132,6 +137,8 @@ private:
         PaintColour,
         LampAmounts,
         HeadLampAmounts,
+        PixelLightDirection,
+        VertexLightDirection,
         Count,
     };
     using ConstantSlots = std::array<XenosProgram::FloatSlot, static_cast<std::size_t>(Constant::Count)>;
@@ -216,6 +223,13 @@ private:
     GLuint m_zeros = 0;
     XenosConstantStream m_stream;
     std::vector<Draw> m_draws;
+    /// What the last draw() of each list drew (index 1 translucent).
+    struct Drawn {
+        FrameParams frame;
+        CarPose pose;
+        std::vector<std::uint32_t> batches;
+    };
+    std::array<std::optional<Drawn>, 2> m_drawn;
 };
 
 } // namespace openhorizon::render

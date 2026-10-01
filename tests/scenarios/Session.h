@@ -75,6 +75,8 @@ struct Hold {
     float zoom = 0.0F;
     /// The left stick's y: on the map, positive moves the cursor north.
     float cursorY = 0.0F;
+    /// The right stick's x: while driving, turns the view round the car.
+    float lookX = 0.0F;
 };
 
 /// A game and the scripted player driving it.

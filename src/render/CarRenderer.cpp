@@ -148,7 +148,7 @@ constexpr std::array kConstantNames{"matWVP", "matWV", "matW", "matWInvT", "c_ey
     "pack_partPosition", "uv1CompressionFactors", "uv2CompressionFactors", "shCompressionFactors", "vsUseMorph",
     "q_ModelToWorld", "tireRotation", "wheelScale", "tireDeformation", "wheelMorph", "shDirectionalLightI",
     "shHemisphericalLightR", "shHemisphericalLightG", "shHemisphericalLightB", "shDirectionalColour", "PaintColor",
-    "dynamicLightsAmount", "dynamicLights2"};
+    "dynamicLightsAmount", "dynamicLights2", "psLightDirWS", "vsLightDirWS"};
 
 /// Direct3D's alpha comparison "greater or equal", in the translator's
 /// alphaTest numbering.
@@ -183,6 +183,8 @@ GLuint g_staticCube = 0;
 /// (+6016 + 16 r, the same layout as dynamicLightsAmount, c58, at +6944
 /// and dynamicLights2, c108, at +7744). The effect's default is 0, which
 /// takes every environment reflection away.
+/// Not applied: shCubeMapDampnerLight (vertex c40), which gates paint, rim and
+/// chrome reflections; its light block (+568, 0x82465234) inputs were not traced.
 constexpr glm::vec4 kReflectionScaler{1.0F, 1.0F, 1.0F, 1.0F};
 
 bool sameBlend(const std::optional<carmodel::CarPass::Blend>& a, const std::optional<carmodel::CarPass::Blend>& b)
@@ -459,6 +461,11 @@ void CarRenderer::fillConstants(XenosConstants& c, const Pass& pass, const Frame
     set(Constant::ShHemisphereBlue,
         rotateSh(shHemisphere(up, light.carAmbientTop.b, light.carAmbientBottom.b), toObject));
     set(Constant::ShDirectionalColour, directionalColour(light.sunColour));
+    // psLightDirWS and vsLightDirWS (c43, c56): the render item's +224
+    // (0x8243D83C), the directional SH's light (0x8246DCDC).
+    const glm::vec4 lightDirection(toSun, 0.0F);
+    set(Constant::PixelLightDirection, lightDirection);
+    set(Constant::VertexLightDirection, lightDirection);
 
     // Material parameters of the settings files, then the car's paint.
     for (const auto& [slot, value] : pass.parameters[pose.metallic ? 1 : 0]) {
@@ -590,6 +597,7 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
     // sending its hundred or so draws would cost the CPU as much as a car
     // in view.
     if (!inView(frame, pose)) {
+        m_drawn[translucent ? 1 : 0].reset();
         return;
     }
     for (const CarMesh::Node& node : m_nodes) {
@@ -608,6 +616,16 @@ void CarRenderer::draw(const FrameParams& frame, const CarPose& pose, bool trans
                 m_draws.push_back({b, &pass, constants, mirrored});
             }
         }
+    }
+    std::optional<Drawn>& drawn = m_drawn[translucent ? 1 : 0];
+    if (!drawn) {
+        drawn.emplace();
+    }
+    drawn->frame = frame;
+    drawn->pose = pose;
+    drawn->batches.clear();
+    for (const Draw& d : m_draws) {
+        drawn->batches.push_back(d.batch);
     }
     if (m_draws.empty()) {
         return;
@@ -739,6 +757,42 @@ GLuint CarRenderer::boundTexture(std::string_view sampler) const
         }
     }
     return 0;
+}
+
+std::optional<glm::vec4> CarRenderer::drawnPixelConstant(std::string_view technique, std::string_view name) const
+{
+    for (const std::optional<Drawn>& drawn : m_drawn) {
+        if (!drawn) {
+            continue;
+        }
+        for (const std::uint32_t b : drawn->batches) {
+            const CarMesh::Batch& batch = m_batches[b];
+            if (batch.technique != technique) {
+                continue;
+            }
+            for (const Pass& pass : m_passes[b]) {
+                const xenos::ConstantBinding* c = pass.program->constant(name, xenos::ShaderStage::Pixel);
+                if (c == nullptr || c->set != xenos::RegisterSet::Float4) {
+                    continue;
+                }
+                XenosConstants constants = *pass.defaults;
+                const glm::mat4 world = nodeTransform(m_nodes[batch.node], drawn->pose) * m_nodes[batch.node].placement;
+                fillConstants(constants, pass, drawn->frame, drawn->pose, batch, world);
+                if (c->index < constants.pixel.size()) {
+                    return constants.pixel[c->index];
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+bool CarRenderer::drewMaterial(std::string_view material, bool translucent) const
+{
+    const std::optional<Drawn>& drawn = m_drawn[translucent ? 1 : 0];
+    return drawn && std::any_of(drawn->batches.begin(), drawn->batches.end(), [&](std::uint32_t b) {
+        return m_batches[b].material == material;
+    });
 }
 
 std::string CarRenderer::casterTechnique(const CarMesh::Batch& batch, CarMesh::NodeKind node)
