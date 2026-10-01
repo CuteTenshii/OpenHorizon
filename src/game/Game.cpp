@@ -1784,6 +1784,11 @@ void Game::updateTraffic(float dt)
         return gone;
     };
     m_vehicles.erase(std::remove_if(m_vehicles.begin() + 1, m_vehicles.end(), tooFar), m_vehicles.end());
+    // Models no car uses go (an engine choice); failed loads stay as null so
+    // they are not retried, as does the one a pending spawn expects.
+    std::erase_if(m_modelCache, [this](const auto& entry) {
+        return entry.second.use_count() == 1 && !(m_pendingSpawn && m_pendingSpawn->carId == entry.first);
+    });
 
     m_trafficTimer -= dt;
     if (m_trafficTimer > 0.0F || m_pendingSpawn) {
