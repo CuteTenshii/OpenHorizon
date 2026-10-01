@@ -1,6 +1,4 @@
-// The dynamic environment cube: the face schedule the game's face loop
-// follows, the face cameras against OpenGL's cube map addressing, and the
-// centre above the focus car.
+// The dynamic environment cube: face schedule, face cameras and centre.
 
 #include "support/GlContext.h"
 #include "support/TestSupport.h"
@@ -194,9 +192,7 @@ TEST_CASE("face_depth_runs_from_near_to_far_reversed", "[envcube]")
 
 TEST_CASE("face_cameras_keep_the_scene_winding", "[envcube]")
 {
-    // A triangle seen by the scene's camera and by the cube face looking the
-    // same way winds the same way on screen, so the scene's culling state
-    // serves the faces too.
+    // Same winding as the scene's camera, so the scene's culling state serves the faces.
     const glm::vec3 centre(5.0F, 1.0F, 5.0F);
     const std::array<glm::vec3, 6> towards{glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(-1.0F, 0.0F, 0.0F),
         glm::vec3(0.0F, 1.0F, 0.0F), glm::vec3(0.0F, -1.0F, 0.0F), glm::vec3(0.0F, 0.0F, 1.0F),
@@ -231,9 +227,7 @@ TEST_CASE("face_cameras_keep_the_scene_winding", "[envcube]")
 
 TEST_CASE("sphere_map_round_trips_through_the_face_blit", "[envcube]")
 {
-    // The lat-long map's texel directions read back at the same place, with
-    // the shader's polynomial atan2 and acos, away from the poles and the
-    // seam where u wraps.
+    // Round trip through the shader's polynomial atan2 and acos, away from poles and seam.
     for (int i = 1; i < 32; ++i) {
         for (int j = 1; j < 16; ++j) {
             const float u = static_cast<float>(i) / 32.0F;
@@ -255,8 +249,7 @@ TEST_CASE("sphere_map_round_trips_through_the_face_blit", "[envcube]")
 
 TEST_CASE("polynomial_atan2_and_acos_stay_within_their_error", "[envcube]")
 {
-    // The HLSL expansions are good to about 1e-5 (atan) and 7e-5 (acos)
-    // radians.
+    // The HLSL expansions are good to about 1e-5 (atan) and 7e-5 (acos) radians.
     for (int i = 0; i <= 200; ++i) {
         const float angle = -3.1F + 6.2F * static_cast<float>(i) / 200.0F;
         const float x = std::cos(angle);
@@ -316,10 +309,8 @@ void clearBound(const std::array<float, 4>& colour)
 TEST_CASE("mip_chain_keeps_each_face_where_it_was_drawn", "[envcube]")
 {
     openhorizon::test::requireGlContext();
-    // Each face drawn a colour of its own (as stored: square roots). The
-    // chain goes through the lat-long map and back, so a level below the
-    // top must show each face's colour near its centre, and a uniform cube
-    // its colour on every level.
+    // Each face its own colour (stored as square roots); the chain goes through the
+    // lat-long map and back.
     constexpr std::array<glm::vec3, 6> kColours{glm::vec3(0.9F, 0.1F, 0.1F), glm::vec3(0.1F, 0.9F, 0.1F),
         glm::vec3(0.1F, 0.1F, 0.9F), glm::vec3(0.9F, 0.9F, 0.1F), glm::vec3(0.1F, 0.9F, 0.9F),
         glm::vec3(0.9F, 0.1F, 0.9F)};
@@ -328,8 +319,7 @@ TEST_CASE("mip_chain_keeps_each_face_where_it_was_drawn", "[envcube]")
     const openhorizon::render::FrameParams frame;
     cube.update(
         glm::vec3(0.0F), 1.0F, glm::vec4(0.0F), frame, nullptr, [&](const openhorizon::render::FrameParams& face) {
-        // Which face this is, from its camera: the view's third row is the
-        // face's axis (in this renderer's world, z negated).
+        // The view's third row is the face's axis, z negated.
         const glm::vec3 axis(face.view[0][2], face.view[1][2], -face.view[2][2]);
         int index = 0;
         const std::array<glm::vec3, 6> axes{glm::vec3(1.0F, 0.0F, 0.0F), glm::vec3(-1.0F, 0.0F, 0.0F),
@@ -363,10 +353,8 @@ TEST_CASE("mip_chain_keeps_each_face_where_it_was_drawn", "[envcube]")
             CHECK((other == face
                 || glm::length(got - want) < glm::length(got - kColours[static_cast<std::size_t>(other)])));
         }
-        // Away from the poles the face keeps its colour. At a pole the
-        // map's u turns round within a texel, so the fetch's footprint, and
-        // with it the level, grows and mixes in the faces around it, as the
-        // game's shader does.
+        // At a pole u turns round within a texel, so the fetch mixes in the
+        // neighbouring faces, as the game's shader does.
         if (face != 2 && face != 3) {
             CHECK((near(got.r, want.r, 0.02F) && near(got.g, want.g, 0.02F) && near(got.b, want.b, 0.02F)));
         }

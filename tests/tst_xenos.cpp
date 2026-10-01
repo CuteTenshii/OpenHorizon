@@ -1,7 +1,5 @@
-// Tests of the Xenos shader library: hand-assembled microcode decoded,
-// disassembled, translated and compiled; an effect container built here in
-// the documented layout; and, when OPENHORIZON_GAME_DIR names an extracted disc,
-// effects of the game translated and compiled (every one as a slow test).
+// The Xenos shader library on hand-assembled microcode, a built effect container
+// and the game's effects.
 
 #include "support/TestSupport.h"
 
@@ -132,9 +130,8 @@ void checkCompiles(const std::string& glsl, xenos::ShaderStage stage)
     }
 }
 
-/// A vertex shader: fetch a float3 position into r1 (w = 1), multiply it by
-/// c4 into r2 with rcp(c5.w) in r2.w, export r2 as position and r1 as
-/// interpolator 0.
+/// Fetches a float3 position into r1 (w = 1), r2 = r1 * c4 with rcp(c5.w) in
+/// r2.w; exports r2 as position and r1 as interpolator 0.
 std::vector<std::uint32_t> vertexProgram()
 {
     std::vector<std::uint32_t> words;
@@ -166,8 +163,8 @@ std::vector<std::uint32_t> vertexProgram()
     return words;
 }
 
-/// A pixel shader: sample tf3 at r0.xy into r1 and export r1 * c2 as colour
-/// 0, with alpha forced to one by the export's constant mask.
+/// Exports tf3 sampled at r0.xy times c2 as colour 0, alpha forced to one by
+/// the export's constant mask.
 std::vector<std::uint32_t> pixelProgram()
 {
     std::vector<std::uint32_t> words;
@@ -239,8 +236,8 @@ TEST_CASE("decodesAluAndFetches", "[xenos]")
     CHECK(xenos::disassembleAlu(a, xenos::ShaderStage::Vertex)
         == std::string("mul r0.xyz_, r0.yzww, c7.xyzz  +  sges r2.___w, |r0|.x"));
 
-    // mulsc r0.___w, c255.y, r0.w: the temporary is encoded in the opcode's
-    // low bit, the third source's select bit and its swizzle.
+    // mulsc r0.___w, c255.y, r0.w: the temporary is in the opcode's low bit,
+    // the third source's select bit and its swizzle.
     const xenos::AluInstruction m = xenos::decodeAlu(0xa8810005, 0x006c1b83, 0xc10500ff);
     const xenos::AluOperand temporary = m.scalarTemporaryOperand();
     const xenos::AluOperand constant = m.scalarOperand();
@@ -259,8 +256,7 @@ TEST_CASE("decodesAluAndFetches", "[xenos]")
     CHECK(f.offset == 3);
     CHECK(!f.normalized);
 
-    // tfetch r3.wzyx, r3.zyz, tf13 2D offset=(0.5,0.5,0) from a track pixel
-    // shader.
+    // tfetch r3.wzyx, r3.zyz, tf13 2D offset=(0.5,0.5,0), from a track pixel shader.
     const xenos::FetchInstruction t = xenos::decodeFetch(0x98d83061, 0x1f1ff053, 0x00214000);
     CHECK(t.opcode == 1U);
     CHECK(t.constIndex == 13U);
@@ -298,8 +294,7 @@ TEST_CASE("translatesVertexShader", "[xenos]")
     CHECK(!contains(result.glsl, "switch (xe_pc)"));
     checkCompiles(result.glsl, xenos::ShaderStage::Vertex);
 
-    // The same fetch bound through a declaration element: big-endian
-    // USHORT2N texture coordinates at byte 16 of a 20-byte vertex.
+    // Through a declaration element: big-endian USHORT2N at byte 16 of a 20-byte vertex.
     xenos::VertexDeclElement uv;
     uv.offset = 16;
     uv.type = 0x2C2059;
@@ -458,8 +453,7 @@ struct TestConstant {
     std::uint16_t type;
 };
 
-/// A shader blob as documented in Effect.h: header, constant table, literal
-/// c255, info and physical part.
+/// A shader blob as Effect.h documents it.
 Bytes shaderBlob(xenos::ShaderStage stage, const std::vector<std::uint32_t>& microcode,
     const std::vector<TestConstant>& constants, const std::vector<std::uint32_t>& elements,
     const std::vector<std::uint32_t>& interpolators)
@@ -556,8 +550,8 @@ Bytes shaderBlob(xenos::ShaderStage stage, const std::vector<std::uint32_t>& mic
     return blob.bytes();
 }
 
-/// An effect with one technique "Main" whose pass "p0" uses the test vertex
-/// and pixel shaders, and one declaration: float3 position, USHORT2N uv.
+/// Technique "Main", pass "p0" with the test shaders, declaration float3
+/// position and USHORT2N uv.
 Bytes testEffect()
 {
     const Bytes vertex = shaderBlob(xenos::ShaderStage::Vertex, vertexProgram(),
@@ -734,8 +728,7 @@ TEST_CASE("packsSystemConstants", "[xenos]")
     CHECK(base == 77U);
 }
 
-/// Every effect of `report` parsed, and every shader and pass translated and
-/// compiled with nothing left unsupported.
+/// Every effect parsed, every shader and pass translated and compiled.
 void checkAllTranslate(const xenos::CheckReport& report)
 {
     CHECK(report.effectParseFailures == std::size_t{0});
@@ -746,12 +739,8 @@ void checkAllTranslate(const xenos::CheckReport& report)
     CHECK(report.passesCompiled == report.passes);
 }
 
-// translatesEveryGameShader takes most of a minute, a GLSL compile for each
-// of over 4000 shaders. These three effects hold the kinds of control flow
-// and pass it meets: a car material branching by conditional exec,
-// predicated exec and conditional jump, a blended track material from
-// Colorado's bin.zip with two passes, and a particle effect with a pass
-// that only sets render states.
+// A fast stand-in for translatesEveryGameShader: a car material with conditional and
+// predicated exec and jumps, a two-pass blended track material, and a render-state-only pass.
 TEST_CASE("translatesRepresentativeGameShaders", "[xenos]")
 {
     const char* dir = gameDir();

@@ -16,12 +16,9 @@ namespace openhorizon::render {
 class Shader {
 public:
     Shader() = default;
-    /// Compiles and links, or restores the program from the cache; throws
-    /// std::runtime_error with the driver's log, prefixed by `name`, when
-    /// either fails.
+    /// Throws std::runtime_error with the driver's log, prefixed by `name`.
     Shader(std::string_view name, std::string_view vertexSource, std::string_view fragmentSource);
-    /// Takes the program of a build started earlier, waiting for it if
-    /// the driver is still compiling; throws as above.
+    /// Waits for the build if the driver is still compiling; throws as above.
     explicit Shader(ProgramBuild& build);
     ~Shader();
     Shader(Shader&& other) noexcept;

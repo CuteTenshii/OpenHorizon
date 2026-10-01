@@ -57,8 +57,7 @@ MapCoverage::MapCoverage(const NavFile& nav, const RoadDiscoveryTuning& tuning)
     , m_tuning(tuning)
     , m_visits(nav.nodes.size(), 0)
 {
-    // 0x82d99950: the discoverable ways grouped by display name, in the
-    // order of the names in the value table.
+    // 0x82d99950: grouped by display name, in value-table order.
     std::unordered_map<std::string_view, std::size_t> valueOrder;
     for (std::size_t i = 0; i < nav.values.size(); ++i) {
         valueOrder.emplace(nav.values[i], i);
@@ -85,8 +84,7 @@ MapCoverage::MapCoverage(const NavFile& nav, const RoadDiscoveryTuning& tuning)
 
 void MapCoverage::recountRoads()
 {
-    // Roads whose every node already counts start discovered (their counts
-    // come from the saved profile in the game).
+    // Counts may come from the saved profile.
     m_discovered = 0;
     for (Road& road : m_roads) {
         road.discovered = false;
@@ -230,8 +228,7 @@ bool MapCoverage::reachesVisited(std::uint32_t node, float budget, std::vector<s
 void MapCoverage::walkZone(
     std::uint32_t way, std::uint32_t position, const std::string& zone, std::vector<std::uint32_t>& visited)
 {
-    // 0x82d94eb8: along the way both ways from `position`, while the nodes
-    // stay in the zone.
+    // 0x82d94eb8: both directions from `position` while in the zone.
     touch(way);
     const std::vector<std::uint32_t>& nodes = m_nav.ways[way].nodes;
     for (std::int64_t i = static_cast<std::int64_t>(position) - 1; i >= 0; --i) {

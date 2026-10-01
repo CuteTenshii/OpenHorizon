@@ -4,16 +4,9 @@
 
 namespace openhorizon::particles {
 
-/// The random number generator the game's particle code draws from.
-///
-/// Verified from the executable: every draw steps a 32-bit linear
-/// congruential generator, seed = seed * 0x41C64E6D + 12345 (0x82DBE490),
-/// and uses bits 16-30 of the new seed. uniform() scales those 15 bits by
-/// 1/32767 (0x82DBE4B0, constant 3.0518509e-5 at 0x82000E88), so it covers
-/// [0, 1] with both ends included; range() is lo + (hi - lo) * uniform()
-/// (0x82DBE4F0). Each particle system owns one generator (at +540 of the
-/// system); the seed the game starts it with is not decoded, so the
-/// constructor takes one.
+/// The particle code's LCG: seed * 0x41C64E6D + 12345, bits 16-30 (0x82DBE490); uniform() divides by 32767,
+/// so [0, 1] inclusive (0x82DBE4B0, 0x82000E88); range() is lo + (hi - lo) * uniform() (0x82DBE4F0). Verified.
+/// One per particle system (+540); the game's starting seed is not decoded.
 class GameRandom {
 public:
     explicit GameRandom(std::uint32_t seed = 0)

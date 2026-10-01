@@ -21,8 +21,7 @@ constexpr std::array<const char*, 4> kLayerNames{"closeCloudFront", "closeCloudB
 
 /// The time-of-day speeds and turns are per hour (0x82000D7C holds 1/3600).
 constexpr float kPerHour = 1.0F / 3600.0F;
-/// The far cloud object's field 416, which scales the map's scroll
-/// (constructor 0x82E37EE8).
+/// The far cloud object's field 416 (constructor 0x82E37EE8).
 constexpr float kFarMapScrollScale = 0.4F;
 
 std::optional<CloudDefinitions::Layer> layerNamed(std::string_view name)
@@ -35,8 +34,7 @@ std::optional<CloudDefinitions::Layer> layerNamed(std::string_view name)
     return std::nullopt;
 }
 
-/// Wraps as the updates do: add one while below zero, take one away while
-/// above one, so exactly 1 is kept.
+/// Wraps as the updates do, keeping exactly 1.
 float wrapUnit(float value)
 {
     while (value < 0.0F) {
@@ -232,8 +230,7 @@ void CloudMotion::advance(const CloudParameters& parameters, float seconds)
 
 float cloudMinSkyHeight(float fogSkyHeightFadeStart)
 {
-    // 0x824740F8: the start clamped to at most -1000 m, seen from the sky
-    // fog's 15 km ring, and that angle taken on the 300 m domes plus 1 m.
+    // 0x824740F8.
     constexpr float kHighest = -1000.0F;
     constexpr double kRing = 15000.0;
     constexpr float kDome = 300.0F;
@@ -243,10 +240,8 @@ float cloudMinSkyHeight(float fogSkyHeightFadeStart)
 
 CloudDome<FarCloudVertex> buildFarCloudDome()
 {
-    // Constants of 0x82E35D08: the sphere's radius squared (0x8203E6C4) and
-    // the camera's height above its centre (0x8224D5B4), 6 degrees as a
-    // double (0x8224D5C0), the game's pi/2 and 2 pi (0x8224D438,
-    // 0x8224D43C), the top vertex's 300 m (0x8224D2B8).
+    // Constants of 0x82E35D08 (0x8203E6C4, 0x8224D5B4, 0x8224D5C0,
+    // 0x8224D438, 0x8224D43C, 0x8224D2B8).
     constexpr float kRadius = 10000.0F;
     constexpr float kCentreBelow = 9700.0F;
     constexpr double kCutBelowHorizon = 0.10471967061360676;
@@ -256,8 +251,7 @@ CloudDome<FarCloudVertex> buildFarCloudDome()
     constexpr std::uint32_t kRings = 15;
     constexpr std::uint32_t kAround = 100;
 
-    // Where the ray 6 degrees below the horizon leaves the sphere: the
-    // larger root, or the smaller when that is behind the camera.
+    // The larger root, or the smaller when that is behind the camera.
     const auto dx = static_cast<float>(std::cos(kCutBelowHorizon));
     const auto dy = static_cast<float>(-std::sin(kCutBelowHorizon));
     const float a = dx * dx + dy * dy;
@@ -308,8 +302,7 @@ CloudDome<FarCloudVertex> buildFarCloudDome()
 
 CloudDome<CloseCloudVertex> buildCloseCloudDome()
 {
-    // Constants of 0x82E35830: -300 (0x82006160) turns the inward normal
-    // into the position, 6 degrees is pi/2 / 15 (0x8224D438, 0x82013CF8).
+    // Constants of 0x82E35830 (0x82006160, 0x8224D438, 0x82013CF8).
     constexpr float kInward = -300.0F;
     constexpr std::uint32_t kAround = 100;
     constexpr std::uint32_t kRow = kAround + 1;

@@ -1,6 +1,5 @@
-// Runs each car through the game's own performance tests on flat ground and
-// compares the results with the figures the game recorded in gamedb
-// (Data_Car.Sim*), to check the car model against the original.
+// Runs each car through the game's performance tests on flat ground and
+// compares with the figures recorded in gamedb (Data_Car.Sim*).
 
 #include "base/Log.h"
 #include "car/CarPhysics.h"
@@ -31,10 +30,8 @@ struct Result {
     float lateralG = NAN;
 };
 
-/// The assists the game's own tests ran with: the test car set-up at
-/// 0x82DFD810 turns ABS, traction control and stability management on, and
-/// the test steps mark the car scripted (+0x1828), which skips traction
-/// control (0x82DF8630).
+/// The game's test assists: ABS and stability on (0x82DFD810); traction
+/// control skipped for the scripted car (+0x1828, 0x82DF8630).
 void assistsLikeGameTests(openhorizon::CarPhysics& car)
 {
     car.assists().abs = true;

@@ -9,18 +9,13 @@ namespace {
 
 /// Half the chevron's width (0x82029ee8).
 constexpr float kHalfWidth = 0.6F;
-/// Each of the two lifts along the up vector (0x82000cd0): the quad's base
-/// and its corners are both raised by it.
+/// Applied twice along the up vector (0x82000cd0).
 constexpr float kLift = 0.05F;
-/// The share of the two-point segment a chevron covers (the corners at
-/// 0x82431238-0x82431390 go 0.6 of the way to the next point).
+/// Share of the two-point segment a chevron covers (0x82431238-0x82431390).
 constexpr float kLength = 0.6F;
-/// Chevrons revealed per unit of reveal progress: a chevron is hidden while
-/// its number from the first, over 51, exceeds the progress.
 constexpr float kRevealChevrons = 51.0F;
-/// The colour rule's constants (0x820296a0-0x820296d0 and 0.2 at
-/// 0x82000d68): amber (192, 164, 52) at the target speed, moving by these
-/// amounts at full strength, which the speed margin reaches at 5 m/s.
+/// 0x820296a0-0x820296d0 and 0.2 at 0x82000d68; full strength at a 5 m/s
+/// margin.
 constexpr float kAmberR = 192.0F;
 constexpr float kAmberG = 164.0F;
 constexpr float kAmberB = 52.0F;
@@ -60,10 +55,7 @@ std::array<std::uint8_t, 3> DrivingLine::colour(float speedMargin)
 
 std::uint8_t DrivingLine::positionAlpha(int offset, float fraction)
 {
-    // 0x826198cc onwards: the point's offset plus one, less how far the car
-    // is towards its next point, against fixed bands of offsets. The
-    // factors are the floats 8/3, 223/6 and 12.75 of the table at
-    // 0x820296a0; 32 is the faint alpha behind and just ahead of the car.
+    // 0x826198cc; the factors are the table at 0x820296a0.
     const float along = static_cast<float>(offset) + 1.0F - fraction;
     float alpha = 0.0F;
     if (offset < kPointsBehind) {
@@ -75,7 +67,7 @@ std::uint8_t DrivingLine::positionAlpha(int offset, float fraction)
     } else {
         alpha = std::clamp((static_cast<float>(kPointsAhead) - along) * 12.75F, 0.0F, 255.0F);
     }
-    // The Full setting's multiplier, 255, applied as (alpha * 255) >> 8.
+    // The Full setting's multiplier.
     return static_cast<std::uint8_t>((static_cast<int>(alpha) * 255) >> 8);
 }
 

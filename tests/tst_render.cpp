@@ -1,6 +1,4 @@
-// The GL program cache: its key and folder without a GL context, and with
-// an offscreen context the round trip through the cache and the fallback to
-// compiling when a cached binary is refused.
+// The GL program cache: key, folder, round trip and the fallback when a binary is refused.
 
 #include "support/GlContext.h"
 
@@ -39,8 +37,7 @@ void main()
 }
 )";
 
-/// The folder the tests point the user cache folder's variable at,
-/// emptied by CacheFolder.
+/// The user cache folder under test, emptied by CacheFolder.
 std::filesystem::path& cacheHome()
 {
     static std::filesystem::path path;
@@ -65,8 +62,7 @@ TEST_CASE("cacheKeyIsStableAndCoversEveryInput", "[render]")
 
 TEST_CASE("cacheFolderIsInTheUserCacheFolder", "[render]")
 {
-    // CacheFolder points the cache's variable at cacheHome(); the folder rules
-    // themselves are tst_base's.
+    // The folder rules themselves are tst_base's.
     CHECK(openhorizon::render::programCacheDirectory().native().starts_with(cacheHome().native()));
     CHECK(openhorizon::render::programCacheDirectory().filename() == std::filesystem::path("shaders"));
 }
@@ -115,8 +111,7 @@ TEST_CASE("refusedBinariesFallBackToCompiling", "[render]")
     glDeleteProgram(openhorizon::render::linkProgram("first", vertex, kFragment));
     CHECK(std::filesystem::exists(file));
 
-    // Keep the header, so the entry is read and handed to the driver, and
-    // spoil the binary after it.
+    // An intact header, so the spoilt binary still reaches the driver.
     const auto size = std::filesystem::file_size(file);
     {
         std::fstream entry(file, std::ios::binary | std::ios::in | std::ios::out);
@@ -124,8 +119,7 @@ TEST_CASE("refusedBinariesFallBackToCompiling", "[render]")
         entry.seekp(static_cast<std::streamoff>(size) - static_cast<std::streamoff>(junk.size()));
         entry.write(junk.data(), static_cast<std::streamsize>(junk.size()));
         std::vector<char> header(80, '\x5a');
-        // Past magic (8), version (4), key length (4), key (32), format (4)
-        // and length (8): the start of the binary itself.
+        // Past magic (8), version (4), key length (4), key (32), format (4), length (8).
         entry.seekp(60);
         entry.write(header.data(), static_cast<std::streamsize>(header.size()));
     }
@@ -174,9 +168,7 @@ TEST_CASE("brokenSourcesThrowWithTheirName", "[render]")
 
 } // namespace
 
-// The world draws a chunk's triangles only while the camera is within its
-// band: the batches' runs of chunks become index ranges, adjacent ones
-// merged, and a batch none of whose chunks is drawn gets no range.
+// Adjacent drawn chunks merge into one range; a batch with none drawn gets no range.
 TEST_CASE("selectedChunksBecomeMergedIndexRanges", "[render]")
 {
     struct Batch {
@@ -226,8 +218,7 @@ TEST_CASE("selectedChunksBecomeMergedIndexRanges", "[render]")
 
 namespace {
 
-/// Points the user cache folder at an empty cacheHome() before the cases
-/// run, never the real cache, and empties it after them.
+/// Points the user cache folder at an empty cacheHome() for the cases, never the real cache.
 class CacheFolder : public Catch::EventListenerBase {
 public:
     using Catch::EventListenerBase::EventListenerBase;

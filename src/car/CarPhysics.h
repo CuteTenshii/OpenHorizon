@@ -61,9 +61,8 @@ struct DrivingAssists {
     bool stabilityControl = true;
     bool automaticGearbox = true;
     /// The game's pad steering (CCarDynamics, 0x82DF9620): the stick asks
-    /// for a share of a speed-dependent lock the tyres can use. Off, the
-    /// stick maps straight onto SteerMaxAngleFiltered, which the AI drivers
-    /// and the performance harness rely on.
+    /// for a share of a speed-dependent lock. Off, it maps straight onto
+    /// SteerMaxAngleFiltered, as the AI drivers and the harness need.
     bool speedSensitiveSteering = true;
 };
 
@@ -75,8 +74,7 @@ struct WorldContact {
     /// Penetration, metres.
     float depth = 0.0F;
     /// The surface pair's FrictionCoefficient and LowSpeedFrictionCoefficient
-    /// (surfaceTypes.xml, car against the surface's category). The defaults
-    /// are the friction the game uses for a pair it does not find
+    /// (surfaceTypes.xml); the defaults are the game's for an unknown pair
     /// (0x82E0B9DC).
     float friction = 0.5F;
     float lowSpeedFriction = 0.5F;
@@ -91,9 +89,8 @@ struct CarContact {
     float depth = 0.0F;
 };
 
-/// Which assists acted on the last physics step, for the HUD's assist
-/// lights: the game lights them while an assist is working, not while it
-/// is merely switched on.
+/// Which assists acted on the last physics step: the HUD lights an assist
+/// while it works, not while it is merely switched on.
 struct AssistActivity {
     /// A braked wheel's brake was let go of.
     bool abs = false;
@@ -106,11 +103,9 @@ struct AssistActivity {
 /// The rigid-body simulation of one car: chassis, four suspensions and tyres,
 /// engine, clutch, gearbox and differentials, driven by a CarSpec.
 ///
-/// Car space has x to the right, y up and z forward, with its origin on the
-/// ground below the middle of the wheelbase, as the car models and
-/// maxdata.xml use. World space is the game's: x east, y up, z north. Both
-/// are left-handed, so a positive rotation about y (as glm computes it)
-/// turns +z towards +x: clockwise seen from above, a right turn.
+/// Car space: x right, y up, z forward, origin on the ground below the
+/// middle of the wheelbase. Left-handed, so a positive rotation about y is a
+/// right turn.
 class CarPhysics {
 public:
     static constexpr int kWheels = 4;
@@ -188,10 +183,8 @@ public:
     /// scales the turning part, as the game's collision torque scales do.
     void applyImpulse(const glm::vec3& impulse, const glm::vec3& worldPoint, float angularScale = 1.0F);
     /// Resolves the body's overlaps with the static world after a step as
-    /// the game does: impulses that stop the approach and resist sliding,
-    /// turning the car only by the settings' car-world torque scale at its
-    /// speed, and a move out of the overlap. Returns the largest normal
-    /// impulse applied (N·s), for damage and sound.
+    /// the game does, turning the car only by the car-world torque scale at
+    /// its speed. Returns the largest normal impulse applied (N·s).
     float resolveWorldContacts(std::span<const WorldContact> contacts, const CollisionSettings& settings);
     /// Moves the car without changing its motion, to resolve penetration.
     void translate(const glm::vec3& offset) { m_cgPosition += offset; }
@@ -320,12 +313,10 @@ private:
 void findCarContacts(const CarPhysics& a, std::span<const CarSpec::CollisionSphere> spheresA, bool boxA,
     const CarPhysics& b, std::span<const CarSpec::CollisionSphere> spheresB, bool boxB, std::vector<CarContact>& out);
 
-/// Resolves two cars' overlaps after a step as the game's response to a
-/// pair of bodies does (0x82E04A60): impulses along the normals only, which
-/// turn each car by only `turnA` or `turnB` of their share, and remove
-/// (1 + `restitution`) of the approach speed, so a negative restitution
-/// leaves some of it; and moves that take both cars out of the overlap,
-/// the lighter one further. Returns the largest impulse applied (N·s).
+/// Resolves two cars' overlaps after a step as the game's pair response does
+/// (0x82E04A60): normal impulses only, turning each car by `turnA` / `turnB`,
+/// removing (1 + `restitution`) of the approach speed; the lighter car moves
+/// further out. Returns the largest impulse applied (N·s).
 float resolveCarContacts(
     CarPhysics& a, CarPhysics& b, std::span<const CarContact> contacts, float turnA, float turnB, float restitution);
 

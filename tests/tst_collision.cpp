@@ -1,6 +1,4 @@
-// Tests of the collision formats and queries: tiles, indexes and surface
-// tables built here in the layouts the headers document, and, when
-// OPENHORIZON_GAME_DIR names an extracted disc, Colorado's own collision.
+// The collision formats and queries, on built data and on Colorado's own collision.
 
 #include "support/TestSupport.h"
 
@@ -88,9 +86,8 @@ std::uint32_t packNormal(glm::vec3 n)
     return field(n.x, 1023.0F, 11) | (field(n.y, 1023.0F, 11) << 11) | (field(n.z, 511.0F, 10) << 22);
 }
 
-/// A .fiz file in the documented layout: each triangle's corners become
-/// vertices of their own, and triangles are listed in every grid cell their
-/// bounds overlap.
+/// A .fiz file with unshared vertices, each triangle listed in every grid
+/// cell its bounds overlap.
 Bytes buildFiz(const TileSpec& spec, std::uint32_t headerId = 7, std::uint32_t cell = 3)
 {
     Writer a;
@@ -262,12 +259,9 @@ void addQuad(std::vector<TriangleSpec>& out, float x0, float x1, float z0, float
     out.push_back(ground({x1, y, z0}, {x0, y, z1}, {x1, y, z1}, surface));
 }
 
-/// A two-tile world: cells (0, 0) and (1, 0) of 100 m from the origin. The
-/// ground is asphalt (0) at y = 0 for x < 104 and dirt (1) at y = 1 beyond;
-/// both quads reach into both tiles, so both tiles hold them, as real tiles
-/// share the triangles near their common edge. Tile 0 also has a guard rail
-/// (3) at x = 50 facing -x, a camera-only roof at y = 5 over x, z in
-/// [10, 20] x [60, 70], and a barrier of route 42 at z = 80 facing -z.
+/// Cells (0, 0) and (1, 0) of 100 m: asphalt (0) at y = 0 for x < 104, dirt (1)
+/// at y = 1 beyond, both in both tiles. Tile 0 adds a rail (3) at x = 50 facing -x,
+/// a camera-only roof at y = 5 over [10, 20] x [60, 70] and a route 42 barrier at z = 80.
 std::map<std::uint32_t, Bytes> twoTileWorld()
 {
     std::vector<TriangleSpec> shared;
@@ -572,8 +566,7 @@ TEST_CASE("raycastsFindGroundWallsAndSurfaces", "[collision]")
     const auto behind = world->raycast(glm::vec3(60.0F, 1.0F, 10.0F), glm::vec3(-1.0F, 0.0F, 0.0F), 200.0F);
     CHECK((behind.has_value() && !behind->frontFace && std::abs(behind->normal.x - 1.0F) < 1e-5F));
 
-    // A long ray across both tiles, starting in the second, finds the rail
-    // in the first.
+    // A ray starting in the second tile finds the rail in the first.
     const auto across = world->raycast(glm::vec3(180.0F, 1.5F, 10.0F), glm::vec3(-1.0F, 0.0F, 0.0F), 300.0F);
     CHECK(across.has_value());
     if (across) {
@@ -607,8 +600,7 @@ TEST_CASE("raycastsFindGroundWallsAndSurfaces", "[collision]")
 TEST_CASE("sphereContactsAreReportedOnce", "[collision]")
 {
     const auto world = twoTileCollision(twoTileWorld());
-    // On the asphalt just inside the second tile's cell, where both tiles
-    // hold the same ground triangle.
+    // Both tiles hold this ground triangle: one contact, not two.
     const std::vector<collision::SphereContact> contacts = world->sphereContacts(glm::vec3(100.0F, 0.5F, 20.0F), 1.0F);
     CHECK(contacts.size() == std::size_t{1});
     if (!contacts.empty()) {
@@ -742,8 +734,7 @@ TEST_CASE("coloradoCollision", "[collision]")
     CHECK(outOfTable.load() == std::size_t{0});
     world->evictAll();
 
-    // A road node of colorado.nav in the festival's town: asphalt at the
-    // node's height.
+    // A road node of colorado.nav in the festival's town.
     const auto road = world->groundBelow(glm::vec3(-2063.6F, 100.0F, -45.0F), 200.0F);
     CHECK(road.has_value());
     if (road) {

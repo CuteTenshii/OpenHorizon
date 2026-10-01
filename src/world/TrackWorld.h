@@ -25,8 +25,7 @@ class Vfs;
 
 namespace openhorizon::world {
 
-/// Game paths of a track's world files, for a track folder name such as
-/// "colorado".
+/// Game paths of a track's world files, for a track folder name such as "colorado".
 struct TrackPaths {
     /// Mount point of the track's bin.zip.
     std::string archive;
@@ -38,30 +37,23 @@ struct TrackPaths {
     static TrackPaths of(std::string_view track);
 };
 
-/// Everything a renderer needs to draw a track's world: its archive, the
-/// index of its render models with every prop placed, the texture tables
-/// and the zone grid.
+/// Everything a renderer needs to draw a track's world.
 struct TrackWorld {
     std::shared_ptr<const lzx::ZipArchive> archive;
-    /// Missing when the track has no zone grid file; the backdrop terrain is
-    /// then drawn from everywhere.
+    /// Missing without a zone grid file; the backdrop terrain is then drawn from everywhere.
     std::optional<ZoneGrid> zones;
     /// Missing when the PVS file cannot be read; props are then left out.
     std::optional<TrackPlacements> placements;
     /// Missing when the PVS file cannot be read; geometry is then untextured.
     std::optional<TrackTextures> textures;
-    /// The track's effects, which the renderer draws the models with.
     TrackShaders shaders;
-    /// The TrackSettings.xml values the effects read; missing when the file
-    /// cannot be read, and the scene constants they give are then left 0.
+    /// Missing when TrackSettings.xml cannot be read; the scene constants it gives are then left 0.
     std::optional<TrackSettings> settings;
     WorldIndex index;
     /// What was missing or could not be read, for the log.
     std::vector<std::string> warnings;
 
-    /// Loads the world of track `track` (a folder of media/tracks). Throws
-    /// DataError if the track has no bin.zip. Returns nothing if `cancel`
-    /// was set while it ran.
+    /// `track` is a folder of media/tracks. Throws DataError without a bin.zip; nothing if `cancel` was set.
     static std::optional<TrackWorld> load(const Vfs& vfs, std::string_view track, const Progress& progress = {},
         const std::atomic<bool>* cancel = nullptr);
 };

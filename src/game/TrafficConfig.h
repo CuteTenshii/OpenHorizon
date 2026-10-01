@@ -10,15 +10,9 @@ namespace openhorizon {
 
 class Vfs;
 
-/// The traffic rules of `gametunablesettings/aiopenworld.xml`, per game
-/// situation ("freeroam", "race", "firsttimecareer"): which traffic cars
-/// exist and how densely they fill each class of road.
-///
-/// Road classes are numbered (2 B-road, 3 and 5 A-road, 4 freeway, 6 and 7
-/// town, 8 festival, 12 dirt road, as the file's comments name them); each
-/// road segment of the track's road network names its class. Units are
-/// inferred: `speed` reads as mph (60 on freeways in free roam, 90 in races)
-/// and densities as cars per 100 m of road.
+/// `gametunablesettings/aiopenworld.xml` per situation ("freeroam", "race", "firsttimecareer").
+/// Road classes per the file's comments: 2 B-road, 3 and 5 A-road, 4 freeway, 6 and 7 town, 8 festival, 12 dirt.
+/// Inferred units: `speed` in mph, densities in cars per 100 m of road.
 struct TrafficConfig {
     struct Car {
         int carId = 0;
@@ -54,7 +48,7 @@ struct TrafficConfig {
 
     std::map<std::string, Settings> settings;
 
-    /// Reads the file. Throws DataError if it is missing or malformed.
+    /// Throws DataError if the file is missing or malformed.
     static TrafficConfig load(const Vfs& vfs);
     const Settings* find(std::string_view name) const;
 };

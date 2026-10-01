@@ -33,13 +33,10 @@ enum class ModelSource : std::uint8_t { Exterior, Cockpit, Wheel, Brake };
 /// - the windscreen parts `glassF` and `lexanF` turn `window` into
 ///   `frontwindow` and `window_2` into `frontwindow_2`.
 ///
-/// Verified: those rules and the strings they test. Not traced: where the
-/// flag comes from. It is taken as set: that is the only setting under which
-/// every material of the disc's models names a technique of the effect (the
-/// cockpit materials exist only as `cockpit_` techniques, and 272 of the 290
-/// wheel models use `outer_rim` and `wheel_black`, which have no `_V2`
-/// technique). The executable's ghost, engine bay and SuperLOD variants are
-/// not applied: they belong to modes this renderer does not draw.
+/// Verified: those rules and the strings they test. The flag's source is not
+/// traced; it is taken as set, the only setting under which every material
+/// of the disc names a technique. Ghost, engine bay and SuperLOD variants are
+/// not applied.
 std::string techniqueName(std::string_view material, std::string_view partName, bool cockpitFlag = true);
 
 /// The technique the executable falls back to when an effect lacks the
@@ -64,25 +61,20 @@ struct MaterialDrawState {
     /// False forces blending off, whatever the draw list uses.
     bool blend = true;
 };
-
 /// The render states the car draw (0x82E63638 to 0x82E63728) sets for a
-/// material. Verified: for names containing `defrost_lines` (0x82E56238,
-/// the case-insensitive search at 0x82CC0AE0) it sets the cull mode to none
-/// (0x8247C4D0, which writes the value into PA_SU_SC_MODE_CNTL's cull
-/// bits), enables alpha to mask (0x8247D9A0, RB_COLORCONTROL bit 4) and
-/// disables blending (0x8247C398) before the draw, and after it restores
-/// D3DCULL_CW, alpha to mask off and blending on. Every other material
-/// keeps the defaults. The rear window's heating wires need it: their mesh
-/// covers the glass in strips whose texture is clear but for the wire.
-/// Inferred: that the name searched (a string at +4 of the object the draw
-/// passes) is the material's; its technique name contains the same words.
+/// material. Verified: names containing `defrost_lines` (0x82E56238, search
+/// at 0x82CC0AE0) draw with culling off (0x8247C4D0), alpha to mask on
+/// (0x8247D9A0) and blending off (0x8247C398), restored after; other
+/// materials keep the defaults. Inferred: that the name searched is the
+/// material's.
+/// Inferred: that the name searched is the material's.
 MaterialDrawState materialDrawState(std::string_view material);
 
 /// True for materials the shadow map technique choosers (0x82E62130 and
 /// 0x82E62338) give no technique, so that they cast no shadow: names
 /// containing `defrost_lines` (0x82E56238) or `liverybadge` (0x82E62190 and
-/// 0x82E62390, the same search). Not applied: their third early out, a
-/// flag byte of the mesh (+152) whose meaning was not traced.
+/// 0x82E62390, the same search). Not applied: a third early out on a mesh
+/// flag byte (+152) whose meaning is not traced.
 bool castsNoShadow(std::string_view material);
 
 /// True for meshes that stand in for a spinning wheel at speed (blurred

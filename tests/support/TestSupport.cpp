@@ -21,11 +21,9 @@ const char* gameDir()
 
 int runTests(int argc, char** argv)
 {
-    // In this process and the ones it starts: a crash under test must end
-    // the run, not wait on a click.
+    // Inherited by child processes: a crash under test must not wait on a click.
     setEnvironmentVariable(kNoCrashDialogVariable, "1");
-    // Never a window on the desktop nor a sound through the speakers,
-    // unless the caller asked for a driver.
+    // No desktop window or speaker sound unless the caller picked a driver.
     setEnvironmentVariable("SDL_VIDEO_DRIVER", "offscreen", false);
     setEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy", false);
     return Catch::Session().run(argc, argv);

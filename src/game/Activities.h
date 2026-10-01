@@ -10,18 +10,12 @@ namespace openhorizon {
 
 class Vfs;
 
-/// One `<TriggerZone>` of an activity, as the zone's parser (0x8298af28)
-/// reads it. Verified there: `object` and `secondObject` name GameObjs.xml
-/// objects (looked up by name through 0x8296dca0); `radius` is stored as
-/// read; `promptTitle` and `prompt` are ids in the Activities string table;
-/// `maxMPH` is multiplied by 0.44704 (miles per hour to metres per second,
-/// 0x82005aec) on load; `is_activation` and `requires_input` default to true
-/// (the flag byte starts at 0x8C, 0x8298af00). When no `prompt` names the
-/// call to action, the zone's is the Activities string IDS_EnterNow (set by
-/// the zone's constructor, 0x8298ae90). Some activities read further
-/// attributes of their own zones: the gas stations `triggerZoneRadius` and
-/// `tutorialRadius` (0x82978344), the map ones `mapTag` and
-/// `mapDescription`.
+/// One `<TriggerZone>` of an activity, as its parser (0x8298af28) reads it.
+/// Verified: objects name GameObjs.xml objects (0x8296dca0); prompts are
+/// Activities string ids, IDS_EnterNow by default (0x8298ae90); `maxMPH` is
+/// scaled by 0.44704 (0x82005aec); both flags default to true (flag byte
+/// 0x8C, 0x8298af00); gas stations add `triggerZoneRadius` and
+/// `tutorialRadius` (0x82978344).
 struct ActivityZone {
     std::string object;
     std::string secondObject;
@@ -43,11 +37,9 @@ struct Activity {
     /// The activity class ("ActivitySpeedCamera", "ActivityGasStation", ...).
     std::string type;
     std::string name;
-    /// The leaderboard the activity posts to (`scoreboard_id`, read by
-    /// 0x829582bc into the activity at +236); -1 when it has none.
+    /// `scoreboard_id` (0x829582bc); -1 when it has none.
     int scoreboardId = -1;
-    /// `<SpeedThreshold minimumSpeed>`, in miles per hour: the speed trap
-    /// compares it with the car's speed times 2.2369 (0x8296cedc).
+    /// `<SpeedThreshold minimumSpeed>`, in miles per hour (0x8296cedc).
     std::optional<float> minimumSpeedMph;
     std::vector<ActivityZone> zones;
     /// `<Missions><Mission name>`: the missions an outpost offers.
@@ -56,14 +48,9 @@ struct Activity {
     std::string file;
 };
 
-/// Every activity of a game mode (a track's folder under media/gamemodes),
-/// read from the files the executable names for a mode (the
-/// "GameModes\%s\..." strings from 0x822401xx to 0x82240508, Leaderboards.xml
-/// to state_definitions.xml), in that order. E3_speed_camera.xml is left
-/// out: it repeats speed_camera_30 with the E3 demo's graded thresholds, and
-/// taking it for the demo's file is inferred from its name. Only files whose
-/// root is `<ActivityManager>` hold activities; commented-out activities are
-/// skipped, as XML comments are.
+/// Every activity of a game mode, read from the files the executable names
+/// for a mode, in its order (strings 0x822401xx-0x82240508). E3_speed_camera.xml
+/// is left out as the E3 demo's (inferred from its name).
 class ActivityCatalogue {
 public:
     /// Reads the mode's activity files; missing files are skipped. Throws

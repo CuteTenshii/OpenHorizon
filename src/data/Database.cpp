@@ -101,8 +101,7 @@ Database::Database(Bytes image)
         sqlite3_close(m_db);
         throw DataError("gamedb: {}", reason);
     }
-    // SQLite may keep a pointer into the image for the connection's life,
-    // which is why the image is a member rather than a copy.
+    // SQLite may keep a pointer into the image for the connection's life.
     const int rc = sqlite3_deserialize(m_db, "main", m_image.data(), static_cast<sqlite3_int64>(m_image.size()),
         static_cast<sqlite3_int64>(m_image.size()), SQLITE_DESERIALIZE_READONLY);
     if (rc != SQLITE_OK) {

@@ -77,9 +77,7 @@ glm::vec3 centre(const glm::mat4& body)
 glm::mat4 faceView(int face, const glm::vec3& centre)
 {
     const FaceBasis& basis = kBases[static_cast<std::size_t>(std::clamp(face, 0, 5))];
-    // Rows s, t and axis of the basis, applied to the game's coordinates of
-    // a point relative to the centre: each row takes this renderer's z
-    // negated.
+    // Each row takes this renderer's z negated (the game's coordinates).
     const glm::vec3 rows[3] = {mirrorZ(basis.s), mirrorZ(basis.t), mirrorZ(basis.axis)};
     glm::mat4 view(1.0F);
     for (int r = 0; r < 3; ++r) {

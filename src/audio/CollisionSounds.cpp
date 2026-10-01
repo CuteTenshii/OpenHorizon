@@ -23,19 +23,15 @@ namespace {
 
 constexpr const char* kCollisionDataPath = "media/audio/collisions/collisiondata.xml";
 
-/// The projects collisiondata.xml's groups name that this manager plays, by
-/// the name that starts a group, and the path the executable loads each
-/// from (its project list, 0x8200D830 for Collisions). AMB_Default, which
-/// only the BreakEvents' Whoosh3D names, is not played here.
+/// By a group's first segment, with the path the executable loads it from (0x8200D830). AMB_Default,
+/// named only by Whoosh3D, is not played here.
 constexpr std::array<std::pair<std::string_view, const char*>, 1> kProjects = {{
     {"Collisions", "Game:\\Media\\Audio\\Collisions\\Collisions.fev"},
 }};
 
-/// Metres per second to miles per hour, the executable's constant
-/// (0x82005AE8) that both report() and playBreak() multiply by.
+/// The executable's constant (0x82005AE8).
 constexpr float kMphPerMetrePerSecond = 2.2369F;
-/// report() and playBreak() clamp the momentum's length to 0..299
-/// (0x8214EA10).
+/// 0x8214EA10.
 constexpr float kMaxMomentumDiff = 299.0F;
 
 std::string lower(std::string_view text)
@@ -46,8 +42,7 @@ std::string lower(std::string_view text)
     return out;
 }
 
-/// The slot a child element fills (0x82C928A0), or nothing for Whoosh3D and
-/// anything else.
+/// 0x82C928A0; nothing for Whoosh3D and anything else.
 std::optional<CollisionSoundTable::Slot> slotOf(std::string_view element)
 {
     if (element == "Impact3D") {

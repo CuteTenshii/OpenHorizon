@@ -1,7 +1,4 @@
-// The driving line assist's rules as the game's builder (0x82618c10) has
-// them: the chevron colours for the speed margin, the alpha along the line,
-// the chevrons' size and placement, and the draw-out after a restart. On
-// synthetic lines; no disc needed.
+// The driving line assist against the game's builder (0x82618c10), on synthetic lines.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -58,8 +55,8 @@ TEST_CASE("drivingLineColoursFollowTheSpeedMargin", "[race]")
 
 TEST_CASE("drivingLineAlphaAlongTheLine", "[race]")
 {
-    // Faint behind the car, rising from 16 points after the first, full
-    // from 22 and fading out by 102; the Full setting's (a * 255) >> 8.
+    // Rising from 16 points after the first, full from 22, gone by 102;
+    // the Full setting's (a * 255) >> 8.
     CHECK(openhorizon::DrivingLine::positionAlpha(0, 0.0F) == 1);
     CHECK(openhorizon::DrivingLine::positionAlpha(12, 0.0F) == 31);
     CHECK(openhorizon::DrivingLine::positionAlpha(15, 0.5F) == 31);

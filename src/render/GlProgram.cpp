@@ -25,12 +25,10 @@ namespace {
 constexpr std::uint32_t kCacheVersion = 1;
 constexpr std::array<char, 8> kMagic{'O', 'H', 'Z', 'P', 'R', 'O', 'G', '\0'};
 
-/// The count glMaxShaderCompilerThreadsKHR takes for "as many threads as
-/// the implementation likes" (0xFFFFFFFF in both extensions' specifications).
+/// glMaxShaderCompilerThreadsKHR's "as many as the implementation likes".
 constexpr GLuint kAllCompilerThreads = 0xFFFFFFFFU;
 
-/// A 128-bit FNV-1a state, in two halves since standard C++ has no
-/// 128-bit integer.
+/// A 128-bit FNV-1a state in two halves (no standard 128-bit integer).
 struct Hash128 {
     std::uint64_t high = 0x6c62272e07bb0142ULL;
     std::uint64_t low = 0x62b821756295c58dULL;

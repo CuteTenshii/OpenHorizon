@@ -1426,9 +1426,8 @@ std::string Translator::mainFunction() const
             }
         }
         if (m_options.parameterRegister && *m_options.parameterRegister < m_registerCount) {
-            // x: pixel x, sign set for back faces; y: pixel y, from the top
-            // when xe_screen.x is set (as Direct3D counts); z, w: 0 for
-            // triangles.
+            // x: pixel x, negative for back faces; y: pixel y, from the top when xe_screen.x is set;
+            // z, w: 0 for triangles.
             m += "    float xe_px = abs(floor(gl_FragCoord.x));\n";
             m += "    xe_px = gl_FrontFacing ? xe_px : uintBitsToFloat(floatBitsToUint(xe_px) | 0x80000000u);\n";
             m += "    float xe_py = xe_screen.x != 0.0 ? floor(xe_screen.y - gl_FragCoord.y) : floor(gl_FragCoord.y);\n";

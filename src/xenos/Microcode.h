@@ -9,23 +9,14 @@
 
 /// Decoding of Xenos (Xbox 360 GPU) shader microcode.
 ///
-/// A program is an array of big-endian 32-bit words, read here as host
-/// integers. It is organised in 96-bit slots of three words. The control flow
-/// program comes first: two 48-bit control flow instructions per slot (the
-/// first in word 0 and the low half of word 1, the second in the high half of
-/// word 1 and word 2). ALU and fetch instructions take one slot each and are
-/// addressed by slot index; an `exec` control flow instruction runs up to six
-/// consecutive slots, and two bits per slot in its sequence field say whether
-/// the slot is a fetch (bit 0) and whether it must wait for earlier results
-/// (bit 1). The control flow program ends where the lowest slot any exec
-/// refers to begins.
+/// A program is big-endian 32-bit words in 96-bit slots. Control flow comes first, two 48-bit
+/// instructions per slot, and ends where the lowest slot any exec refers to begins. ALU and fetch
+/// instructions take one slot each; an exec runs up to six, with fetch (bit 0) and serialize (bit 1)
+/// per slot in its sequence field.
 ///
-/// The bit layouts follow the publicly documented R400/Xenos/Adreno 2xx
-/// encodings (AMD R600 ISA document, freedreno's a2xx notes, Xenia's ISA
-/// descriptions); every instruction form below occurs in the game's shaders
-/// and was checked against them for consistency (verified: exec, alloc,
-/// vertex fetch, texture fetch, ALU with vector and scalar halves and exports;
-/// the loop, call and jump encodings are from the documentation only).
+/// Bit layouts from the public R400/Xenos/Adreno 2xx docs (AMD R600 ISA, freedreno, Xenia). Verified
+/// on the game's shaders: exec, alloc, vertex and texture fetch, ALU and exports. Loop, call and jump
+/// encodings are from the docs only.
 namespace openhorizon::xenos {
 
 enum class ShaderStage : std::uint8_t {
@@ -217,8 +208,7 @@ struct FetchInstruction {
     bool isSigned = false;
     /// False for integer (unnormalized) data.
     bool normalized = true;
-    /// Signed normalized data uses the "no zero" mapping (2x+1)/(2^n-1)
-    /// instead of clamping -2^(n-1) to -1.
+    /// Signed normalized data uses (2x+1)/(2^n-1) instead of clamping.
     bool signedNoZero = false;
     bool indexRounded = false;
     std::int32_t expAdjust = 0;
@@ -473,9 +463,8 @@ struct Program {
     std::array<std::uint32_t, 3> slot(std::uint32_t index) const;
 };
 
-/// Splits microcode into control flow and instruction slots. Throws
-/// DataError when an exec refers past the end, the size is not a whole
-/// number of slots, or no instruction ends the program.
+/// Splits microcode into control flow and slots. Throws DataError for an exec past the end, a partial
+/// slot, or no ending instruction.
 Program decodeProgram(ShaderStage stage, std::span<const std::uint32_t> words);
 
 /// Absolute component index read for result component `component` from an

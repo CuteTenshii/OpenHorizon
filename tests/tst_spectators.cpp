@@ -1,7 +1,5 @@
-// Tests of the spectator formats: parsers on data built here in the layouts
-// the headers document, a small crowd loaded from a disc written to a
-// temporary folder, and, when OPENHORIZON_GAME_DIR names an extracted disc, the crowd
-// of Colorado.
+// The spectator formats: parsers on built data, a small crowd from a temporary disc,
+// and Colorado's crowd.
 
 #include "support/TestSupport.h"
 
@@ -123,8 +121,7 @@ Bytes skinnedModel()
         {{0.5F, 1.0F, 0.0F}, 0, 0, 0, 1, 255},
         {{-0.5F, 1.0F, 0.0F}, 65535, 0, 1, 0, 128},
     };
-    // Winding counter-clockwise seen from +Z in the file's right-handed
-    // frame, the side the normals face.
+    // Counter-clockwise from +Z in the file's right-handed frame, the normals' side.
     const std::vector<std::uint16_t> indices = {0, 2, 1, 1, 2, 3, 0, 2, 1};
     Writer w;
     w.u32(1);
@@ -161,9 +158,8 @@ Bytes skinnedModel()
     return w.data;
 }
 
-/// Packs `(value, bits)` fields into the frame stream's layout: bit b of the
-/// stream is bit b % 32 of the big-endian word b / 32. The stream keeps its
-/// last word whole, as the files do.
+/// Packs `(value, bits)` fields: stream bit b is bit b % 32 of the big-endian
+/// word b / 32, the last word kept whole as in the files.
 Bytes packStream(const std::vector<std::pair<std::uint32_t, unsigned>>& fields, std::size_t totalBytes)
 {
     std::vector<std::uint32_t> words((totalBytes + 3) / 4, 0);
@@ -189,9 +185,8 @@ constexpr std::int16_t kRotationInitial = -100;
 constexpr std::int16_t kTranslationInitial = 256;
 constexpr std::int16_t kConstantInitial = -64;
 
-/// A CAFF animation: bone 0 with an animated rotation x (12 bits), an
-/// animated translation x (7 bits) and a constant translation y; bone 1
-/// without channels. Frames are 3 bytes, so they straddle stream words.
+/// Bone 0: animated rotation x (12 bits), translation x (7 bits), constant
+/// translation y; bone 1 none. 3-byte frames straddle stream words.
 Bytes animationFile(std::uint16_t bones = 2)
 {
     Writer d;
@@ -408,8 +403,7 @@ Bytes walkSet(std::string_view name)
     w.u32(2);
     w.f32(40.0F);
     w.u32(0);
-    // Stored order second, first, third: the path runs (0,0) (10,0) (10,10)
-    // then (0,10) (0,5) (0,1).
+    // Stored second, first, third: (0,0) (10,0) (10,10) then (0,10) (0,5) (0,1).
     const std::array<std::array<glm::vec3, 3>, 2> segments = {{
         {glm::vec3(10.0F, 0.0F, 0.0F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(10.0F, 0.0F, 10.0F)},
         {glm::vec3(0.0F, 0.0F, 5.0F), glm::vec3(0.0F, 0.0F, 10.0F), glm::vec3(0.0F, 0.0F, 1.0F)},
@@ -511,8 +505,8 @@ TEST_CASE("spectatorMeshMirrorsXAndKeepsFrontsClockwise", "[spectators]")
     CHECK(std::bit_cast<std::uint32_t>(v0[sp::SpectatorMesh::kColour]) == 0xFFFFFFFFU);
     CHECK(v0[sp::SpectatorMesh::kBones + 1] == 1.0F);
     CHECK(v0[sp::SpectatorMesh::kWeights] == 1.0F);
-    // Clockwise from the front in a left-handed frame: the numeric cross
-    // product of the edges points along the normal.
+    // Clockwise from the front in a left-handed frame: the edges' cross product
+    // points along the normal.
     for (std::size_t t = 0; t < mesh.indices.size(); t += 3) {
         const auto at = [&](std::uint32_t i) {
             const float* v = &mesh.vertices[i * sp::SpectatorMesh::kFloatsPerVertex];
@@ -695,8 +689,7 @@ TEST_CASE("spritesChooseCellsByViewAngle", "[spectators]")
     atlas.width = 128;
     atlas.height = 128;
     atlas.rgba.assign(static_cast<std::size_t>(atlas.width * atlas.height) * 4, 0);
-    // Model 0's standing front cell is cell 1; an opaque column from row 20
-    // to row 109.
+    // Model 0's standing front cell 1, opaque from row 20 to 109.
     for (int y = 20; y < 110; ++y) {
         atlas.rgba[(static_cast<std::size_t>(y) * 128 + 64 + 30) * 4 + 3] = 255;
     }
@@ -715,8 +708,8 @@ TEST_CASE("crowdDrawFollowsTheGamesRules", "[spectators]")
     CHECK_THAT(draw::modelFade(70.0F, draw::kModelFade), WithinAbs(0.5, 1e-6));
     CHECK_THAT(draw::modelFade(80.0F, draw::kModelFade), WithinAbs(0.0, 1e-6));
     CHECK_THAT(draw::modelFade(190.0F, draw::kWalkerFade), WithinAbs(0.5, 1e-6));
-    // Sprites come in from 40 to 60 m and go from 650 to 700 m; those of
-    // billboard-only people show from the camera out.
+    // Sprites fade in over 40 to 60 m and out over 650 to 700 m; billboard-only
+    // people show from the camera out.
     CHECK_THAT(draw::spriteFade(30.0F, false), WithinAbs(0.0, 1e-6));
     CHECK_THAT(draw::spriteFade(50.0F, false), WithinAbs(0.5, 1e-6));
     CHECK_THAT(draw::spriteFade(100.0F, false), WithinAbs(1.0, 1e-6));
@@ -725,9 +718,8 @@ TEST_CASE("crowdDrawFollowsTheGamesRules", "[spectators]")
     CHECK_THAT(draw::spriteFade(5.0F, true), WithinAbs(1.0, 1e-6));
     CHECK_THAT(draw::spriteFade(800.0F, true), WithinAbs(0.0, 1e-6));
 
-    // Eight people within 10 m: the band's cap of five sends three on to the
-    // next level; a person past 90 m takes the last band, clamped to the
-    // model's four levels.
+    // The band's cap of five sends three of eight on; past 90 m the last band,
+    // clamped to the model's four levels.
     std::vector<float> distances(8, 5.0F);
     distances.push_back(20.0F);
     distances.push_back(95.0F);
@@ -738,8 +730,7 @@ TEST_CASE("crowdDrawFollowsTheGamesRules", "[spectators]")
     for (const float c : {-1.0F, -0.7F, -0.2F, 0.0F, 0.3F, 0.707F, 0.95F, 1.0F}) {
         CHECK_THAT(draw::shaderArcCos(c), WithinAbs(std::acos(c), 1e-4));
     }
-    // Three views: front within 45 degrees, back past 135, side between;
-    // six views: a column every 22.5 degrees from the front.
+    // Three views: front within 45 degrees, back past 135; six: every 22.5 degrees.
     const glm::vec2 north(0.0F, 1.0F);
     CHECK(draw::spriteColumn(north, glm::normalize(glm::vec2(0.5F, 1.0F)), false).column == 1);
     CHECK(draw::spriteColumn(north, glm::vec2(1.0F, 0.0F), false).column == 2);
@@ -831,8 +822,7 @@ TEST_CASE("crowdSetLoadsFromADisc", "[spectators]")
         writer.finish();
     }
 
-    // Held by pointer so it can close the archive before the folder goes:
-    // Windows refuses to delete a file that is still open.
+    // Closed before the folder goes: Windows refuses to delete an open file.
     auto vfs = std::make_unique<openhorizon::Vfs>();
     vfs->mountDisc(root);
     const sp::CrowdSet crowd = sp::CrowdSet::load(*vfs, "testtrack");
@@ -844,9 +834,8 @@ TEST_CASE("crowdSetLoadsFromADisc", "[spectators]")
     CHECK(crowd.walkPaths().size() == std::size_t{1});
     CHECK(crowd.report().legacyFile.has_value());
     CHECK(crowd.report().unknownClassInstances == 1);
-    // Missing: two textures, the sprites and the shadow; and the person of
-    // an unknown class. The class's cheer names a clip its skeleton lacks,
-    // which the game leaves out, as the load does.
+    // Two textures, the sprites, the shadow and the unknown-class person. A cheer
+    // clip the skeleton lacks is left out, as the game does, and not counted.
     CHECK(crowd.report().failures.size() == std::size_t{5});
     CHECK(crowd.classes()[0].cheers.empty());
     CHECK(crowd.spriteTexture() == -1);
@@ -860,8 +849,7 @@ TEST_CASE("crowdSetLoadsFromADisc", "[spectators]")
 
     const std::vector<std::uint32_t> nearCentre = crowd.spectatorsNear(50.0F, 50.0F, 10.0F);
     CHECK(nearCentre.size() == std::size_t{1});
-    // The two people of the first set and the walker, whose path runs
-    // around the origin.
+    // The first set's two people and the walker.
     const std::vector<std::uint32_t> nearOrigin = crowd.spectatorsNear(0.0F, 0.0F, 80.0F);
     CHECK(nearOrigin.size() == std::size_t{3});
     CHECK(std::find(nearOrigin.begin(), nearOrigin.end(), 0U) != nearOrigin.end());
@@ -890,8 +878,7 @@ TEST_CASE("crowdSetLoadsFromADisc", "[spectators]")
     // Spectator space mirrors X, so the clip's +2 m along X becomes -2 m.
     CHECK(near(skinned[0], {-0.5F - 2.0F, -0.5F, 0.0F}, 1e-4F));
 
-    // The game gives the first class six views, from the model's fourth
-    // cell on, whatever the class is called.
+    // The first class gets six views from the model's fourth cell, whatever its name.
     const sp::SpriteBillboard billboard = crowd.spriteFor(0, {0.0F, 1.0F, 10.0F});
     CHECK(billboard.frame.view == sp::SpriteView::SeatedFront);
     CHECK(billboard.height > 0.0F);
@@ -914,9 +901,8 @@ TEST_CASE("coloradoCrowd", "[spectators]")
     CHECK(crowd.textures().size() == std::size_t{22});
     CHECK(crowd.skeletons().size() == std::size_t{3});
     CHECK(crowd.report().unknownClassInstances == 0);
-    // Street_stand names two clips (Stand_Cheer_08 and _10) that its
-    // skeleton does not list; the game leaves them out of the class, and
-    // so does the load.
+    // Street_stand's Stand_Cheer_08 and _10 are missing from its skeleton and
+    // left out, as the game does.
     CHECK(crowd.report().failures.size() == std::size_t{0});
     for (const sp::CrowdClass& crowdClass : crowd.classes()) {
         if (crowdClass.name == "Street_stand") {
@@ -954,8 +940,7 @@ TEST_CASE("coloradoCrowd", "[spectators]")
     for (const sp::SpectatorAnimation& animation : crowd.animations()) {
         const sp::AnimationClip& clip = animation.clip;
         CHECK_THAT(clip.framesPerSecond(), WithinAbs(30.0, 0.05));
-        // Bones turn at most about 55 degrees between frames (a fist pump's
-        // elbow); a misread stream would jump anywhere.
+        // At most about 55 degrees between frames (a fist pump's elbow).
         float largest = 0.0F;
         for (int f = 1; f < clip.frameCount; ++f) {
             for (std::size_t b = 0; b < clip.boneCount(); ++b) {

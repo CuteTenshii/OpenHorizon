@@ -1,9 +1,5 @@
-// Loads a track's world the way the engine's streamer does and reports what
-// it found: model and prop counts, the tile meshes around one point and a
-// sample of their textures. With --sizes it measures what the whole map
-// costs instead: every tile's geometry at each level of detail and every
-// texture the tiles use, decoded one tile and one texture at a time so the
-// map is never held in memory at once.
+// Loads a track's world as the streamer does and reports counts, tiles and
+// textures near a point. --sizes measures the whole map, one tile at a time.
 
 #include "base/Log.h"
 #include "vfs/Vfs.h"
@@ -122,9 +118,7 @@ template <typename Work> void parallelEach(std::size_t count, unsigned threads, 
     }
 }
 
-/// Geometry of one level of detail over the whole map, as the renderer
-/// uploads it: the track-effect vertices and indices, and the procedural
-/// copies' interleaved vertices and indices.
+/// One level of detail's geometry over the whole map, as uploaded.
 struct LevelCost {
     std::size_t chunks = 0;
     std::size_t triangles = 0;

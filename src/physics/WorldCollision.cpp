@@ -19,8 +19,8 @@ constexpr std::uint8_t kLooseObjectCategory = 8;
 constexpr std::uint8_t kSmashableCategory = 12;
 /// Scattered copies at least this tall are trees and get a trunk.
 constexpr float kTreeHeight = 4.0F;
-/// Tiles are dropped once the focus is this much farther than the load
-/// radius, so a car driving along a tile edge does not reload it repeatedly.
+/// Hysteresis beyond the load radius, so driving along a tile edge does not
+/// reload it repeatedly.
 constexpr float kDropMargin = 250.0F;
 
 /// Möller–Trumbore, accepting hits from either side.
@@ -228,8 +228,7 @@ std::shared_ptr<const WorldCollision::Tile> WorldCollision::buildTile(
 void WorldCollision::update(const glm::vec3& focus, float radius)
 {
     if (m_fiz) {
-        // Collision mesh tiles are small and quick to parse; keep one batch
-        // loading at a time, and let far ones go.
+        // One batch of collision mesh tiles loading at a time.
         if (!m_fizLoading.valid()
             || m_fizLoading.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
             if (m_fizLoading.valid()) {
@@ -300,9 +299,8 @@ void WorldCollision::update(const glm::vec3& focus, float radius)
 
 bool WorldCollision::readyAt(const glm::vec3& point) const
 {
-    // Tiles hold the chunks centred in them, and big terrain chunks reach
-    // over their neighbours, so every tile whose bounds cover the point must
-    // be in.
+    // Big terrain chunks reach over neighbouring tiles, so every tile whose
+    // bounds cover the point must be in.
     const auto& tiles = m_grid.tiles();
     for (std::size_t i = 0; i < tiles.size(); ++i) {
         const auto& tile = tiles[i];
@@ -373,10 +371,8 @@ void WorldCollision::fillSurface(int surface, GroundHit& hit) const
         return;
     }
     hit.grip = type->frictionScale;
-    // Loose surfaces resist a rolling tyre through their velocity-dependent
-    // friction; taking a fiftieth of its coefficient as rolling resistance
-    // gives sand (coefficient 5) a tenth of the load as drag. The scale is
-    // inferred, not taken from the game's code.
+    // Rolling drag as a fiftieth of the velocity-friction coefficient (sand's
+    // 5 gives a tenth of the load). Inferred, not from the game's code.
     hit.drag = std::clamp(type->velocityFriction.longitudinalCoeff * 0.02F, 0.0F, 0.25F);
 }
 
@@ -489,16 +485,14 @@ void WorldCollision::sphereContacts(const glm::vec3& centre, float radius, std::
     if (m_fiz) {
         const collision::SurfaceTable& surfaces = m_fiz->surfaces();
         for (const collision::SphereContact& c : m_fiz->sphereContacts(centre, radius, m_filter)) {
-            // Loose objects and smashables in the mesh are knocked over,
-            // not driven into.
+            // Loose objects and smashables are knocked over, not driven into.
             const collision::SurfaceType* type = surfaces.find(c.surface);
             if (type && (type->category == kLooseObjectCategory || type->category == kSmashableCategory)) {
                 continue;
             }
             out.push_back({c.point, c.normal, c.depth, c.surface});
         }
-        // Inside the drivable area the collision mesh is the ground; the
-        // render geometry only adds the props standing on it.
+        // Inside the drivable area render geometry only adds the props.
         meshCovers = m_fiz->groundBelow(centre + glm::vec3(0.0F, radius, 0.0F), 20.0F, m_filter).has_value();
     }
     renderContacts(centre, radius, meshCovers, out);

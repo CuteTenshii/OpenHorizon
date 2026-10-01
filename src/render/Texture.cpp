@@ -10,9 +10,8 @@ namespace openhorizon::render {
 
 namespace {
 
-// S3TC enums, which glcorearb.h leaves to the extension headers. DXT1 is
-// uploaded as its RGBA variant because foliage and fences use its 1-bit
-// alpha for their cut-outs; the RGB variant would drop it.
+// Not in glcorearb.h. DXT1 goes up as RGBA: foliage and fences cut out with
+// its 1-bit alpha.
 constexpr GLenum kCompressedRgbaDxt1 = 0x83F1;
 constexpr GLenum kCompressedRgbaDxt5 = 0x83F3;
 constexpr GLenum kCompressedSrgbAlphaDxt1 = 0x8C4D;

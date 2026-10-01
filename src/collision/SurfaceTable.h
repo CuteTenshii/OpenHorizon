@@ -17,10 +17,8 @@ namespace openhorizon::collision {
 /// Game path of the surface table.
 inline constexpr std::string_view kSurfaceTypesPath = "media/physics/surfaceTypes.xml";
 
-/// Velocity-dependent friction: extra resistance that grows with the tyre's
-/// sliding speed up to `velPeak` (m/s). The game gives soft surfaces large
-/// coefficients (sand 5, slow concrete 10), so it works as the off-road drag
-/// that slows a car on loose ground.
+/// Velocity-dependent friction: resistance growing with the tyre's sliding
+/// speed up to `velPeak` (m/s); large on soft surfaces, so it acts as off-road drag.
 struct VelocityFriction {
     float velPeak = 0.0F;
     float lateralCoeff = 0.0F;
@@ -49,16 +47,9 @@ struct Springiness {
     float reboundDamping = 0.0F;
 };
 
-/// One entry of `surfaceTypes.xml`. The id is the entry's position in
-/// `<SurfaceTypesList>`, which is the byte `.fiz` triangles store; the
-/// parameters come from the element of the same name under
-/// `<SurfaceTypes>`.
-///
-/// Values the element leaves out keep the defaults below, which match the
-/// file's asphalt grip and drag values. `hasParameters` is false for list
-/// entries without an element (the list names "Kerb", which has none) and
-/// for elements without a `<Friction>` block (CameraCollision and the
-/// smashables).
+/// One entry of `surfaceTypes.xml`: the id (the byte `.fiz` triangles store) is its
+/// position in `<SurfaceTypesList>`, the parameters its element under `<SurfaceTypes>`.
+/// Defaults match the file's asphalt; `hasParameters` is false without a `<Friction>` block.
 struct SurfaceType {
     std::string name;
     /// Index into SurfaceTable::categories(); kNoCategory if the element is
@@ -66,12 +57,10 @@ struct SurfaceType {
     std::uint8_t category = 0xFF;
     bool hasParameters = false;
 
-    /// Tyre grip multiplier for road cars: 1 on asphalt, 0.95 dirt, 0.85
-    /// grass, 0.3 slow grass, 0 on invisible walls.
+    /// Tyre grip multiplier for road cars.
     float frictionScale = 1.0F;
     float heatTireScale = 1.0F;
-    /// How much the off-road tyre model applies: 0 on paved surfaces, 1 on
-    /// loose ones.
+    /// How much the off-road tyre model applies: 0 paved, 1 loose.
     float offRoadness = 0.0F;
     float offRoadWetFrictionScale = 1.0F;
     /// Slip angle (degrees) of peak grip on this surface when dry and wet.
@@ -80,10 +69,8 @@ struct SurfaceType {
     float rearGripMultiplier = 1.0F;
     float minimumArcadeGrip = 0.0F;
     float handbrakeGripMultiplier = 0.5F;
-    /// Scales the chase camera's heading spring (Friction/Offroad; 0.8 on
-    /// dirt and grass, 0.55 on some loose types). The executable copies the
-    /// parsed entry from its byte 68 into a 284-byte table (0x82F16D38),
-    /// which puts this value at the offset CCamFollow reads (0x82902254).
+    /// Scales the chase camera's heading spring: the value CCamFollow reads
+    /// (0x82902254) from the surface table at 0x82F16D38.
     float chaseCamSpringMultiplier = 1.0F;
     VelocityFriction velocityFriction;
     /// Aerodynamic drag of bodies on or in the surface.

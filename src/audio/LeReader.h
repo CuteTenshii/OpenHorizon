@@ -10,10 +10,8 @@
 
 namespace openhorizon::audio {
 
-/// Bounds-checked reader of little-endian data. FMOD writes its FSB and FEV
-/// files little-endian even for the Xbox 360, unlike the rest of the game's
-/// formats, which BeReader covers. Reading past the end throws DataError
-/// naming the source and offset.
+/// Bounds-checked little-endian reader: FMOD's FSB and FEV files are little-endian even on the Xbox 360.
+/// Reading past the end throws DataError naming the source and offset.
 class LeReader {
 public:
     LeReader(ByteView data, std::string source)
@@ -101,8 +99,7 @@ public:
         return text;
     }
 
-    /// FMOD's string: a u32 byte count that includes the terminating NUL,
-    /// then the bytes. A count of zero is an empty string with no bytes.
+    /// A u32 byte count including the NUL, then the bytes; 0 is empty with no bytes.
     std::string countedString()
     {
         const std::uint32_t length = u32();

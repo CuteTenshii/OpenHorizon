@@ -62,24 +62,11 @@ void wholeRanges(const std::vector<Batch>& batches, std::vector<IndexRange>& ran
     }
 }
 
-/// Draws the procedural copies of models (world::ScatterSet: the trees,
-/// bushes, rocks and fences of the procedural sets) with the renderer's own
-/// shading instead of the track effects.
-///
-/// The game draws every procedural copy with per-instance constants that
-/// WorldRenderer cannot supply yet: its procedural-model draw (from
-/// 0x82448060) sets FadeValues from a fade byte the visibility code updates
-/// every frame (0x82EE1D00: a cross-fade of F metres, the block's +28, at
-/// each level's ends) and a minimum distance kept per group at run time
-/// (FadeValues.xy = E2 and E2 less the smallest draw distance of the
-/// merged groups, which the vertex shaders turn into a fade over distance),
-/// SurfaceNormalAndShadowPower from the instance's ground normal and the
-/// global at 0x835A57C8, and adds a per-instance term to ambColor. The
-/// foliage effects multiply their opacity by FadeValues.z, so without those
-/// values the copies would not show at all. Until they are recovered, this
-/// pass keeps drawing them as the renderer did before it used the track
-/// effects: one diffuse texture, alpha-tested at one half, lit by the sun and
-/// the hemisphere ambient, fogged like the world.
+/// Draws the procedural copies of models (world::ScatterSet) with the
+/// renderer's own shading, not the track effects: the game's draw (from
+/// 0x82448060) sets per-instance FadeValues (0x82EE1D00),
+/// SurfaceNormalAndShadowPower (0x835A57C8) and an ambColor term that are
+/// not recovered, and without FadeValues.z the foliage effects draw nothing.
 class ScatterPass {
 public:
     struct Mesh {
@@ -87,12 +74,10 @@ public:
         GLuint vbo = 0;
         GLuint ibo = 0;
         std::vector<world::TileMesh::Batch> batches;
-        /// What draw() draws of each batch (see selectRanges()): every
-        /// index until the owner selects chunks.
+        /// What draw() draws of each batch (see selectRanges()).
         std::vector<IndexRange> ranges;
         std::vector<std::uint32_t> rangeStart;
-        /// The same, less the chunks outside the camera's view, when
-        /// `clipped` is set; draw() then draws these.
+        /// Less the chunks out of view; drawn instead when `clipped` is set.
         std::vector<IndexRange> viewRanges;
         std::vector<std::uint32_t> viewRangeStart;
         bool clipped = false;

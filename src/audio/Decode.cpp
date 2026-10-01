@@ -120,8 +120,7 @@ public:
             throw DataError("{}: out of memory for a packet", m_source);
         }
         std::memcpy(m_packet->data, packet.data(), packet.size());
-        // A timestamp on the first packet lets FFmpeg account for the
-        // decoder delay it skips instead of warning about it.
+        // Without a first timestamp FFmpeg warns about the decoder delay it skips.
         m_packet->pts = m_sentPackets == 0 ? 0 : AV_NOPTS_VALUE;
         ++m_sentPackets;
         int sent = avcodec_send_packet(m_context.get(), m_packet.get());

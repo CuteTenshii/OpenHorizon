@@ -131,8 +131,6 @@ std::optional<TrackPlacements> TrackPlacements::load(
     const auto cancelled = [cancel] { return cancel != nullptr && cancel->load(); };
     const auto& entries = archive.entries();
 
-    // Zone files are stored several times, some under names differing only
-    // in case; one copy of each is enough.
     const std::vector<std::size_t> zones = distinctEntries(archive, ".pvsz");
     std::vector<int> zoneNumbers;
     zoneNumbers.reserve(zones.size());
@@ -179,8 +177,7 @@ std::optional<TrackPlacements> TrackPlacements::load(
         listing.erase(std::unique(listing.begin(), listing.end()), listing.end());
     }
 
-    // Procedural sets, likewise stored several times each. Only the start of
-    // a file is read to tell a model set from the others by its kind.
+    // Only a set file's start is read, enough to tell its kind.
     const std::vector<std::size_t> sets = distinctEntries(archive, ".pgeo");
     struct ReadSet {
         bool isModelSet = false;

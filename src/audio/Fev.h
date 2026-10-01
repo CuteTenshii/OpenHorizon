@@ -16,8 +16,7 @@ namespace openhorizon::audio {
 /// A sound bank an FEV project plays from; `name` + ".fsb" next to the .fev.
 struct FevBank {
     std::string name;
-    /// 0x200 on banks loaded into memory, 0x80 on the one streamed bank
-    /// (AMB_Quads_Stream); inferred from which banks carry which value.
+    /// 0x200 in memory, 0x80 on the one streamed bank, AMB_Quads_Stream (inferred).
     std::uint32_t flags = 0;
     std::uint32_t maxStreams = 0;
     /// The FSB header hash the bank was built with; 0 in version 0x37 files.
@@ -31,15 +30,12 @@ struct FevCategory {
     std::vector<FevCategory> children;
 };
 
-/// A sound placed on a layer: plays while the layer's controlling parameter
-/// lies in [start, start + length] of the parameter's range, as fractions.
+/// Plays while the layer's parameter lies in [start, start + length], as fractions of its range.
 struct FevSoundInstance {
     std::uint16_t soundDefinition = 0;
     float start = 0.0F;
     float length = 1.0F;
-    /// Plays once rather than looping. Inferred: the flag is set on every
-    /// UI click, voice line, impact and turbo blow-off and clear on every
-    /// ambience bed, wind, tyre roll and engine loop.
+    /// Plays once rather than looping (inferred).
     bool oneShot = false;
 };
 
@@ -50,34 +46,25 @@ struct FevEnvelopePoint {
     std::uint32_t curveShape = 0;
 };
 
-/// A curve on a layer that drives a property from one of the event's
-/// parameters. The property word always has bit 0x4 set (all 2439
-/// envelopes on the disc); the bit above it says what the curve drives,
-/// inferred from the curves: 0x8 volume (values 0..1: skid volume rises
-/// with SlipAngle, engine layers fade in just above idle rpm), 0x10 pitch
-/// (values around 0.5; the scale is unknown), none: a parameter of a DSP
-/// effect (the first envelope of an effect names it, later ones point at it
-/// through `parent`). 0x20, 0x80, 0x100 and 0x400 also occur, unidentified.
-/// The controlling parameter index is verified to be in range on every
-/// envelope and matches the curve shapes where they are telling.
+/// A curve driving a property from an event parameter. `property` always has 0x4 (all 2439 envelopes);
+/// inferred: 0x8 volume (0..1), 0x10 pitch (values around 0.5, scale unknown), neither a DSP effect parameter;
+/// 0x20, 0x80, 0x100, 0x400 unidentified. Verified: the parameter index is in range on every envelope.
 struct FevEnvelope {
     bool isVolume() const { return (property & ~0x7U) == 0x8U; }
     bool isPitch() const { return (property & ~0x7U) == 0x10U; }
     bool isEffect() const { return (property & ~0x7U) == 0; }
 
-    /// Index of the envelope that owns the DSP effect this one also drives,
-    /// or -1.
+    /// The envelope owning the DSP effect this one also drives, or -1.
     std::int32_t parent = -1;
     /// "FMOD Highpass" and similar; empty for event-level properties.
     std::string dspName;
     std::uint32_t dspParameter = 0;
     std::uint32_t property = 0;
-    /// Index into FevEvent::parameters of the parameter the curve follows.
+    /// Index into FevEvent::parameters.
     std::uint32_t parameter = 0;
     std::vector<FevEnvelopePoint> points;
 
-    /// The curve's value at `position` (0..1), linear between points and
-    /// flat beyond the ends.
+    /// Linear between points, flat beyond the ends.
     float valueAt(float position) const;
 };
 
@@ -87,8 +74,7 @@ struct FevLayer {
 
     std::uint16_t flags = 0;
     std::int16_t priority = -1;
-    /// Index into FevEvent::parameters of the parameter sound instances are
-    /// placed along, or kNoParameter.
+    /// Index into FevEvent::parameters, or kNoParameter.
     std::uint16_t controlParameter = 0;
     std::vector<FevSoundInstance> sounds;
     std::vector<FevEnvelope> envelopes;
@@ -96,8 +82,7 @@ struct FevLayer {
 
 struct FevParameter {
     std::string name;
-    /// Change per second when the parameter runs by itself (a "Timer"
-    /// parameter has 0.4).
+    /// Change per second when the parameter runs by itself (0.4 on a "Timer").
     float velocity = 0.0F;
     float minimum = 0.0F;
     float maximum = 1.0F;
@@ -106,8 +91,7 @@ struct FevParameter {
     std::vector<float> sustainPoints;
 };
 
-/// Designer user properties: type 0 integer, 1 float (both seen), 2 string
-/// (presumed from FMOD Designer; absent from the disc).
+/// Type 0 integer, 1 float (both seen), 2 string (presumed; absent from the disc).
 struct FevUserProperty {
     std::string name;
     std::variant<std::int32_t, float, std::string> value;
@@ -115,14 +99,13 @@ struct FevUserProperty {
 
 struct FevEvent {
     std::string name;
-    /// Group path and name joined with '/', without the project name, e.g.
-    /// "Transmissions/ShiftComplete/L0".
+    /// Without the project name, e.g. "Transmissions/ShiftComplete/L0".
     std::string path;
     /// A Designer "simple event": one sound, no layers or parameters.
     bool simple = false;
     std::array<std::uint8_t, 16> guid{};
     float volume = 1.0F;
-    /// In octaves (inferred: 0 on almost every event).
+    /// In octaves (inferred).
     float pitch = 0.0F;
     std::uint32_t priority = 128;
     std::uint32_t maxPlaybacks = 1;
@@ -140,12 +123,9 @@ struct FevEvent {
     const FevParameter* findParameter(std::string_view parameterName) const;
 };
 
-/// An event group: a folder of events and subgroups. Its user properties
-/// hold settings the game reads by name (Tires.fev's "Tires/Tires" group
-/// carries the tyre parameter smoothing rates).
+/// A folder of events and subgroups; its user properties hold settings the game reads by name.
 struct FevGroup {
-    /// Parent groups and name joined with '/', without the project name,
-    /// e.g. "Tires/LOD1/OnRoad".
+    /// Without the project name, e.g. "Tires/LOD1/OnRoad".
     std::string path;
     std::vector<FevUserProperty> userProperties;
 
@@ -171,16 +151,10 @@ struct FevSoundDefinition {
     std::vector<FevWaveform> waveforms;
 };
 
-/// An FMOD Designer event project in the FEV1 layout, versions 0x00400000
-/// (52 files on the disc) and 0x00370000 (Damage and ExhNoise).
-///
-/// The parser reads every one of the disc's 54 projects to exactly the end
-/// of the file, and 6032 of the 6088 wavetable waveforms that name a bank on
-/// the disc name the FSB sample at their index (the rest point at banks that
-/// were rebuilt after the project, e.g. Damage.fsb). That is the verified
-/// part. Field meanings below are inferred from values unless said
-/// otherwise. All little-endian; a string is a u32 byte count including the
-/// NUL, then the bytes (count 0: empty, no bytes).
+/// An FMOD Designer FEV1 project, versions 0x00400000 (52 files) and 0x00370000 (Damage, ExhNoise).
+/// Verified: all 54 projects parse to exactly their end; 6032 of 6088 wavetable waveforms name the FSB sample
+/// at their index (the rest are banks rebuilt later, e.g. Damage.fsb). Fields inferred unless said otherwise.
+/// Little-endian; a string is a u32 byte count including the NUL, then the bytes (0: empty, no bytes).
 ///
 ///     char[4] "FEV1", u32 version, u32, u32 (unknown)
 ///     [0x40] u32 n, then n (u32 id, u32 value) pairs (memory use table)
@@ -193,11 +167,11 @@ struct FevSoundDefinition {
 ///         u32 subgroup count, u32 event count, subgroups, events
 ///     event: u32 type (0x10 simple, 0x8 complex), string name,
 ///         [0x40] u8[16] GUID, property block of 132 bytes (128 in 0x37,
-///         which lacks the steal priority): f32 volume, f32 pitch,
+///         without steal priority): f32 volume, f32 pitch,
 ///         f32 pitch and f32 volume randomisation, u32 priority,
 ///         u32 max playbacks, [0x40] u32 steal priority, u32 mode,
 ///         f32 min distance, f32 max distance, then cone, speaker level
-///         and reverb settings that are not decoded
+///         and reverb settings (not decoded)
 ///       simple: u32 sound count, sound instances, u32 category count,
 ///         strings
 ///       complex: u32 layer count, layers: u16 flags, s16 priority,
@@ -227,8 +201,7 @@ struct FevSoundDefinition {
 ///         of the file (not decoded)
 class FevProject {
 public:
-    /// Throws DataError naming `source` if the file does not have the layout
-    /// above.
+    /// Throws DataError naming `source` if the file does not have the layout above.
     static FevProject parse(ByteView data, std::string source);
 
     const std::string& name() const { return m_name; }
@@ -240,11 +213,9 @@ public:
     const std::vector<FevGroup>& groups() const { return m_groups; }
     const std::vector<FevSoundDefinition>& soundDefinitions() const { return m_soundDefinitions; }
 
-    /// The event at `path` ("Group/Subgroup/Event"), compared without case;
-    /// a leading project name is accepted.
+    /// `path` like "Group/Subgroup/Event", without case; a leading project name is accepted.
     const FevEvent* findEvent(std::string_view path) const;
-    /// The group at `path`, compared without case; a leading project name
-    /// is accepted.
+    /// Without case; a leading project name is accepted.
     const FevGroup* findGroup(std::string_view path) const;
     const FevSoundDefinition& soundDefinition(std::size_t index) const;
 

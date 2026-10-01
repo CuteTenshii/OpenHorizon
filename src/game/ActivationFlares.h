@@ -15,34 +15,16 @@ class ParticleManager;
 } // namespace particles
 
 /// The flares activation zones burn: the SimpleEmitter `<object>_flare` of
-/// the track's ParticleEmitters.xml (every career event zone of colorado
-/// has one, a `_Composite_Flare_N` effect placed a few metres from the
-/// zone's object).
+/// the track's ParticleEmitters.xml.
 ///
-/// Verified in the executable: the zone's parser names the flare `object`
-/// + "_flare" (0x8298b028-0x8298b050, kept at +20 of the zone). When the
-/// zone builds its trigger volumes (0x8298e9c8) it adds a second one for
-/// the flare: a sphere (type 1, whose radius is its first extent,
-/// 0x82f1b54c) of 500 m (the vector 0x8208c1d0) around the zone, given the
-/// same subject as the activation volume. Entering it sets +108 and
-/// switches the flare on (0x8298b4f8, the particle presentation's
-/// ActivateSimpleEmitter at vtable +52) if the zone is enabled (+192 bit 0)
-/// and not hidden (+109); leaving it clears +108 and switches the flare off
-/// (0x8298b5a0, DeactivateSimpleEmitter at +56) (0x8298dcf0, 0x8298de68).
-/// Enabling the zone (0x8298dbe8) switches the flare on when the subject is
-/// inside and the zone not hidden, and disabling it switches it off; hiding
-/// (0x8298b648 with 1) switches it off and showing again (with 0) on while
-/// the subject is inside. A new zone is not hidden (+109 = 1, 0x8298ae64).
-///
-/// Inferred: the subject both volumes are given (+15668 of the object
-/// 0x8298ed64 finds) is the player's car, as the activation volume offers
-/// the event to the player; the zone's centre (+64) is its object's
-/// position, which 0x8298b2b0 copies from the object's matrix into it with
-/// VMX128 code the disassembler does not decode. The distance is taken in
-/// three dimensions, as a sphere's.
-/// Missing: what hides a zone (0x8298b648 is reached only through the
-/// activity's virtual at +96, 0x82504c50, whose callers were not found), so
-/// zones here are never hidden.
+/// Verified: the flare is named `object` + "_flare" (0x8298b028-0x8298b050).
+/// Its volume is a 500 m sphere around the zone (0x8298e9c8, 0x82f1b54c,
+/// 0x8208c1d0); inside it the flare burns while the zone is enabled and not
+/// hidden (on 0x8298b4f8, off 0x8298b5a0; 0x8298dcf0, 0x8298de68,
+/// 0x8298dbe8, 0x8298b648); a new zone is not hidden (0x8298ae64).
+/// Inferred: the subject is the player's car (0x8298ed64) and the centre the
+/// zone object's position (0x8298b2b0), distance in 3D. Missing: what hides a
+/// zone (0x8298b648, via 0x82504c50), so zones are never hidden.
 class ActivationFlares {
 public:
     /// The radius of the flare's volume (0x8208c1d0).

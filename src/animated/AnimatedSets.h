@@ -10,23 +10,18 @@
 #include <string>
 #include <vector>
 
-/// The procedural sets that carry the game's animated world objects: kind 4
-/// holds an object (its geometry and a Granny file of skeletons and
-/// animations), kind 5 places objects of kind-4 sets around the track.
+/// The procedural sets of the animated world objects: kind 4 holds an object
+/// (geometry and a Granny file), kind 5 places kind-4 objects on the track.
 ///
-/// Both start with the header every procedural set has (see
-/// world::ScatterSet; parsed by 0x82ECBB08): "OEGP", the kind at 0x30, the
-/// name length at 0x3C, the count e of 8-byte entries at 0x40, the count x
-/// of 8-byte header entries at 0x44, the file size at 0x48, the mesh count
-/// at 0x54 (0 in every set of these kinds) and at 0x58 a flag for the
-/// 56-byte event block at 0x60. After the name: x header entries (4-byte
-/// aligned, u32 id and u32 length of a blob that follows the list), then e
-/// entries (4-byte aligned, u32 id and u32 flag; a set flag adds a 20-byte
-/// record and four strings, which no set of these kinds has). The body
-/// starts after them. The loader picks the class by the kind (0x82EE0998:
-/// kind 4 makes the class with vtable 0x82002954, kind 5 the one with
-/// vtable 0x82002A04), and the class's body parser (vtable slot 30) reads
-/// the rest.
+/// Both start with the procedural set header (see world::ScatterSet; parsed
+/// by 0x82ECBB08): "OEGP", kind at 0x30, name length at 0x3C, count e of
+/// 8-byte entries at 0x40, count x of 8-byte header entries at 0x44, file
+/// size at 0x48, mesh count at 0x54 (always 0 here), at 0x58 a flag for the
+/// 56-byte event block at 0x60. After the name, 4-byte aligned: x header
+/// entries (u32 id, u32 length of a blob after the list), then e entries (u32
+/// id, u32 flag; a set flag adds a 20-byte record and four strings, never
+/// here), then the body. The loader picks the class by kind (0x82EE0998:
+/// vtable 0x82002954 for 4, 0x82002A04 for 5); vtable slot 30 parses the body.
 namespace openhorizon::animated {
 
 /// The kinds of procedural set this module reads.
@@ -36,9 +31,8 @@ inline constexpr std::uint32_t kPlacementSetKind = 5;
 /// A kind-4 set: an animated object, in the track's bin.zip
 /// (`Anim_ANIM_*` sets) or as a file of media/animatedobjects.
 ///
-/// Body layout, verified in the body parser (0x82EC0F58) and read to the
-/// last byte of all 33 kind-4 sets of Colorado and all 290 files of
-/// media/animatedobjects; each block is 4-byte aligned:
+/// Body layout, verified in the body parser (0x82EC0F58) and on every set of
+/// Colorado and media/animatedobjects; each block is 4-byte aligned:
 ///
 ///     16-byte aligned, a 96-byte header: +0 bounds minimum and +16 maximum
 ///       (vec4), +36 size of the Granny file, +40 size of the GPU block,
@@ -66,33 +60,24 @@ inline constexpr std::uint32_t kPlacementSetKind = 5;
 ///       (triangles), then every batch's vertices, each 4-byte aligned, in
 ///       entry, level and batch order
 ///
-/// Entry i draws model i of the Granny file (the counts of all 1,014
-/// entries match its models and skeletons); a rigid batch's bone indexes
-/// that model's skeleton (all 1,496 are in range), and so do a skinned
-/// batch's vertices' bone indices. Every draw's triangles lie in its
-/// batch's index list. In the track's sets, entry k of the e list is the
-/// track texture a draw's texture index k names (e equals the number of
-/// indices the draws use in all 33 sets; inferred from that). In the
-/// pack's files the strings name `textures/<name>.xds` (2,503 of 2,513
-/// references resolve).
+/// Verified on the disc: entry i draws model i of the Granny file, whose
+/// skeleton rigid batches' bones and skinned vertices' bones index; every
+/// draw lies in its batch's index list. In the track's sets a draw's texture
+/// index k names entry k of the e list (inferred); in the pack's files the
+/// strings name `textures/<name>.xds`.
 ///
-/// Batch strings are attachments, e.g. `Audio: path=Triggerable_Events/...
-/// eventfile=TRG_Fan_Generator oneshot=False` (615 batches); light records
-/// look like spot lights (inferred from their values). Neither is used here.
-/// Not known: header +44, +52 and +56, batch +32 and the draws' flags
-/// beyond what AnimatedObjectDraw says.
+/// Batch strings are attachments (`Audio: path=... eventfile=... oneshot=...`);
+/// light records look like spot lights (inferred). Neither is used here.
+/// Not known: header +44, +52 and +56, batch +32, the draws' other flags.
 struct AnimatedObjectDraw {
     /// Texture index per sampler (diffuse s0, normal map s1, emissive s3,
-    /// specular s4), -1 where the draw has none. Which slot feeds which
-    /// sampler is inferred from the texture names' suffixes (_d, _n, _emis,
-    /// _s) in the pack's files.
+    /// specular s4), -1 for none; inferred from the name suffixes _d, _n, _emis, _s.
     std::array<std::int32_t, 4> textures{-1, -1, -1, -1};
     std::uint32_t firstTriangle = 0;
     std::uint32_t triangleCount = 0;
-    /// The words at +24, +28 and +32. The draw loop's render states read
-    /// a material's +24 (non-zero: no culling) and +28 (non-zero: additive,
-    /// no depth write), and its +32 (2: the normal map blends in at 0.7);
-    /// that these are the same records is inferred.
+    /// +24, +28, +32, inferred to be the draw loop's material words: +24
+    /// non-zero no culling, +28 non-zero additive without depth write, +32 = 2
+    /// normal map blended at 0.7.
     std::array<std::uint32_t, 3> flags{};
     float specularPower = 0.0F;
     float specularIntensity = 0.0F;
@@ -113,9 +98,8 @@ struct AnimatedObjectBatch {
     std::vector<AnimatedObjectDraw> blended;
     std::vector<std::string> attachments;
     std::uint32_t lights = 0;
-    /// The word at +60, which the draw loop uploads as ModelData.x
-    /// (0x82444D4C): the switch-on value from which emissive maps light.
-    /// 0 in every batch of the disc.
+    /// Uploaded as ModelData.x (0x82444D4C): the switch-on value from which
+    /// emissive maps light. 0 on the whole disc.
     float modelData = 0.0F;
 };
 
@@ -150,8 +134,7 @@ struct AnimatedObjectSet {
 /// A kind-5 set: placements of animated objects.
 ///
 /// Body layout, verified in the body parser (0x82EC6E78), writer
-/// (0x82EC77E8) and size function (0x82EC7F50), and read to the last byte
-/// of all 202 kind-5 sets of Colorado:
+/// (0x82EC77E8), size function (0x82EC7F50) and every set of Colorado:
 ///
 ///     4-byte aligned, a 28-byte header: u32 placement count, u32 count of
 ///       64-byte records (0 in every set), u32 run-time bytes, u32 more
@@ -168,14 +151,10 @@ struct AnimatedObjectSet {
 ///     per placement, its overrides (none on Colorado), then the 64-byte
 ///       records
 ///
-/// A placement names its object by a header entry, whose id is the number
-/// of the kind-4 set (`__R00G<number>.pgeo`). The run-time link code was
-/// not found; the mapping is inferred from the set names, and it holds for
-/// all 455 placements of Colorado (windmills to the windmill sets,
-/// sprinklers to the sprinklers, festival rides to the rides). The axes
-/// are proper rotations without scale on every placement of Colorado and
-/// map the object's coordinates to the world's: world = x X + y Y + z Z +
-/// position, as the draw's InstanceMatrix does (0x824449B0).
+/// A placement's header entry id is the number of its kind-4 set
+/// (`__R00G<number>.pgeo`), inferred from the set names. The axes are
+/// unscaled rotations: world = x X + y Y + z Z + position, as InstanceMatrix
+/// (0x824449B0).
 struct AnimatedPlacement {
     /// Number of the kind-4 set placed.
     std::uint32_t objectSet = 0;
@@ -187,8 +166,7 @@ struct AnimatedPlacement {
     std::array<float, 2> lodDistances{0.0F, 0.0F};
     float cullDistance = 0.0F;
     bool ownInstance = true;
-    /// The object plays only while the camera is this close; negative:
-    /// always.
+    /// Plays only while the camera is this close; negative: always.
     float triggerDistance = -1.0F;
     /// The object plays only while the time of day's SwitchOnLights value
     /// is at least this, when this is positive.

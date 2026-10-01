@@ -35,15 +35,11 @@ constexpr const char* kInGame = "InGame";
 constexpr const char* kScreenTitles = "ScreenTitles";
 constexpr const char* kPostRaceFlow = "PostRaceFlow";
 
-/// UI/EventTitleMaxLongNameLength, which globalregistry.xml sets to the
-/// executable's own default (the initialiser at 0x8322bbb8).
+/// UI/EventTitleMaxLongNameLength (globalregistry.xml; default at 0x8322bbb8).
 constexpr std::size_t kTitleMaxLongNameLength = 30;
-/// CCareerEventTitle's update (0x8271c980) fires onDone once the stopwatch
-/// its show started passes the float at 0x820468ec, 4.0; taken as seconds,
-/// the stopwatch's unit elsewhere.
+/// The float at 0x820468ec read by the update (0x8271c980); seconds inferred.
 constexpr float kTitleCardSeconds = 4.0F;
-/// UI/RaceRewards/PositionWaitTime's value in globalregistry.xml, used when
-/// the file cannot be read.
+/// UI/RaceRewards/PositionWaitTime in globalregistry.xml, if unreadable.
 constexpr float kPositionWaitTime = 1.0F;
 
 constexpr int kStyleFestivalRace = 1;
@@ -66,10 +62,8 @@ std::optional<float> registryValue(const Vfs& vfs, std::string_view id)
     return std::nullopt;
 }
 
-/// Capitals as the name setter maps each character (0x82cbf8c0): ASCII
-/// letters and the Latin-1 letters of UTF-8 text. Inferred: that the
-/// table is an upper-case map, as every event title the game shows is in
-/// capitals.
+/// ASCII and Latin-1 letters in capitals, as the table at 0x82cbf8c0 maps
+/// them (inferred to be an upper-case map).
 std::string upperCase(std::string_view text)
 {
     std::string out(text);
@@ -161,9 +155,7 @@ void drawScene(SceneScreen& screen, const HelpBar* help, int width, int height,
     screen.renderer.end();
 }
 
-/// The event ticket's folder under media/ui/textures/horizon/EventTickets
-/// by CareerEventStyle, from the switch at 0x828ec658; empty for other
-/// styles.
+/// The folder under EventTickets by CareerEventStyle (switch at 0x828ec658).
 std::string_view ticketFolder(int style)
 {
     switch (style) {
@@ -184,9 +176,8 @@ std::string_view ticketFolder(int style)
     }
 }
 
-/// An option list of PAUSE_MENU_BUTTON entries in a MENU contract, as the
-/// pause menu's (see PauseMenu), with the list events of the scrolling
-/// list (0x82865c40) and its SIZE<n> (0x828b53e4).
+/// PAUSE_MENU_BUTTON entries in a MENU contract, with the scrolling list's
+/// events (0x82865c40) and SIZE<n> (0x828b53e4).
 class OptionList {
 public:
     void bind(const Presentation& scene, int menuElement)
@@ -229,8 +220,7 @@ public:
         }
     }
 
-    /// Moves the focus by one; the list does not wrap (BOOLEAN_WRAP_DATA
-    /// is false in the scene).
+    /// No wrap: BOOLEAN_WRAP_DATA is false in the scene.
     void move(Presentation& scene, int step)
     {
         const int next = m_focus + step;
@@ -275,8 +265,7 @@ std::string eventKindLine(const EventScreenInfo& info, UiStrings& strings)
         return {};
     }
     const char* id = kIds[static_cast<std::size_t>(info.careerEventStyle - 1)];
-    // IDS_TitleRally belongs to the rally expansion, whose CareerEventUI
-    // entry the disc lacks; the kind line then stays empty.
+    // IDS_TitleRally is the rally expansion's, missing from the disc.
     return strings.has(kCareerEventUi, id) ? strings.get(kCareerEventUi, id) : std::string();
 }
 
@@ -335,29 +324,21 @@ void EventSummaryScreen::open(const EventScreenInfo& info)
         s.setText(s.element("TEXT_WRISTBAND"), s.strings.get(kCareerEventUi, "IDS_HorizonChampion_Line2"));
     } else {
         s.setText(s.element("TEXT_POINTS_TITLE"), s.strings.get(kCareerEventUi, "IDS_PointsAvailable"));
-        // The points (from Events.Level and WristbandScoring, 0x8253b230)
-        // go through a conversion not traced; their tape is left out rather
-        // than show the scene's placeholder digits, and its heading with it.
+        // The points conversion (WristbandScoring, 0x8253b230) is not traced.
         s.hide(s.scene.find("Layer/Rotation/Ticket/Info/Points"));
         s.hide(s.element("TEXT_POINTS_TITLE"));
     }
-    // The prize (Events.CashPrize through 0x826984e8) is converted by code
-    // not traced either.
+    // The prize conversion (0x826984e8) is not traced.
     s.hide(s.scene.find("Layer/Rotation/Ticket/Info/Credits"));
-    // The race and track lines take values from the event-info record
-    // (0x828f7b90, +36 and +40: a distance and its unit, whose formatting
-    // was not traced) and a street race's place name whose source was not
-    // traced; the car lines and the eligibility need the player's garage,
-    // and the class icons the event's class (0x82704e38) behind a flag not
-    // traced. All are left out.
+    // Not traced: distance formatting (0x828f7b90 +36, +40), street place,
+    // class flag (0x82704e38); the car lines need the garage.
     for (const char* path : {"Layer/Rotation/Ticket/Info/RaceInfo", "Layer/Rotation/Ticket/Info/TrackInfo",
              "Layer/Rotation/Ticket/Info/CarInfo", "Layer/Rotation/Ticket/Info/CarClass/TEXT_ELIGIBILITY",
              "Layer/Rotation/Ticket/Info/CarClass/ClassIcon", "Layer/Rotation/History",
              "Layer/Rotation/Ticket/Info/ExtraInfo", "Layer/GROUP_TEST_TEXT"}) {
         s.hide(s.scene.find(path));
     }
-    // The ticket (0x828ee038): the event's EventTicket image in its style's
-    // folder.
+    // 0x828ee038.
     impl.ticket.clear();
     if (const std::string_view folder = ticketFolder(info.careerEventStyle); !folder.empty() && !info.ticket.empty()) {
         impl.ticket = texturePathForScene(
@@ -372,10 +353,9 @@ void EventSummaryScreen::open(const EventScreenInfo& info)
         scheme = "SHOW_HEATS";
     }
     s.scene.fireEvent(s.root, scheme);
-    // The player bar shows the profile's level, car and credits, which the
-    // screen is not given; its HIDE slide hides it, as the pause menu's is.
+    // The screen is given no profile for the player bar.
     s.scene.goToSlide(s.scene.find("Layer/PlayerBar"), "HIDE");
-    // 0x82728138: ENTER EVENT on A with the flow's okCareer, BACK on B.
+    // 0x82728138.
     impl.help.set(s.scene,
         {{HelpIcon::A, s.strings.get(kHelpButtons, "IDS_EnterEvent")},
             {HelpIcon::B, s.strings.get(kHelpButtons, "IDS_Back")}});
@@ -489,13 +469,9 @@ void EventTitleCard::show(const EventScreenInfo& info)
     // 0x82728580.
     s.setText(impl.title, eventTitle(info));
     s.setText(impl.subtitle, eventKindLine(info, s.strings));
-    // The card binds no help bar and takes no input; the scene's bar is
-    // left with every slot hidden (inferred: the screen base's empty bar).
+    // Inferred: the screen base's empty help bar.
     impl.help.set(s.scene, {});
-    // The scene's winnings (TEXT_WINNINGS, TEXT_WINNING: the root
-    // contract's, which a post-race screen fills) are not the card's; its
-    // show leaves them unset, so they are not drawn (inferred: the card
-    // shows its event bar alone).
+    // Inferred: the winnings belong to a post-race screen, not the card.
     s.hide(s.scene.find("Layer/Winnings"));
     s.scene.fireEvent(impl.bar, "EVENT");
     impl.elapsed = 0.0F;
@@ -574,9 +550,7 @@ struct PreRaceMenu::Impl {
     {
         UiStrings& strings = screen.strings;
         popup.reset();
-        // 0x8281d568: screen 242 of type 4 with PauseMenu's QUIT RACE and
-        // the career text (the rally and rivals texts belong to modes this
-        // reimplementation does not have).
+        // 0x8281d568: screen 242 of type 4; career text only.
         if (popupTitle >= 0) {
             popup.setText(popupTitle, strings.get(kPauseMenu, "IDS_QuitRace"));
         }
@@ -589,9 +563,8 @@ struct PreRaceMenu::Impl {
             }
             popup.setText(popupMessage, std::move(message));
         }
-        // The buttons of message box type 4 were not traced; the pause
-        // menu's retire box (0x827eae30), which asks the same in a race,
-        // has OK on A and CANCEL on B, and this one takes them (inferred).
+        // Inferred from the pause menu's retire box (0x827eae30); type 4's
+        // buttons are not traced.
         popupHelp.set(popup,
             {{HelpIcon::A, strings.get(kHelpButtons, "IDS_OK")},
                 {HelpIcon::B, strings.get(kHelpButtons, "IDS_Cancel")}});
@@ -628,9 +601,8 @@ PreRaceMenu::~PreRaceMenu() = default;
 
 std::vector<PreRaceEntry> preRaceEntries(UiStrings& strings)
 {
-    // CPreRace's show handler (0x8281cf68) outside the rivals mode.
-    // DIFFICULTY is listed only when 0x82593190 is true and 0x82583db8
-    // false, checks whose meaning was not traced; it is left out.
+    // 0x8281cf68, outside the rivals mode. DIFFICULTY (0x82593190 and not
+    // 0x82583db8, not traced) is left out.
     return {{PreRaceItem::StartRace, strings.get(kInGame, "IDS_RaceMenu")},
         {PreRaceItem::Options, strings.get(kPauseMenu, "IDS_Options")},
         {PreRaceItem::QuitRace, strings.get(kInGame, "IDS_QuitRaceMenu")}};
@@ -642,8 +614,7 @@ void PreRaceMenu::open(const EventScreenInfo& info)
     SceneScreen& s = impl.screen;
     s.scene.reset();
     impl.entries = preRaceEntries(s.strings);
-    // MENU_TITLES (0x82664ca0): the name over the kind line, TWO_TITLES
-    // when there is a kind line, ONE_TITLE otherwise.
+    // MENU_TITLES (0x82664ca0).
     const std::string kind = eventKindLine(info, s.strings);
     s.setText(impl.title, eventTitle(info));
     s.setText(impl.subtitle, kind);
@@ -654,8 +625,7 @@ void PreRaceMenu::open(const EventScreenInfo& info)
         texts.push_back(entry.text);
     }
     impl.list.show(s.scene, texts, 0);
-    // 0x82817538: SELECT on A; BACK on B only with flag +437, which nothing
-    // found sets.
+    // 0x82817538; BACK needs flag +437, which nothing found sets.
     impl.help.set(s.scene, {{HelpIcon::A, s.strings.get(kHelpButtons, "IDS_Select")}});
     impl.confirming = false;
     impl.open = true;
@@ -690,7 +660,7 @@ PreRaceMenu::Action PreRaceMenu::update(const MenuInput& input, float dt)
             impl.help.enable(scene, true);
         }
     } else if (input.accept && impl.list.count() > 0) {
-        // The select handler (0x82821b00, jump table 0x820662e0).
+        // 0x82821b00, jump table 0x820662e0.
         switch (impl.entries[static_cast<std::size_t>(impl.list.focus())].item) {
         case PreRaceItem::StartRace:
             action = Action::Race;
@@ -780,11 +750,8 @@ struct PostRaceFinishedScreen::Impl {
         : screen(vfs, language, kFinishedScene)
         , waitTime(registryValue(vfs, "UI/RaceRewards/PositionWaitTime").value_or(kPositionWaitTime))
     {
-        // Only the title's stackers run: the position tape's SUPER_STACKER
-        // places TEXT_POSITION, which the IN and OUT slides animate, and
-        // SuperStackers writes x over the slides' tracks from the loaded
-        // position, which lies off screen. The tape keeps its authored
-        // length instead.
+        // Not the tape's stacker: it would overwrite the IN and OUT slides'
+        // x with the off-screen loaded position.
         stackers.bind(screen.scene, screen.renderer, screen.scene.find("Layer/RotationHelper/ScreenTitle"));
         help.bind(screen.scene, screen.renderer, screen.element("COMPONENT_HELP_BUTTON_BAR"));
     }
@@ -814,8 +781,7 @@ void PostRaceFinishedScreen::show(int place, int careerEventStyle)
     s.scene.reset();
     s.setText(s.element("TEXT_SCREEN_TITLE"), s.strings.get(kScreenTitles, "IDS_PostRace_Finished"));
     s.setText(s.element("TEXT_ONLINE"), std::string());
-    // COMPONENT_TIMER counts down the online session's results; offline
-    // the screen has none to show.
+    // COMPONENT_TIMER is the online session's.
     s.hide(s.element("COMPONENT_TIMER"));
     std::string position;
     if (careerEventStyle == kStyleHeadlineRace) {
@@ -824,7 +790,6 @@ void PostRaceFinishedScreen::show(int place, int careerEventStyle)
         position = replaceFirst(s.strings.get(kPostRaceFlow, "IDS_Place"), "{0}", placeOrdinal(place, s.strings));
     }
     s.setText(s.element("TEXT_POSITION"), position);
-    // No help bar on the offline path: every slot hidden.
     impl.help.set(s.scene, {});
     impl.first = place == 1;
     s.scene.fireEvent(s.root, impl.first ? "SHOW_POSITION_TAPE_FIRST" : "SHOW_POSITION_TAPE_NON_FIRST");
@@ -850,7 +815,7 @@ bool PostRaceFinishedScreen::update(float dt)
         return false;
     }
     SceneScreen& s = impl.screen;
-    // The update (0x82821420): the countdown runs on the frame's time.
+    // 0x82821420.
     if (impl.countdown) {
         *impl.countdown -= dt;
         if (*impl.countdown <= 0.0F) {

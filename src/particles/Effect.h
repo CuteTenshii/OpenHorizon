@@ -14,14 +14,9 @@ namespace openhorizon {
 class Vfs;
 } // namespace openhorizon
 
-/// The game's particle effects: `media/effects/*.xml`, one emitter each, and
-/// the list of effects a track loads (`media/effects/DefaultTrack.xml`).
-///
-/// Everything here is read the way the game's loader reads it
-/// (CParticleSystemNew serialisation at 0x82DCA0C8, the emitter renderer's at
-/// 0x82DC7A58 and its material's at 0x82DC3F50): element and attribute
-/// names, which file versions carry which elements, the unit conversions and
-/// the defaults for missing values all come from that code.
+/// The game's particle effects (`media/effects/*.xml`, one emitter each) and a track's effect list.
+/// Names, versions, unit conversions and defaults follow the loaders: CParticleSystemNew 0x82DCA0C8,
+/// emitter renderer 0x82DC7A58, material 0x82DC3F50.
 namespace openhorizon::particles {
 
 /// Game path of the folder holding the effect files and their textures.
@@ -30,9 +25,7 @@ inline constexpr std::string_view kEffectsFolder = "media/effects";
 /// (`effects\DefaultTrack.xml` in the executable).
 inline constexpr std::string_view kDefaultTrackPath = "media/effects/DefaultTrack.xml";
 
-/// A value with a relative variation: the game draws uniformly from
-/// value * (1 - variation) to value * (1 + variation) unless a field says
-/// otherwise.
+/// Drawn uniformly from value * (1 - variation) to value * (1 + variation) unless a field says otherwise.
 struct Varied {
     float value = 0.0F;
     float variation = 0.0F;
@@ -63,11 +56,9 @@ inline constexpr std::uint32_t kRowOnly = 4;
 inline constexpr std::uint32_t kSoft = 8;
 } // namespace shader
 
-/// Particle size over life (EmitterProperties/Size). A particle is born at
-/// `value` if it grows (growFor > 0) and at its drawn maximum otherwise,
-/// grows to the maximum over [growFrom, growFrom + growFor] and shrinks to
-/// its drawn end size over [shrinkTo - shrinkFor, shrinkTo], in units of
-/// time over the longest possible life.
+/// EmitterProperties/Size, times in units of the longest possible life. Born at `value` if it grows (growFor > 0),
+/// else at its drawn maximum; grows over [growFrom, growFrom + growFor], shrinks to its end size over
+/// [shrinkTo - shrinkFor, shrinkTo].
 struct SizeCurve {
     glm::vec2 value{0.0F};
     glm::vec2 variation{0.0F};
@@ -155,10 +146,7 @@ struct Behaviour {
     CollisionPlane collision;
 };
 
-/// Render/ParticleType/Material. Colours are stored the way the game keeps
-/// them after loading: red, green and blue squared (the loader raises them
-/// to the power 2, 0x82DC4104; saving takes the square root), alpha as in
-/// the file.
+/// Render/ParticleType/Material. RGB is kept squared, as the loader leaves it (0x82DC4104); alpha as in the file.
 struct Material {
     BlendType blend = BlendType::Alpha;
     glm::vec4 rgbStart{0.0F};
@@ -198,8 +186,7 @@ struct EffectDefinition {
     /// File name without folder or extension, lower case as on the disc.
     std::string name;
     int version = 0;
-    /// Particles alive at once: the size of the system's ring (budget) and
-    /// the smaller one the game switches to when it runs low (lowerbudget).
+    /// Particles alive at once; lowerBudget is the smaller ring the game switches to when it runs low.
     std::uint32_t budget = 0;
     std::uint32_t lowerBudget = 0;
     /// Hours and minutes of the day the effect shows; files before version
@@ -207,8 +194,7 @@ struct EffectDefinition {
     int timeOfDay[4] = {0, 0, 24, 0};
 
     EmitterShape shape = EmitterShape::SuperSpray;
-    /// SuperSpray spread angles in radians (the file has degrees; the loader
-    /// converts value and variation, 0x82DCA4F8).
+    /// SuperSpray spread in radians; the file has degrees (0x82DCA4F8).
     Varied offAxis;
     Varied offPlane;
     /// Particles per second. The file's variation attribute is named `var`.
@@ -231,8 +217,7 @@ struct EffectDefinition {
     SizeCurve size;
     /// Seconds per half turn: the spin rate is pi / spinTime (0 below 0.01).
     Varied spinTime;
-    /// Initial angle; value in radians (converted from degrees on load),
-    /// variation used as the loader leaves it (an absolute +- range).
+    /// Initial angle: value in radians (degrees in the file), variation an absolute +- range.
     Varied spinPhase;
     SpinAxis spinAxis = SpinAxis::Random;
     glm::vec3 spinAxisUser{0.0F};

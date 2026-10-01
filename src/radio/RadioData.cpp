@@ -157,9 +157,7 @@ std::optional<std::size_t> RadioSystemData::findStation(std::string_view name) c
 
 RadioSystemData parseRadioSystem(std::string_view xml, const std::string& source)
 {
-    // The file names an attribute "3dPanLevel", which XML forbids (names
-    // cannot start with a digit) but the game's own parser takes; it is
-    // renamed before a conforming parser sees it.
+    // "3dPanLevel" is not a valid XML name, but the game's parser takes it.
     std::string fixed(xml);
     for (std::size_t at = fixed.find(" 3dPanLevel="); at != std::string::npos;
          at = fixed.find(" 3dPanLevel=", at + 1)) {

@@ -11,24 +11,12 @@ namespace openhorizon {
 
 class Vfs;
 
-/// The discount signs ("flyers") of a game mode and which of them the player
-/// has smashed.
-///
-/// `media/gamemodes/<mode>/Flyers.xml` lists one `ActivityFlyers` activity
-/// per sign, named by the GameplayID of the sign's GameObjs.xml entry
-/// (flyer_001 to flyer_100 for Colorado). The executable loads it as
-/// "GameModes\%s\Flyers.xml"; that the mode folder is the track's name is
-/// inferred from Colorado having both.
-///
-/// What the game does on a smash, read from its code: it counts the
-/// collected and total ActivityFlyers activities (call at 0x82972b08), sets
-/// the profile value Main/UpgradeDiscount (ForzaProfile.sch, UInt32) to the
-/// collected count when it differs (0x8298d4f8, counting with 0x82988298),
-/// and posts a notification (0x82972b48 to 0x82972d2c) built from the
-/// Activities string table: IDS_FlyerCollected "{0}/{1} DISCOUNT SIGNS
-/// SMASHED" with the two counts and IDS_FlyerCollected_Message "Total
-/// upgrades discount: {0}" with Main/UpgradeDiscount. How the discount value
-/// is formatted (a percent sign or not) is not decoded.
+/// The discount signs ("flyers") of a game mode: one `ActivityFlyers` per
+/// sign in Flyers.xml, named by its GameObjs.xml GameplayID.
+/// Verified: a smash counts the signs (0x82972b08, 0x82988298), sets
+/// Main/UpgradeDiscount (UInt32) to the collected count (0x8298d4f8) and posts
+/// IDS_FlyerCollected (0x82972b48-0x82972d2c). Inferred: the mode folder is
+/// the track's name. Missing: the discount's number format.
 class Flyers {
 public:
     /// Reads `media/gamemodes/<mode>/Flyers.xml`. Throws DataError if it is

@@ -36,9 +36,8 @@ namespace openhorizon {
 
 namespace {
 
-/// Matches the width of logLine's time column, which a crash line cannot
-/// fill: reading the clock and formatting a double are not safe in a
-/// signal handler.
+/// Fills logLine's time column: the clock and double formatting aren't
+/// signal-safe.
 constexpr std::string_view kCrashPrefix = "[    crash] fatal   ";
 constexpr std::size_t kMaxDetail = 1000;
 constexpr int kMaxFrames = 64;
@@ -83,9 +82,8 @@ std::wstring widenUtf8(std::string_view text)
     return wide;
 }
 
-/// The first thread to crash reports; a crash inside its own report ends
-/// the process at once, and any other thread waits for the report to end
-/// it.
+/// The first thread to crash reports; a crash inside the report ends the
+/// process, and other threads wait.
 CrashEntry enterCrash()
 {
     const DWORD self = GetCurrentThreadId();
@@ -264,9 +262,8 @@ void writeMinidump(EXCEPTION_POINTERS* pointers)
     exception.ThreadId = GetCurrentThreadId();
     exception.ExceptionPointers = pointers;
     exception.ClientPointers = FALSE;
-    // Thread and module lists plus the memory the stacks point at: enough
-    // for a debugger to show every thread's stack and locals, a few
-    // megabytes rather than the whole heap.
+    // Enough for every thread's stack and locals, a few megabytes rather
+    // than the whole heap.
     const auto type = static_cast<MINIDUMP_TYPE>(
         MiniDumpWithIndirectlyReferencedMemory | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules);
     const BOOL written = MiniDumpWriteDump(
@@ -306,10 +303,8 @@ LONG WINAPI onUnhandledException(EXCEPTION_POINTERS* pointers)
 {
     const EXCEPTION_RECORD* record = pointers->ExceptionRecord;
     if (record->ExceptionCode == kMsvcCppException && g_previousFilter) {
-        // The C++ runtime's own filter makes the exception current and
-        // calls std::terminate, where onTerminate can name it. It does not
-        // return; if a filter set by someone else does, the exception is
-        // reported below without its message.
+        // The C++ runtime's filter calls std::terminate, where onTerminate
+        // names the exception; a foreign filter that returns lands below.
         static_cast<void>(g_previousFilter(pointers));
     }
     if (enterCrash() == CrashEntry::Nested) {
@@ -412,8 +407,7 @@ constexpr int kFatalSignals[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT};
 constexpr std::size_t kMaxArgument = 4200;
 
 std::atomic<pid_t> g_crashingThread{0};
-// Written at install time (and the detail by the terminate handler after
-// it owns the crash), read by the signal handler, which may not allocate.
+// Written outside the signal handler, which may not allocate.
 char g_reporterPath[kMaxArgument] = {};
 char g_reportArgument[kMaxArgument] = {};
 char g_detailArgument[kMaxDetail + 32] = {};
@@ -533,9 +527,8 @@ void launchReporter(std::string_view detail)
     ::_exit(127);
 }
 
-/// Restores the default action for `signal` and raises it again, so the
-/// process ends as the signal would have ended it: that exit status, and a
-/// core dump where the system keeps them.
+/// Re-raises `signal` with the default action, keeping its exit status and
+/// core dump.
 [[noreturn]] void dieWithSignal(int signal)
 {
     struct sigaction action{};
@@ -586,9 +579,8 @@ void onFatalSignal(int signal, siginfo_t* info, void* context)
     dieWithSignal(signal);
 }
 
-/// Where the handler runs, so it still can when the crash is a stack
-/// overflow. Well above SIGSTKSZ: the handler puts a FixedLine and the
-/// backtrace frames on it.
+/// Lets the handler run after a stack overflow. Well above SIGSTKSZ: it
+/// holds a FixedLine and the backtrace frames.
 alignas(16) char g_alternateStack[128U * 1024U];
 
 void installAlternateStack()
@@ -675,8 +667,7 @@ void installCrashHandlers(const CrashHandlerOptions& options)
             g_previousFilter = previous;
         }
         std::signal(SIGABRT, onAbortSignal);
-        // No "abort() has been called" box and no Windows Error Reporting:
-        // the crash report above replaces both.
+        // The crash report replaces the abort box and Windows Error Reporting.
         _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
         // Room for the filter to run after a stack overflow on this thread.
         ULONG guarantee = 64U * 1024U;
@@ -690,8 +681,7 @@ void installCrashHandlers(const CrashHandlerOptions& options)
     if (!g_installed) {
         g_installed = true;
         installAlternateStack();
-        // backtrace loads libgcc on its first call, which may allocate:
-        // done now, so the call in the handler does not.
+        // backtrace's first call loads libgcc, which may allocate.
         void* warmUp[1];
         static_cast<void>(::backtrace(warmUp, 1));
         struct sigaction action{};
@@ -819,8 +809,7 @@ std::string windowsCommandLineArgument(std::string_view argument)
             continue;
         }
         if (c == '"') {
-            // Each backslash before a quote is doubled, and the quote gets
-            // one of its own.
+            // Backslashes before a quote double, plus one for the quote.
             quoted.append(backslashes * 2 + 1, '\\');
         } else {
             quoted.append(backslashes, '\\');

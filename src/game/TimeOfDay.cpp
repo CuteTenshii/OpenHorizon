@@ -17,12 +17,9 @@ namespace {
 
 constexpr float kMinutesPerDay = 1440.0F;
 constexpr float kSecondsPerDay = 86400.0F;
-/// The executable puts `FogDensity * 0.01` into the shaders' base-2
-/// extinction per metre (0x824297B4, the factor at 0x82000CCC).
+/// FogDensity to base-2 extinction per metre (0x824297B4, 0x82000CCC).
 constexpr float kFogDensityPerMetre = 0.01F;
-/// The template lighting() uses until the post-processing's zone blend is
-/// set (TimeOfDay::setFog); the blend's own record outside every zone is
-/// in PostProcessing.
+/// Used until TimeOfDay::setFog.
 constexpr const char* kDefaultFogTemplate = "NoFog";
 
 pugi::xml_document parseTrackFile(const Vfs& vfs, const std::string& path)
@@ -165,9 +162,7 @@ render::SceneLighting TimeOfDay::lighting() const
     render::SceneLighting l;
     l.sunDirection = sunDirection();
     l.sunColour = m_curves.sample("SunColor", t) * m_curves.sampleScalar("SunColorMult", t);
-    // The hemisphere pair the track shaders call skyColor and groundColor;
-    // the executable samples these curves together with the sun's into the
-    // one lighting block it hands the renderer (0x8265A7CC).
+    // The track shaders' skyColor and groundColor (0x8265A7CC).
     l.ambientColour = m_curves.sample("AmbientColour", t);
     l.ambientTop = m_curves.sample("HLTopColour", t);
     l.ambientBottom = m_curves.sample("HLBottomColour", t);
@@ -186,9 +181,7 @@ render::SceneLighting TimeOfDay::lighting() const
     l.hazeIntensity = m_curves.sampleScalar("AtmosphereHazeIntensity", t);
     l.hazePower = m_curves.sampleScalar("AtmosphereHazePower", t);
     l.hazeEllipticalScale = m_curves.sampleScalar("AtmosphereHazeEllipticalScale", t);
-    // The sampler hands these to the sky together (0x8265A7CC). It prefers
-    // the rotation curve SunObjectRot when that has keys; Colorado's has
-    // none.
+    // The game prefers SunObjectRot when it has keys (0x8265A7CC); Colorado's has none.
     l.sunObjectDirection = aim("SunObjectPos", "SunObjectTargetPos");
     l.sunObjectColour = m_curves.sample("SunObjectColour", t);
     l.sunObjectAlpha = m_curves.sampleScalar("SunObjectAlpha", t);
@@ -197,8 +190,7 @@ render::SceneLighting TimeOfDay::lighting() const
     l.starFade = m_curves.sampleScalar("StarFade", t);
     // Sampled with the others (0x8265AF60), unclamped.
     l.switchOnLights = m_curves.sampleScalar("SwitchOnLights", t);
-    // The sampler stores it unclamped (0x8265A8FC); Colorado's runs from -1
-    // at night to 1 by day.
+    // Unclamped (0x8265A8FC); Colorado's runs from -1 at night to 1 by day.
     l.shadowIntensity = m_curves.sampleScalar("ShadowIntensity", t);
 
     const std::optional<TimeOfDayCurves::FogTemplate>& chosen = m_fog ? m_fog : m_curves.fogTemplate();

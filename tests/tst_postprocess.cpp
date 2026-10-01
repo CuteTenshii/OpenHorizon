@@ -1,7 +1,5 @@
-// The post-processing: the template, zone and TrackSettings readers, the
-// zone blend, the colour grading tables and the maths of the final combine,
-// against the executable's formulas; the GPU chain on a uniform picture in
-// an offscreen context; and Colorado's files when OPENHORIZON_GAME_DIR is set.
+// The post-processing readers, zone blend, grading and combine against the executable's
+// formulas, and the GPU chain on a uniform picture.
 #include "support/GlContext.h"
 #include "support/TestSupport.h"
 
@@ -193,8 +191,7 @@ TEST_CASE("templatesReadTheAttributesTheGameReads", "[postprocess]")
     CHECK_THAT(t.bloom[0].scale, WithinAbs(1.2, 1e-6));
     CHECK_THAT(t.bloom[0].persist, WithinAbs(0.001, 1e-7));
 
-    // The colour settings' blue post modulation comes from the red
-    // attribute, as the game's loader reads it.
+    // The game's loader reads blue post modulation from the red attribute.
     const openhorizon::PostTemplates::ColourSettings& c = t.colourSettings.at(0);
     CHECK_THAT(c.desaturation, WithinAbs(0.9, 1e-6));
     CHECK_THAT(c.luminosity.y, WithinAbs(0.71, 1e-6));
@@ -292,8 +289,7 @@ TEST_CASE("zoneBlendSnapsFromOutsideAndEasesBetweenZones", "[postprocess]")
     const float x = 2.5F / 4.0F;
     CHECK_THAT(tracker.blend(zones), WithinAbs(x * x * (3.0F - 2.0F * x), 1e-6));
 
-    // Turning back into A mirrors the time: 2.5 s of B's 4 s leaves 3/8 of
-    // A's 10 s to run back.
+    // Turning back mirrors the time: 2.5 s of B's 4 s leaves 3/8 of A's 10 s.
     tracker.update(zones, glm::vec2(10.0F, 10.0F), dt);
     CHECK(tracker.target() == 0);
     CHECK(tracker.source() == 1);
@@ -411,8 +407,7 @@ TEST_CASE("colourTransformAppliesContrastBrightnessSaturationAndScale", "[postpr
     // Contrast k: (c - 0.5) (1 + k) + 0.5.
     const glm::vec3 contrast = apply(post::colourTransform(0.5F, 0.0F, 1.0F, w, glm::vec3(1.0F)), c);
     CHECK_THAT(contrast.x, WithinAbs((0.2 - 0.5) * 1.5 + 0.5, 1e-6));
-    // Then brightness adds, then saturation s c + (1 - s) dot(c, w), then
-    // the post modulation scales.
+    // Then brightness, saturation s c + (1 - s) dot(c, w), post modulation.
     const float s = 0.9F;
     const glm::vec3 mod(1.04F, 1.02F, 1.0F);
     const glm::vec3 all = apply(post::colourTransform(0.5F, 0.1F, s, w, mod), c);
@@ -460,8 +455,7 @@ void release(Picture& p)
     glDeleteTextures(1, &p.texture);
 }
 
-/// The combine's output for a uniform scene of square-root colour `s` with
-/// no bloom, grading or vignette, from the traced formulas.
+/// The combine for a uniform square-root colour `s`, no bloom, grading or vignette.
 float expectedUniform(float s, const openhorizon::render::PostFrame& frame, float bloomSquared)
 {
     const float linear = s * s + bloomSquared;
@@ -508,8 +502,7 @@ TEST_CASE("gpuChainTonemapsAUniformPictureAsTheFormulasDo", "[postprocess]")
     postProcess.run(scene.texture, kWidth, kHeight, out.framebuffer, frame);
     CHECK_THAT(centre(), WithinAbs(expectedUniform(s, frame, 0.0F), 1.5 / 255.0));
 
-    // Bloom: a uniform hot extract survives the blurs (their weights sum
-    // to 1), so the bloom squared is 0.2 times the weights' sum times it.
+    // The blur weights sum to 1: bloom squared is 0.2 times the weights' sum times the extract.
     frame.bloomScale = 1.0F;
     frame.bloomCutoff = 1.0F;
     frame.bloomLowerGradient = 1.0F;
@@ -520,8 +513,7 @@ TEST_CASE("gpuChainTonemapsAUniformPictureAsTheFormulasDo", "[postprocess]")
     const float hot = std::max(s * s * exposure - 1.0F / 255.0F, 0.0F);
     CHECK_THAT(centre(), WithinAbs(expectedUniform(s, frame, 0.2F * 5.0F * hot), 1.5 / 255.0));
 
-    // The adapted luminance moves by 0.075 of the way per frame after a
-    // reset: a darker scene is exposed with a luminance barely changed.
+    // The adapted luminance moves 0.075 of the way per frame after a reset.
     const float dark = 0.1F;
     const float darkColour[4] = {dark, dark, dark, 1.0F};
     glClearNamedFramebufferfv(scene.framebuffer, GL_COLOR, 0, darkColour);
@@ -549,8 +541,7 @@ TEST_CASE("gpuCombineDrawsEachHalfWithItsVignette", "[postprocess]")
     const float colour[4] = {0.5F, 0.5F, 0.5F, 1.0F};
     glClearNamedFramebufferfv(scene.framebuffer, GL_COLOR, 0, colour);
     openhorizon::render::PostFrame frame = uniformFrame();
-    // A top vignette with power 0 covers everything: black at full
-    // strength. The bottom one is off.
+    // A top vignette of power 0 covers everything; the bottom one is off.
     frame.vignetteTop.transform = glm::vec4(1.0F, 0.0F, 0.0F, 1.0F);
     frame.vignetteTop.power = 0.0F;
     frame.vignetteTop.colour = glm::vec4(0.0F, 0.0F, 0.0F, 1.0F);
@@ -567,8 +558,7 @@ TEST_CASE("gpuCombineDrawsEachHalfWithItsVignette", "[postprocess]")
     release(out);
 }
 
-// Not a check: the GPU time of the whole chain at the console's 1280x720,
-// for the record.
+// Not a check: the whole chain's GPU time at the console's 1280x720.
 TEST_CASE("gpuChainTimeAt720p", "[postprocess]")
 {
     openhorizon::test::requireGlContext();
@@ -603,12 +593,8 @@ TEST_CASE("gpuChainTimeAt720p", "[postprocess]")
     release(out);
 }
 
-/// The whole combine for a uniform scene of square-root colour `s` on the
-/// first frame after a reset, from the traced formulas: the bloom of the
-/// hot extract with no persistence, the exposure from the scene's own
-/// luminance, the filmic curve, the grading table sampled trilinearly at
-/// the texel centres, the vignette at `v` (the pixel's offset from the
-/// picture's centre, y down) and the colour matrix. Red channel, 0..1.
+/// The whole combine's red channel (0..1) for a uniform square-root colour `s` on the
+/// first frame after a reset; `v` is the pixel's offset from the centre, y down.
 float referenceCombine(
     float s, const openhorizon::render::PostFrame& f, const openhorizon::render::PostVignette& vignette, glm::vec2 v)
 {
@@ -661,10 +647,8 @@ float referenceCombine(
     return std::sqrt(graded.r);
 }
 
-// "The post-processing crushes the low end": a sunlit road and a shadowed
-// one, 0.22 and 0.10 in the square-root scene target, through the whole
-// chain with Colorado's noon settings at the free-roam start (the
-// Inner_Festival zone), against the traced formulas.
+// Sunlit and shadowed road (0.22 and 0.10, square-root) with Colorado's noon
+// settings in the Inner_Festival zone.
 TEST_CASE("coloradoNoonShadowAndSunComeOutAsTheFormulasGive", "[postprocess]")
 {
     const char* dir = openhorizon::test::gameDir();
@@ -722,12 +706,10 @@ TEST_CASE("coloradoPostProcessingLoadsAndFollowsItsZones", "[postprocess]")
     CHECK(p.zoneName().empty());
     CHECK_THAT(p.settings().bloomScale, WithinAbs(1.0 * curves.sampleScalar("BloomScaleMultiplier", noon), 1e-5));
     CHECK_THAT(p.settings().filmic.shoulderStrength, WithinAbs(0.700001, 1e-5));
-    // The fog outside every zone multiplies the curves by one and scatters
-    // the sun from 2000 m over 2000 m.
+    // Outside every zone the fog scatters the sun from 2000 m over 2000 m.
     CHECK_THAT(p.fog().density, WithinAbs(1.0, 1e-6));
     CHECK_THAT(p.fog().scatterStartDistance, WithinAbs(2000.0, 1e-6));
-    // Entering Redrock (the centroid of its first triangle) snaps to its
-    // Hot_hazy bloom, Saturated colour settings and Redrock fog.
+    // Entering Redrock snaps to Hot_hazy bloom, Saturated colour and Redrock fog.
     p.update(glm::vec2(-6384.0F, -4888.0F), 1.0F / 60.0F, curves, noon);
     CHECK(std::string(p.zoneName()) == std::string("Redrock"));
     CHECK_THAT(p.settings().bloomScale, WithinAbs(1.0 * curves.sampleScalar("BloomScaleMultiplier", noon), 1e-5));
@@ -735,8 +717,7 @@ TEST_CASE("coloradoPostProcessingLoadsAndFollowsItsZones", "[postprocess]")
     CHECK_THAT(p.fog().density, WithinAbs(2.35, 1e-5));
     CHECK_THAT(p.settings().vignetteTop.angleDegrees, WithinAbs(-2.3, 1e-5));
     CHECK_THAT(p.settings().vignetteBottom.minIntensity, WithinAbs(0.749, 1e-5));
-    // At noon the day grading applies in full: the Redrock table, not the
-    // identity.
+    // At noon the day grading applies in full.
     const openhorizon::GradingLut identity = identityLut();
     CHECK(p.gradingLut() != identity);
     // At night the filmic curve is the night one.

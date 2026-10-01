@@ -26,8 +26,7 @@ std::string_view baseName(std::string_view name)
     return name;
 }
 
-/// The FSB name a waveform file name becomes when it fits: no folder and no
-/// ".wav".
+/// No folder and no ".wav", when it fits.
 std::string_view stemOf(std::string_view name)
 {
     name = baseName(name);
@@ -169,8 +168,7 @@ FsbBank FsbBank::parseImpl(Bytes data, std::uint64_t fileSize, bool hasData, std
         in.fail(std::format("negative sizes ({} samples, {} header bytes, {} data bytes)", count, headersSize,
             dataSize));
     }
-    // Even a basic header takes 8 bytes, which bounds the count before it
-    // sizes any allocation.
+    // A basic header takes 8 bytes: bounds the count before any allocation.
     if (count > headersSize / 8) {
         in.fail(std::format("{} samples cannot fit in {} header bytes", count, headersSize));
     }

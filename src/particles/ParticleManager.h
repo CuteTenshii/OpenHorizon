@@ -30,13 +30,11 @@ struct CompositeSystems {
     std::vector<ParticleSystem*> members;
 };
 
-/// A SimpleEmitter of the track's ParticleEmitters.xml, which gameplay code
-/// switches on and off by its GameplayID (CSimpleEmitter, 112 bytes, made by
-/// 0x82dc9c28 for a single effect and 0x82dc9ce0 for a composite).
+/// A SimpleEmitter, switched by gameplay through its GameplayID (CSimpleEmitter, 112 bytes; made by 0x82dc9c28,
+/// composites 0x82dc9ce0).
 struct SimpleEmitterState {
     std::string gameplayId;
-    /// The emitter's own id (+92, from a counter the constructor steps),
-    /// which the emitters it starts carry.
+    /// +92, from a counter the constructor steps; carried by the emitters it starts.
     int id = 0;
     glm::vec3 position{0.0F};
     glm::vec3 angles{0.0F};
@@ -49,9 +47,7 @@ struct SimpleEmitterState {
     bool running = false;
 };
 
-/// The game's particle manager (CParticleSystemManagerNew) for the effects a
-/// track loads: one running system per DefaultTrack.xml entry, found by its
-/// system name, updated together once a frame.
+/// CParticleSystemManagerNew: one system per DefaultTrack.xml entry, found by system name, updated once a frame.
 class ParticleManager {
 public:
     struct System {
@@ -59,10 +55,7 @@ public:
         std::unique_ptr<ParticleSystem> system;
     };
 
-    /// Loads DefaultTrack.xml and each single effect it lists. Composites
-    /// (which only start other effects) and entries whose file is missing
-    /// are skipped and named in skipped(). Throws DataError when the list
-    /// itself is missing.
+    /// Composites and entries whose file is missing go to skipped(). Throws DataError when the list is missing.
     static ParticleManager load(const Vfs& vfs);
     /// Builds systems for `entries` from already parsed definitions (matched
     /// by file name, case-insensitive).
@@ -80,40 +73,28 @@ public:
     const std::vector<System>& systems() const { return m_systems; }
     const std::vector<std::string>& skipped() const { return m_skipped; }
 
-    /// Emits from `system` with the time step of the last update(), as the
-    /// game's emitters do.
+    /// Emits with the time step of the last update(), as the game's emitters do.
     void emit(ParticleSystem& system, const EmitRequest& request);
-    /// Advances every system that has particles or kept emitters by `dt`
-    /// seconds, runs its kept emitters, and keeps `dt` for the emissions of
-    /// the coming frame (the manager's +8152).
+    /// Advances busy systems by `dt` seconds and keeps `dt` for the next frame's emissions (manager +8152).
     void update(float dt);
     void clear();
 
-    /// The system named `file`, loading media/effects/<file>.xml into a new
-    /// one the first time, as 0x82dcbd20 does for the effects placed
-    /// emitters and composites name; nullptr when the file is missing,
-    /// unreadable or a composite.
+    /// Loads media/effects/<file>.xml on first use (0x82dcbd20); nullptr when missing, unreadable or a composite.
     ParticleSystem* acquire(const Vfs& vfs, std::string_view file);
     /// The composite `file` with its member systems, loaded the first time
     /// (0x82dcc048); nullptr when its file is missing or unreadable.
     const CompositeSystems* acquireComposite(const Vfs& vfs, std::string_view file);
 
-    /// Makes the SimpleEmitters of `set`, stopped, loading their effects
-    /// (the SimpleEmitter part of 0x82dcc748). One whose effect cannot be
-    /// loaded is left out and named in skipped(); of two with one
-    /// GameplayID the first is kept, as the map insert (0x82c9abe8) keeps
-    /// it.
+    /// Makes the SimpleEmitters of `set`, stopped (0x82dcc748). Unloadable effects go to skipped(); of two sharing
+    /// a GameplayID the first is kept, as the map insert does (0x82c9abe8).
     void placeSimpleEmitters(const Vfs& vfs, const ParticleEmitterSet& set);
     /// The SimpleEmitter with this GameplayID, or nullptr.
     const SimpleEmitterState* simpleEmitter(std::string_view gameplayId) const;
     const std::vector<SimpleEmitterState>& simpleEmitters() const { return m_simpleEmitters; }
-    /// Switches a SimpleEmitter on (0x82dc66f8, the particle presentation's
-    /// ActivateSimpleEmitter): it starts whether or not it runs already,
-    /// which starts nothing new while its emitters are still going. False
-    /// when there is no such emitter.
+    /// ActivateSimpleEmitter (0x82dc66f8): starts even when running, which adds nothing while its emitters go on.
+    /// False when there is no such emitter.
     bool activateSimpleEmitter(std::string_view gameplayId);
-    /// Switches a SimpleEmitter off (0x82dc3578, DeactivateSimpleEmitter),
-    /// stopping it if it runs. False when there is no such emitter.
+    /// DeactivateSimpleEmitter (0x82dc3578). False when there is no such emitter.
     bool deactivateSimpleEmitter(std::string_view gameplayId);
     /// The systems a SimpleEmitter's emitters run in.
     std::vector<const ParticleSystem*> systemsOf(const SimpleEmitterState& emitter) const;

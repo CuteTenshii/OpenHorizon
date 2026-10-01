@@ -70,11 +70,8 @@ void main()
 
 #ifdef _WIN32
 
-/// Windows has no fontconfig, so the pattern's family and weight pick a
-/// file of the fonts every Windows installation ships. Generic families
-/// map to the system's own choices (Segoe UI for sans-serif, as the shell
-/// uses; Consolas for monospace); a named family is tried as its file
-/// name. Arial is the last resort.
+/// Windows has no fontconfig: the pattern picks a font file every
+/// installation ships, with Arial as the last resort.
 std::string findFont(const std::string& pattern)
 {
     const std::size_t colon = pattern.find(':');

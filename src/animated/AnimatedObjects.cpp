@@ -24,8 +24,7 @@ constexpr float kLightsOffValue = -1.0F;
 /// A day threshold at or above this does not gate (0x8241FE60).
 constexpr float kDayGateLimit = 0.95F;
 
-/// A small, well-mixed hash (from MurmurHash3's finaliser) for the clip
-/// choices, which the game makes with its random generator.
+/// MurmurHash3's finaliser, standing in for the game's random generator.
 std::uint32_t mix(std::uint32_t h)
 {
     h ^= h >> 16;

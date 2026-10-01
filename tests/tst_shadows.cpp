@@ -1,5 +1,4 @@
-// The sun shadows: the cascades' fitting and update rules on synthetic
-// cameras, and with the disc the ShadowIntensity curve that gates them.
+// The sun shadow cascades' fitting and update rules, and the ShadowIntensity curve.
 
 #include "support/TestSupport.h"
 
@@ -22,8 +21,8 @@ using openhorizon::render::ShadowCamera;
 using openhorizon::render::ShadowCascades;
 namespace shadowmath = openhorizon::render::shadowmath;
 
-/// Colorado's ShadowLightDirection (TrackSettings.xml), which the game
-/// uses as written while OverrideShadowLightDirection is set.
+/// Colorado's ShadowLightDirection (TrackSettings.xml), used as written while
+/// OverrideShadowLightDirection is set.
 const glm::vec3 kColoradoLight(0.75F, -0.65F, 0.59F);
 
 bool near(float a, float b, float tolerance = 1e-4F)
@@ -86,10 +85,8 @@ TEST_CASE("snapping_puts_the_world_origin_on_a_texel_corner", "[shadows]")
         const float cells = origin[axis] / texel;
         CHECK(near(cells, std::round(cells), 2e-2F));
     }
-    // 0x82497DB0 moves the projected centre p to t - fmod(p, t) + p, so the
-    // centre ends up t - fmod(p, t) from the box's middle: up to one texel
-    // for positive p, and between one and two for negative p, as C's fmod
-    // keeps the sign of p.
+    // 0x82497DB0 moves p to t - fmod(p, t) + p: up to one texel off for positive p,
+    // one to two for negative p, as fmod keeps the sign.
     const auto unsnapped = shadowmath::fit(kColoradoLight, centre, 26.25F, 26.25F, 1000.0F, false, resolution);
     const glm::vec3 p = glm::mat3(unsnapped.viewProjection) * centre;
     const glm::vec4 projected = f.viewProjection * glm::vec4(centre, 1.0F);
@@ -160,8 +157,8 @@ TEST_CASE("levels_move_with_the_camera_past_their_margin", "[shadows]")
     for (std::size_t i = 0; i < ShadowCascades::kLevels; ++i) {
         cascades.markDrawn(i);
     }
-    // 2 m: past level 0's 1.25 m; level 1's 2.5 m is then compared with
-    // 2 m × 0.75 (one level waiting), and levels 2 and 3 stay.
+    // Past level 0's 1.25 m; level 1's 2.5 m is compared with 2 m × 0.75
+    // (one level waiting).
     cascades.update(cameraAt(glm::vec3(2.0F, 0.0F, 0.0F)), kColoradoLight);
     const auto& levels = cascades.levels();
     CHECK(levels[0].dirty);

@@ -1,7 +1,5 @@
-// Loads a car's render models the way the engine does and reports what it
-// found: parts, meshes, materials, textures, wheel mounts and bounds, with an
-// optional Wavefront OBJ export for inspection in any 3D viewer. With --all
-// it loads every drivable car and reports how many load.
+// Loads a car's render models as the engine does and reports parts, meshes,
+// materials, textures, wheel mounts and bounds; optional OBJ export, --all.
 
 #include "base/Log.h"
 #include "car/CarPhysics.h"
@@ -236,10 +234,8 @@ std::string pngName(const std::filesystem::path& obj, std::size_t texture)
     return std::format("{}_tex{}.png", obj.stem().string(), texture);
 }
 
-/// Writes the mesh as OBJ with one group per batch. The OBJ is right-handed
-/// with the front towards -Z (car space with Z negated); faces keep the
-/// file's winding, counter-clockwise in that space where the placement does
-/// not mirror, and are rewound where it does.
+/// Writes OBJ, one group per batch, Z negated (front towards -Z); mirrored
+/// placements are rewound.
 void writeObj(const CarModel& model, const std::filesystem::path& path)
 {
     const CarMesh& mesh = model.mesh;
@@ -425,9 +421,8 @@ int renderViews(const openhorizon::Vfs& vfs, const openhorizon::Database* db, co
             pose.paint = paint->first;
             pose.metallic = paint->second;
         }
-        // Stand the car on flat ground as the game's physics holds it, so
-        // body and wheels sit at their ride height: the pose Game::carPose
-        // takes from the settled model.
+        // Settled on flat ground so body and wheels sit at ride height, as
+        // Game::carPose poses it.
         if (const std::optional<openhorizon::Row> row
             = db->queryOne("SELECT Id FROM Data_Car WHERE lower(MediaName) = lower(?)", {model.mediaName})) {
             const openhorizon::CarSpec spec = openhorizon::loadCarSpec(*db, row->i("Id"), &vfs);

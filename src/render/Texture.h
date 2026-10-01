@@ -11,8 +11,7 @@ struct TextureMipChain;
 
 namespace openhorizon::render {
 
-/// A 2D texture on the GPU. Compressed game formats (DXT1, DXT5, BC5) are
-/// uploaded as they are; the driver samples them directly.
+/// Compressed game formats (DXT1, DXT5, BC5) are uploaded as they are.
 class Texture {
 public:
     Texture() = default;
@@ -22,12 +21,10 @@ public:
     Texture(const Texture&) = delete;
     Texture& operator=(const Texture&) = delete;
 
-    /// Uploads every level of `chain`. `srgb` marks colour textures, whose
-    /// texels are stored gamma-encoded, as opposed to normal maps and masks.
+    /// `srgb` marks gamma-encoded colour textures, not normal maps or masks.
     static Texture fromMipChain(const world::TextureMipChain& chain, bool srgb);
     /// A texture from tightly packed RGBA8 texels, with generated mips.
     static Texture fromRgba(int width, int height, std::span<const std::uint8_t> rgba, bool srgb, bool mipmaps);
-    /// A 1x1 texture of one colour.
     static Texture solid(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a);
 
     GLuint id() const { return m_id; }

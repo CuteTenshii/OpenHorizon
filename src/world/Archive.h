@@ -24,31 +24,23 @@ namespace openhorizon::world {
 /// Reports how far a long job has come: `done` of `total` items.
 using Progress = std::function<void(std::size_t done, std::size_t total)>;
 
-/// The entry's contents. Throws DataError, naming the entry, if it cannot be
-/// read or decoded.
+/// Throws DataError, naming the entry, if it cannot be read or decoded.
 Bytes readEntry(const lzx::ZipArchive& archive, const lzx::ZipEntry& entry);
 
-/// The first `size` bytes of an entry (all of it, if shorter), decompressing
-/// only the LZX chunks that cover them. The CRC cannot be checked on a partial
-/// read. Throws DataError if the entry cannot be read.
+/// The first `size` bytes of an entry, decompressing only the LZX chunks that cover them; the CRC goes unchecked.
+/// Throws DataError if the entry cannot be read.
 Bytes readEntryPrefix(const lzx::ZipArchive& archive, const lzx::ZipEntry& entry, std::size_t size);
 
-/// Indexes into `archive.entries()` of the entries whose names end with
-/// `suffix` (ignoring case), one per distinct name, in archive order. A
-/// track's bin.zip stores most files several times, some under names that
-/// differ only in case, with identical contents; one copy is enough.
+/// Indexes of the entries ending with `suffix` (ignoring case), one per distinct name, in archive order.
+/// A track's bin.zip stores most files several times, some names differing only in case, with identical contents.
 std::vector<std::size_t> distinctEntries(const lzx::ZipArchive& archive, std::string_view suffix);
 
-/// The number written right before `suffix` at the end of `text`, where the
-/// digits follow the character `prefix` (letters match ignoring case): for
-/// ("coloradoout.06454.rmb.bin", '.', ".rmb.bin") that is 6454. Nothing if
-/// the text does not have that shape or the number does not fit 32 bits.
+/// The digits between `prefix` and the trailing `suffix` (ignoring case): ("coloradoout.06454.rmb.bin", '.',
+/// ".rmb.bin") gives 6454. Nothing if the shape differs or the number overflows 32 bits.
 std::optional<std::uint32_t> numberBefore(std::string_view text, char prefix, std::string_view suffix);
 
-/// Runs `job(i)` for every i below `count` on all hardware threads and waits
-/// for them. `progress`, if set, is called now and then with the number of
-/// finished items, never from two threads at once. The first exception a job
-/// throws stops the remaining work and is rethrown here.
+/// Runs `job(i)` for every i below `count` on all hardware threads. `progress` is never called from two threads at
+/// once; the first exception a job throws stops the rest and is rethrown here.
 template <typename Job> void parallelFor(std::size_t count, Job&& job, const Progress& progress = {})
 {
     constexpr std::size_t kProgressStep = 2048;

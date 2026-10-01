@@ -10,22 +10,15 @@
 
 namespace openhorizon::spectators {
 
-/// Which picture of a person a sprite cell holds.
-///
-/// `media/spectators/sprites.xds` (DXT1, 2048x768, 1-bit alpha) is an atlas
-/// of 64x128 cells, row-major, 9 per model in the order of spectators.xml's
-/// <models> list (verified: the clothes of each group of cells match the
-/// model's texture in that order). The game draws them for the people past
-/// the skinned meshes' reach (see CrowdDraw.h). Within a model's 9 cells
-/// (read off the atlas):
+/// A cell of `media/spectators/sprites.xds` (DXT1, 2048x768, 1-bit alpha): 64x128 cells, row-major, 9 per model
+/// in spectators.xml's <models> order (verified). A model's cells, read off the atlas:
 ///
 ///     0 standing, back     3 seated, back
 ///     1 standing, front    4 seated, front
 ///     2 standing, side     5, 6, 7 seated, turned 22.5, 45, 67.5 degrees
 ///                          8 seated, side
 ///
-/// Side and turned cells show the person facing the image's right; the other
-/// side is the same cell mirrored (bSpritesBothSides is false).
+/// Side and turned cells face the image's right; the other side is mirrored.
 enum class SpriteView : std::uint8_t {
     StandingBack,
     StandingFront,
@@ -52,15 +45,13 @@ struct SpriteAtlasLayout {
     int cellCount() const { return columns() * rows(); }
     /// The cell of `view` of the model at `modelIndex` in <models> order.
     static int cell(int modelIndex, SpriteView view) { return modelIndex * kCellsPerModel + static_cast<int>(view); }
-    /// Texture coordinates of a cell's top-left and bottom-right corners (v
-    /// grows downwards, as the texture's rows are stored).
+    /// Top-left and bottom-right; v grows downwards, as the rows are stored.
     void cellRect(int cell, glm::vec2& uvMin, glm::vec2& uvMax) const;
 };
 
 /// How big a cell is in the world, measured from the atlas at load.
 struct SpriteMetrics {
-    /// Metres per texel, from the standing front cells' height against the
-    /// standing meshes' height.
+    /// From the standing front cells' height against the standing meshes'.
     float metresPerTexel = 1.0F / 64.0F;
     /// Texel rows from the top of a cell to the ground the person stands on.
     float groundRow = SpriteAtlasLayout::kCellHeight;
@@ -79,18 +70,13 @@ struct SpriteFrame {
     bool mirrored = false;
 };
 
-/// Chooses the cell for a person whose cells start at `baseCell` (the
-/// model's first cell, plus three for six-view classes; see
-/// Spectator::spriteCell), at `position` facing `facing` (horizontal, world
-/// coordinates), seen from `camera`, by the game's billboard vertex shader
-/// (draw::spriteColumn()): the view is the cell `baseCell` + column, and a
-/// mirrored cell is drawn flipped left to right.
+/// `baseCell` as Spectator::spriteCell; the column comes from draw::spriteColumn(), as the billboard shader picks
+/// it.
 SpriteFrame chooseSprite(const SpriteAtlasLayout& layout, int baseCell, bool sixViews, const glm::vec3& facing,
     const glm::vec3& position, const glm::vec3& camera);
 
-/// Measures the atlas: `atlas` is its decoded top level, `modelHeights` the
-/// standing height of each model in <models> order (metres, 0 when unknown).
-/// Returns the defaults when no standing front cell has opaque texels.
+/// `atlas` is the decoded top level, `modelHeights` metres in <models> order (0: unknown). Returns the defaults
+/// when no standing front cell has opaque texels.
 SpriteMetrics measureSprites(const world::RgbaImage& atlas, const std::vector<float>& modelHeights);
 
 } // namespace openhorizon::spectators

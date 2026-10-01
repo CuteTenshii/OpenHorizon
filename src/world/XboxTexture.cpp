@@ -54,9 +54,7 @@ void putLe16(std::uint8_t* p, std::uint16_t v)
     p[1] = static_cast<std::uint8_t>(v >> 8);
 }
 
-/// The four colours a DXT colour block can select. DXT1 blocks with
-/// c0 <= c1 use three colours and transparent black; DXT3 and DXT5 always
-/// use four.
+/// DXT1 blocks with c0 <= c1 use three colours and transparent black; DXT3 and DXT5 always use four.
 std::array<Rgba, 4> colourPalette(std::uint16_t c0, std::uint16_t c1, bool dxt1)
 {
     std::array<Rgba, 4> palette{from565(c0), from565(c1), Rgba{}, Rgba{}};
@@ -97,9 +95,7 @@ int colourDistance(const Rgba& a, const Rgba& b)
     return dr * dr + dg * dg + db * db;
 }
 
-/// Two endpoint colours spanning the block's texels along their principal
-/// axis, which suits the gradients DXT blocks store far better than the
-/// bounding box corners do.
+/// Endpoints along the texels' principal axis, which fits DXT gradients better than bounding box corners.
 std::pair<std::array<float, 3>, std::array<float, 3>> colourEndpoints(const Rgba* texels, const bool* use)
 {
     std::array<float, 3> mean{};
@@ -130,10 +126,7 @@ std::pair<std::array<float, 3>, std::array<float, 3>> colourEndpoints(const Rgba
             }
         }
     }
-    // Power iteration toward the principal axis. It starts from the row of
-    // the channel that varies most: a fixed start such as (1, 1, 1) can be
-    // orthogonal to the true axis (red rising while green falls) and would
-    // collapse every texel onto the mean.
+    // Start from the widest channel's row: a fixed start such as (1, 1, 1) can be orthogonal to the true axis.
     std::size_t widest = 0;
     for (std::size_t c = 1; c < 3; ++c) {
         if (covariance[c][c] > covariance[widest][widest]) {
@@ -202,8 +195,7 @@ void encodeColour(const Rgba* texels, bool dxt1, std::uint8_t* block)
         std::swap(c0, c1);
     }
     const auto palette = colourPalette(c0, c1, dxt1);
-    // With equal endpoints a DXT1 block is in three-colour mode; only the
-    // first three entries are colours then.
+    // With c0 <= c1 a DXT1 block is in three-colour mode.
     const int colours = (dxt1 && c0 <= c1) ? 3 : 4;
     std::uint32_t bits = 0;
     for (std::size_t i = 0; i < 16; ++i) {
@@ -288,9 +280,7 @@ RgbaImage imageOf(xds::Image&& decoded)
     return {static_cast<int>(decoded.width), static_cast<int>(decoded.height), std::move(decoded.rgba)};
 }
 
-/// The top level of `texture`: block formats as they are, anything else
-/// (8_8_8_8, the single-channel formats) decoded to RGBA with the texture's
-/// swizzle.
+/// Block formats as they are; 8_8_8_8 and the single-channel formats decoded to RGBA with the texture's swizzle.
 TextureSurface topLevelSurface(const xds::Texture& texture)
 {
     const std::uint32_t format = texture.info().format;
@@ -393,8 +383,7 @@ TextureSurface untileXboxSurface(ByteView tiled, std::uint32_t formatWord, int w
     const std::uint32_t blocksWide = (info.width + edge - 1) / edge;
     info.pitch = (blocksWide + kTileBlocks - 1) / kTileBlocks * kTileBlocks * edge;
     if (is8888(info.format)) {
-        // The containers carry no swizzle; their 8_8_8_8 texels are A, R, G,
-        // B in memory once swapped.
+        // The containers carry no swizzle; 8_8_8_8 texels are A, R, G, B once swapped.
         info.swizzle = {xds::Swizzle::Y, xds::Swizzle::Z, xds::Swizzle::W, xds::Swizzle::X};
     }
     try {

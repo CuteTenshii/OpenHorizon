@@ -439,9 +439,8 @@ Effect parseEffect(ByteView data, const std::string& source)
     }
     Effect effect;
 
-    // Shaders are found by their magic: the section tables that list them are
-    // only partly understood, and a blob is self-describing enough (size
-    // prefix and consistent sizes) that a stray match is rejected.
+    // Found by magic since the section tables are only partly understood; the size checks reject
+    // stray matches.
     std::vector<std::size_t> blobOffsets;
     for (std::size_t at = base + kShaderObjectHeader; at + kShaderHeaderBytes <= base + blockSize; at += 4) {
         const std::uint32_t magicWord = loadBe32(data.data() + at);

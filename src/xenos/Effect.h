@@ -15,17 +15,14 @@
 /// The game's compiled effects (`.fxobj`): Xbox 360 D3DX effects holding
 /// techniques, passes and Xenos shaders.
 ///
-/// All values are big-endian. Layout as decoded from the files (every one of
-/// the 371 effects on the disc and in the track archives parses this way;
-/// "inferred" marks fields whose meaning is read from the data rather than
-/// from documentation):
+/// Big-endian. Verified on every effect of the disc and track archives; "inferred" marks fields
+/// whose meaning is read from the data alone:
 ///
 ///     0x00  u32 0x101, u32 hash, u32 effect data size, u32 ?,
 ///           u32 vertex declaration count, u32 ?,
 ///           u32 file size - 0x1C, then variable data
-///     ...   u32 0xA3D70141 (found by scanning), u32 block size, u32 ?;
-///           the block data D starts after these 12 bytes and every offset
-///           below is relative to D
+///     ...   u32 0xA3D70141 (scanned for), u32 block size, u32 ?; block
+///           data D follows and the offsets below are relative to it
 ///     D+0x200  u32 offset of the technique pointer array
 ///     D+0x20C  u32 technique count
 ///
@@ -199,13 +196,9 @@ Shader parseShader(ByteView blob, const std::string& source);
 struct VertexDeclElement {
     std::uint16_t stream = 0;
     std::uint16_t offset = 0;
-    /// Xbox 360 D3DDECLTYPE: GPU vertex format in bits 0-5, endian swap in
-    /// 6-7 (1 = 8-in-16, 2 = 8-in-32), signed in bit 8, integer in bit 9
-    /// and the component selectors (3 bits each, x first; 4 = 0, 5 = 1) in
-    /// bits 10-21. Decoded from the type values of the declarations
-    /// (FLOAT3 0x2A23B9, USHORT2N 0x2C2059, DEC3N 0x1A2187, SHORT4N
-    /// 0x1A215A, D3DCOLOR 0x182886), whose selectors give xyz1, xy01,
-    /// xyzw and zyxw.
+    /// Xbox 360 D3DDECLTYPE: format bits 0-5, endian swap 6-7 (1 = 8-in-16, 2 = 8-in-32), signed bit
+    /// 8, integer bit 9, 3-bit selectors x first in 10-21 (4 = 0, 5 = 1). Decoded from the game's
+    /// types (FLOAT3 0x2A23B9, USHORT2N 0x2C2059, DEC3N 0x1A2187, SHORT4N 0x1A215A, D3DCOLOR 0x182886).
     std::uint32_t type = 0;
     std::uint8_t method = 0;
     std::uint8_t usage = 0;
@@ -251,14 +244,9 @@ struct Effect {
     /// The declaration providing every input of vertex shader `shader`: the
     /// first whose elements cover all its usages; nullptr if none does.
     const VertexDeclaration* declarationFor(const Shader& shader) const;
-    /// The declaration to bind vertex shader `shader` with: declarationFor()
-    /// if there is one; otherwise one built from the shader's inputs in
-    /// fetch order, packed without gaps on stream 0, each with the type the
-    /// effect's other declarations give its usage. The effects of the
-    /// skinned driver-hand shaders need this: their declarations cover only
-    /// the unskinned and shadow inputs, and packing reproduces the full
-    /// skinned layout another effect declares (inferred). Nothing if an
-    /// input's usage appears in no declaration.
+    /// declarationFor(), else the shader's inputs packed in fetch order on stream 0 with the types
+    /// other declarations give their usages (the skinned driver-hand effects need this; inferred).
+    /// Nothing if a usage appears in no declaration.
     std::optional<VertexDeclaration> inputDeclaration(const Shader& shader) const;
 };
 

@@ -26,12 +26,8 @@ constexpr float kRelaxationLength = 0.25F;
 /// car instead.
 constexpr float kLowSpeed = 2.0F;
 constexpr float kRollingResistance = 0.013F;
-/// Lateral grip multiplier fitted so the stock cars match the game's
-/// recorded skidpad figures (Data_Car.SimLatGees60MPH) across the whole car
-/// list; braking figures already match without one. The game scales each
-/// tyre's friction by a per-tyre factor times the tyre-width factor (see the
-/// tyre setup at 0x82DD47E0 in the title update); that per-tyre factor has
-/// not been traced to its source yet, and this constant stands in for it.
+/// Fitted so the stock cars match Data_Car.SimLatGees60MPH; stands in for the
+/// game's untraced per-tyre friction factor (tyre setup at 0x82DD47E0, title update).
 constexpr float kLateralGripCalibration = 1.10F;
 /// Brake torque at full pedal as a multiple of what stops the car at 1 g,
 /// enough to lock the wheels on any stock tyre.
@@ -77,10 +73,8 @@ CarPhysics::CarPhysics(const CarSpec& spec)
     const float wheelbase = m_spec.wheelbase;
     m_cgLocal = {0.0F, m_spec.cgHeight, wheelbase * (m_spec.frontWeight - 0.5F)};
 
-    // The game sizes the body's inertia by a box of its own
-    // (List_UpgradeCarBodyWeight.BlockDimX/Y/Z, read next to the mass and
-    // centre of mass); taking it as a uniform solid box is inferred from the
-    // columns' names, as the use of the block has not been traced.
+    // Inertia of a uniform solid box of List_UpgradeCarBodyWeight.BlockDimX/Y/Z;
+    // inferred from the column names, as the block's use is untraced.
     const float width = m_spec.inertiaBlock[0];
     const float height = m_spec.inertiaBlock[1];
     const float length = m_spec.inertiaBlock[2];
@@ -211,24 +205,11 @@ float CarPhysics::impulseResponse(const glm::vec3& worldPoint, const glm::vec3& 
 
 float CarPhysics::resolveWorldContacts(std::span<const WorldContact> contacts, const CollisionSettings& settings)
 {
-    // After the game's response to a car's contacts with the static world
-    // (0x82DD2750, called for the car through 0x82DD5C20 from 0x82DF8D50).
-    // Verified there: one pass over the contacts in order, each seeing the
-    // velocities the ones before it left; a normal impulse that only stops
-    // the approach (its bounce term multiplies by a zero register, so the
-    // surface pair's Elasticity does not enter); Coulomb friction against
-    // the sliding velocity from before that contact's normal impulse, up to
-    // the pair's friction times the normal impulse; both impulses turning
-    // the car by only a share, the torque scale, which also enters their
-    // effective masses; and the overlap removed by moving the car, not by
-    // velocity, along each normal as far as the moves before it have not
-    // already covered. Inferred: the vector argument it compares with each
-    // contact's depth less its approach speed is the step's length; for the
-    // overlapping contacts given here that test always passes.
-    // Missing: a flag in the contact's packed normal that gives a contact
-    // the full turning share (what sets it has not been traced), and the
-    // per-surface CarWorldCollFricMods, which only differ from 1 for a car
-    // tipped past 30 degrees and whose use has not been traced.
+    // After 0x82DD2750 (via 0x82DD5C20 from 0x82DF8D50). Verified: one ordered
+    // pass; normal impulses stop the approach without bounce; Coulomb friction;
+    // both turn the car by the torque scale; overlap removed by moving the car.
+    // Missing (untraced): a packed-normal flag for a full turning share, and
+    // the per-surface CarWorldCollFricMods.
     const float torqueScale = settings.carWorldTorqueScaleAt(speed());
     const float frictionBlend = settings.frictionBlendAt(speed());
     const glm::mat3 inverseInertia = worldInverseInertia();
@@ -357,19 +338,12 @@ void findCarContacts(const CarPhysics& a, std::span<const CarSpec::CollisionSphe
 float resolveCarContacts(
     CarPhysics& a, CarPhysics& b, std::span<const CarContact> contacts, float turnA, float turnB, float restitution)
 {
-    // After 0x82E04A60, which the physics world runs for each pair of
-    // bodies in contact (0x82E054F0). Verified there: one pass over the
-    // contacts in order; the first body's contact point lies `depth` back
-    // along the normal from the second's; an impulse only while the depth
-    // less the approach over the step is not negative, of -(1 + e) times
-    // the approach over both bodies' effective masses, whose rotational
-    // parts are scaled by each car's torque scale (two virtuals on the car
-    // dynamics, 0x82E04AC0 on); no friction; and the overlap removed by
-    // moving both bodies along each normal as far as the moves before it
-    // have not covered, each by the other's share of their summed mass
-    // (+0x160 is the mass, +0x164 its inverse, set together at 0x82E0B3D4).
-    // Missing: a per-direction test on each body (virtual +0x4C) that
-    // treats it as immovable; what makes it true has not been traced.
+    // After 0x82E04A60 (per body pair, from 0x82E054F0). Verified: one ordered
+    // pass; impulse -(1 + e) times the approach over both effective masses,
+    // rotational parts scaled by each car's torque scale (0x82E04AC0 on); no
+    // friction; overlap split by each body's share of the summed mass (+0x160
+    // mass, +0x164 inverse, set at 0x82E0B3D4).
+    // Missing: the per-body immovable test (virtual +0x4C), untraced.
     constexpr float kStep = 1.0F / CarPhysics::kStepRate;
     const float shareA = b.mass() / (a.mass() + b.mass());
     glm::vec3 moveA(0.0F);
@@ -462,13 +436,10 @@ float CarPhysics::engineTorque(float rpm, float throttle) const
 
 float CarPhysics::lateralCapability(float speed) const
 {
-    // After CCarDynamics' virtual at 0x82DE61B8: the axle loads from the
-    // weight split plus the aerodynamic downforce at this speed, then six
-    // rounds of summing each tyre's peak lateral force at its load and
-    // moving load to the outer tyre by that force times the height over the
-    // track. The game's height is the centre of mass less a per-axle value
-    // (vehicle +0x1E24, +0x2644) that has not been traced; the centre of
-    // mass height stands in for it.
+    // After CCarDynamics' virtual at 0x82DE61B8: six rounds moving load to the
+    // outer tyre by the summed peak lateral force times height over track. The
+    // centre of mass height stands in for the game's untraced per-axle height
+    // (vehicle +0x1E24, +0x2644).
     const float q = (speed / kAeroReferenceSpeed) * (speed / kAeroReferenceSpeed);
     const float weight = m_mass * kGravity;
     const float frontAxle
@@ -545,12 +516,9 @@ float CarPhysics::lockAt(float speed) const
 
 float CarPhysics::normalisedSlip(int wheel) const
 {
-    // Slip angle over the tyre's peak slip angle; positive when the tyre
-    // pushes the car to the right, the way a right turn (positive steer)
-    // loads it. The game weighs a per-wheel value by load that its tunable
-    // NormRearSlipAngleToCountersteer names a normalised slip angle; that
-    // the value is exactly this ratio is inferred from that name and the
-    // 1.05 threshold the steering compares it with.
+    // Slip angle over peak slip angle, positive when the tyre pushes the car
+    // right. Inferred from NormRearSlipAngleToCountersteer's name and its 1.05
+    // threshold.
     const WheelState& state = m_wheels[static_cast<std::size_t>(wheel)];
     return state.relaxedSlipAngle * kRadToDeg / m_peakSlipAngle[static_cast<std::size_t>(wheel)];
 }
@@ -595,10 +563,8 @@ void CarPhysics::updateSteering(const CarControls& controls, float dt)
         const float rearSlip = axleSlip(RearLeft);
         const float speed = forwardSpeed();
         const float maxAngle = m_spec.steerMaxAngleDeg * kDegToRad;
-        // The game checks the second front wheel when steering right and the
-        // first otherwise; which of its wheels is left is not traced, so the
-        // wheel on the inside of the turn is taken, with its slip opposing
-        // the steering.
+        // The game checks its second front wheel steering right; which is left
+        // is untraced, so the inside wheel is taken, its slip opposing the steer.
         const bool frontOpposes = current > 0.0F ? normalisedSlip(FrontRight) <= 0.0F : normalisedSlip(FrontLeft) > 0.0F;
         const bool countersteer = std::abs(rearSlip) > m_spec.normRearSlipAngleToCountersteer;
         constexpr float kMinAssistSpeed = 2.0F;
@@ -747,9 +713,8 @@ void CarPhysics::updateGearbox(const CarControls& controls, float dt)
         return w.onGround;
     }) >= 2;
     const float coupledRpm = drivenWheelSpeed() * currentRatio() * kRpmPerRadPerSec;
-    // The game's automatic gearbox holds its gear while any driven wheel's
-    // normalised slip is past 1.1 (0x82DF3BC8), so wheelspin does not
-    // shift it up.
+    // The automatic gearbox holds its gear while a driven wheel's normalised
+    // slip is past 1.1 (0x82DF3BC8).
     constexpr float kUpshiftSlipLimit = 1.1F;
     bool spinning = false;
     for (int w = 0; w < kWheels; ++w) {
@@ -867,21 +832,17 @@ float CarPhysics::brakeTorque(int wheel, const CarControls& controls) const
 
 float CarPhysics::normalisedSlipRatio(int wheel) const
 {
-    // The assists and the gearbox read one per-wheel slip (+0x1F0 of the
-    // wheel). Its writer has not been traced; that it is the slip ratio over
-    // the tyre's peak is inferred from what it is compared with: 1 for ABS
-    // without ABS (NoABSSlipDef*NoSteer), up to 3 on both sides of zero with
-    // it (ReleasePointABSFrontNoSteer, beyond what a braking slip ratio can
-    // reach), and 1.1 for the gearbox's wheelspin test.
+    // The per-wheel slip the assists and the gearbox read (+0x1F0 of the
+    // wheel); its writer is untraced. Slip ratio over peak is inferred from its
+    // thresholds: 1 without ABS, up to 3 with it, 1.1 for the gearbox.
     const std::size_t w = static_cast<std::size_t>(wheel);
     return m_wheels[w].slipRatio / m_peakSlipRatio[w];
 }
 
 float CarPhysics::applyAssists(const CarControls& controls, float dt)
 {
-    // 0x82DF8630 starts each wheel from the brake pedal and runs stability
-    // management (0x82DEEF80), then ABS, then traction control, all on the
-    // tyre state the previous step left.
+    // 0x82DF8630: brake pedal per wheel, then stability management
+    // (0x82DEEF80), ABS and traction control, on the previous step's tyres.
     for (int w = 0; w < kWheels; ++w) {
         m_wheelBrake[static_cast<std::size_t>(w)] = controls.brake;
         m_absTimer[static_cast<std::size_t>(w)] += dt;
@@ -895,11 +856,9 @@ float CarPhysics::applyAssists(const CarControls& controls, float dt)
 
 bool CarPhysics::applyStabilityManagement()
 {
-    // 0x82DEEF80: above StabilityManageSpeed while rolling forwards, the
-    // rear tyres' average normalised slip angle past STMSlipMin brakes one
-    // diagonal pair of wheels, fully at STMSlipMax, and eases the other pair
-    // by half as much. The surface's TCandStabilitySpeedMultiplier (1 on
-    // tarmac) scales the speed; surfaces are not told apart here.
+    // 0x82DEEF80: above StabilityManageSpeed going forwards, the rear average
+    // normalised slip angle from STMSlipMin to STMSlipMax brakes one diagonal
+    // pair and eases the other by half. Surface multipliers are not applied.
     const float threshold = m_spec.assistSettings.stabilityManageSpeedMph * kMphToMs;
     if (glm::dot(m_velocity, m_velocity) < threshold * threshold || forwardSpeed() < 0.0F) {
         return false;
@@ -912,11 +871,8 @@ bool CarPhysics::applyStabilityManagement()
         return false;
     }
     const float amount = std::clamp((magnitude - lower) / (upper - lower), 0.0F, 1.0F);
-    // The game brakes its wheels 0 and 3 when the average is positive and 1
-    // and 2 otherwise (0x82DE2F58). Which of its wheels is left is not
-    // traced; the pair is taken so that the outer front wheel brakes, the
-    // one that turns the car out of the slide: a positive slip here is the
-    // rear pushing the car right, which a right turn gives.
+    // The game brakes wheels 0 and 3 for a positive average, else 1 and 2
+    // (0x82DE2F58); its left side is untraced, so the outer front wheel brakes.
     const bool rightTurn = rearSlip > 0.0F;
     const std::array<int, 2> braked
         = rightTurn ? std::array<int, 2>{FrontLeft, RearRight} : std::array<int, 2>{FrontRight, RearLeft};
@@ -935,11 +891,9 @@ bool CarPhysics::applyStabilityManagement()
 
 bool CarPhysics::applyAbs(const CarControls& controls)
 {
-    // 0x82DF8630: with ABS on, or with it off and the pedal at
-    // NoABSBrakeTravel, a braked wheel whose normalised slip passes the
-    // release point against its direction of roll lets go of its brake for
-    // the release duration. The release points blend from the no-steer to
-    // the full-steer value by the steering input.
+    // 0x82DF8630: with ABS on, or off with the pedal at NoABSBrakeTravel, a
+    // wheel past its release point (blended from no-steer to full-steer by
+    // steering) lets go of its brake for the release duration.
     const AssistSettings& settings = m_spec.assistSettings;
     if (!m_assists.abs && controls.brake < settings.noAbsBrakeTravel) {
         return false;
@@ -979,10 +933,9 @@ bool CarPhysics::applyAbs(const CarControls& controls)
             timer = 0.0F;
             released = true;
         } else if (!m_wheels[index].onGround) {
-            // A wheel in the air restarts the release time, so its brake
-            // lets go from the next step. On this step the game also caps
-            // the brake by a ratio of wheel fields (+0x37C, +0x384, +0x340
-            // and the mass) that have not been identified; the brake is kept.
+            // A wheel in the air restarts the release time. The game also caps
+            // the brake here by unidentified wheel fields (+0x37C, +0x384,
+            // +0x340); the brake is kept.
             timer = 0.0F;
         }
     }
@@ -992,17 +945,12 @@ bool CarPhysics::applyAbs(const CarControls& controls)
 float CarPhysics::tractionControlCut() const
 {
     // 0x82DF8630: the driven wheels' average forward normalised slip against
-    // the allowed slip (AssistsTCSSlipDefTakeoff below TractionControlSpeed,
-    // AssistsTCSSlipDefMoving above it, held within the CarTuning range),
-    // raised towards TCSFullSteerSlipScale as the driven tyres near their
-    // peak slip angle. The cut grows from nothing at the allowed slip to a
-    // closed throttle TCSFullEffectFricDiff beyond it. The surface's TCS
-    // multipliers (1 on tarmac) are not applied, as surfaces are not told
-    // apart here.
+    // the allowed slip (AssistsTCSSlipDefTakeoff / Moving, held in the CarTuning
+    // range, raised towards TCSFullSteerSlipScale near peak slip angle); a closed
+    // throttle TCSFullEffectFricDiff beyond it. Surface TCS multipliers are not applied.
     const AssistSettings& settings = m_spec.assistSettings;
-    // The game takes the sign from the gear index at +0x1390 (the gearbox at
-    // 0x82DF3B90 indexes its shift table by it): negative for index 0 only.
-    // That index 0 is reverse is inferred.
+    // The game takes the sign from the gear index at +0x1390 (0x82DF3B90),
+    // negative for index 0; that index 0 is reverse is inferred.
     const float direction = m_gear < 0 ? -1.0F : 1.0F;
     const glm::vec3 f = forward();
     const float along = forwardSpeed() * direction;
@@ -1052,22 +1000,17 @@ float CarPhysics::tractionControlCut() const
 
 glm::vec3 CarPhysics::modifyFrictionTorque(const glm::vec3& tyreTorque) const
 {
-    // 0x82DEFF88, run on the summed torque of the tyre forces before the
-    // body integrates it. The settings block is WithAssists when traction
-    // control or stability management is on and NoAssists otherwise (the
-    // game's simulation steering has a block of its own, not modelled
-    // here). Its per-drive-layout modifiers are always the AWD ones, as
-    // 0x82DE3AC0 falls through its cases, and those are all 1 on the disc;
-    // the off-road modifiers belong to a car state (+0x5071 == 4) not
-    // modelled here.
+    // 0x82DEFF88, on the tyres' summed torque. WithAssists when traction control
+    // or stability management is on; drive-layout modifiers are the AWD ones
+    // (0x82DE3AC0 falls through), all 1 on the disc. The simulation-steering and
+    // off-road (+0x5071 == 4) blocks are not modelled.
     const AssistSettings& settings = m_spec.assistSettings;
     const bool assisted = m_assists.tractionControl || m_assists.stabilityControl;
     const std::array<FrictionTorqueMod, 2>& blocks
         = assisted ? settings.frictionTorqueWithAssists : settings.frictionTorqueNoAssists;
 
-    // The two blocks blend by the car's mass. The game compares its own
-    // mass with the Mass0KG and Mass1KG keys times 0.01, which is taken to
-    // mean it keeps the mass in 100 kg.
+    // Blends by mass: the game compares Mass0KG / Mass1KG times 0.01, taken to
+    // mean it keeps mass in 100 kg.
     const float lightMass = std::min(settings.frictionTorqueMass0Kg, settings.frictionTorqueMass1Kg);
     const float heavyMass = std::max(settings.frictionTorqueMass0Kg, settings.frictionTorqueMass1Kg);
     float massBlend = 0.0F;
@@ -1177,9 +1120,8 @@ void CarPhysics::prepareTyres(float dt)
         c.grip = m_spec.compound.widthScale(front ? m_spec.frontTires.widthMm : m_spec.rearTires.widthMm)
             * wheel.ground.grip;
 
-        // The slip angle builds up over the relaxation length rather than
-        // jumping, which models the carcass twisting and keeps the lateral
-        // force stable at low speed.
+        // The slip angle builds up over the relaxation length, keeping the
+        // lateral force stable at low speed.
         const float steadyAngle = std::atan2(c.vy, std::max(std::abs(c.vx), 0.5F));
         const float relaxRate = std::min(1.0F, (std::abs(c.vx) + 0.5F) * dt / kRelaxationLength);
         wheel.relaxedSlipAngle += (steadyAngle - wheel.relaxedSlipAngle) * relaxRate;
@@ -1191,12 +1133,9 @@ void CarPhysics::prepareTyres(float dt)
         constexpr float kProbe = 0.05F;
         float fxProbe = 0.0F;
         tyreForces(w, wheel.spin + kProbe, fxProbe, fy, slip, magnitude);
-        // How fast the tyre's grip pushes back on wheel spin, used to
-        // integrate the spin implicitly; the tyre is too stiff for an
-        // explicit step at low speed. Past the peak the local slope flattens
-        // and a step would overshoot to the far side of free rolling, so the
-        // chord back to free rolling (where the force is zero) is used when
-        // it is steeper.
+        // Spin is integrated implicitly, the tyre being too stiff for an
+        // explicit step; past the peak the chord back to free rolling is used
+        // when steeper, so the step cannot overshoot.
         float slope = std::max(0.0F, (fxProbe - c.fx0) / kProbe);
         const float rollingSpin = c.vx / wheelRadius(w);
         const float fromRolling = wheel.spin - rollingSpin;
@@ -1225,11 +1164,9 @@ void CarPhysics::solveDrivetrain(float throttle, const CarControls& controls, fl
     const float engineInertia = m_spec.engineInertia + m_spec.drivetrainInertia;
     const float coupledSpeed = drivenWheelSpeed() * ratio;
 
-    // An automatic clutch stays fully in once the wheels turn the engine
-    // above idle. Below that, at a standing start, it works like launch
-    // control: the engine is held at the launch speed (Camshaft StartRPM)
-    // while the clutch slips. It lets go entirely when the car is held
-    // stopped without throttle.
+    // An automatic clutch stays in once the wheels turn the engine above idle;
+    // below, it slips with the engine held at the launch speed (Camshaft
+    // StartRPM), and lets go when the car is held stopped without throttle.
     float engagement = 0.0F;
     bool launching = false;
     if (m_shiftTimer > 0.0F || m_gear == 0) {
@@ -1284,10 +1221,8 @@ void CarPhysics::solveDrivetrain(float throttle, const CarControls& controls, fl
 
     const float wheelTorque = clutch * ratio;
     const auto splitAxle = [&](int left, float torque, const Differential& diff) {
-        // Limited-slip: the faster wheel hands torque to the slower one, up
-        // to the locking torque the table gives for driving or coasting.
-        // How the game shapes the lock against speed difference is not
-        // known; it is taken as full lock beyond 2 rad/s of difference.
+        // Limited-slip up to the table's locking torque. Guessed: full lock
+        // beyond 2 rad/s of difference; the game's shaping is unknown.
         const float lock = torque >= 0.0F ? diff.lockAccel : diff.lockDecel;
         const float difference = m_wheels[left].spin - m_wheels[left + 1].spin;
         const float transfer = lock * smoothSign(difference, 2.0F);

@@ -71,9 +71,8 @@ void main()
 }
 )";
 
-// Inside the outline u*u - v < 0 (reversed on outside triangles). Dividing
-// the value by its screen-space gradient gives the distance to the edge in
-// pixels, so the edge is anti-aliased over one pixel at any size.
+// Inside the outline u*u - v < 0 (reversed on outside triangles); divided by
+// its screen-space gradient it is the edge distance in pixels.
 const char* const kTextFragment = R"(#version 450 core
 in vec2 vCurve;
 flat in float vOutside;
@@ -103,9 +102,8 @@ GLint glWrap(TextureWrap wrap)
     case TextureWrap::Clamp:
         break;
     }
-    // Anark's untiled images show nothing outside their square; the
-    // transparent border keeps UV animations (the needle trails turn their
-    // image) from smearing edge texels.
+    // Anark's untiled images show nothing outside their square; the border keeps
+    // UV animations from smearing edge texels.
     return GL_CLAMP_TO_BORDER;
 }
 
@@ -378,8 +376,7 @@ const UiRenderer::GpuMesh& UiRenderer::mesh(const Mesh& source)
     }
     m_meshIndexData.insert(m_meshIndexData.end(), source.indices.begin(), source.indices.end());
 
-    // Buffers grow by recreating them from the CPU copies, which happens a
-    // few times while a scene's meshes are first drawn.
+    // Grown by recreating from the CPU copies.
     const auto upload = [](GLuint& buffer, std::size_t& capacity, const void* data, std::size_t bytes) {
         if (bytes > capacity) {
             if (buffer) {
@@ -514,11 +511,9 @@ std::vector<TextLineLayout> layoutText(const VectorFont& font, const DrawText& t
     const float size = text.size;
     const float lineStep = font.lineHeight() * size + text.leading;
     const float blockHeight = lineStep * static_cast<float>(lines.size());
-    // The element's origin is the top of the block of lines, raised by a
-    // fraction of the block's height for the other vertical alignments
-    // (0x8243a2a8: 0.5, 1, 0.75 and 0.25 for alignments 1 to 4, none for
-    // the rest), and each baseline lies the font's ascent below the top of
-    // its line (0x8242f1d0 with the line records of 0x8242fa08).
+    // Origin at the block's top, raised by 0.5, 1, 0.75, 0.25 of its height for
+    // alignments 1 to 4 (0x8243a2a8); baselines one ascent below each line's top
+    // (0x8242f1d0, line records 0x8242fa08).
     float top = 0.0F;
     switch (text.verticalAlign) {
     case 1:

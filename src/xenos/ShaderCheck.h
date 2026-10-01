@@ -13,17 +13,15 @@ namespace openhorizon {
 class Vfs;
 }
 
-/// Validation of generated GLSL with the glslang front end (through
-/// shaderc), without a GL context. Kept out of the openhorizon_xenos library so the
-/// engine does not link shaderc.
+/// Validation of generated GLSL with glslang (through shaderc), without a GL context. Kept out of
+/// openhorizon_xenos so the engine does not link shaderc.
 namespace openhorizon::xenos {
 
 /// Compiles `glsl` as a GLSL 4.50 shader of `stage` for OpenGL. Returns the
 /// compiler's messages on failure, nothing on success.
 std::optional<std::string> compileGlsl(std::string_view glsl, ShaderStage stage, std::string_view name);
 
-/// Every `.fxobj` the game can load: those on the disc and those inside
-/// mounted archives (the track bin.zip files), as normalized paths.
+/// Every `.fxobj` the game can load, loose or inside mounted archives, as normalized paths.
 std::vector<std::string> listEffects(const Vfs& vfs);
 
 struct CheckReport {
@@ -51,9 +49,8 @@ struct CheckReport {
     std::vector<std::string> failures;
 };
 
-/// Parses every effect, translates every shader (vertex shaders with the
-/// effect's declaration) and every pass, and compiles all results.
-/// `threads` of 0 uses all hardware threads.
+/// Parses, translates and compiles every effect, shader and pass. `threads` of 0 uses all hardware
+/// threads.
 CheckReport checkEffects(const Vfs& vfs, const std::vector<std::string>& paths, unsigned threads = 0);
 
 std::string formatReport(const CheckReport& report);

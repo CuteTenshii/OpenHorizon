@@ -9,10 +9,7 @@
 
 namespace openhorizon::spectators {
 
-/// `media/spectators/spectators.xml`: the people of the crowd, how they are
-/// grouped, which animations each skeleton plays and the crowd classes that
-/// placements refer to by number. The layout, as the disc ships it
-/// (verified):
+/// `media/spectators/spectators.xml`. Layout, verified:
 ///
 ///     <spectators>
 ///       <models Version numSpriteAngles bSpritesBothSides>
@@ -28,17 +25,12 @@ namespace openhorizon::spectators {
 ///       </crowdclass> ...
 ///     </spectators>
 ///
-/// A model's mesh is `models/<name><skeleton suffix>.skinbin` and its skin
-/// `textures/<texture>.dds.xds`; an animation is `anims/<filename>.anim.bin`
-/// (the skeleton's subdir is not part of the path; the game's loader joins
-/// "\spectators\anims\" and ".anim.bin" around the file name, verified in the
-/// executable). Commented-out entries are ignored by the XML parser, as by
-/// the game.
+/// Meshes are `models/<name><skeleton suffix>.skinbin`, skins `textures/<texture>.dds.xds`, animations
+/// `anims/<filename>.anim.bin` without the skeleton's subdir (verified in the executable's loader).
 struct SpectatorConfig {
     struct Model {
         std::string name;
-        /// Texture name, e.g. "Female01"; several models can share a mesh
-        /// shape but not a texture.
+        /// E.g. "Female01"; models can share a mesh shape but not a texture.
         std::string texture;
         /// Sprite atlas cells per model (9 on the disc).
         int spritesPerTexture = 0;
@@ -64,42 +56,34 @@ struct SpectatorConfig {
         float weight = 1.0F;
     };
     struct CrowdClass {
-        /// The `id` attribute, counting from 1; placements store it minus
-        /// one (see PlacedSpectator::crowdClass).
+        /// Counts from 1; placements store it minus one.
         int id = 0;
         std::string name;
         std::string skeleton;
         std::string modelSet;
-        /// Played while the crowd is calm, and the first choice of looping
-        /// classes, which list nothing else.
+        /// Played while the crowd is calm; looping classes list nothing else.
         std::vector<WeightedAnimation> idles;
         /// Played when the crowd gets excited (cars passing, a finish).
         std::vector<WeightedAnimation> cheers;
-        /// `randomsize`; absent on most classes, where the game's parser
-        /// gives true (its default argument at 0x8320E4F8).
+        /// Absent means true, the parser's default (0x8320E4F8).
         std::optional<bool> randomSize;
         /// `offsetX/Y/Z`, metres; zero wherever the disc sets them.
         glm::vec3 offset {0.0F};
-        /// `BBoffsetY`: -1 on the classes that sit on things (shoulders,
-        /// walls); by its name, a vertical offset of the billboard sprite,
-        /// in metres. Inferred.
+        /// -1 on classes that sit on things; inferred to be the sprite's vertical offset in metres.
         float billboardOffsetY = 0.0F;
     };
 
     int version = 0;
-    /// `numSpriteAngles` (10 on the disc); the atlas holds 9 cells per model,
-    /// so the value does not describe the atlas layout.
+    /// 10 on the disc, yet the atlas holds 9 cells per model: not the atlas layout.
     int spriteAngles = 0;
-    /// `bSpritesBothSides` ("False" on the disc): the atlas holds one side
-    /// view and the other is drawn mirrored.
+    /// False on the disc: the other side view is drawn mirrored.
     bool spritesBothSides = false;
     std::vector<Model> models;
     std::vector<ModelSet> modelSets;
     std::vector<Skeleton> skeletons;
     std::vector<CrowdClass> classes;
 
-    /// Parses the file's text. Throws DataError naming `source` if it is not
-    /// well-formed XML or has no `spectators` root.
+    /// Throws DataError naming `source` if it is not well-formed XML or has no `spectators` root.
     static SpectatorConfig parse(std::string_view text, const std::string& source);
 
     /// Lookups by name, ignoring case; -1 when absent.

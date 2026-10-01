@@ -22,10 +22,8 @@ void main()
 }
 )";
 
-/// BlitSphericalMap: the cube's level 0 along envcube::sphereDirection(),
-/// written squared, so the map holds linear colour. The source is sampled
-/// bilinearly from its top level only (the blit helper, 0x824728D8, sets
-/// the mip filter to the base map).
+/// BlitSphericalMap: written squared, so the map holds linear colour; reads
+/// only the top level (blit helper 0x824728D8).
 const char* const kToSphereFragment = R"(#version 450 core
 layout(binding = 0) uniform samplerCube uCube;
 uniform vec2 uSize;
@@ -42,8 +40,7 @@ void main()
 )";
 
 /// AveragedDownSample (0x82CFD7C8, blob 0x500C): one bilinear fetch of the
-/// level above at the texel's centre (setTexLOD to that level), which for
-/// a map halving each level is the average of its 2 x 2 texels.
+/// level above, averaging its 2 x 2 texels.
 const char* const kDownsampleFragment = R"(#version 450 core
 layout(binding = 0) uniform sampler2D uSphere;
 uniform vec2 uSize;
@@ -55,12 +52,8 @@ void main()
 }
 )";
 
-/// BlitCubeFaceFromSphericalMap: the face texel's direction axis + (2u - 1)
-/// U + (2v - 1) V (the bases at 0x82CFA9A0, the same as OpenGL's cube map
-/// addressing), read from the lat-long map at envcube::sphereCoordinates()
-/// trilinearly with the level the texel's footprint selects (the fetch
-/// names no level; that the hardware then takes it from the gradients is
-/// inferred), then written as the square root again.
+/// BlitCubeFaceFromSphericalMap (bases at 0x82CFA9A0), written as the square
+/// root again. Inferred: the fetch's level comes from the gradients.
 const char* const kToFaceFragment = R"(#version 450 core
 layout(binding = 0) uniform sampler2D uSphere;
 uniform vec3 uAxis;
@@ -141,8 +134,7 @@ EnvironmentCube::EnvironmentCube()
     glCreateFramebuffers(1, &m_framebuffer);
     glCreateVertexArrays(1, &m_emptyVao);
 
-    // Until its faces are drawn the cube holds black rather than whatever
-    // the new storage holds.
+    // Black until its faces are drawn.
     const std::array<float, 4> black{0.0F, 0.0F, 0.0F, 0.0F};
     for (int level = 0; level < envcube::kLevels; ++level) {
         for (int face = 0; face < 6; ++face) {
@@ -196,10 +188,7 @@ void EnvironmentCube::update(const glm::vec3& centre, float envMapFrequencyScale
             glNamedFramebufferTextureLayer(m_framebuffer, GL_COLOR_ATTACHMENT0, m_cube, 0, face);
             glNamedFramebufferTextureLayer(m_framebuffer, GL_DEPTH_ATTACHMENT, m_depth, 0, face);
         };
-        // The game clears the target before the first face and after each
-        // face's resolve (0x82431998, 0x8243A120), so every face starts from
-        // the same colour and a depth of 0, the far end of its reversed
-        // depth.
+        // The game clears before every face (0x82431998, 0x8243A120).
         const auto clearFace = [&] {
             sceneState();
             glClearNamedFramebufferfv(m_framebuffer, GL_COLOR, 0, &clearColour.x);
@@ -255,8 +244,8 @@ void EnvironmentCube::buildMips()
     glBindTextureUnit(0, m_cube);
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
-    // Its mips, each from the one above. Only the level read is in the
-    // texture's range, so the level drawn into is never also sampled.
+    // Only the level read is in the texture's range, so the level drawn
+    // into is never also sampled.
     m_downsample.use();
     glBindTextureUnit(0, m_sphere);
     for (int level = 1; level < kSphereLevels; ++level) {
@@ -273,9 +262,7 @@ void EnvironmentCube::buildMips()
     glTextureParameteri(m_sphere, GL_TEXTURE_BASE_LEVEL, 0);
     glTextureParameteri(m_sphere, GL_TEXTURE_MAX_LEVEL, kSphereLevels - 1);
 
-    // Every level of every face below the top from the map; the top is the
-    // rendered face and stays (0x82E8B750 skips level 0 when the map was
-    // made from the cube it fills).
+    // Level 0 stays the rendered face (0x82E8B750 skips it).
     m_toFace.use();
     for (int level = 1; level < envcube::kLevels; ++level) {
         const int size = envcube::kSize >> level;

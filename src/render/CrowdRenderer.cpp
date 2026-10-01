@@ -19,9 +19,8 @@ namespace {
 
 namespace draw = spectators::draw;
 
-/// Floats of a model vertex on the GPU: position, normal, texture
-/// coordinates, the two bone indices and their weights (the colour of
-/// spectators::SpectatorMesh is left out: the files have none).
+/// Floats of a model vertex; SpectatorMesh's colour is left out (the files
+/// have none).
 constexpr int kVertexFloats = 12;
 /// Floats of a model instance: the placement's three rows and the
 /// animation, skin layer and fade (see kModelVertexSource).
@@ -32,8 +31,7 @@ constexpr GLuint kBonesBinding = 0;
 constexpr GLuint kSkinUnit = 0;
 constexpr GLuint kAtlasUnit = 0;
 constexpr GLuint kMaskUnit = 1;
-/// Frames a second the game renders at in play, one clip frame each (see
-/// CrowdRenderer::draw()).
+/// The game's render rate in play, one clip frame each.
 constexpr double kTicksPerSecond = 30.0;
 constexpr GLenum kCompressedSrgbAlphaDxt1 = 0x8C4D;
 constexpr GLenum kCompressedSrgbAlphaDxt5 = 0x8C4F;
@@ -259,9 +257,7 @@ std::string fragmentSource(const char* body)
     return std::string("#version 450 core\n") + kSceneLightingGlsl + body;
 }
 
-/// The planes a point in view satisfies (dot(plane, (p, 1)) >= 0): the
-/// four sides and the near plane of the reversed-depth projection, whose far
-/// plane is at infinity.
+/// dot(plane, (p, 1)) >= 0 in view; no far plane (infinite reversed depth).
 std::array<glm::vec4, 5> viewPlanes(const glm::mat4& viewProjection)
 {
     const glm::mat4 t = glm::transpose(viewProjection);
@@ -398,8 +394,8 @@ void CrowdRenderer::uploadMeshes(const spectators::CrowdSet& crowd)
 
 void CrowdRenderer::uploadSkins(const spectators::CrowdSet& crowd)
 {
-    // One array of every model's skin: the skins are all 256x256 DXT1 with
-    // full mip chains on the disc, so one draw can reach them all.
+    // Every skin on the disc is 256x256 DXT1 with full mips, so one array
+    // holds them all.
     std::vector<std::uint32_t> textures;
     for (std::size_t m = 0; m < crowd.models().size(); ++m) {
         const std::uint32_t texture = crowd.models()[m].texture;
@@ -461,9 +457,8 @@ void CrowdRenderer::uploadSkins(const spectators::CrowdSet& crowd)
 
 void CrowdRenderer::uploadClips(const spectators::CrowdSet& crowd)
 {
-    // Every frame of every clip as bone rows: row r of bone b of frame f of
-    // clip c at (clipBase[c] + f * bones + b) * 3 + r, so a person's
-    // AnimInfo.x is the first bone of its frame.
+    // Row r of bone b of frame f of clip c at
+    // (clipBase[c] + f * bones + b) * 3 + r.
     std::vector<glm::vec4> rows;
     std::vector<glm::mat4> matrices;
     for (std::uint32_t a = 0; a < crowd.animations().size(); ++a) {
@@ -486,8 +481,7 @@ void CrowdRenderer::uploadClips(const spectators::CrowdSet& crowd)
 
 void CrowdRenderer::uploadSprites(const spectators::CrowdSet& crowd)
 {
-    // Each set's sprites together, in record order, so a set is one draw
-    // of its instances as the game's billboard draw is.
+    // A set's sprites are contiguous: one draw per set, as the game's.
     std::vector<float> instances;
     for (const spectators::CrowdGroup& group : crowd.groups()) {
         m_groupSpriteFirst.push_back(static_cast<std::uint32_t>(instances.size() / kSpriteFloats));
@@ -763,8 +757,7 @@ void CrowdRenderer::draw(const FrameParams& frame, const world::TrackSettings* s
         m_spriteShader.set("uCrowdAmbient", frame.lighting.ambientColour);
         m_spriteShader.set("uEmissive", emissive);
         m_atlas.bind(kAtlasUnit);
-        // The quads always face along the view; which way they wind does
-        // not matter.
+        // The quads always face along the view, so winding does not matter.
         glDisable(GL_CULL_FACE);
         glBindVertexArray(m_spriteVao);
         glBindBuffer(GL_DRAW_INDIRECT_BUFFER, m_spriteCommands);

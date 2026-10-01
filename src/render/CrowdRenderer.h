@@ -22,61 +22,21 @@ namespace openhorizon::render {
 
 struct FrameParams;
 
-/// Draws the crowds of the track's crowd placement sets as the game's
-/// CProceduralCharacters does (see spectators/CrowdDraw.h for the rules and
-/// their evidence): every person of a shown, visible set as a sprite, and
-/// the people the model queue takes as skinned models with their clips.
-///
-/// The shaders follow the game's PROC_CHARACTER_SKIN_VS/PS and
-/// PROC_CHARACTER_BILLBOARD_VS/PS (the executable's PROC_CHARACTER_*.updb
-/// blobs at 0x82184970, 0x82165788, 0x821839D0 and 0x821652B0), step by
-/// step:
-///
-/// - Models: each vertex is the blend of its two bones by the second
-///   bone's weight, each bone a 3x4 matrix of the clip's frame; then the
-///   person's placement (the draw record's rows: right, up and facing,
-///   scaled by the person's scale for people who stand, and the position).
-///   The pixel is the skin texture lit by `ambColor` plus `sunColor` times
-///   the sun's cosine times the screen's sun shadow mask, fogged, its alpha
-///   the texture's times the fade.
-/// - Sprites: a quad standing on the person's feet, turned about the
-///   vertical to face along the camera's view (not towards the camera),
-///   0.9 m wide and 1.9 m tall at size 1, showing the cell
-///   spectators::draw::spriteColumn() picks. The vertex lights it with
-///   `ambColor`, the tint squared times EmissiveSwitchOnThreshold.y and
-///   `sunColor` times the sun's cosine against the view's backward
-///   direction; the pixel shadows all but the ambient with the mask.
-/// - Both write the square root of the colour, as the scene target holds
-///   (see FrameRenderer), and draw with alpha to mask, which on the
-///   single-sample target keeps pixels whose alpha reaches one half as
-///   WorldRenderer emulates it (the draws set RB alpha-to-mask with offsets
-///   0x87, 0x8246C158 and 0x8248C6E0; the dither itself is not reproduced).
+/// Draws the track's crowds as CProceduralCharacters does (rules in
+/// spectators/CrowdDraw.h): sprites for every person of a shown set, skinned
+/// models for those the model queue takes. Shaders ported from
+/// PROC_CHARACTER_SKIN_VS/PS and PROC_CHARACTER_BILLBOARD_VS/PS (0x82184970,
+/// 0x82165788, 0x821839D0, 0x821652B0); alpha to mask (0x8248C6E0) without the dither.
 ///
 /// Verified from the draws (0x8246C158, 0x8248A270): FadeValues, AnimInfo
-/// (the clip's first bone row plus frame times bones), the sprite constants
-/// (32 cells a row, the atlas's rows, 0.5 m, 2 m, 0.9, 0.95, 0.95, 1.05) and
-/// that every instance of a set is drawn. Inferred or left out:
-/// - The pixel shaders' c360_0.z multiplies the texture; the skinned draw
-///   fills that register slot (the device constant at +0x1550, taken to be
-///   pixel c0) with the tint squared times a factor from the view's object
-///   (+0xEE84) whose writer was not found, plus the scene ambient, and the
-///   sprite draw leaves whatever was there. Neither is reproduced: the
-///   texture is used as it is.
-/// - SKIN_PS's headlight term (bEnableDeferredLightContribution) needs the
-///   deferred light buffer this renderer does not have, as for the track
-///   (see TODO.md); it is left out.
-/// - The bone rows are float matrices rather than the game's 11:11:10
-///   rows, which differ from them by the rows' quantisation.
-/// - The sprite quad's across direction: the shader takes it from CamLook,
-///   row 2 of the camera's matrix at view block +0x110 (0x8248A438), as
-///   (-CamLook.z, 0, CamLook.x) and lights with -CamLook. Taking CamLook as
-///   the view direction (its name, and the lighting then faces the camera)
-///   puts the quad's +x corner on the screen's left.
-/// - People do not cast sun shadows: the depth passes that could draw them
-///   (SKIN_DEPTH, BILLBOARD_DEPTH) were not traced to the shadow maps. Nor
-///   do they get blob shadows: PROC_CHARACTER_SHADOW is never used and
-///   CCrowdPresentation's blob shadows (0x82EA1E98) draw only the track's
-///   `.crowd` file, which is empty on every track of the disc.
+/// and the sprite constants. Inferred or left out:
+/// - Pixel c360_0.z (device constant +0x1550) is not applied (its writer,
+///   view object +0xEE84, was not found).
+/// - SKIN_PS's deferred headlight term: no deferred light buffer here.
+/// - Bones are float matrices, not the game's 11:11:10 rows.
+/// - The sprite's across direction from CamLook (0x8248A438) is inferred.
+/// - No sun shadows (depth passes not traced) and no blob shadows (0x82EA1E98
+///   draws only the track's `.crowd`, empty on every track).
 class CrowdRenderer {
 public:
     /// What the last draw() drew.
@@ -84,15 +44,12 @@ public:
         /// Models by level of detail, walkers included.
         std::array<std::size_t, 4> models{};
         std::size_t walkers = 0;
-        /// Sets shown by the session and in view, and those drawn as
-        /// sprites (within the sprites' reach).
+        /// Sets shown by the session and in view.
         std::size_t visibleSets = 0;
-        /// Of those, the sets of events (with an event block): a race's own
-        /// crowds, or free roam's at the events' starts.
+        /// Of those, the sets with an event block.
         std::size_t visibleEventSets = 0;
         std::size_t spriteSets = 0;
-        /// Sprite instances handed to the GPU; the shader collapses those
-        /// outside their fade.
+        /// Sprite instances handed to the GPU, faded-out ones included.
         std::size_t spriteInstances = 0;
         /// Clip frames the queued people moved on by.
         int ticks = 0;
@@ -112,17 +69,12 @@ public:
     /// The screen's sun shadow mask (ShadowPass::mask()), or 0 for none.
     void setShadowMask(GLuint texture) { m_shadowMask = texture; }
 
-    /// Culls, queues and animates the people for this frame's camera and
-    /// draws them into the bound scene target. The clips advance one frame
-    /// per 30th of a second of frame.time, the presentation clock, which
-    /// stops while the game is paused: the game advances a queued person's
-    /// frame once per frame it renders (0x82EB9DF0) and renders at 30 Hz
-    /// (FrameRate 30 in the in-game render scenario), the clips' own rate.
+    /// Draws into the bound scene target. Clips advance at 30 Hz of
+    /// frame.time, the game's render rate (0x82EB9DF0), so they stop on pause.
     void draw(const FrameParams& frame, const world::TrackSettings* settings);
 
     const Stats& stats() const { return m_stats; }
-    /// Clip frames the presentation clock has moved the crowd on by since
-    /// the renderer was made.
+    /// Clip frames advanced since construction.
     std::uint64_t ticksApplied() const { return m_ticksApplied; }
 
 private:

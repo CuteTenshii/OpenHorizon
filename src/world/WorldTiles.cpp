@@ -23,9 +23,7 @@ std::uint64_t cellKey(int x, int z)
     return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(x)) << 32) | static_cast<std::uint32_t>(z);
 }
 
-/// What a material draws with: its surface (the batch it goes into, less
-/// the index range) and where its vertices keep the inputs that surface
-/// reads.
+/// A material's batch (less the index range) and where its vertices keep the inputs it reads.
 struct SurfaceSource {
     TileMesh::Batch surface;
     int texcoord0Offset = -1;
@@ -88,16 +86,13 @@ SurfaceSource surfaceSource(const RenderMesh& mesh, const RenderMesh::Part& part
         surface.texture = normalMap;
         return source;
     }
-    // The splat and occlusion maps span a ground patch once, on the last
-    // coordinate pair the shader reads: the second for splat-blended
-    // ground, the third for vertex-blended ground.
+    // Splat and occlusion maps span a patch once, on the last coordinate pair the shader reads.
     const int patchOffset = fits(layout->texcoord2Offset) ? layout->texcoord2Offset
         : fits(layout->texcoord1Offset)                   ? layout->texcoord1Offset
                                                           : -1;
     const bool splatGround = blendA != TileMesh::kNoTexture && blendB != TileMesh::kNoTexture
         && splat != TileMesh::kNoTexture && patchOffset >= 0;
-    // Roads also name two Blend layers, but mix them with noise and modulate
-    // maps rather than a vertex colour; they stay plain.
+    // Roads mix their Blend layers with noise and modulate maps, not a vertex colour; they stay plain.
     const bool roadLayers
         = layout->samplerRegister("Noise_Sampler") >= 0 || layout->samplerRegister("Modulate_Sampler") >= 0;
     const bool vertexGround = blendA != TileMesh::kNoTexture && blendB != TileMesh::kNoTexture
@@ -115,8 +110,7 @@ SurfaceSource surfaceSource(const RenderMesh& mesh, const RenderMesh::Part& part
         if (vertexGround) {
             source.colourOffset = layout->colourOffset;
         }
-        // The first constant holds Blend_A's and Blend_B's scales, the
-        // second Blend_C's.
+        // The first constant holds Blend_A's and Blend_B's scales, the second Blend_C's.
         if (!info.constants.empty()) {
             const glm::vec4& ab = info.constants[0];
             surface.layerScales[0] = layerScale(ab.x);
@@ -177,8 +171,7 @@ WorldTileGrid::WorldTileGrid(
     const auto& chunks = index.chunks();
     for (std::uint32_t i = 0; i < chunks.size(); ++i) {
         const WorldChunk& chunk = chunks[i];
-        // Every chunk has a tile, so that changing the filters later only
-        // changes what the tiles draw.
+        // Every chunk gets a tile, so a filter change only changes what tiles draw.
         const glm::vec3 centre = (chunk.boundsMin + chunk.boundsMax) / 2.0F;
         const auto [cx, cz] = cellAt(centre.x, centre.z);
         const auto [it, inserted] = m_tileByCell.try_emplace(cellKey(cx, cz), m_tiles.size());
@@ -293,8 +286,7 @@ TileMesh buildTileMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
     const std::vector<std::uint32_t>& chunks, const TrackTextures* textures)
 {
     TileMesh out;
-    // Indices per surface, concatenated into out.indices at the end. Only
-    // backdrop geometry is kept apart by chunk.
+    // Concatenated into out.indices at the end; only backdrop is kept apart by chunk.
     std::map<BatchKey, std::pair<TileMesh::Batch, std::vector<std::uint32_t>>> batchIndices;
     const auto& entries = archive.entries();
     const auto fail = [&out](std::uint32_t chunk, const std::string& error) {
@@ -335,10 +327,7 @@ TileMesh buildTileMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
             }
         }
         const RenderMesh& mesh = *cached;
-        // A placement's matrix can mirror the model; its triangles then turn
-        // inside out, and the normals computed from them with it. The parsed
-        // model already has Z negated, which mirrors once more, so a matrix
-        // with a positive determinant is the mirroring one here.
+        // The parsed model's Z flip already mirrors, so a positive determinant is the mirroring placement.
         const bool mirrored = chunk.placed && determinant(chunk.placement.rows) > 0.0F;
         const float handedness = mirrored ? -1.0F : 1.0F;
         TileMesh::Model model;
@@ -368,9 +357,7 @@ TileMesh buildTileMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
                     const std::uint32_t a = material.triangles[t];
                     const std::uint32_t b = material.triangles[t + 1];
                     const std::uint32_t d = material.triangles[t + 2];
-                    // Unnormalized, so larger triangles weigh more in the
-                    // average. Flipping Z mirrored the geometry and reversed
-                    // its winding, hence the swapped operands.
+                    // Unnormalized to weigh by area; operands swapped for the Z flip's reversed winding.
                     const glm::vec3 n
                         = handedness * glm::cross(positions[d] - positions[a], positions[b] - positions[a]);
                     normals[a] += n;
@@ -378,8 +365,7 @@ TileMesh buildTileMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
                     normals[d] += n;
                 }
             }
-            // Materials sharing a vertex can map it through different
-            // texture transforms, so every material gets its own copies.
+            // Materials sharing a vertex can transform its UVs differently, so each gets its own copies.
             remap.resize(positions.size());
             for (const RenderMesh::Material& material : part.materials) {
                 if (isNotSurface(mesh, material)) {
@@ -414,17 +400,14 @@ TileMesh buildTileMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
                             const glm::vec3& p = positions[v];
                             const float length = glm::length(normals[v]);
                             const glm::vec3 n = length > 0.0F ? normals[v] / length : glm::vec3(0.0F, 1.0F, 0.0F);
-                            // The material's offset and scale decode both
-                            // coordinate pairs.
+                            // The material's offset and scale decode both coordinate pairs.
                             const glm::vec2 uv = source.texcoord0Offset >= 0
                                 ? RenderMesh::texcoord(part, material, v, source.texcoord0Offset)
                                 : glm::vec2(0.0F);
                             const glm::vec2 uv1 = source.texcoord1Offset >= 0
                                 ? RenderMesh::texcoord(part, material, v, source.texcoord1Offset)
                                 : glm::vec2(0.0F);
-                            // The colour's bytes travel in a float's space, in
-                            // the file's order; the renderer reads them back as
-                            // four normalized bytes.
+                            // File-order bytes in a float; the renderer reads four normalized bytes.
                             std::uint32_t colourBytes = 0xFFFFFFFFU;
                             if (source.colourOffset >= 0) {
                                 const std::uint32_t colour = RenderMesh::colour(part, v, source.colourOffset);

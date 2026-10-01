@@ -32,11 +32,8 @@ void ActivationFlares::setHidden(std::size_t zone, bool hidden)
 
 void ActivationFlares::update(const std::optional<glm::vec3>& subject, particles::ParticleManager& particles)
 {
-    // The executable switches a flare on the events listed in the class
-    // comment, and each leaves it on exactly when the zone is enabled, not
-    // hidden and has the subject inside, so that state is followed. The one
-    // exception, showing a hidden zone again, switches the flare on without
-    // looking at the enabled bit (0x8298b648); zones are never hidden here.
+    // Showing a hidden zone ignores the enabled bit (0x8298b648); zones are
+    // never hidden here, so the state below matches every other event.
     for (Zone& zone : m_zones) {
         zone.inside = subject && glm::distance(*subject, zone.centre) < kRadius;
         const bool wanted = zone.enabled && !zone.hidden && zone.inside;

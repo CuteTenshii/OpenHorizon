@@ -1,7 +1,6 @@
 #pragma once
 
-// Drives the player's car along the road network, for scenarios that need
-// a drive over real roads: the frame-time test and the streaming scenario.
+// Drives the player's car along real roads, for the frame-time and streaming scenarios.
 
 #include "scenarios/Session.h"
 
@@ -20,10 +19,8 @@
 
 namespace openhorizon::test {
 
-/// Drives along the road network: follows a way to its end and there takes
-/// the way through the end node that turns least, as a driver cruising the
-/// roads would. The car stays on the roads the minimap draws, so it keeps
-/// discovering them.
+/// Follows a way to its end, then takes the way through the end node that
+/// turns least. Stays on the roads the minimap draws, so it keeps discovering them.
 class RoadFollower {
 public:
     explicit RoadFollower(const openhorizon::ui::Navigation& navigation)
@@ -31,9 +28,8 @@ public:
     {
     }
 
-    /// Controls for this frame, with the previous frame's keys and buttons
-    /// as held before, so a press is seen once; they put the car back on
-    /// the road when it has been stuck for a while.
+    /// Carries the previous frame's keys so a press is seen once; resets the
+    /// car onto the road when it has been stuck for a while.
     openhorizon::InputState controls(const openhorizon::CarPhysics& car)
     {
         openhorizon::InputState input = steer(car);
@@ -65,7 +61,6 @@ private:
             input.axes[static_cast<std::size_t>(openhorizon::Axis::RightTrigger)] = 0.3F;
             return input;
         }
-        // A point ahead on the road to steer at.
         for (int guard = 0; guard < 64 && glm::length(point() - ground) < kLookahead; ++guard) {
             advance();
         }

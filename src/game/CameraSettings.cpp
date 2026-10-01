@@ -72,9 +72,8 @@ FollowCamera FollowCamera::load(const CameraSettings& settings, std::string_view
     camera.heightSpringKInAir = settings.get(key("Spring\\HeightSpringKInAir"), camera.heightSpringKInAir);
     camera.heightSpringD = settings.get(key("Spring\\HeightSpringD"), camera.heightSpringD);
 
-    // The override pass (0x828FE5E8) stores each non-zero column and, if it
-    // stored any, Init skips the pass that copies the ini's globals
-    // (0x828FE2D0) and the height limits; the untouched offsets stay 0.
+    // Any override skips the ini's globals and height limits (0x828FE5E8,
+    // 0x828FE2D0); the untouched offsets stay 0.
     if (const std::optional<Row> row = overridesOf(db, carId)) {
         const float height = row->f(std::format("{}HeightOffset", prefix));
         const float radius = row->f(std::format("{}RadiusOffset", prefix));

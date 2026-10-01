@@ -14,19 +14,13 @@
 
 namespace openhorizon::collision {
 
-/// Flag bits of FizTriangle::flags. Every triangle has an even value; the
-/// meanings are inferred from which triangles carry each bit, as the code
-/// that reads them has not been traced.
+/// Flag bits of FizTriangle::flags; bit 0 is never set. Meanings inferred.
 namespace TriangleFlags {
-/// Set on ground-like triangles (terrain, road tops) and clear on walls:
-/// every triangle without it slopes by 30 degrees or more, and most with it
-/// face up (inferred).
+/// Ground (terrain, road tops); clear on walls, which all slope 30 degrees or more.
 inline constexpr std::uint8_t kGround = 0x02;
-/// Blocks the camera: set on every "CameraCollision" triangle and on most
-/// terrain, clear on invisible walls and on some ground detail (inferred).
+/// Blocks the camera; clear on invisible walls and some ground detail.
 inline constexpr std::uint8_t kCamera = 0x04;
-/// Blocks cars: clear only on "CameraCollision" triangles, which cars pass
-/// through (inferred).
+/// Blocks cars; clear only on "CameraCollision" triangles.
 inline constexpr std::uint8_t kSolid = 0x08;
 /// Common on invisible walls, safety plastic and wood; meaning unknown.
 inline constexpr std::uint8_t kUnknown10 = 0x10;
@@ -52,10 +46,8 @@ struct FizTriangle {
     /// Which of FizTile::routes the triangle belongs to, one bit per list
     /// entry; kAlwaysPresent for ordinary world geometry.
     std::uint16_t routeMask = kAlwaysPresent;
-    /// Per edge (vertex k to k+1): 255 where the edge is flat, concave or
-    /// unmarked; on convex edges roughly 255·cos(half the angle between
-    /// the two faces' normals), and near 180 on some open edges. Likely
-    /// used to smooth contacts across edges (inferred).
+    /// Per edge (vertex k to k+1): 255 when flat, concave or unmarked; on convex
+    /// edges about 255·cos(half the angle between the faces' normals). Inferred.
     std::array<std::uint8_t, 3> edgeCosines{255, 255, 255};
 
     static constexpr std::uint16_t kAlwaysPresent = 0x8000;
@@ -63,8 +55,8 @@ struct FizTriangle {
     bool belongsToRoutes() const { return routeMask != kAlwaysPresent; }
 };
 
-/// The trailing `OWBB` block of a tile, kept as stored. It is not collision
-/// geometry: the loader hands it to a different subsystem (0x82C12A90).
+/// A tile's trailing `OWBB` block, kept as stored; not collision geometry
+/// (the loader hands it to 0x82C12A90).
 struct OwbbBlock {
     /// Name hash; 0x87D73394 in every Colorado tile.
     std::uint32_t hash = 0;
@@ -72,14 +64,12 @@ struct OwbbBlock {
     std::uint32_t id = 0;
     /// Cell of the track's collision grid (CollisionIndex), as in `.col`.
     std::uint32_t cell = 0;
-    /// The block's bytes after its 16-byte header, up to its 16-byte
-    /// trailer (which repeats the header).
+    /// The bytes between the 16-byte header and its 16-byte copy.
     Bytes payload;
 };
 
-/// A decoded `.fiz` collision tile: the collision triangles around one
-/// 100 m cell of a track's grid, in world coordinates (x east, y up, z as in
-/// the track's placement files; unlike render models, Z is not negated).
+/// A decoded `.fiz` collision tile: the triangles around one 100 m cell of a
+/// track's grid, in world coordinates (Z not negated, unlike render models).
 ///
 /// Layout (big-endian; "A" is the section that starts at file offset 0x20,
 /// and offsets written A+n are relative to it):
@@ -122,22 +112,11 @@ struct OwbbBlock {
 ///       minus 0x20), then the payload (u32 id, u32 cell, ...) and a copy
 ///       of the first 16 bytes                                    verified
 ///
-/// A tile holds, whole, every triangle that touches its cell, and some that
-/// only reach its margin, so triangles near a cell edge are in both tiles.
-/// Every triangle is listed in at least one grid cell, and each list holds
-/// the triangles whose bounds overlap its cell.
+/// Triangles reaching into the margin appear whole in both neighbouring tiles.
+/// Tiles cover only the drivable area, fenced by "Invisible" walls.
 ///
-/// The tiles cover only the drivable area: the roads, the ground beside
-/// them and the open spaces cars may enter, fenced by walls of the
-/// "Invisible" surface. On Colorado about a quarter of the ground inside
-/// the tiles' cells has collision; the rest of the rendered terrain has
-/// none. Heights agree with the render geometry to within millimetres.
-///
-/// Route ids are the numbers of the track's race routes
-/// (`Ribbon_00/TrackRouteNNN.xml`): the triangles of a route's barriers
-/// match its checkpoints' extent. A triangle's mask bit k marks it as part
-/// of route `routes[k]`, so the game can raise the barriers of the race
-/// being driven; outside races they are presumably absent.
+/// Route ids are the track's `Ribbon_00/TrackRouteNNN.xml` numbers; mask bit k
+/// marks a barrier of route `routes[k]`. Absent outside races (inferred).
 struct FizTile {
     std::uint32_t version = 1;
     /// XZ bounds (x = world X, y = world Z).
@@ -153,8 +132,7 @@ struct FizTile {
     std::uint32_t cellsX = 0;
     std::uint32_t cellsZ = 0;
     glm::vec2 cellSize{10.0F};
-    /// Per cell, the start of its run in cellTriangles; cellsX·cellsZ + 1
-    /// entries.
+    /// Per cell, the start of its run in cellTriangles, plus one end entry.
     std::vector<std::uint32_t> cellStart;
     std::vector<std::uint16_t> cellTriangles;
 
@@ -175,9 +153,8 @@ struct FizTile {
     bool present(const FizTriangle& triangle, int activeRoute) const;
 };
 
-/// Decodes a `.fiz` file. `source` names it in errors. Throws DataError if
-/// the data does not have the layout FizTile describes: bad magic or
-/// version, sizes past the end, offsets or indices out of range.
+/// Decodes a `.fiz` file; `source` names it in errors. Throws DataError when
+/// the data does not match the layout FizTile describes.
 FizTile parseFizTile(ByteView data, const std::string& source);
 
 /// Unpacks a vertex normal stored as FizTile documents.

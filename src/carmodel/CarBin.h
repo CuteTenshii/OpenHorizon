@@ -20,16 +20,12 @@ namespace openhorizon::carmodel {
 /// A car render model file (`*.carbin`): a car's exterior or cockpit, a
 /// wheel, or a brake rotor or caliper.
 ///
-/// The file is the game's object serialisation written out field by field,
-/// big-endian, with no padding and no lengths: bytes are read straight after
-/// each other, so a u8 leaves the following u32 unaligned. Every nested
-/// object ("section") starts with a u32 version. Strings are a u32 length
-/// and that many bytes. Arrays are a section (u32 version 1), a u32 count
-/// and the elements. The layout below was established by following the
-/// executable's loader (CCarModelResource and the render model classes it
-/// builds on) and checked on data: every non-stripped carbin on the disc
-/// (2300 files: exteriors, cockpits, wheels, brakes) parses to its last
-/// byte. Facts marked "inferred" come from the data alone.
+/// The game's object serialisation, big-endian, unpadded and unaligned.
+/// Every nested object ("section") starts with a u32 version. Strings are a
+/// u32 length and the bytes; arrays a section (u32 version 1), a u32 count
+/// and the elements. Layout from the loader (CCarModelResource); verified:
+/// every non-stripped carbin on the disc parses to its last byte. Facts
+/// marked "inferred" come from the data alone.
 ///
 ///     preamble   depends on the kind of file (first u32 = its version):
 ///       car      u32 5, 256 bytes, f32[4], 48 bytes, f32[4], u32 n,
@@ -79,16 +75,13 @@ namespace openhorizon::carmodel {
 ///                0xFFFFFF
 ///
 /// A mesh of LOD 0 indexes the part's LOD 0 vertex buffer, any other mesh
-/// the first one (verified on data: wheels carry both). The material name
-/// becomes a technique of `media/shaders/cars/shaders_v16.fxobj` (see
-/// carmodel::techniqueName); the separate `<name>.fxobj` effects are loaded
-/// only by the showroom (`CustomCarShaders.xml`, `inraceload="false"`).
+/// the first (verified). Material names are techniques of
+/// `media/shaders/cars/shaders_v16.fxobj` (carmodel::techniqueName); the
+/// separate `<name>.fxobj` effects are showroom only (`CustomCarShaders.xml`).
 ///
-/// Positions are stored with the front of the car towards -Z, right-handed.
-/// The engine's car space puts the front at +Z with X to the right, so
-/// decodeVertex() negates Z, as world::RenderMesh does for track models. The
-/// indices then wind clockwise seen from the front of each triangle, the
-/// convention of world::TileMesh.
+/// Positions are stored right-handed, front towards -Z; decodeVertex()
+/// negates Z, leaving indices clockwise seen from the front, as
+/// world::TileMesh.
 struct CarBin {
     enum class Kind : std::uint8_t {
         /// Exterior or cockpit of a car (`media/cars/<car>/`).
@@ -122,10 +115,9 @@ struct CarBin {
         /// on data: every mesh uses the full u16 range.
         glm::vec4 uv0{0.0F, 1.0F, 0.0F, 1.0F};
         glm::vec4 uv1{0.0F, 1.0F, 0.0F, 1.0F};
-        /// The other eight floats of the factor block; zero in all but 124
-        /// meshes, meaning unknown.
+        /// The other eight floats of the factor block; mostly zero, unknown.
         std::array<float, 8> extraFactors{};
-        /// The byte before the factors; set in 537 meshes, meaning unknown.
+        /// The byte before the factors; unknown.
         bool factorFlag = false;
         /// From the model's draw lists: drawn in the translucent pass.
         bool translucent = false;
@@ -150,8 +142,8 @@ struct CarBin {
         glm::vec3 centroid{0.0F};
         /// The float after the centroid; unknown.
         float unknownValue = 0.0F;
-        /// The byte after the glass section; set on 5081 of 15333 parts,
-        /// mostly ones with glass, meaning unknown.
+        /// The byte after the glass section; mostly set on parts with glass,
+        /// unknown.
         bool flag = false;
         /// Entries of the glass section's two arrays (16 bytes and 2 bytes
         /// each; shatter data, inferred, not decoded).
@@ -218,25 +210,18 @@ struct CarBin {
 ///
 ///     0   s16[3] direction, s16 length   position = direction / 32767
 ///                                        · length / 32767 · |halfExtent|
-///                                        + part position (verified: the
-///                                        directions are unit length and
-///                                        the result fills the part box;
-///                                        the car vertex shaders compute
-///                                        the same with pack_partPosition)
+///                                        + part position (verified; the
+///                                        shaders' pack_partPosition)
 ///     8   u16[2] first texture coordinates (Mesh::uv0)
 ///     12  u16[2] second texture coordinates (Mesh::uv1)
 ///     16  s16[4] tangent frame as a quaternion (x, y, z, w) / 32767:
-///                it turns +X into the normal and +Y into the tangent along
-///                u (verified against face normals and texture gradients)
+///                +X turns into the normal, +Y into the tangent along u
+///                (verified)
 ///     24  s8[4]  lighting transfer: order-2 spherical harmonic
-///                coefficients in D3DX order, byte n being coefficient n
-///                (the shaders fetch the element as signed 8_8_8_8 and read
-///                its components reversed). Each is decompressed as
+///                coefficients in D3DX order, each decompressed as
 ///                (b / 127 · 0.5 + 0.5) · range + minimum with the header's
-///                lighting minimum and range (shCompressionFactors) and
-///                dotted with the scene's lighting coefficients. Verified:
-///                byte 0, the constant term, stays near 105 over a body
-///                while byte 1 follows -y of the normal.
+///                lighting minimum and range (shCompressionFactors).
+///                Verified.
 struct Vertex {
     /// Car space (Z negated from the file).
     glm::vec3 position{0.0F};

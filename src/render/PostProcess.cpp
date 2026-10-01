@@ -17,8 +17,7 @@ void main()
 }
 )";
 
-/// Every texture of the chain stores the square root of linear colour in a
-/// 10-bit format with an exponent bias of 2, which holds [0, 4].
+/// The chain stores sqrt colour in 10 bits with exponent bias 2: [0, 4].
 const char* const kCommon = R"(#version 450 core
 const float kRange = 4.0;
 vec3 stored(vec3 c)
@@ -27,8 +26,7 @@ vec3 stored(vec3 c)
 }
 )";
 
-/// The exposure both the hot extract and the combine compute from the
-/// adapted luminance (vertex shaders 0x821BD58C and 0x821BD8C4).
+/// Shared by the hot extract and combine (0x821BD58C, 0x821BD8C4).
 const char* const kExposure = R"(
 layout(binding = 7) uniform sampler2D uLuminance;
 uniform vec4 uKeys;
@@ -268,8 +266,7 @@ PostProcess::PostProcess()
     glSamplerParameteri(m_point, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glCreateTextures(GL_TEXTURE_3D, 1, &m_lut);
     glTextureStorage3D(m_lut, 1, GL_RGBA8, 16, 16, 16);
-    // The luminance is a 32-bit float (render target entry 0, k_32_FLOAT);
-    // the game's is 32 x 32 texels of one value.
+    // Render target entry 0, k_32_FLOAT (32 x 32 of one value in the game).
     for (Target& t : m_luminance) {
         create(t, 1, 1, GL_R32F);
     }
@@ -323,9 +320,8 @@ void PostProcess::resize(int width, int height)
     }
     m_width = width;
     m_height = height;
-    // The quarter-size targets are allocated at multiples of 32 (the render
-    // target table rounds relative sizes up, 0x825F21D4), and the passes
-    // draw over the whole of them.
+    // Relative sizes round up to multiples of 32 (0x825F21D4); passes draw
+    // over the whole target.
     const int w = align32((width + 3) / 4);
     const int h = align32((height + 3) / 4);
     create(m_d1, w, h, GL_RGBA16F);
@@ -363,8 +359,6 @@ void PostProcess::run(GLuint scene, int width, int height, GLuint output, const 
     const auto size
         = [](const Target& t) { return glm::vec2(static_cast<float>(t.width), static_cast<float>(t.height)); };
 
-    // Luminance: two gamma-correct down-samples, the biased row average and
-    // the accumulation into the adapted value.
     m_downsample.use();
     glBindSampler(0, m_point);
     bindTarget(m_d1);
@@ -401,8 +395,6 @@ void PostProcess::run(GLuint scene, int width, int height, GLuint output, const 
     m_luminanceValid = true;
     glBindTextureUnit(7, luminance.texture);
 
-    // Bloom: the hot extract with the previous frame's bloom, four blur
-    // levels, and the composite back up into the bloom.
     if (!m_bloomValid) {
         const float black[4] = {0.0F, 0.0F, 0.0F, 1.0F};
         glClearNamedFramebufferfv(m_bloom.framebuffer, GL_COLOR, 0, black);
@@ -452,7 +444,6 @@ void PostProcess::run(GLuint scene, int width, int height, GLuint output, const 
     add(m_composite[0], m_blurY[0].texture, 0.2F * w[1], m_composite[1].texture, 1.0F);
     add(m_bloom, m_hot.texture, 0.2F * w[0], m_composite[0].texture, 1.0F);
 
-    // The final combine, top half and bottom half with their own vignette.
     if (!frame.gradingLut.empty()) {
         glTextureSubImage3D(m_lut, 0, 0, 0, 0, 16, 16, 16, GL_RGBA, GL_UNSIGNED_BYTE, frame.gradingLut.data());
     }

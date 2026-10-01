@@ -21,9 +21,7 @@ public:
     CubeMap(const CubeMap&) = delete;
     CubeMap& operator=(const CubeMap&) = delete;
 
-    /// Uploads `cube`. `srgb` marks colour data stored gamma-encoded, as for
-    /// Texture::fromMipChain. Levels the cube lacks are not made up: a cube
-    /// with only its top level is sampled from it alone.
+    /// `srgb` as for Texture::fromMipChain. Missing levels are not generated.
     static CubeMap fromCube(const world::CubeTexture& cube, bool srgb);
 
     GLuint id() const { return m_id; }

@@ -45,17 +45,14 @@ void SuperStackers::bind(const Presentation& scene, UiRenderer& renderer, int ro
             return value ? static_cast<int>(*value) : fallback;
         };
         Stacker stacker;
-        // The defaults are the attach's (0x828cf6a8) when a scene leaves a
-        // parameter out: left alignment, text positioned, a scaler over the
-        // first element only.
+        // The attach's defaults (0x828cf6a8).
         stacker.alignment = integer("ALIGNMENT", 1);
         stacker.positionText = scene.contractFlag(contract, "POSITION_TEXT").value_or(true);
         const int count = integer("NUM_ELEMENTS", 0);
         for (int i = 0; i < count; ++i) {
             Element stacked;
             stacked.element = scene.contractParameter(contract, std::format("ELEMENT_{}", i));
-            // A path that names nothing keeps its place in the numbering the
-            // scalers refer to, with no width.
+            // Keeps its place in the numbering the scalers use.
             if (stacked.element < 0) {
                 stacker.elements.push_back(stacked);
                 continue;
@@ -76,9 +73,7 @@ void SuperStackers::bind(const Presentation& scene, UiRenderer& renderer, int ro
             Scaler scaler;
             scaler.element = scene.contractParameter(contract, std::format("SCALER_{}", i));
             const std::optional<float> size = scene.contractNumber(contract, std::format("SCALER_{}_SIZE", i));
-            // A scaler without a size cannot convert widths to scale; the
-            // attach's default for it was not traced, so such scalers stay
-            // as authored.
+            // The attach's default size was not traced; such scalers stay as authored.
             if (scaler.element < 0 || !size || *size == 0.0F) {
                 continue;
             }
@@ -122,9 +117,8 @@ void SuperStackers::bind(const Presentation& scene, UiRenderer& renderer, int ro
     }
 }
 
-/// Each text counts for the width it has grown by since it was authored,
-/// the elements move by the widths before them and by the alignment, and
-/// each scaler stretches its model under a run of elements.
+/// Texts count for the width they grew by since authored; scalers stretch
+/// their model under a run of elements.
 void SuperStackers::layout(Presentation& scene, UiRenderer& renderer) const
 {
     for (const Stacker& stacker : m_stackers) {
@@ -161,8 +155,7 @@ void SuperStackers::layout(Presentation& scene, UiRenderer& renderer) const
             const float end = scaler.last < 0 ? total : starts[static_cast<std::size_t>(scaler.last) + 1];
             const float span = end - start;
             if (scaler.mode == 1) {
-                // The model keeps its size and slides along with its texture
-                // going the other way, so more of the texture's length shows.
+                // The model keeps its size; its texture slides the other way.
                 const float uScale
                     = scaler.image >= 0 ? scene.attribute(scaler.image, attr::ScaleU).value_or(1.0F) : 1.0F;
                 const float shift = span * uScale / (scaler.scale0 * scaler.size);

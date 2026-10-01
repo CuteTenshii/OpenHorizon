@@ -1,8 +1,5 @@
-// The track's shading inputs: the Xbox 360 cube texture decoder (XPR2 cube
-// maps and CAFF cube textures), the TrackSettings.xml values the track
-// effects read, and the scene constants computed from them and from the
-// time of day. Synthetic data always; the disc's files when OPENHORIZON_GAME_DIR
-// names an extracted disc.
+// The track's shading inputs: XPR2 and CAFF cube textures, TrackSettings.xml and
+// the scene constants.
 
 #include "support/TestSupport.h"
 
@@ -86,8 +83,8 @@ bool levelsHalve(const world::CubeTexture& cube, int size, int levels)
 
 TEST_CASE("cubeFacesFollowEachOtherInTheirTail", "[shading]")
 {
-    // A 4-texel DXT1 cube is all packed tail: one 32x32-block (8 KiB)
-    // surface per face, the level 16 texels along X as in 2D textures.
+    // A 4-texel DXT1 cube is all packed tail: one 32x32-block (8 KiB) surface
+    // per face, the level 16 texels along X.
     constexpr std::size_t kFaceBytes = 32 * 32 * 8;
     std::vector<std::uint8_t> memory(kFaceBytes * world::CubeTexture::kFaces, 0);
     const std::uint32_t block = xds::tiledOffset2D(4, 0, 32, 3);
@@ -139,8 +136,7 @@ TEST_CASE("cubeLayoutsTheDataCannotHoldAreRejected", "[shading]")
 TEST_CASE("emissiveSwitchOnFollowsTheSampler", "[shading]")
 {
     using render::TrackFrameConstants;
-    // By day the curve is 0 and the presentation keeps -1: no emissive map
-    // passes its ModelData.x test (0 by default).
+    // By day -1, so no emissive map passes its ModelData.x test (0 by default).
     const glm::vec4 day = TrackFrameConstants::emissiveSwitchOn(0.0F, 1.0F, 12.0F);
     CHECK(day.x == -1.0F);
     CHECK(day.y == 0.0F);
@@ -158,9 +154,7 @@ TEST_CASE("emissiveSwitchOnFollowsTheSampler", "[shading]")
     CHECK_THAT(TrackFrameConstants::emissiveSwitchOn(1.0F, 0.0F, 28810.0F).w, WithinAbs(10.0, 1e-3));
 }
 
-// A model's material table holds the vertex shader's constants apart from
-// the pixel shader's: vc360_3 reads the first of the vertex group, never the
-// pixel constant c360_3 of the same material.
+// vc360_3 reads the first of the vertex group, never the pixel constant c360_3.
 TEST_CASE("materialConstantsReadTheirStagesGroup", "[shading]")
 {
     using render::materialSlot;
@@ -202,8 +196,7 @@ TEST_CASE("sceneConstantsTakeTheTrackSettings", "[shading]")
     CHECK(settings.lightHemiBottom == glm::vec3(0.1F, 0.2F, 0.3F));
     CHECK_THAT(settings.iblDirectScale, WithinAbs(1.3, 1e-6));
     CHECK(settings.iblSunColour == glm::vec3(1.0F, 0.98F, 0.94F));
-    // The cube faces' clear: 0.2 min(sun 1.3 clamp(-y) + 0.7 top + 0.3
-    // bottom, 1). A sun straight down saturates red and green.
+    // 0.2 min(sun 1.3 clamp(-y) + 0.7 top + 0.3 bottom, 1).
     const glm::vec4 noon = settings.cubeClearColour(glm::vec3(0.0F, -1.0F, 0.0F));
     CHECK_THAT(noon.x, WithinAbs(0.2, 1e-5));
     CHECK_THAT(noon.y, WithinAbs(0.2, 1e-5));
@@ -249,8 +242,7 @@ TEST_CASE("sceneConstantsTakeTheTrackSettings", "[shading]")
 TEST_CASE("discCubeMaps", "[shading]")
 {
     const std::unique_ptr<Vfs> vfs = disc();
-    // The track's static car cube map: 256 texels, DXT5, every level down to
-    // 1x1 in a packed tail.
+    // 256 texels, DXT5, every level down to 1x1 in a packed tail.
     const std::optional<Bytes> track = vfs->read("media/tracks/colorado/staticCarCubemap.xpr");
     CHECK(track.has_value());
     if (track) {
@@ -304,8 +296,7 @@ TEST_CASE("discTrackCubeTextures", "[shading]")
     if (!archive) {
         return;
     }
-    // The cube most reflective materials name, and a 2D texture that is not
-    // one.
+    // The cube most reflective materials name, and a 2D texture.
     const world::CubeTexture cube = world::loadTrackCube(*archive, 0x00000D9D);
     CHECK(cube.format == world::TextureSurface::Format::Dxt1);
     CHECK(levelsHalve(cube, 256, 1));
@@ -328,8 +319,7 @@ TEST_CASE("discTrackSettingsAndSwitchOnLights", "[shading]")
     CHECK(settings.trackLightMap == glm::vec4(0.3F, 1.0F, 0.0F, 0.0F));
     CHECK(settings.dynamicCubemap);
 
-    // SwitchOnLights runs from 0 by day to 1 by night, so emissives are off
-    // at noon and on at midnight.
+    // SwitchOnLights runs from 0 by day to 1 by night.
     TimeOfDay time(TimeOfDayCurves::load(*vfs, "colorado"));
     time.setSeconds(12.0F * 3600.0F);
     CHECK(render::TrackFrameConstants::emissiveSwitchOn(time.lighting().switchOnLights, 0.0F, 0.0F).x == -1.0F);

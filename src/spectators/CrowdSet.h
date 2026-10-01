@@ -24,33 +24,14 @@ namespace openhorizon {
 class Vfs;
 } // namespace openhorizon
 
-/// Spectators: the crowds of the festival, of race starts and along routes.
-///
-/// How the game draws them (see CrowdDraw.h for the draw itself): the
-/// people of the track's crowd placement sets (CrowdPlacement.h) are each
-/// a sprite from a shared atlas, and near the camera also a skinned
-/// low-poly mesh (four levels of detail, one 256x256 DXT1 texture, two
-/// bones a vertex) animated by skeletal clips. Each person names a crowd
-/// class of spectators.xml, which picks the skeleton (standing or seated),
-/// the people that can appear and the idle and cheer clips. Which person,
-/// clip and frame an instance gets is not stored: the set's init
-/// (CProceduralCharacters, 0x82EDD8A8) draws them from a generator seeded
-/// with the set's person count, and this library draws them the same way
-/// (see placeSpectators()).
+/// Spectators: the crowds of the festival, of race starts and along routes (draw rules in CrowdDraw.h).
+/// Person, clip and frame are not stored: the set's init (CProceduralCharacters, 0x82EDD8A8) draws them from a
+/// generator seeded with the set's person count, as placeSpectators() does.
 namespace openhorizon::spectators {
 
-/// Spectator space: the skinned mesh files' coordinates mirrored in X, so
-/// that a person faces +Z with the left side at -X in the left-handed world
-/// frame (X east, Y up, Z north), as the world's own geometry is. Meshes,
-/// skinned positions and skinning matrices of this library are all in it.
-///
-/// Geometry of one person, ready for upload: interleaved vertices of
-/// kFloatsPerVertex floats (position, normal, texture coordinates, the
-/// colour's four bytes R, G, B, A in one float's space as in
-/// world::TileMesh, two bone indices and two weights as floats) and a
-/// triangle list per level of detail, finest first. Triangles wind clockwise
-/// seen from their front, like world::TileMesh. The files carry no vertex
-/// colour, so it is opaque white.
+/// In spectator space: the mesh files' coordinates mirrored in X, so a person faces +Z in the left-handed world
+/// frame. Every mesh, skinned position and skinning matrix of this library is in it.
+/// Vertices and winding as world::TileMesh, plus two bone indices and two weights; colour is opaque white.
 struct SpectatorMesh {
     static constexpr int kFloatsPerVertex = 13;
     static constexpr int kNormal = 3;
@@ -75,12 +56,10 @@ struct SpectatorMesh {
     std::size_t triangleCount(std::size_t lod) const { return lod < lods.size() ? lods[lod].indexCount / 3 : 0; }
 };
 
-/// Converts a mesh file into spectator space with every level drawn with
-/// `texture`.
+/// Every level is drawn with `texture`.
 SpectatorMesh buildSpectatorMesh(const SkinnedModel& model, std::uint32_t texture);
 
-/// Converts skinning matrices of the file's frame (skinMatrices()) into
-/// spectator space, in place.
+/// Converts skinMatrices() output into spectator space, in place.
 void mirrorToSpectatorSpace(std::span<glm::mat4> matrices);
 
 /// A person in one pose: a <models> entry of spectators.xml with the mesh of
@@ -88,11 +67,9 @@ void mirrorToSpectatorSpace(std::span<glm::mat4> matrices);
 struct SpectatorModel {
     /// "Male01".
     std::string name;
-    /// Index of the entry in spectators.xml's <models>, which is also its
-    /// place in the sprite atlas.
+    /// Index in spectators.xml's <models>, also its place in the sprite atlas.
     int configModel = 0;
-    /// Index into CrowdSet::skeletons() of the first skeleton with the
-    /// mesh's suffix.
+    /// Index into CrowdSet::skeletons() of the first skeleton with the mesh's suffix.
     std::uint32_t skeleton = 0;
     bool seated = false;
     std::string path;
@@ -105,8 +82,7 @@ struct SpectatorModel {
     std::uint32_t texture = 0;
 };
 
-/// A texture of the crowd with every mip level. `chain.origin` is not
-/// meaningful for these; `chain.files` and `path` name the game file.
+/// `chain.origin` is meaningless here; `chain.files` and `path` name the game file.
 struct SpectatorTexture {
     std::string name;
     std::string path;
@@ -139,27 +115,21 @@ struct WeightedChoice {
 struct CrowdClass {
     int id = 0;
     std::string name;
-    /// Index into CrowdSet::skeletons(), -1 when spectators.xml names none it
-    /// defines.
+    /// Index into CrowdSet::skeletons(), -1 when spectators.xml names none it defines.
     int skeleton = -1;
     bool seated = false;
     /// Indices into CrowdSet::models() of the people it shows.
     std::vector<std::uint32_t> models;
-    /// Indices into CrowdSet::animations(); clips the disc lacks are left
-    /// out (and reported).
+    /// Indices into CrowdSet::animations(); clips the disc lacks are left out and reported.
     std::vector<WeightedChoice> idles;
     std::vector<WeightedChoice> cheers;
     glm::vec3 offset {0.0F};
     float billboardOffsetY = 0.0F;
     std::optional<bool> randomSize;
-    /// The 50-slot tables the game draws a clip from, indices into
-    /// CrowdSet::animations() (draw::clipTable()); empty when the class has
-    /// no clip of the kind.
+    /// draw::clipTable() of CrowdSet::animations() indices; empty when the class has no clip of the kind.
     std::vector<std::uint32_t> idleTable;
     std::vector<std::uint32_t> cheerTable;
-    /// Whether the sprites of the class's people take six views (the seated
-    /// cells) instead of three: the game gives six to the first class only
-    /// (the instance packer at 0x82EDDF08 compares the class with 0).
+    /// Six sprite views instead of three: the first class only (0x82EDDF08 compares the class with 0).
     bool sixSpriteViews = false;
 };
 
@@ -178,8 +148,7 @@ struct CrowdGroup {
     /// Its people: CrowdSet::spectators()[first .. first + count).
     std::uint32_t first = 0;
     std::uint32_t count = 0;
-    /// The set's generator after its people were placed; the game keeps
-    /// drawing from it when their clips end.
+    /// The set's generator after placement; the game keeps drawing from it when clips end.
     std::uint32_t randomState = 0;
 
     /// Sets without an event block are shown whatever the player does.
@@ -197,8 +166,7 @@ struct Spectator {
     glm::vec3 position {0.0F};
     /// Radians clockwise from north (see PlacedSpectator::headingRadians()).
     float heading = 0.0F;
-    /// Index into CrowdSet::classes(), -1 when the placement names a class
-    /// spectators.xml lacks.
+    /// Index into CrowdSet::classes(), -1 when spectators.xml lacks the class.
     int crowdClass = -1;
     /// Index into CrowdSet::models(), -1 when the class has no loadable one.
     int model = -1;
@@ -206,34 +174,24 @@ struct Spectator {
     int animation = -1;
     /// The clip's frame at load, so neighbours do not move in step.
     int startFrame = 0;
-    /// Scale of the model: 0.95 to 1.05 by the size factor, stored by the
-    /// game as a 16-bit float (0x82EDDD90, constants at 0x833A5690/94).
+    /// 0.95 to 1.05 by the size factor, a 16-bit float in the game (0x82EDDD90, 0x833A5690/94).
     float modelScale = 1.0F;
-    /// The size factor: a draw from 0.1 to 1 for classes with randomsize
-    /// (the default, 0x8320E4F8), 1 otherwise. The sprite's size is 0.95 to
-    /// 1.05 by it (draw::kSpriteSizeMin).
+    /// A draw from 0.1 to 1 with randomsize (the default, 0x8320E4F8), else 1.
     float sizeFactor = 1.0F;
     /// Drawn only as a sprite (PlacedSpectator::flags).
     bool billboardOnly = false;
     /// The person's tint, 0 to 1 (PlacedSpectator::extra).
     glm::vec3 tint{0.0F};
-    /// First sprite cell of the person's model in the atlas (the model's
-    /// nine cells, plus three for six-view classes), -1 for people the game
-    /// gives no sprite: those of the class after the shoulder carriers
-    /// ("SatShoulders_sit"), who ride on another person (0x82EDE0D0).
+    /// First atlas cell of the model; -1 for shoulder riders ("SatShoulders_sit"), who get no sprite (0x82EDE0D0).
     int spriteCell = -1;
     bool sixSpriteViews = false;
-    /// For those riders, the index into CrowdSet::spectators() of the first
-    /// shoulder carrier of the set standing at the same x and z, whose clip
-    /// and frame they play (0x82EDDCE4); -1 otherwise.
+    /// For riders, the set's first carrier at the same x and z, whose clip and frame they play (0x82EDDCE4).
     int leader = -1;
     /// Index into CrowdSet::groups().
     std::uint32_t group = 0;
     bool seated = false;
-    /// For people who walk, the index into CrowdSet::walkPaths() of their
-    /// path and how far along it they are at time 0 (a draw from 0 to 1 of
-    /// the path's stated length, 0x82EC06D0); -1 for people who stay where
-    /// they are placed.
+    /// Walkers' path in CrowdSet::walkPaths() (-1: not walking) and start, a draw of 0 to 1 of its stated length
+    /// (0x82EC06D0).
     int walkPath = -1;
     float walkStart = 0.0F;
     /// The record's flags and last bytes (see PlacedSpectator).
@@ -246,25 +204,19 @@ struct Spectator {
     glm::mat4 transform() const;
 };
 
-/// A walking path and the set it comes from. Each path gets one walking
-/// person (a Spectator whose walkPath names it); the files do not say how
-/// many walk it, so one is this library's choice.
+/// One walker per path is this library's choice; the files do not say how many walk it.
 struct CrowdWalkPath {
     std::uint32_t group = 0;
     WalkPath path;
 };
 
-/// Which sets to show: free roam (optionally only the events offered on the
-/// map) or one race. Sets without an event block show in both; free roam
-/// adds the sets listing route 0 (the crowds at events' start areas), a
-/// race the sets of its event or route. Inferred from the sets' tags and
-/// routes, not from game code.
+/// Sets without an event block always show; free roam adds those listing route 0, a race those of its event or
+/// route. Inferred from the sets' data, not game code.
 struct CrowdSession {
     bool race = false;
     std::string eventId;
     int routeId = 0;
-    /// Free roam only: HorizonEventIDs whose tagged sets show; empty shows
-    /// them all.
+    /// Free roam only: HorizonEventIDs whose tagged sets show; empty shows them all.
     std::vector<std::string> offeredEvents;
 
     static CrowdSession freeRoam(std::vector<std::string> offeredEvents = {});
@@ -272,8 +224,7 @@ struct CrowdSession {
     bool shows(const CrowdGroup& group) const;
 };
 
-/// A person drawn as a sprite: the cell and a vertical quad standing on
-/// `bottomCentre`, turned to the camera.
+/// A vertical quad standing on `bottomCentre`, turned to the camera.
 struct SpriteBillboard {
     SpriteFrame frame;
     glm::vec3 bottomCentre {0.0F};
@@ -295,10 +246,8 @@ struct CrowdLoadReport {
 /// The crowd of one track: people, meshes, textures, clips and placements.
 class CrowdSet {
 public:
-    /// Loads media/spectators and the crowd placement sets of
-    /// media/tracks/<track>. Throws DataError when spectators.xml or the
-    /// track's archive is missing; files that cannot be read are listed in
-    /// report().failures and left out.
+    /// Throws DataError when spectators.xml or the track's archive is missing; unreadable files go to
+    /// report().failures.
     static CrowdSet load(const Vfs& vfs, std::string_view track);
 
     const SpectatorConfig& config() const { return m_config; }
@@ -320,40 +269,26 @@ public:
     /// The animation named `name` (ignoring case), or -1.
     int findAnimation(std::string_view name) const;
 
-    /// People within `radius` metres of (x, z) in the horizontal plane,
-    /// nearest first.
+    /// Horizontal distance, nearest first.
     std::vector<std::uint32_t> spectatorsNear(float x, float z, float radius) const;
     /// Groups `session` shows.
     std::vector<std::uint32_t> groupsFor(const CrowdSession& session) const;
-    /// People of the groups `session` shows, thinned to about `crowdSize`
-    /// (0 to 1) of them by a hash of each person, so a smaller crowd keeps
-    /// a subset of a larger one. Events.CrowdSize is 1.0 for every event of
-    /// the disc, so the game data never thins a crowd.
+    /// Thinned to about `crowdSize` (0 to 1) by a per-person hash, so a smaller crowd is a subset of a larger.
+    /// Events.CrowdSize is 1.0 for every event on the disc.
     std::vector<std::uint32_t> spectatorsFor(const CrowdSession& session, float crowdSize = 1.0F) const;
 
-    /// Skinning matrices in spectator space of `model` playing `animation`
-    /// at `time` seconds (looping), one per bone of the model's skeleton.
-    /// Throws DataError when the clip's skeleton differs from the model's.
+    /// In spectator space, looping. Throws DataError when the clip's skeleton differs from the model's.
     std::vector<glm::mat4> skinMatrices(std::uint32_t model, std::uint32_t animation, float time) const;
-    /// The model's vertices skinned the same way, in spectator space, in
-    /// vertex order.
+    /// Skinned like skinMatrices(), in vertex order.
     std::vector<glm::vec3> skinnedPositions(std::uint32_t model, std::uint32_t animation, float time) const;
-    /// Skinning matrices in spectator space of animation `animation` at
-    /// whole frame `frame`, one per bone, for the models of the skeleton
-    /// the clip belongs to (bindSkeleton()). `out` needs one entry per bone
-    /// of the clip.
+    /// For the models of bindSkeleton(animation). `out` needs one entry per bone of the clip.
     void frameSkinMatrices(std::uint32_t animation, int frame, std::span<glm::mat4> out) const;
-    /// Index into skeletons() of the skeleton whose bind pose the models
-    /// playing `animation` were made for: the first with the suffix of the
-    /// first skeleton that lists the clip.
+    /// The first skeleton with the suffix of the first skeleton listing the clip.
     std::uint32_t bindSkeleton(std::uint32_t animation) const;
 
-    /// Where person `spectator` is at `time` seconds and the heading they
-    /// face: their placement for people who stand or sit, a point moving
-    /// along the path at kWalkingSpeed for walkers.
+    /// Walkers move along their path at kWalkingSpeed; others stay at their placement.
     glm::vec3 walkerAt(std::uint32_t spectator, float time, float& heading) const;
-    /// Metres a second walkers move along their path: the walker's speed
-    /// field, 1 (0x82EDD9E0), times the frame's time (0x82EC0630).
+    /// Metres a second (0x82EDD9E0, applied per frame at 0x82EC0630).
     static constexpr float kWalkingSpeed = 1.0F;
     /// The sprite to draw for person `spectator` seen from `camera`.
     SpriteBillboard spriteFor(std::uint32_t spectator, const glm::vec3& camera) const;
@@ -386,11 +321,9 @@ private:
     std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> m_grid;
 };
 
-/// Decodes a texture file (.xds) with all its mip levels; levels the file
-/// lacks are filtered from the top one. Throws DataError on failure.
+/// Missing mip levels are filtered from the top one. Throws DataError on failure.
 world::TextureMipChain loadXdsMipChain(ByteView data, const std::string& source);
-/// Decodes a PC DDS texture (DXT1, DXT3 or DXT5, as `shadow.dds` is) with
-/// all its mip levels. Throws DataError on failure.
+/// DXT1, DXT3 or DXT5 (`shadow.dds` is a PC DDS). Throws DataError on failure.
 world::TextureMipChain loadDdsMipChain(ByteView data, const std::string& source);
 
 } // namespace openhorizon::spectators

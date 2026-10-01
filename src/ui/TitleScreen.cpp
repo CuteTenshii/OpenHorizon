@@ -21,12 +21,10 @@ namespace {
 constexpr const char* kScene = "media/ui/scenes/ui4/120_p_pre_splash";
 /// The project of the "UIInGame" sound groups, as the executable names it.
 constexpr const char* kUiProject = "Game:\\Media\\Audio\\UI\\UIInGame\\UIInGame.fev";
-/// Entry 0 of the front-end ambience table (0x828e24a8), which CSplash
-/// starts on entering.
+/// Entry 0 of the front-end ambience table (0x828e24a8).
 constexpr const char* kAmbience = "SplashScreen";
 
-/// The scene's root contract: the behaviour under the scene element that
-/// carries TEXT_PRESS_START. Its class name is stored as ")_Splash".
+/// The behaviour over TEXT_PRESS_START; its class name is stored ")_Splash".
 int findRootContract(const Presentation& scene)
 {
     for (const int child : scene.children(0)) {
@@ -130,8 +128,7 @@ TitleScreen::Impl::Impl(const Vfs& vfs, TitleAudio titleAudio, const std::string
 
 void TitleScreen::Impl::startMusic()
 {
-    // The ambience manager (0x828e3130) leaves a sound that is already
-    // playing alone.
+    // The ambience manager (0x828e3130) leaves a playing sound alone.
     if (!ambience || (music && music->isStarted())) {
         return;
     }
@@ -193,8 +190,7 @@ TitleFlow::Step TitleFlow::update(const MenuInput& input, float dt, bool fadeOut
         m_fadeInPending = false;
     }
 
-    // Another screen over this one keeps the idle timer at zero
-    // (0x8285ca78).
+    // 0x8285ca78.
     m_idle = m_waiting || m_inAttract ? 0.0 : m_idle + static_cast<double>(dt);
     if (!m_fadingOut && m_idle > kAttractSeconds) {
         m_idle = 0.0;
@@ -204,8 +200,7 @@ TitleFlow::Step TitleFlow::update(const MenuInput& input, float dt, bool fadeOut
         m_fadeOutTimer = kFadeOutSeconds;
     }
 
-    // The input handler (0x8285c290) does nothing while +629 is set; B is
-    // polled after A and Start but its result is not used.
+    // 0x8285c290 ignores input while +629 is set; B's result is unused.
     if (!m_waiting && !m_fadingOut && (input.accept || input.start)) {
         step.sounds.emplace_back("PressStartSlideOff");
         step.events.emplace_back("START_OUTRO");
@@ -273,8 +268,7 @@ void TitleScreen::show()
     if (impl.pressStart >= 0) {
         impl.scene.setText(impl.pressStart, impl.strings.get("Main", "IDS_PressStart"));
     }
-    // CSplash adds no help entries on the prompt, so the bar hides every
-    // slot.
+    // CSplash adds no help entries on the prompt.
     impl.help.set(impl.scene, {});
     if (impl.movie) {
         impl.movie->restart();

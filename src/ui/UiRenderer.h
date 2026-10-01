@@ -19,9 +19,8 @@ class Vfs;
 
 namespace openhorizon::ui {
 
-/// One line of a DrawText as UiRenderer::drawText() places it, in the
-/// text's own space (before DrawText::world): the pen starts at (x,
-/// baseline) and the line's glyphs advance `width` from there.
+/// In the text's own space (before DrawText::world): the pen starts at (x,
+/// baseline) and advances `width`.
 struct TextLineLayout {
     std::string_view text;
     float x = 0.0F;
@@ -29,9 +28,8 @@ struct TextLineLayout {
     float width = 0.0F;
 };
 
-/// The lines of `text` (split at its line breaks) where drawText() draws
-/// them with `font`; the text's size, tracking and leading are taken as
-/// they are (after the text scale). The views point into `text.text`.
+/// Size, tracking and leading are taken after the text scale. The views
+/// point into `text.text`.
 std::vector<TextLineLayout> layoutText(const VectorFont& font, const DrawText& text);
 
 /// An OpenGL texture the UI owns.
@@ -44,14 +42,12 @@ public:
     UiTexture(const UiTexture&) = delete;
     UiTexture& operator=(const UiTexture&) = delete;
 
-    /// RGBA8 texels, row-major from the top, with generated mips unless
-    /// `mipmaps` is false. The UI samples gamma-encoded values as they are:
-    /// it blends in display space like the console did.
+    /// RGBA8, rows from the top. Gamma-encoded values are sampled as they are:
+    /// the console blended in display space.
     static UiTexture fromRgba(int width, int height, const std::uint8_t* rgba, bool mipmaps = true);
     /// An empty single-level DXT1 texture to fill with uploadDxt1().
     static UiTexture dxt1(int width, int height);
-    /// Fills a block-aligned region of a dxt1() texture with DXT1 blocks in
-    /// PC byte order.
+    /// Block-aligned DXT1 blocks in PC byte order.
     void uploadDxt1(int x, int y, int width, int height, const std::uint8_t* blocks, std::size_t bytes);
 
     GLuint id() const { return m_id; }
@@ -83,11 +79,9 @@ private:
     GLuint m_id = 0;
 };
 
-/// Draws evaluated scenes and text with the game's fonts. Coordinates are
-/// Anark layer units (the scene's 1280x720 design size, origin at the
-/// centre, y up), fitted to the target keeping the aspect ratio. Draws with
-/// blending into whatever framebuffer is bound, leaving depth testing and
-/// culling off.
+/// Coordinates are Anark layer units (1280x720 design, origin at the centre,
+/// y up), fitted keeping the aspect ratio. Blends into the bound
+/// framebuffer with depth testing and culling off.
 class UiRenderer {
 public:
     UiRenderer(const Vfs& vfs, FontLibrary& fonts);

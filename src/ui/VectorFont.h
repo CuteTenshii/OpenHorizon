@@ -18,14 +18,9 @@ class Vfs;
 
 namespace openhorizon::ui {
 
-/// One corner of a glyph triangle. Glyphs are meshes covering their box
-/// (with a margin) whose corners carry curve coordinates: a point is inside
-/// the glyph where u*u - v < 0, with the test reversed on triangles marked
-/// `outside` (the region between the outline and the box). Straight edges
-/// have u = 0, so the value falls linearly to 0 at the outline; curved edges
-/// use the quadratic Loop-Blinn coordinates (-1,1), (0,-1), (1,1). Scaling
-/// the value by its screen-space gradient gives an anti-aliased edge at any
-/// size, which is how the game draws its "Vector AA" fonts.
+/// A glyph mesh corner: inside where u*u - v < 0, reversed on `outside`
+/// triangles (between outline and box). Straight edges have u = 0; curves use
+/// Loop-Blinn (-1,1), (0,-1), (1,1), the game's "Vector AA".
 struct GlyphVertex {
     /// Position in ems from the pen, y up.
     glm::vec2 position{0.0F};
@@ -37,8 +32,7 @@ struct Glyph {
     char32_t codePoint = 0;
     /// Pen advance in ems.
     float advance = 0.0F;
-    /// Triangle list, three vertices per triangle, with the record's x
-    /// offset applied.
+    /// Three vertices per triangle, the record's x offset applied.
     std::vector<GlyphVertex> triangles;
     /// Extent of the outline (not the covering mesh) in ems.
     glm::vec2 inkMin{0.0F};
@@ -77,20 +71,12 @@ struct Glyph {
 ///       an outside triangle and |x| is the position, then u16 indices
 ///       (relative to the glyph's first vertex)
 ///
-/// The text layout's vertical metrics, verified from the executable: a
-/// line is ascent + descent high and its baseline lies ascent below its
-/// top, with ascent the s32 at 0x44 and descent minus the s32 at 0x48, both
-/// over the units per em at 0x50 (0x8242fff0 and 0x82430468 read them at
-/// 56, 60 and 68 in the metrics block; the line breaker 0x8242fa08 keeps
-/// each line's largest ascent and height). In every text font that is
-/// 1.125 em up and 0.375 em down from the baseline, so capitals (0.75 em)
-/// sit 0.375 em below the top of their line.
+/// Vertical metrics, verified (0x8242fff0, 0x82430468; line breaker
+/// 0x8242fa08): ascent the s32 at 0x44, descent minus the s32 at 0x48, both
+/// over units per em at 0x50; 1.125 em and 0.375 em in every text font.
 ///
-/// Fonts have no kerning pairs: the kerning lookup (0x82ef4cd8) returns 0
-/// when a glyph's first pair is -1, which it is for every glyph of every
-/// font on the disc ("num kerns 0" in the compiler logs). The layout
-/// (0x82442d4c) advances the pen by the glyph's advance times the size,
-/// without rounding to pixels.
+/// No kerning: every glyph's first pair is -1 (lookup 0x82ef4cd8). The layout
+/// (0x82442d4c) advances by advance times size, unrounded.
 class VectorFont {
 public:
     /// Throws DataError if the data is not a vfont.
@@ -128,16 +114,14 @@ private:
 /// sequences give U+FFFD.
 char32_t decodeUtf8(std::string_view text, std::size_t& i);
 
-/// The fonts of `media/ui/fonts`, found through fontmap.xml: a scene names a
-/// face such as "horizon_e" or "DG2_lcd", the map gives a target ("E") and
-/// the file is `<target>_vector_aa.dt`, or `<target>ru_vector_aa.dt` for
-/// Russian. Fonts load on first use.
+/// Fonts by face name through fontmap.xml ("horizon_e" to "E", file
+/// `<target>_vector_aa.dt`, or `<target>ru_vector_aa.dt` for Russian).
 class FontLibrary {
 public:
     FontLibrary(const Vfs& vfs, std::string language);
 
-    /// The font for a face name; unknown names use font A (the game's
-    /// default). Returns nullptr only if no font can be loaded at all.
+    /// Unknown names use font A, the game's default; nullptr only when no font
+    /// loads.
     const VectorFont* font(std::string_view faceName);
     /// Every target the map lists, for tools.
     std::vector<std::string> targets() const;

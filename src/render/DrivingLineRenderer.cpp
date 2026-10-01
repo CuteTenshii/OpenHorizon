@@ -56,8 +56,7 @@ Texture loadTexture(const Vfs& vfs)
         throw DataError("{} is missing", kTexture);
     }
     const world::RgbaImage image = world::decodeXboxTexture(*data);
-    // The file's own mip levels are not read; the top level's are
-    // generated instead.
+    // Mips are generated from the top level, not read from the file.
     Texture texture = Texture::fromRgba(image.width, image.height, image.rgba, false, true);
     glTextureParameteri(texture.id(), GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTextureParameteri(texture.id(), GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);

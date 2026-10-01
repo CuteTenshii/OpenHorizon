@@ -12,54 +12,25 @@
 
 /// Translation of Xenos microcode to GLSL 4.50.
 ///
-/// The generated code follows the hardware model instead of reconstructing
-/// HLSL: temporaries are a `vec4 r[]` array, the previous scalar result, the
-/// predicate, a0 and aL are variables, and every ALU slot evaluates its
-/// sources before writing its vector and scalar results. Multiplications use
-/// the Direct3D 9 rule that zero times anything (including infinity) is
-/// zero, which the game's normalisations rely on.
+/// The code follows the hardware model: temporaries in `vec4 r[]`, the previous scalar, predicate,
+/// a0 and aL as variables. Multiplications use the Direct3D 9 rule that zero times anything is zero,
+/// which the game's normalisations rely on.
 ///
-/// Interface of the generated shaders (the same in every program, so the
-/// renderer can bind once per frame):
+/// Interface, the same in every program so the renderer binds once per frame:
 ///
-///  - `uniform XeVertexConstants { vec4 c[256]; }` at UBO binding 0 and
-///    `uniform XePixelConstants { vec4 c[256]; }` at binding 1: the float
-///    constants c0-c255 of each stage (std140). Literal constants the
-///    shader defines are folded into the code wherever they are addressed
-///    directly; relative addressing reads the block, so the renderer should
-///    also upload the literals (see ShaderProgramSource).
-///  - `uniform XeControlConstants { uvec4 bools[2]; uvec4 loops[8]; }` at
-///    binding 2: the 256 boolean constants as bits (vertex b# at bit #,
-///    pixel b# at bit 128 + #, verified against the game's constant tables
-///    and control flow) and the 32 loop constants (count in bits 0-7, start
-///    in 8-15, signed step in 16-23).
-///  - `uniform XeSystemConstants` at binding 3 (see kSystemBlock in the
-///    source; documented on SystemConstants in ShaderProgram.h): the clip
-///    space remap, vertex stream base offsets, screen size for pixel
-///    positions, alpha test and output gamma.
-///  - Vertex data: `readonly buffer XeVertexStream<s> { uint xe_vb<s>[]; }`
-///    at SSBO binding s for stream s. The game's vertex buffers are bound
-///    unchanged, byte for byte, and each fetch decodes its format, endian
-///    swap, signedness and normalisation in GLSL. This is chosen over GL
-///    vertex attributes because the Xenos formats include ones GL cannot
-///    express as attributes (big-endian 16-bit and 10-bit data, 10_11_11),
-///    because fetches index with any register (not only the vertex id) and
-///    because the declaration-to-fetch binding the Direct3D runtime performs
-///    is then resolved once, at translation, from the effect's own
-///    declaration.
-///  - Textures: `sampler2D xe_tex<n>` (1D and 2D fetches), `sampler3D
-///    xe_tex<n>_3d`, `samplerCube xe_tex<n>_cube` at texture unit n, the
-///    fetch constant index. Pixel shader sampler s# is fetch constant #,
-///    vertex shader sampler s# fetch constant 16 + # (both verified against
-///    the constant tables; the game has one vertex texture, s1 at tf17).
-///    Filter overrides inside fetch instructions are
-///    not applied (texture and sampler objects decide), and 1D textures are
-///    read as Nx1 2D ones.
-///  - Varyings: `layout(location = L) out/in vec4 xe_var<L>`; which
-///    interpolator register goes to which location is an option, so a
-///    program can link a vertex and pixel shader by semantic.
-///  - Pixel outputs: `layout(location = n) out vec4 xe_color<n>` for each
-///    colour export, and gl_FragDepth when the shader exports depth.
+///  - `uniform XeVertexConstants { vec4 c[256]; }` at UBO binding 0, `XePixelConstants` at 1 (std140).
+///    Directly addressed literals are folded; relative addressing reads the block, so upload them too.
+///  - `uniform XeControlConstants { uvec4 bools[2]; uvec4 loops[8]; }` at binding 2: vertex b# at bit
+///    #, pixel b# at bit 128 + # (verified); loops: count in bits 0-7, start 8-15, signed step 16-23.
+///  - `uniform XeSystemConstants` at binding 3: see SystemConstants in ShaderProgram.h.
+///  - Vertex data: `readonly buffer XeVertexStream<s> { uint xe_vb<s>[]; }` at SSBO binding s. The
+///    game's buffers are bound unchanged and fetches decode them in GLSL, since GL attributes cannot
+///    express big-endian or 10_11_11 formats nor fetches indexed by any register.
+///  - Textures: `sampler2D xe_tex<n>` (1D read as Nx1 2D), `sampler3D xe_tex<n>_3d`, `samplerCube
+///    xe_tex<n>_cube` at unit n, the fetch constant: pixel s# at #, vertex s# at 16 + # (verified).
+///    Filter overrides in fetch instructions are not applied.
+///  - Varyings: `layout(location = L) out/in vec4 xe_var<L>`, register-to-location set by option.
+///  - Pixel outputs: `layout(location = n) out vec4 xe_color<n>`, and gl_FragDepth for depth exports.
 namespace openhorizon::xenos {
 
 /// Where one vertex fetch reads its data, as the Direct3D runtime would bind
@@ -86,9 +57,8 @@ struct VertexFetchLayout {
 VertexFetchLayout layoutFromDeclaration(const VertexDeclElement& element, std::uint32_t stride);
 
 struct TranslationOptions {
-    /// Vertex shaders: layout per fetch slot. Slots not listed use the
-    /// format, offset and stride encoded in the instruction, on stream
-    /// 95 - fetch constant index (Direct3D puts stream s at constant 95 - s).
+    /// Vertex shaders: layout per fetch slot. Unlisted slots use the instruction's own layout, on
+    /// stream 95 - fetch constant index (Direct3D puts stream s at constant 95 - s).
     std::map<std::uint32_t, VertexFetchLayout> vertexFetches;
     /// Vertex shaders: varying location of each interpolator export
     /// register, -1 to drop it. Identity by default.
@@ -108,10 +78,8 @@ struct TranslationOptions {
 /// `samplerRegister` of a shader of `stage`.
 std::uint32_t samplerFetchConstant(ShaderStage stage, std::uint32_t samplerRegister);
 
-/// Options derived from a parsed shader: its literals, its interpolators
-/// (at locations equal to their registers), its pixel parameter register,
-/// its sampler names and, for vertex shaders, fetch layouts from
-/// `declaration` when given.
+/// Options derived from a parsed shader, with interpolator locations equal to their registers and
+/// vertex fetch layouts from `declaration` when given.
 TranslationOptions defaultOptions(const Shader& shader, const VertexDeclaration* declaration);
 
 struct SamplerUse {

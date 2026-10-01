@@ -19,23 +19,18 @@ class Vfs;
 struct InputState;
 } // namespace openhorizon
 
-/// Pieces the game's front-end screens share: the string tables by name,
-/// the pad input a screen reads, and the help button bar most scenes carry.
+/// What the front-end screens share: string tables, pad input, help bar.
 namespace openhorizon::ui {
 
-/// The game's string tables, looked up by table name and string id as the
-/// executable does (0x82d6d6d8 takes a table name such as "PauseMenu" and a
-/// hashed IDS_ id). Tables load on first use, the chosen language first and
-/// English when that language lacks the table.
+/// String tables by name and IDS_ id, as 0x82d6d6d8 looks them up; loaded on
+/// first use, falling back to English when the language lacks a table.
 class UiStrings {
 public:
     UiStrings(const Vfs& vfs, std::string language);
 
-    /// The text of `id` in `table`, or the id itself when it is missing so
-    /// the gap stays visible.
+    /// The id itself when missing, so the gap stays visible.
     std::string get(std::string_view table, std::string_view id);
-    /// Whether `table` has `id`. Some ids the game references belong to
-    /// downloadable content whose tables are not on the disc.
+    /// Some ids belong to downloadable content not on the disc.
     bool has(std::string_view table, std::string_view id);
 
 private:
@@ -46,11 +41,8 @@ private:
     std::unordered_map<std::string, std::optional<StringTable>> m_tables;
 };
 
-/// What a menu screen reads from the pad in one frame. The game's front end
-/// binds its navigation in input context 10 (the table at 0x82598a38): up,
-/// down, left and right on the D-pad and on the left stick, A to accept, B
-/// to go back, Start and Back. Presses are edges: true on the frame the
-/// control goes down.
+/// Front-end controls of input context 10 (table 0x82598a38). Presses are
+/// edges: true on the frame the control goes down.
 struct MenuInput {
     bool up = false;
     bool down = false;
@@ -59,9 +51,9 @@ struct MenuInput {
     bool accept = false;
     bool back = false;
     bool start = false;
-    /// The Back button (the one with the left-pointing arrow).
+    /// The Back button.
     bool select = false;
-    /// X and Y, which screens give their own meaning in their help bars.
+    /// Given meaning by each screen's help bar.
     bool x = false;
     bool y = false;
     /// The sticks, -1 to 1, y up.
@@ -69,10 +61,7 @@ struct MenuInput {
     glm::vec2 rightStick{0.0F};
 };
 
-/// Turns the engine's pad state into MenuInput. Direction presses come from
-/// the D-pad edges and from the left stick crossing `stickThreshold`; the
-/// threshold the game's front end uses for its stick directions was not
-/// traced, so the caller chooses it.
+/// The stick threshold is the caller's: the game's was not traced.
 class MenuInputReader {
 public:
     explicit MenuInputReader(float stickThreshold)
@@ -87,9 +76,8 @@ private:
     glm::vec2 m_previousStick{0.0F};
 };
 
-/// The pad buttons the help bar shows, as the index into the icon table the
-/// help bar reads (0x83333b98, one row of 17 textures per controller
-/// family; the pad row is the one used here).
+/// Index into the help bar's icon table (0x83333b98, 17 textures per
+/// controller family; the pad row is used).
 enum class HelpIcon : int {
     A = 0,
     B = 1,
@@ -110,48 +98,28 @@ enum class HelpIcon : int {
     Dpad = 16,
 };
 
-/// The game path of a help icon's texture, from the icon table.
 std::string helpIconTexture(HelpIcon icon);
 
-/// The furthest right a model shows its textures, in the layer space of
-/// `model.world`: the rightmost point of its mesh where every clamped
-/// layer's texture u lies within [0, 1]. Outside that range a clamped layer
-/// samples the transparent border, so nothing of the model shows there.
-/// SUPER_STACKER slides the brush strokes' textures along their meshes
-/// rather than resizing them, so a stroke's mesh reaches far past it.
+/// The rightmost point of the mesh, in `model.world`'s layer space, where
+/// every clamped layer's u lies in [0, 1]: SUPER_STACKER slides textures
+/// along meshes that reach far past what shows.
 float visibleRight(const DrawModel& model);
 
-/// Where a help button in use lies as last evaluated, in layer units: the
-/// button's origin, the right end of its text and the right end of its
-/// pill (the brush stroke under the logo and text, where its texture ends).
+/// In layer units: origin, text's right end, pill's right end.
 struct HelpButtonExtent {
     float left = 0.0F;
     float textRight = 0.0F;
     float pillRight = 0.0F;
 };
 
-/// A scene's HELP_BUTTON_BAR: a row of HELP_BUTTON slots, each with a
-/// logo material and a text. The game appends entries in order (0x828ddca8
-/// pushes each onto the bar's list) and the bar shows them in its slots
-/// left to right, firing SHOWN on the slots in use and HIDDEN on the rest.
-/// The logo is the material's texture, which the bar replaces with the
-/// icon's (MATERIAL_BUTTON_LOGO).
+/// A scene's HELP_BUTTON_BAR (entries appended by 0x828ddca8), with the logo
+/// replaced through MATERIAL_BUTTON_LOGO and each slot's SUPER_STACKER.
 ///
-/// Each slot carries a SUPER_STACKER under its left marker that fits the
-/// pill to the logo and text, and the bar packs the slots in use by their
-/// texts. Verified from the executable: the button's attach (0x8289a7b8)
-/// reads position.x of GROUP_LEFT_MARKER and of TEXT_BUTTON_TEXT into its
-/// +244 and +248; its update (0x828a78d8) sets the text and has the text
-/// object measure it into +252; the bar's layout (0x8289e100) sets each
-/// button's position.x to a running sum that starts at 0 and grows by
-/// +248 - +244 + +252 + 34 (the float at 0x83333b94, beside the icon
-/// table), and hides the buttons not in use. Inferred: that +252 is the
-/// text's width as the stackers measure it; the authored slots agree
-/// (h_map's are 160 apart for "BUTTON TEXT", 112 wide, 11 after its
-/// marker: 11 + 112 + 34 = 157). Missing: the bar's own alignment (the
-/// layout then moves the group of buttons by the total width for an
-/// alignment its +212 holds, whose source was not traced); the group stays
-/// where the scene places it, which is the left-aligned case.
+/// Verified: attach 0x8289a7b8 reads the marker's and text's x into +244 and
+/// +248, update 0x828a78d8 measures the text into +252, layout 0x8289e100
+/// places each slot at a running sum of +248 - +244 + +252 + 34 (0x83333b94).
+/// Inferred: +252 is the stackers' text width (h_map's slots agree). Missing:
+/// the bar's alignment (+212, not traced); the group stays left-aligned.
 class HelpBar {
 public:
     struct Entry {
@@ -159,20 +127,16 @@ public:
         std::string text;
     };
 
-    /// Binds the bar whose contract sits on `bar` (the scene's
-    /// COMPONENT_HELP_BUTTON_BAR), with the stackers of its slots. Call on
-    /// the scene as loaded. Does nothing when `bar` is -1.
+    /// `bar` is the scene's COMPONENT_HELP_BUTTON_BAR, on the scene as loaded;
+    /// -1 does nothing.
     void bind(const Presentation& scene, UiRenderer& renderer, int bar);
     void set(Presentation& scene, const std::vector<Entry>& entries);
-    /// Fits every slot's pill to its logo and text and packs the slots in
-    /// use from the left, for the texts the scene shows now.
+    /// Fits each pill to its logo and text and packs the slots in use.
     void layout(Presentation& scene, UiRenderer& renderer) const;
     /// Shows or hides the whole bar with its ENABLED and DISABLED events.
     void enable(Presentation& scene, bool enabled) const;
-    /// Points the logos of the slots in use at their icons' textures.
     void apply(std::vector<DrawItem>& items) const;
     std::size_t slotCount() const { return m_slots.size(); }
-    /// The slots in use as `items` (the scene's evaluate()) draws them.
     std::vector<HelpButtonExtent> extents(
         const Presentation& scene, UiRenderer& renderer, const std::vector<DrawItem>& items) const;
 
@@ -185,7 +149,7 @@ private:
         int material = -1;
         /// The model SUPER_STACKER stretches under the logo and text.
         int pill = -1;
-        /// The text's x less the left marker's, as the scene loads.
+        /// The text's x less the left marker's, as loaded.
         float textOffset = 0.0F;
     };
     int m_contract = -1;
@@ -195,46 +159,25 @@ private:
     SuperStackers m_stackers;
 };
 
-/// How much larger the game draws a text element than its size taken as
-/// ems of the vector font. The render data stores, next to each text's
-/// size, the width its authored string had in the editor (the f32 that
-/// render data 1008 adds to text records, read at 0x82f2cbe0); over the
-/// scenes' sample strings that width is 1.30 to 1.38 times the string
-/// measured at its size in ems ("BUTTON" in horizon_e 36: 220 against 164;
-/// "BUTTON TEXT" in horizon_b 14: 112 against 81; "GAME PAUSED" at 13: 118
-/// against 91; "22" in horizon_b 15: 22 against 17; "TITLETEXTGOESHERE" in
-/// horizon_e 36: 554 against 414; "0" in horizon_e 54: 54 against 40;
-/// "PLEASE WAIT" in horizon_e 16: 156 against 119; the loading tip's
-/// placeholder in horizon_a 16: 493 against 360), which is the 96/72 of a
-/// point size drawn in pixels. The text layout's scale has the same factor:
-/// the style setup (0x82430aa0, 0x824309b8) takes a value its text object
-/// holds times 4/3 (the constant at 0x82000ca4) over the font's build size
-/// of 14. Inferred: that the value held is the element's size (which the
-/// text setup at 0x82f2a1e8 passes through a per-font factor that returns
-/// 1, 0x825ecbd8), and that an em of the glyph meshes is the build size, as
-/// the widths above agree. The HUD draws through UiRenderer without this
-/// factor.
+/// The game draws text 96/72 larger than its size in ems: the style setup
+/// (0x82430aa0, 0x824309b8) scales by 4/3 (0x82000ca4) over the build size
+/// 14, and the editor widths (render data 1008, 0x82f2cbe0) run 1.30 to 1.38
+/// times the measured ones. Inferred: the held value is the element's size
+/// (factor 1, 0x825ecbd8). The HUD draws without this factor.
 inline constexpr float kTextPointsToUnits = 4.0F / 3.0F;
 
-/// Scales the size of every text item by kTextPointsToUnits.
 void applyTextScale(std::vector<DrawItem>& items);
 
-/// The width of a text element's box in design units: its boxwidth
-/// attribute, a fraction of the scene's width (the text setup at 0x82f2a1e8
-/// multiplies the render data's copy by the screen width). 0 when unset.
+/// The boxwidth attribute times the scene's width (0x82f2a1e8); 0 when unset.
 float textBoxWidth(const Presentation& scene, int element);
-/// The font and size a text element is authored with.
 struct TextStyle {
     std::string font;
     float size = 0.0F;
 };
 TextStyle textStyle(const Presentation& scene, int element);
 
-/// Breaks `text` into lines no wider than `width` design units when drawn
-/// with `measure`, at spaces, keeping the text's own line breaks. A word
-/// wider than the line keeps a line to itself. The Anark runtime wraps text
-/// whose wordwrap attribute is set to its boxwidth; the wrap rule itself
-/// (break at spaces) was not traced.
+/// Breaks at spaces within `width`, keeping the text's own breaks; an
+/// over-long word gets its own line. The wrap rule itself was not traced.
 template <typename Measure> std::string wrapText(std::string_view text, float width, Measure measure)
 {
     std::string out;

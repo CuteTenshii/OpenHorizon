@@ -40,8 +40,7 @@ constexpr std::array<const char*, 17> kHelpIcons{
     "GAME:\\Media\\UI\\Textures\\Horizon\\Controller\\D_Pad.tga",
 };
 
-/// What the help bar's layout (0x8289e100) adds after each button's text
-/// before the next button: the float at 0x83333b94.
+/// Gap after each text in the layout (0x8289e100); the float at 0x83333b94.
 constexpr float kHelpButtonGap = 34.0F;
 
 } // namespace

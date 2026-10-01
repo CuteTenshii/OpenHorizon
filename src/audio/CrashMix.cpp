@@ -12,8 +12,7 @@ namespace openhorizon::audio {
 namespace {
 
 constexpr const char* kSnapshotsPath = "media/audio/audiomixersnapshots.xml";
-/// Metres per second to miles per hour, the executable's constant
-/// (0x82005AE8) the check multiplies by.
+/// The executable's constant (0x82005AE8).
 constexpr float kMphPerMetrePerSecond = 2.2369F;
 
 } // namespace

@@ -23,19 +23,14 @@ class ZipArchive;
 
 namespace openhorizon::world {
 
-/// Which event props (Placement::eventProp) a WorldTileGrid includes; other
-/// chunks are always included.
+/// Which event props (Placement::eventProp) a WorldTileGrid includes; other chunks always are.
 class EventPropFilter {
 public:
     /// None.
     EventPropFilter() = default;
     static EventPropFilter all();
-    /// The props the game's route gate shows while route `routeId` is loaded
-    /// (Placement::onRoute): 0 in free roam, a race's Tracks.RouteId during
-    /// the race. Props with an eventTag are left out whatever their routes:
-    /// the game also shows and hides them by name, which the activation
-    /// zones do here (ActivityProps), and how its route and name gates
-    /// combine for a prop that has both was not traced.
+    /// Props the route gate shows for `routeId` (0 in free roam, else Tracks.RouteId). Props with an eventTag are
+    /// left to ActivityProps; how the game combines both gates was not traced.
     static EventPropFilter route(int routeId);
 
     bool includes(const WorldChunk& chunk) const;
@@ -46,15 +41,12 @@ private:
     int m_routeId = -1;
 };
 
-/// The world's chunks bucketed into square tiles of the XZ plane, so a
-/// renderer can merge a tile's chunks into one draw and re-merge only when
-/// the camera crosses one of the tile's LOD band edges.
+/// Chunks bucketed into square XZ tiles, re-merged only when the camera crosses a tile's LOD band edge.
 class WorldTileGrid {
 public:
     struct Tile {
-        /// The tile's cell: tile (x, z) covers the chunks whose centres lie
-        /// in [origin + tileSize·x, origin + tileSize·(x + 1)) along X, and
-        /// likewise along Z, with the origin at the index footprint's minimum.
+        /// Chunks whose centres lie in [origin + tileSize·x, origin + tileSize·(x + 1)) per axis, origin at the
+        /// footprint's minimum.
         int cellX = 0;
         int cellZ = 0;
         /// Union of the tile's chunk bounds.
@@ -68,9 +60,7 @@ public:
         std::vector<float> edges;
     };
 
-    /// Leaves out the event props that `eventProps` does not include, and
-    /// the chunks `hidden` marks (indexed like WorldIndex::chunks()). The
-    /// grid keeps a reference to `index`.
+    /// `hidden` is indexed like WorldIndex::chunks(). Keeps a reference to `index`.
     WorldTileGrid(const WorldIndex& index, float tileSize, const EventPropFilter& eventProps = {},
         const std::vector<bool>& hidden = {});
 
@@ -79,25 +69,19 @@ public:
 
     /// The cell holding world point `x`, `z`.
     std::pair<int, int> cellAt(float x, float z) const;
-    /// The index into tiles() of the tile of cell (`cellX`, `cellZ`), or
-    /// nothing if no chunk's centre lies in it.
+    /// Nothing if no chunk's centre lies in the cell.
     std::optional<std::size_t> tileAt(int cellX, int cellZ) const;
 
-    /// Applies new filters: which event props to draw, and which chunks to
-    /// leave out. Returns the tiles whose chunks changed, which alone need
-    /// building again.
+    /// Returns the tiles whose chunks changed, which alone need rebuilding.
     std::vector<std::size_t> update(const EventPropFilter& eventProps, const std::vector<bool>& hidden);
 
     /// Horizontal distance from `x`, `z` to the tile's bounds (0 inside).
     float distanceTo(const Tile& tile, float x, float z) const;
-    /// Which of the tile's distance intervals `distance` falls in; the chunk
-    /// set changes only when this does.
+    /// The tile's distance interval; the chunk set changes only when this does.
     int stateAt(const Tile& tile, float distance) const;
     /// Chunks drawn when the tile is `distance` metres away.
     std::vector<std::uint32_t> chunksAt(const Tile& tile, float distance) const;
-    /// Chunks whose band ends beyond `distance`: every chunk a camera at
-    /// least `distance` metres from each of the tile's chunks may draw. The
-    /// set changes only where stateAt() does.
+    /// Chunks whose band ends beyond `distance`: all a camera at least that far from each chunk may draw.
     std::vector<std::uint32_t> chunksBeyond(const Tile& tile, float distance) const;
     const WorldIndex& index() const { return m_index; }
 
@@ -112,16 +96,9 @@ private:
     bool m_built = false;
 };
 
-/// Geometry of one tile state, ready for upload: interleaved position
-/// (x, y, z), normal (x, y, z), first and second texture coordinates (u, v
-/// each) and the vertex colour's four bytes (in file order: R, G, B, A) in
-/// one float's space, and triangle-list indices grouped into one batch per
-/// surface (shading and textures), with backdrop terrain in batches of its
-/// own, one per chunk, so each can be shown or hidden by the camera's zone
-/// (WorldChunk::visibleFrom). Triangles wind clockwise seen from their front
-/// in world coordinates, which is how the model files' winding comes out
-/// after the parser's Z flip; triangles of placements that mirror their
-/// model are reordered to match. The normals point to the front.
+/// One tile state's geometry: interleaved position, normal, two UV pairs and the colour bytes (R, G, B, A) in one
+/// float; one batch per surface, backdrop one per chunk for zone culling (WorldChunk::visibleFrom).
+/// Triangles wind clockwise from the front in world space, mirroring placements reordered to match.
 struct TileMesh {
     static constexpr int kFloatsPerVertex = 11;
     /// Float index of the normal in a vertex.
@@ -141,11 +118,9 @@ struct TileMesh {
     enum class Shading : std::uint8_t {
         /// One diffuse texture, alpha-tested.
         Plain,
-        /// Ground: Blend_A, Blend_B and Blend_C mixed by a splat map (red
-        /// weighs B, green C, the rest A), times an ambient occlusion map.
+        /// Blend_A/B/C mixed by a splat map (red weighs B, green C, the rest A), times an occlusion map.
         Splat,
-        /// Ground: Blend_A and Blend_B mixed by the vertex colour's alpha,
-        /// times an ambient occlusion map.
+        /// Blend_A and Blend_B mixed by the vertex colour's alpha, times an occlusion map.
         VertexBlend,
         /// Lakes: animated normal maps and a reflection, drawn translucent.
         Water,
@@ -154,26 +129,20 @@ struct TileMesh {
     enum Layer : std::uint8_t { LayerB, LayerC, SplatMap, OcclusionMap, LayerCount };
 
     struct Batch {
-        /// The diffuse texture, Blend_A for ground, or the first normal map
-        /// for water.
+        /// The diffuse texture, Blend_A for ground, or the first normal map for water.
         std::uint32_t texture = kNoTexture;
         std::uint32_t firstIndex = 0;
         std::uint32_t indexCount = 0;
         /// Geometry of backdrop chunks (WorldChunk::backdrop).
         bool backdrop = false;
-        /// For backdrop batches, the chunk (index into WorldIndex::chunks())
-        /// the geometry comes from; kMergedChunks otherwise.
+        /// The backdrop batch's chunk (WorldIndex::chunks()); kMergedChunks otherwise.
         std::uint32_t chunk = kMergedChunks;
         Shading shading = Shading::Plain;
-        /// The other textures of ground shading (see Layer); kNoTexture
-        /// where unused. The splat and occlusion maps read the second
-        /// texture coordinates.
+        /// kNoTexture where unused. The splat and occlusion maps read the second texture coordinates.
         std::array<std::uint32_t, LayerCount> layers{kNoTexture, kNoTexture, kNoTexture, kNoTexture};
-        /// How often Blend_A, Blend_B and Blend_C repeat per unit of the first
-        /// texture coordinates (u, v each).
+        /// Blend_A/B/C repeats per unit of the first texture coordinates (u, v each).
         std::array<float, 6> layerScales{1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F};
-        /// The batch's indices chunk by chunk, in order, covering exactly
-        /// [firstIndex, firstIndex + indexCount).
+        /// Covers exactly [firstIndex, firstIndex + indexCount), chunk by chunk.
         std::vector<ChunkRun> runs;
 
         /// Every texture the batch draws with.
@@ -205,27 +174,12 @@ struct TileMesh {
     std::vector<std::uint32_t> textures() const;
 };
 
-/// Materials that are not visible surfaces:
-/// - a lighting effect, such as the glow of the town's lights over the night
-///   sky ("light_pollution.fx" on a 1 km plane), which drawn as a surface
-///   becomes a large opaque wall;
-/// - the placeholder material ("Placeholder001") of an abandoned set of
-///   terrain pieces ("Area04", "TERR_Zone1_Area1_00"), textured "THIS OBJECT
-///   DOES NOT HAVE A FORZA MATERIAL" and partly below the ground. On
-///   Colorado 63 models use it and only it;
-/// - crowd areas ("CrowdTERR" on "Plane004_LOD00" and the like): flat
-///   polygons just above the ground, textured with an orange tile grid,
-///   that mark where spectators stand. On Colorado 48 models use it and
-///   only it.
-/// Such materials are neither drawn nor picked.
+/// Neither drawn nor picked: "light_pollution.fx" (a 1 km glow plane), "Placeholder001" (abandoned terrain pieces)
+/// and "CrowdTERR" (flat markers of where spectators stand).
 bool isNotSurface(const RenderMesh& mesh, const RenderMesh::Material& material);
 
-/// Decodes and merges `chunks` (indices into `index.chunks()`) on the calling
-/// thread. Safe to call from several threads at once on the same archive.
-/// Normals are averaged per part from its triangles, weighted by area.
-/// Without `textures`, or for materials whose diffuse texture or texture
-/// coordinates are unknown, geometry goes into a kNoTexture batch. Chunks
-/// that cannot be decoded are counted and reported in the mesh, not thrown.
+/// Thread-safe on one archive. Normals are area-weighted per part; unknown textures go to a kNoTexture batch.
+/// Undecodable chunks are reported in the mesh, not thrown.
 TileMesh buildTileMesh(const lzx::ZipArchive& archive, const WorldIndex& index,
     const std::vector<std::uint32_t>& chunks, const TrackTextures* textures = nullptr);
 

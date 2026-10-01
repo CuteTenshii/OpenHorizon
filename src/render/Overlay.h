@@ -13,10 +13,8 @@
 
 namespace openhorizon::render {
 
-/// Immediate-mode drawing on top of the scene with a system font: 3D lines,
-/// 2D text and rectangles for the debug view. What the player sees comes
-/// from the game's own scenes instead. Calls queue geometry; flush() draws
-/// and clears it.
+/// Debug-view drawing with a system font: 3D lines, 2D text and rectangles,
+/// queued until flush().
 class Overlay {
 public:
     /// Loads a font through fontconfig by pattern (e.g. "sans-serif:bold")
@@ -39,8 +37,7 @@ public:
     float text(float x, float y, std::string_view utf8, const glm::vec4& colour, float scale = 1.0F);
     float textWidth(std::string_view utf8, float scale = 1.0F) const;
     float lineHeight(float scale = 1.0F) const { return static_cast<float>(m_lineHeight) * scale; }
-    /// Vertices of the lines, rectangles and text queued since the last
-    /// flush.
+    /// Vertices queued since the last flush.
     std::size_t queuedVertices() const { return m_lines.size() + m_quads.size(); }
 
     /// Draws everything queued: lines with `viewProjection` and depth

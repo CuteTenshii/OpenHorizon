@@ -9,8 +9,7 @@ namespace {
 constexpr std::uint32_t kVersion40 = 0x00400000;
 constexpr std::uint32_t kSimpleEvent = 0x10;
 constexpr std::uint32_t kComplexEvent = 0x08;
-/// A sanity bound on counts so that a misread count fails with a clear
-/// message instead of an enormous allocation.
+/// A misread count fails here instead of as an enormous allocation.
 constexpr std::uint32_t kMaxCount = 1U << 20;
 
 struct ParsedProject {
@@ -271,8 +270,7 @@ FevSoundDefinition FevReader::readSoundDefinition(std::uint32_t templateCount)
             waveform.type = FevWaveform::Type::Programmer;
             break;
         default:
-            // Oscillators (type 1) carry settings whose layout no file on
-            // the disc shows, so they cannot be skipped reliably.
+            // No file on the disc shows an oscillator's (type 1) layout, so it cannot be skipped.
             m_in.fail(std::format("sound definition '{}' has a waveform of unsupported type {}", definition.name,
                 type));
         }

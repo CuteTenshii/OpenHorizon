@@ -57,8 +57,7 @@ std::string lower(std::string text)
     return text;
 }
 
-/// The effect texture loader replaces a .tga extension with .xds
-/// (0x82CF9198), which is how names such as particle_smoke.tga resolve.
+/// The effect texture loader replaces .tga with .xds (0x82CF9198).
 std::string texturePath(const std::string& name)
 {
     std::string file = lower(name);
@@ -68,9 +67,7 @@ std::string texturePath(const std::string& name)
     return std::string(kEffectsFolder) + "/" + file;
 }
 
-/// Whether an .xds file's fetch constant (bytes 28-51) marks its colour
-/// channels as gamma-encoded: the X, Y and Z sign fields (bits 2-7 of
-/// the first dword) set to 3.
+/// Gamma-encoded when the fetch constant's (bytes 28-51) X, Y and Z sign fields (first dword bits 2-7) are 3.
 bool isGammaTexture(const Bytes& data)
 {
     if (data.size() < 32) {
@@ -99,9 +96,7 @@ ParticleRenderer::ParticleRenderer(const Vfs& vfs)
     glCreateBuffers(1, &m_records);
     glCreateBuffers(1, &m_indices);
     glCreateSamplers(1, &m_sampler);
-    // The animation frames step past the texture's edge and rely on
-    // wrapping (the vertex shader never takes the frame index modulo the
-    // frame count).
+    // Animation frames step past the texture's edge: the vertex shader never wraps the frame index.
     glSamplerParameteri(m_sampler, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glSamplerParameteri(m_sampler, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glSamplerParameteri(m_sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
@@ -254,8 +249,7 @@ void ParticleRenderer::drawSystem(const ParticleSystem& system, const ParticleFr
     const EffectDefinition& d = system.definition();
     const GLuint diffuse = texture(d.render.texture);
     if (diffuse == 0) {
-        // The game samples no texture, reads alpha 0 and discards every
-        // pixel (the shaders' alpha test), so nothing shows.
+        // The game reads alpha 0 here and its alpha test discards every pixel.
         return;
     }
     GLuint gradient = 0;

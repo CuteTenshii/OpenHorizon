@@ -25,9 +25,8 @@ constexpr float kFarCoverAtNoCoverage = 0.616F;
 constexpr float kFarCoverAtFullCoverage = 0.43F;
 constexpr float kFarSharpness = 0.984F;
 
-/// Direct3D 9 arithmetic the microcode relies on: zero times anything
-/// (infinity included) is zero, log2 of 1 is exactly 0 and exp2 of 0 exactly
-/// 1, so a power of zero is 1 even for a zero base.
+/// Direct3D 9 arithmetic the microcode relies on: zero times infinity is
+/// zero, and a zero power of a zero base is 1.
 const char* const kXenosMath = R"(
 float xmul(float a, float b)
 {
@@ -47,10 +46,7 @@ float xpow(float base, float power)
 }
 )";
 
-// FarCloud_VS: POSITION0.xyz and TEXCOORD0.xyz; the height is lifted to
-// the minimum before the transform; interpolators 0-3 as the microcode
-// exports them (front masks, front map and weight, back masks, back map
-// and weight).
+// FarCloud_VS; interpolators 0-3 as the microcode exports them.
 const char* const kFarVertex = R"(#version 450 core
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec3 aTexcoord;
@@ -208,8 +204,7 @@ std::string fragmentSource(const char* body)
     return std::string("#version 450 core\n") + kXenosMath + body;
 }
 
-/// Sky textures carry no gamma sign in their fetch constants, so their
-/// texels are linear; the game samples them with mips.
+/// Linear: no gamma sign in the sky textures' fetch constants.
 Texture loadTexture(const Vfs& vfs, const std::string& path)
 {
     const std::optional<Bytes> data = vfs.read(path);

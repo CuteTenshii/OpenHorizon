@@ -35,7 +35,6 @@ std::string readText(const Vfs& vfs, const std::string& path)
 
 } // namespace
 
-/// An open bank file and its parsed headers.
 struct RadioAssets::BankFile {
     std::unique_ptr<ReadOnlyFile> file;
     std::string path;

@@ -18,17 +18,11 @@ struct ZipEntry;
 
 namespace openhorizon {
 
-/// The game's file system: the files of an extracted disc, with every
-/// archive of `media/zipmanifest.xml` mounted at its own path without the
-/// ".zip" (so `media/physics.zip` provides `media/physics/...`), plus any
-/// overlay folders layered on top (DLC content, mods).
-///
-/// Paths are matched as the game matches them: without regard to case or
-/// slash direction, and with or without the `game:\` device prefix. A loose
-/// file in an overlay wins over everything; then loose disc files; then
-/// archives by manifest priority, the highest first.
-///
-/// Archives are opened on first use. Reading is thread-safe.
+/// The extracted disc plus every `media/zipmanifest.xml` archive mounted at
+/// its path minus ".zip", under any overlay folders (DLC, mods).
+/// Paths ignore case, slash direction and `game:\`. Precedence: overlays,
+/// loose disc files, then archives by manifest priority. Reads are
+/// thread-safe.
 class Vfs {
 public:
     Vfs();
@@ -68,8 +62,7 @@ public:
     /// The real file behind a loose game path, if there is one.
     std::optional<std::filesystem::path> hostPath(std::string_view path) const;
 
-    /// The archive mounted exactly at `mountPoint`, opening it if needed; for
-    /// code that walks one archive's entries, such as the world streamer.
+    /// The archive mounted exactly at `mountPoint`, opening it if needed.
     std::shared_ptr<const lzx::ZipArchive> archiveAt(std::string_view mountPoint) const;
 
     const std::filesystem::path& discRoot() const { return m_discRoot; }

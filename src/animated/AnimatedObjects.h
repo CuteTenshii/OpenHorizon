@@ -26,9 +26,8 @@ struct AnimatedObject {
     std::uint32_t setNumber = 0;
     AnimatedObjectSet set;
     granny::FileInfo granny;
-    /// tracks[animation][entry][bone]: index into the animation's group for
-    /// that entry's model, -1 where no track names the bone. Tracks bind to
-    /// bones by name, as their order differs from the skeleton's.
+    /// tracks[animation][entry][bone]: index into the entry's track group, -1
+    /// where no track names the bone (bound by name, not skeleton order).
     std::vector<std::vector<std::vector<int>>> tracks;
     /// groups[animation][entry]: the track group that moves the entry's
     /// model (the one named after it), -1 for none.
@@ -51,50 +50,25 @@ struct AnimatedView {
 };
 
 /// The track's animated objects, where they stand and how far each has
-/// played.
-///
-/// How the game runs them, verified in the executable unless said:
-///  - Placements: every kind-5 set places objects of the track's kind-4 sets
-///    (AnimatedPlacementSet). Sets with an event block are gated by the
-///    loaded route as zone-file props are (world::Placement::onRoute);
-///    that the same gate applies is inferred, as the block is parsed by the
-///    shared header parser. On Colorado 97 sets carry one, none of whose
-///    route lists holds free roam's route 0: the air dancers and
-///    inflatables of race routes.
-///  - Visibility (0x82EC85A8): an instance is drawn when its bounds (the
-///    set's box through the placement, 0x82EB8970) are in view and it is
-///    no farther than its cull distance; its level of detail is 0 up to
-///    the first switch distance, 1 up to the second, else 2. The game
-///    measures from the camera to the placement (inferred: the distance
-///    code's operands were not traced), and chooses the level in one view
-///    (view 9) whose relation to the main camera was not traced.
-///  - Clock (0x82427848, reached once a frame through 0x8241D3B0): each
-///    visible instance's clock advances by the presentation's time step,
-///    the same as TrackFrameConstants::timeGain's, which is 0 while the
-///    game is paused (0x824217E0, 0x82491608). Instances out of view keep
-///    their clock and resume where they stopped.
-///  - Clips: an instance with no clip playing that is ready (below) and,
-///    when its trigger distance is not negative, no farther than it, picks
-///    one of its animations at random with a random phase within its
-///    duration, and plays it looping for ever (0x82EB8638, loop count 0).
-///    The game's random numbers (0x82DBE490, 0x82DBE4F0) are not
-///    reproduced: the choice here comes from a hash of the instance, so a
-///    load always looks the same.
-///  - Ready (0x8241FE60): the time-of-day gate against the SwitchOnLights
-///    curve (taken as -1 when 0, 0x8265AFB8): an instance with a night
-///    threshold above 0 plays only while the curve is at least that (the
-///    fireworks, stage lights, lasers), one with a day threshold below 0.95
-///    only while the curve is at most that (the tractors and the crop
-///    duster). An instance that stops being ready drops its clip; drawn
-///    then, it shows its rest pose (inferred: the draw does not read the
-///    flag).
-///  - Instances placed as shared (placement +80 = 0) play the set's single
-///    instance.
-/// Missing: the 0.5 s ease-in of a clip picked after the first frame (the
-/// blend curve was not traced); the attached sounds and particle effects
-/// (batch strings `Audio: ...`, the effect queue 0x82EB9328); the objects
-/// the gameplay spawns by name from media/animatedobjects (checkpoint
-/// lasers, start gantry sparks, confetti), whose triggers were not traced.
+/// played. Verified in the executable unless said:
+///  - Placements: kind-5 sets place objects of kind-4 sets; sets with an
+///    event block are gated by the loaded route like zone props (inferred).
+///  - Visibility (0x82EC85A8): bounds (0x82EB8970) in view and within the
+///    cull distance; LOD 0, 1 or 2 by the two switch distances. Distance is
+///    camera to placement (inferred); LOD is chosen in view 9 (untraced).
+///  - Clock (0x82427848, via 0x8241D3B0): visible instances advance by the
+///    presentation time step, 0 while paused (0x824217E0, 0x82491608).
+///  - Clips: an idle, ready instance within its trigger distance (unless
+///    negative) loops a random animation from a random phase (0x82EB8638).
+///    A hash of the instance stands in for the game's RNG (0x82DBE490,
+///    0x82DBE4F0).
+///  - Ready (0x8241FE60): SwitchOnLights (0 taken as -1, 0x8265AFB8) at least
+///    the night threshold when above 0, at most the day one when below 0.95.
+///    An unready instance drops its clip and shows its rest pose (inferred).
+///  - Shared placements (placement +80 = 0) play the set's single instance.
+/// Missing: the 0.5 s ease-in of later clips; attached sounds and effects
+/// (`Audio: ...`, queue 0x82EB9328); objects spawned by name from
+/// media/animatedobjects.
 class AnimatedObjects {
 public:
     struct Instance {

@@ -22,16 +22,10 @@ struct SampledCurve {
     bool empty() const { return values.empty(); }
 };
 
-/// Friction of one tyre direction: a curve at light load and one at heavy
-/// load, each the normalised friction against slip, with its own peak
-/// friction coefficient. Loads between the two blend the curves, which is
-/// how the game models a tyre gripping less per kilogram as load rises.
-///
-/// From `List_TireFrictionMultiCurve` and `List_TireFrictionCurve`: slip runs
-/// from 0 to `maxSlip` over the curve's samples (degrees of slip angle for the
-/// lateral curves, whose maxSlip is 49.5; slip ratio for the longitudinal
-/// ones, whose maxSlip is 1.1). Loads are in kilograms-force, as the table's
-/// 10.1972 and 1019.72 (100 N and 10 kN) show.
+/// Friction of one tyre direction: normalised friction against slip at a
+/// light and a heavy load, blended for loads between. From
+/// `List_TireFrictionMultiCurve` / `List_TireFrictionCurve`: slip in degrees
+/// (lateral, maxSlip 49.5) or slip ratio (longitudinal, 1.1); loads in kgf.
 struct TireFrictionCurve {
     float maxSlip = 1.0F;
     float lightLoadKgf = 10.1972F;
@@ -46,9 +40,8 @@ struct TireFrictionCurve {
     float friction(float slip, float loadN) const;
     /// The slip at which the blended curve peaks for `loadN`.
     float peakSlip(float loadN) const;
-    /// Peak friction for `loadN`: each curve's highest value, blended by
-    /// load between the two curves' loads and clamped at both ends, as the
-    /// game's lookup at 0x82DD1678 blends its per-curve peaks.
+    /// Peak friction for `loadN`: the curves' peaks blended by load and
+    /// clamped, as the lookup at 0x82DD1678 does.
     float peakFriction(float loadN) const;
 };
 
@@ -85,10 +78,8 @@ struct TireCompound {
     float widthScale(float widthMm) const;
 };
 
-/// One axle's suspension, from `List_SpringDamperPhysics`. Values are
-/// converted to SI on load: the table stores springs in N/mm and dampers in
-/// kN·s/m, which gives every car a ride frequency near 1.5 to 2.5 Hz and
-/// damping ratios near 0.3 to 0.7, as road cars have.
+/// One axle's suspension, from `List_SpringDamperPhysics`, converted to SI:
+/// the table stores springs in N/mm and dampers in kN·s/m.
 struct AxleSuspension {
     float rideHeight = 0.12F;
     float maxCompression = 0.06F;
@@ -129,14 +120,12 @@ struct Differential {
     float accelReferenceTorque = 50.0F;
 };
 
-/// One block of `FrictionTorqueMod` in `media/physics/physicssettings.ini`:
-/// how far the yaw torque of the tyre forces is scaled and clamped, as the
-/// executable's step at 0x82DEFF88 applies it. The `0` values hold while
-/// the car's velocity is within the angle whose cosine is `cosYawAngle0` of
-/// its heading, the `1` values beyond `cosYawAngle1`; in between they blend.
-/// "Turn" applies when the torque turns the body the way it already yaws,
-/// "Straighten" otherwise. Clamps are angular accelerations in degrees per
-/// second squared. Field order is the loader's (0x82CA7218).
+/// One `FrictionTorqueMod` block of `media/physics/physicssettings.ini`:
+/// scale and clamp of the tyre forces' yaw torque (applied at 0x82DEFF88).
+/// `0` values hold within the heading angle of cosine `cosYawAngle0`, `1`
+/// values past `cosYawAngle1`, blended between; "Turn" adds to the yaw,
+/// "Straighten" opposes it. Clamps in deg/s²; field order is the loader's
+/// (0x82CA7218).
 struct FrictionTorqueMod {
     float cosYawAngle0 = 0.0F;
     float cosYawAngle1 = 0.0F;
@@ -150,10 +139,8 @@ struct FrictionTorqueMod {
     float straightenClamp1 = 0.0F;
 };
 
-/// The driving-assist tunables of `media/physics/physicssettings.ini`
-/// (PhysicsSettings, bound by the loader at 0x82CA0CE0 and read at run time
-/// from 0x8359FAD8). The initial values are the ones the disc's file holds,
-/// kept for running without the disc; `loadCarSpec` reads the file.
+/// Driving-assist tunables of `media/physics/physicssettings.ini` (loader
+/// 0x82CA0CE0, read from 0x8359FAD8); defaults are the disc file's values.
 struct AssistSettings {
     /// Stability management and traction control act above these speeds
     /// (mph), compared as squared speeds (0x82DEEF80, 0x82DF8630).
@@ -201,10 +188,8 @@ struct CarSpec {
     int classId = 0;
     float performanceIndex = 0.0F;
 
-    /// List_UpgradeCarBodyWeight.Mass of the stock body; the executable reads
-    /// it with CMHeight, CMBackFront and BlockDimX/Y/Z into the car's rigid
-    /// body (loader at 0x82CA9A10). Data_Car.CurbWeight (in 100 kg) agrees
-    /// for 173 of the 176 cars and is the fallback.
+    /// List_UpgradeCarBodyWeight.Mass of the stock body (loader 0x82CA9A10);
+    /// Data_Car.CurbWeight (in 100 kg) is the fallback.
     float massKg = 1400.0F;
     /// Share of the weight on the front axle.
     float frontWeight = 0.55F;
@@ -221,10 +206,9 @@ struct CarSpec {
     /// (List_UpgradeCarBodyWeight.BlockDimX/Y/Z: width, height, length).
     std::array<float, 3> inertiaBlock{1.9F, 0.9F, 4.5F};
 
-    /// One of the spheres `physics/maxdata.xml` lists as the body's collision
-    /// shape, in car space (the file's coordinates less
-    /// BottomCenterWheelbasePos, as the car model is placed). Flags 2 marks
-    /// the body spheres; flags 1 the 5 cm corner points.
+    /// A body sphere from `physics/maxdata.xml`, in car space (the file's
+    /// coordinates less BottomCenterWheelbasePos). Flags 2 marks the body
+    /// spheres; flags 1 the 5 cm corner points.
     struct CollisionSphere {
         std::array<float, 3> centre{};
         float radius = 0.0F;
@@ -238,9 +222,8 @@ struct CarSpec {
     /// to `torqueCurveMaxRpm`.
     SampledCurve torqueCurve;
     float torqueCurveMaxRpm = 8000.0F;
-    /// Braking torque with the throttle shut at the redline, N·m. How the
-    /// game spreads it over lower engine speeds is not known; the engine
-    /// model scales it linearly with speed.
+    /// Braking torque with the throttle shut at the redline, N·m. Scaled
+    /// linearly with engine speed: the game's spread is not known.
     float engineBrakingTorque = 50.0F;
     float redlineRpm = 7000.0F;
     float idleRpm = 800.0F;
@@ -283,12 +266,9 @@ struct CarSpec {
     float brakeBias = 0.5F;
     float handbrakeScale = 1.5F;
     float absReleasePoint = 0.7F;
-    /// ABS (List_UpgradeBrakes): the normalised slip at which a wheel's
-    /// brake lets go, front and rear, with the wheel straight and at full
-    /// steering input, and how long it stays released (seconds). The loader
-    /// at 0x82CAA740 reads them in the order ReleasePointABS, DurationABS,
-    /// front no-steer, front full-steer, rear no-steer, rear full-steer,
-    /// and 0x82DF8630 blends each pair by the steering input.
+    /// ABS (List_UpgradeBrakes, loader 0x82CAA740): normalised slip at which
+    /// a wheel's brake lets go, straight and at full lock (blended by steering
+    /// at 0x82DF8630), and how long it stays released (seconds).
     float absDuration = 0.05F;
     float absSlipFrontNoSteer = 3.0F;
     float absSlipFrontFullSteer = 0.5F;
@@ -297,8 +277,7 @@ struct CarSpec {
     int frontBrakeSize = 12;
     int rearBrakeSize = 12;
 
-    // Aerodynamics. Forces as the game tabulates them: pounds-force at
-    // 100 mph (see CarSpec loading for how that was established).
+    // Aerodynamics: pounds-force at 100 mph, as the game tabulates them.
     float dragAt100MphLbf = 200.0F;
     float frontDownforceAt100MphLbf = 0.0F;
     float rearDownforceAt100MphLbf = 0.0F;
@@ -325,9 +304,8 @@ struct CarSpec {
     float steerRateDynFindPeak = 10.0F;
     /// Seconds for the steering to reach its full rate from rest.
     float steerAccelTimeToMaxRate = 0.01F;
-    /// From media/physics/physicssettings.ini (PhysicsSettings): the
-    /// normalised rear slip above which the steering countersteers, and the
-    /// normalised front slip above which it stops adding lock.
+    /// physicssettings.ini: the normalised rear slip above which the steering
+    /// countersteers, and the front slip above which it stops adding lock.
     float normRearSlipAngleToCountersteer = 3.0F;
     float steerFrictionClamp = 1.2F;
     /// Data_Car.AssistsTCSSlipDefTakeoff / Moving: the driven wheels'
@@ -335,11 +313,9 @@ struct CarSpec {
     /// TractionControlSpeed.
     float tcsSlipTakeoff = 33.0F;
     float tcsSlipMoving = 0.5F;
-    /// AutoSteerOverrides.STMSlipMin / STMSlipMax (by
-    /// Data_Car.AutoSteerOverrideId): the rear tyres' average normalised
-    /// slip angle where stability management starts to brake, and where it
-    /// brakes fully. The table's AutoSteer columns belong to the game's
-    /// auto-steer setting, which this engine does not have.
+    /// AutoSteerOverrides.STMSlipMin / STMSlipMax (by AutoSteerOverrideId):
+    /// rear normalised slip angle where stability management starts and fully
+    /// brakes.
     float stmSlipMin = 1.5F;
     float stmSlipMax = 3.0F;
     AssistSettings assistSettings;
@@ -365,13 +341,9 @@ struct CarSpec {
     float fullThrottleTorque(float rpm) const;
 };
 
-/// Collision settings from `media/physics/physicssettings.ini`, as the game
-/// binds them (loader at 0x82CA0CE0, defaults set by the constructor at
-/// 0x82E08010, used where a key is absent).
-///
-/// The disc's file spells one key "CarCarResitution", which does not match
-/// the name the executable binds ("CarCarRestitution"), so the game keeps
-/// that value's default of -0.2.
+/// Collision settings from `media/physics/physicssettings.ini` (loader
+/// 0x82CA0CE0, defaults from the constructor at 0x82E08010). The disc's file
+/// misspells "CarCarResitution", so the game keeps its default of -0.2.
 struct CollisionSettings {
     float carCarRestitution = -0.2F;
     float defaultRestitution = 0.0F;
@@ -380,9 +352,8 @@ struct CollisionSettings {
     float raceCarTorqueScale = 0.3F;
     float raceCarTorqueScaleInRace = 0.2F;
     float raceCarTorqueScaleVsTrafficInRace = 0.2F;
-    /// Car against the static world. The physics world copies these into
-    /// itself every step (0x82E09BC0) and the contact response (0x82DD2750)
-    /// reads them there; see carWorldTorqueScaleAt() and frictionBlendAt().
+    /// Car against the static world, read by the contact response at
+    /// 0x82DD2750 (copied each step at 0x82E09BC0).
     float carWorldTorqueScale = 0.2F;
     float lowSpeedCarWorldTorqueScale = 1.0F;
     float collisionLowSpeedMph = 20.0F;
@@ -390,40 +361,30 @@ struct CollisionSettings {
     float frictionLowSpeedMph = 10.0F;
     float frictionHighSpeedMph = 30.0F;
 
-    /// The share of a world contact's impulse that turns a car moving at
-    /// `speed` m/s: LowSpeedCarWorldTorqueScale up to CollisionLowSpeedMph,
-    /// CarWorldTorqueScale from CollisionHighSpeedMph, linear between
-    /// (0x82DD2750, on the length of the body's velocity).
+    /// Share of a world contact's impulse that turns a car at `speed` m/s
+    /// (0x82DD2750): LowSpeedCarWorldTorqueScale up to CollisionLowSpeedMph,
+    /// CarWorldTorqueScale from CollisionHighSpeedMph, linear between.
     float carWorldTorqueScaleAt(float speed) const;
-    /// Where a car moving at `speed` m/s sits between a surface pair's
-    /// LowSpeedFrictionCoefficient (0) and FrictionCoefficient (1): 0 up to
-    /// FrictionLowSpeedMph, 1 from FrictionHighSpeedMph, linear between
-    /// (0x82E04258, which passes it to the pair lookup at 0x82E0B890).
+    /// Where a car at `speed` m/s sits between LowSpeedFrictionCoefficient
+    /// (0) and FrictionCoefficient (1), by FrictionLow/HighSpeedMph
+    /// (0x82E04258, passed to the pair lookup at 0x82E0B890).
     float frictionBlendAt(float speed) const;
 };
 
-/// Reads the collision settings; keys the file does not give keep the
-/// executable's defaults.
+/// Reads the collision settings; missing keys keep the executable's defaults.
 CollisionSettings loadCollisionSettings(const Vfs& vfs);
 
-/// Spheres in car space that stand in for the body against the world, sized
-/// from its bounding box (maxdata.xml): a row of touching spheres down each
-/// side at bumper height and two near the roof, so walls and rollovers are
-/// caught. They are not the game's shapes, which have not been traced.
+/// Stand-in body spheres against the world, sized from the maxdata.xml box:
+/// rows along each side at bumper height and two near the roof. Not the
+/// game's shapes, which are untraced.
 std::vector<CarSpec::CollisionSphere> worldContactSpheres(const CarSpec& spec);
 
-/// Spheres in car space for contacts between cars: the body spheres of
-/// maxdata.xml (flags 2), or, where it lists none (as for the box truck
-/// KEN_T440_12, whose four spheres carry flags 3), rows like those of
-/// worldContactSpheres() but twice as dense and closed at both ends, which
-/// meet another such car's box.
+/// Spheres for contacts between cars: maxdata.xml's body spheres (flags 2),
+/// or, where none are listed, denser closed rows like worldContactSpheres().
 std::vector<CarSpec::CollisionSphere> carContactSpheres(const CarSpec& spec);
 
-/// Whether a car meets other cars with its maxdata.xml BoundingBox rather
-/// than with spheres: those that list no body spheres. The stand-in rows
-/// of carContactSpheres() sit above the ride height, which on a truck
-/// (0.53 m for KEN_T440_12) leaves room for a car's nose below them; the
-/// box reaches the ground as the file gives it.
+/// Whether a car meets other cars with its maxdata.xml BoundingBox: those
+/// listing no body spheres, so a truck's box reaches the ground.
 bool carContactIsBox(const CarSpec& spec);
 
 /// Reads the stock specification of car `carId` (`Data_Car.Id`) from the

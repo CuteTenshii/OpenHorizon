@@ -8,11 +8,9 @@ namespace openhorizon::xenos {
 
 struct Shader;
 
-/// A text listing of a program: each control flow instruction, and under
-/// every exec the slots it runs as fetch or ALU instructions. The notation
-/// follows the XNA/Xbox assembler loosely: `r#` temporaries, `c#` float
-/// constants, `b#` boolean constants, `oPos`/`oPts`/`o#` vertex exports,
-/// `oC#`/`oDepth` pixel exports, `_` for components left unwritten.
+/// A text listing of a program: each control flow instruction with its exec slots under it. Notation
+/// loosely follows the XNA assembler: `r#` temporaries, `c#`/`b#` constants, `oPos`/`oPts`/`o#` vertex
+/// and `oC#`/`oDepth` pixel exports, `_` for unwritten components.
 std::string disassemble(const Program& program);
 
 /// One ALU slot, as in the listing.

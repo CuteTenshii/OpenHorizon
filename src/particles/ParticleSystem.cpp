@@ -8,8 +8,7 @@
 namespace openhorizon::particles {
 namespace {
 
-/// The executable's float constants for pi and pi/2 (0x82000D24,
-/// 0x8200C908).
+/// The executable's pi and pi/2 (0x82000D24, 0x8200C908).
 constexpr float kPi = 3.1415927410125732F;
 constexpr float kHalfPi = 1.5707963705062866F;
 constexpr float kTwoPi = 6.2831854820251465F;
@@ -34,19 +33,14 @@ glm::vec3 safeNormalize(const glm::vec3& v)
     return len2 > 0.0F ? v / std::sqrt(len2) : v;
 }
 
-/// The angles the renderer turns a travel direction into for
-/// DirectionOfTravel and UserDefined spin axes: (0, -y, z) of the unit
-/// vector times pi/2 (0x82DC5F84, 0x82DC60F0).
+/// DirectionOfTravel and UserDefined spin axes: (0, -y, z) of the unit vector times pi/2 (0x82DC5F84, 0x82DC60F0).
 glm::vec3 axisAngles(const glm::vec3& direction)
 {
     const glm::vec3 n = safeNormalize(direction);
     return glm::vec3(0.0F, -n.y, n.z) * (kPi * 0.5F);
 }
 
-/// The emitter angles 0x82DC7090 derives from an emission direction:
-/// the heading of (dx, -dz) through the executable's polynomial arcsine
-/// (coefficients at 0x82004740) and the y component scaled linearly to
-/// an angle.
+/// 0x82DC7090: heading of (dx, -dz) through the executable's polynomial arcsine (0x82004740), y scaled linearly.
 glm::vec3 emitterAngles(const glm::vec3& d)
 {
     const glm::vec2 horizontal = safeNormalize(glm::vec3(-d.z, d.x, 0.0F));
@@ -125,9 +119,7 @@ void ParticleSystem::clear()
 
 glm::vec3 ParticleSystem::randomUnit()
 {
-    // 0x82DBE5C0: a height uniform in [-1, 1] and an angle uniform in
-    // [0, 2pi). Which output component takes the height is not decoded; it
-    // does not change the distribution.
+    // 0x82DBE5C0. Which component takes the height is not decoded; the distribution is the same either way.
     const float z = m_random.uniform() * 2.0F - 1.0F;
     const float angle = m_random.uniform() * kTwoPi;
     const float r = std::sqrt(std::max(0.0F, 1.0F - z * z));
@@ -162,8 +154,7 @@ bool ParticleSystem::generate(
     std::size_t count, const glm::vec3& position, const glm::vec3& angles, const EmitRequest& request, GameRandom& crt)
 {
     const EffectDefinition& d = *m_definition;
-    // The shape generators (0x824A9B80 SuperSpray, 0x82DC1568 Plane) fill
-    // position and direction; spawn() turns the direction into a velocity.
+    // Shape generators: 0x824A9B80 SuperSpray, 0x82DC1568 Plane.
     const std::size_t first = m_count;
     if (d.shape == EmitterShape::SuperSpray) {
         for (std::size_t k = 0; k < count; ++k) {
@@ -188,8 +179,7 @@ bool ParticleSystem::generate(
             p.position = position + request.segment * r + transformRow(glm::vec3(x, 0.0F, z), m);
         }
     } else {
-        // Box emitters (0x82DC1398) are only used by debris effects and
-        // their generator is not decoded.
+        // Box (0x82DC1398), used only by debris effects, is not decoded.
         return false;
     }
     m_count += count;
@@ -205,9 +195,8 @@ SystemEmitter ParticleSystem::makeEmitter(int id, const glm::vec3& position, con
     e.id = id;
     e.position = position;
     e.angles = angles;
-    // 0x82dc3a60 passes quantity (+368) times the budget scale (+376), the
-    // emit times (+380, +384), and afterwards copies the infinite flag
-    // (+532) over the one 0x82dc31f0 derived from a negative end.
+    // 0x82dc3a60: quantity +368, budget scale +376, emit times +380/+384; the infinite flag (+532) overrides the
+    // one 0x82dc31f0 derives from a negative end.
     e.rate = d.quantity.value * m_budgetScale;
     e.start = d.emitStart;
     e.end = d.emitEnd;
@@ -242,14 +231,10 @@ void ParticleSystem::stopEmitters(int id, std::optional<float> finishTime)
 
 void ParticleSystem::updateEmitters(float dt, GameRandom& crt)
 {
-    // 0x82414440, per emitter; `remove` is its out flag, which has the
-    // update loop delete the emitter. The emitters placed here are neither
-    // kept past their end (+154 clear) nor moving (their velocity, +96, is
-    // the zero vector 0x82001340 that 0x82dc3a60 passes).
+    // 0x82414440 per emitter. Placed emitters are never kept past their end (+154 clear) and never move (+96 is
+    // the zero vector 0x82001340).
     constexpr float kMinimumRate = 0.5F;
-    // Particles take no velocity from these emitters: inferred, the vector
-    // the loop passes to the spawner (0x82417124) comes from VMX128 code the
-    // disassembler does not decode.
+    // No inherited velocity: inferred, the spawner's (0x82417124) vector comes from VMX128 code.
     const EmitRequest request;
     std::erase_if(m_emitters, [&](SystemEmitter& e) {
         e.age += dt;
@@ -341,8 +326,7 @@ void ParticleSystem::spawn(std::size_t first, std::size_t count, const EmitReque
                 p.axis = axisAngles(p.velocity);
                 break;
             case SpinAxis::PerpToDirOfTravel:
-                // These quads face along their velocity in the vertex shader
-                // (quad type 1), which does not read the angles.
+                // Quad type 1 faces along the velocity and ignores the angles.
                 p.axis = glm::vec3(0.0F);
                 break;
             case SpinAxis::UserDefined:
@@ -393,8 +377,7 @@ void ParticleSystem::applyBehaviours(float dt)
     for (const Behaviour& b : d.behaviours) {
         switch (b.kind) {
         case Behaviour::Kind::Gravity: {
-            // 0x82DBFFC0 subtracts strength * dt * dt from the vertical
-            // velocity each update.
+            // 0x82DBFFC0: strength * dt * dt, not * dt.
             const float dv = b.gravity.strength * dt * dt;
             for (std::size_t i = 0; i < m_count; ++i) {
                 Particle& p = slot(i);
@@ -419,9 +402,7 @@ void ParticleSystem::applyBehaviours(float dt)
             }
             break;
         case Behaviour::Kind::BubbleMotion:
-            // 0x82DC0430: undo last frame's offset, advance the phase and
-            // offset the particle sideways to its velocity by a sine
-            // (0x82AB7D00, the sine series at 0x820011A0).
+            // 0x82DC0430; sine 0x82AB7D00, series at 0x820011A0.
             for (std::size_t i = 0; i < m_count; ++i) {
                 Particle& p = slot(i);
                 if (!p.alive) {
@@ -438,8 +419,7 @@ void ParticleSystem::applyBehaviours(float dt)
         case Behaviour::Kind::Wind:
         case Behaviour::Kind::WheelAttractor:
         case Behaviour::Kind::Collision:
-            // Not decoded: wind (ambient effects), the rim smoke's wheel
-            // attractor and debris collision planes.
+            // Not decoded.
             break;
         }
     }

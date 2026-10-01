@@ -20,8 +20,7 @@ constexpr const char* kUiSoundsPath = "media/audio/ui/ui4audio.xml";
 constexpr const char* kGeneralProject = "Game:\\Media\\Audio\\GameModes\\General.fev";
 constexpr std::string_view kGeneralPrefix = "General/";
 constexpr std::string_view kSpeedTrapFlash = "SpeedTrapFlash";
-/// The MaterialTypeID the car loader falls back to (0x82CB5500 takes r16,
-/// which holds 1 there).
+/// The car loader's fallback MaterialTypeID (0x82CB5500).
 constexpr int kFallbackMaterialType = 1;
 
 /// The General project's event ui4audio.xml plays for `name`, or empty.
@@ -136,8 +135,7 @@ void GameplaySounds::speedTrapFlash()
         return;
     }
     std::erase_if(m_flashPlaying, [](const auto& instance) { return !instance->isPlaying(); });
-    // At most the event's max playbacks at once, a new flash taking the
-    // oldest one's place, as ui::UiSounds treats the other UI sounds.
+    // A new flash replaces the oldest beyond max playbacks, as ui::UiSounds does.
     while (!m_flashPlaying.empty() && m_flashPlaying.size() >= std::max<std::uint32_t>(event->maxPlaybacks, 1)) {
         m_flashPlaying.front()->stop(0.0F);
         m_flashPlaying.erase(m_flashPlaying.begin());

@@ -16,8 +16,7 @@ namespace openhorizon::render {
 
 namespace {
 
-/// SunSize.x: how far from the camera the sun or moon quad sits
-/// (0x8224D2B8).
+/// SunSize.x (0x8224D2B8).
 constexpr float kSunDistance = 300.0F;
 /// Star_PS's StarPowers.xyz, the sky parameter block's defaults.
 constexpr float kStarLow = 0.25F;
@@ -25,9 +24,7 @@ constexpr float kStarHigh = 0.97F;
 constexpr float kStarPower = 7.0F;
 constexpr std::size_t kStarBytes = 16;
 
-// Sun_VS: the corner arrives as POSITION0.xy (a float3 stream); gl_VertexID
-// picks it from the object's four vertices in the order the vertex buffer
-// holds them, drawn as a fan.
+// Corners in the game's vertex buffer order, drawn as a fan.
 const char* const kSunVertex = R"(#version 450 core
 uniform mat4 uViewProjection;
 uniform vec3 uSunDirection;
@@ -105,8 +102,7 @@ Bytes readFile(const Vfs& vfs, const char* path)
     return std::move(*data);
 }
 
-/// Sun.xds and Moon0.xds carry no gamma flag in their fetch constants, so
-/// their texels are linear.
+/// Sun.xds and Moon0.xds have no gamma flag: their texels are linear.
 Texture loadTexture(const Vfs& vfs, const char* path)
 {
     const world::RgbaImage image = world::decodeXboxTexture(readFile(vfs, path));
@@ -136,8 +132,7 @@ SkyObjects::SkyObjects(const Vfs& vfs)
     const std::vector<float> stars = readStars(readFile(vfs, "media/realtimesky/stars.bin"));
     m_starCount = stars.size() / 4;
 
-    // Sampler states 0x82477220-0x824772A8: clamped U and V, linear
-    // minification, magnification and mip filters.
+    // Sampler states 0x82477220-0x824772A8.
     glCreateSamplers(1, &m_sampler);
     glSamplerParameteri(m_sampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glSamplerParameteri(m_sampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);

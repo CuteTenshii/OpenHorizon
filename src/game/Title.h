@@ -13,14 +13,9 @@
 
 namespace openhorizon {
 
-/// The title screen the game opens on, before anything of the session
-/// loads: ui::TitleScreen in the game's 16:9 picture, with its music on its
-/// own audio device, which is closed with it before the game opens its own.
-///
-/// After Start the game signs in a profile (front-end request 322) and loads
-/// the save; that step is out of scope, so Start goes straight on to the
-/// game. When the screen idles into its attract it is brought back at once,
-/// since what the game's request 6 plays was not traced.
+/// The title screen, before the session loads, with its music on its own audio device closed before the game's.
+/// Profile sign-in after Start (front-end request 322) is out of scope; the attract (request 6) is untraced, so an
+/// idle screen comes straight back.
 class Title {
 public:
     /// Throws DataError if the title's scene cannot be loaded.
@@ -29,12 +24,9 @@ public:
     Title(const Title&) = delete;
     Title& operator=(const Title&) = delete;
 
-    /// Runs on the window's input and clock until the player presses Start
-    /// (true) or closes the window (false).
+    /// True when the player presses Start, false when the window closes.
     bool run();
-    /// Runs one frame of `dt` seconds on `controls` and draws it into the
-    /// 16:9 picture without presenting it. Returns true once the player has
-    /// pressed Start.
+    /// Draws without presenting. Returns true once the player has pressed Start.
     bool frame(const InputState& controls, float dt);
     bool started() const { return m_started; }
     const ui::TitleScreen& screen() const { return *m_screen; }

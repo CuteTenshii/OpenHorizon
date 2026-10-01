@@ -9,8 +9,7 @@ namespace openhorizon::world {
 
 /// The tables of a track's PVS file (`Ribbon_00/<Track>_00.pvs`, magic
 /// "FPVS", big-endian) that the world needs. At 0x20 the file has a u32 zone
-/// count and one u32 per zone; after a gap of varying size, found by its
-/// contents within 64 bytes, it holds:
+/// count and one u32 per zone; after a gap of varying size it holds:
 ///
 ///     u32 N, N texture records of 28 bytes:
 ///         u32 texture id, u32 record number, f32 1, f32 1, u32 0, u32 0,
@@ -22,9 +21,7 @@ namespace openhorizon::world {
 ///         u32 n, n texture record numbers, u32 m, m shader numbers,
 ///         15 floats (orientation and bounding box)
 ///
-/// Render object i is the file `<track>.<i>.rmb.bin`. A draw record is one
-/// placement of a render object; the zone files say where (see
-/// TrackPlacements).
+/// Render object i is the file `<track>.<i>.rmb.bin`; the zone files place draw records (see TrackPlacements).
 struct PvsTables {
     /// Texture id of each texture record.
     std::vector<std::uint32_t> textureIds;
@@ -34,8 +31,7 @@ struct PvsTables {
     std::vector<std::uint16_t> drawObjects;
 };
 
-/// Parses a PVS file. Throws DataError if it does not have the expected
-/// layout.
+/// Throws DataError if the file does not have the expected layout.
 PvsTables readPvs(ByteView pvs);
 
 } // namespace openhorizon::world

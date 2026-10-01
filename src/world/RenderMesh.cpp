@@ -63,9 +63,7 @@ std::size_t lodTokenLength(std::string_view text, std::size_t at)
     return end - at;
 }
 
-/// Reads the material table and shader paths after the last part. The tail
-/// only matters for texturing, so a layout this parser does not know leaves
-/// the table empty instead of rejecting the model.
+/// The tail only matters for texturing, so an unknown layout leaves the table empty instead of failing.
 void readMaterialTable(BeReader& r, RenderMesh& mesh)
 {
     constexpr std::uint32_t kMaxEntries = 4096;
@@ -87,8 +85,7 @@ void readMaterialTable(BeReader& r, RenderMesh& mesh)
             r.expect(3, "material entry tag");
             info.shader = r.u32();
             r.expect(0, "material entry header");
-            // Two groups of shader constants (float4 each): the vertex
-            // shader's, then the pixel shader's.
+            // The vertex shader's float4 constants, then the pixel shader's.
             for (int group = 0; group < 2; ++group) {
                 r.expect(1, "shader constant tag");
                 const std::uint32_t constants = r.u32();
@@ -376,8 +373,7 @@ std::string lodGroupKey(std::string_view partName)
         key.push_back(partName[i]);
         ++i;
     }
-    // Trailing chunk numbers: the whole run of underscores and digits at the
-    // end, from its first underscore on.
+    // The trailing run of underscores and digits, from its first underscore.
     std::size_t runStart = key.size();
     while (runStart > 0 && (key[runStart - 1] == '_' || isDigit(key[runStart - 1]))) {
         --runStart;

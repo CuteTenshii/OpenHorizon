@@ -1,8 +1,5 @@
-// Car physics checks that need no world: the real cars from the disc driven
-// on a flat or tilted plane, for the behaviours players notice first (a car
-// holding still, recovering from a slide, steering the same both ways).
-// They need the disc and skip without OPENHORIZON_GAME_DIR; openhorizon-cartest covers the
-// performance figures.
+// The disc's cars driven on a flat or tilted plane, no world needed.
+// openhorizon-cartest covers the performance figures.
 
 #include "support/TestSupport.h"
 
@@ -129,9 +126,7 @@ TEST_CASE("carLeftAloneOnFlatGroundStaysStill", "[car]")
 TEST_CASE("handbrakeHoldsACarOnASlope", "[car]")
 {
     const char* dir = gameDir();
-    // The game holds a stopped car on its handbrake. The tyre model has no
-    // static friction at walking speed, so it still creeps a little on a
-    // steep slope; this bounds that creep.
+    // The tyre model has no static friction, so the car creeps a little on a steep slope.
     for (const float grade : {0.05F, 0.20F}) {
         const Slope ground(grade);
         openhorizon::CarPhysics car(Disc::get(dir).car("ALF_8C_08"));
@@ -149,8 +144,6 @@ TEST_CASE("handbrakeHoldsACarOnASlope", "[car]")
 TEST_CASE("assistsRecoverFromPowerOversteer", "[car]")
 {
     const char* dir = gameDir();
-    // A second of full lock at full throttle, then the wheel straight: with
-    // the default assists the car must come back in line, not keep turning.
     openhorizon::FlatGround ground;
     openhorizon::CarPhysics car(Disc::get(dir).car("ALF_8C_08"));
     car.reset({0, 0, 0}, 0, ground);
@@ -186,9 +179,8 @@ TEST_CASE("steeringLockIsTheSameBothWays", "[car]")
     CHECK(std::abs(leftFl) > std::abs(leftFr));
 }
 
-/// The steering angle at the middle of the front axle, from the two front
-/// wheels' Ackermann angles (CarPhysics turns the inner wheel tighter
-/// about the same turning centre): tan = 2 / (cot inner + cot outer).
+/// The steering angle at the middle of the front axle from the two
+/// Ackermann angles: tan = 2 / (cot inner + cot outer).
 float centreSteerAngle(const openhorizon::CarPhysics& car)
 {
     const float a = car.wheels()[0].steerAngle;
@@ -199,8 +191,7 @@ float centreSteerAngle(const openhorizon::CarPhysics& car)
     return std::atan(2.0F / (1.0F / std::tan(a) + 1.0F / std::tan(b)));
 }
 
-/// Holds `input` on the stick for a second from a start at `kmh` and
-/// returns the centre steering angle in degrees.
+/// The centre steering angle in degrees after a second of `input` from `kmh`.
 float steadySteerAngle(const openhorizon::CarSpec& spec, float kmh, float input)
 {
     openhorizon::FlatGround ground;
@@ -248,13 +239,8 @@ TEST_CASE("fullSteerLockFallsWithSpeed", "[car]")
 TEST_CASE("nearlyFullSteerAtSpeedGetsTheFindPeakLock", "[car]")
 {
     const char* dir = gameDir();
-    // With the stick at 0.976 of full input or more (0x8224ACA0) and the
-    // wheels within one step's turn of the lock, the pad steering
-    // (0x82DF9620) adds lock while the front tyres are short of their
-    // peak; otherwise the car gets only the stick's share of the lock. A
-    // pad reporting 31000 at full travel gives 0.9945 through the game's
-    // shaping and gets that extra lock; the 0.939 the old 12 % per-axis
-    // dead zone gave it does not, and steers markedly less at speed.
+    // At 0.976 input or more (0x8224ACA0) the pad steering (0x82DF9620) adds lock up to the
+    // front tyres' peak. A pad reporting 31000 at full travel shapes to 0.9945.
     const openhorizon::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
     const float full = steadySteerAngle(spec, 60.0F, 1.0F);
     CHECK(steadySteerAngle(spec, 60.0F, 0.9945F) > 0.99F * full);
@@ -268,11 +254,8 @@ struct WallHit {
     float finalYawRate = 0.0F;
 };
 
-/// Drives `spec` at `kmh` into a concrete wall (the plane x = 0, facing
-/// -x) that it meets at `angle` radians from head-on, lets go of the
-/// controls on contact and measures its turning over `seconds`. The body's
-/// contacts are found as the game's are, from worldContactSpheres(), and
-/// resolved by CarPhysics::resolveWorldContacts() after each step.
+/// Drives `spec` at `kmh` into a concrete wall (the plane x = 0) at `angle`
+/// radians from head-on, lets go on contact and measures its turning over `seconds`.
 WallHit driveIntoWall(const openhorizon::CarSpec& spec, float kmh, float angle, float seconds)
 {
     Disc& disc = Disc::get(gameDir());
@@ -295,8 +278,6 @@ WallHit driveIntoWall(const openhorizon::CarSpec& spec, float kmh, float angle, 
     controls.throttle = 1.0F;
     for (int i = 0; i < kStepsPerSecond * 60 && (!result.hit || i < steps); ++i) {
         if (!result.hit) {
-            // Keeps the speed on the way in, as a player holding the
-            // throttle does, then lets go at the wall.
             controls.throttle = car.speed() * 3.6F < kmh ? 1.0F : 0.0F;
         }
         car.step(controls, ground);
@@ -335,10 +316,6 @@ WallHit driveIntoWall(const openhorizon::CarSpec& spec, float kmh, float angle, 
 TEST_CASE("wallImpactDoesNotSpinTheCar", "[car]")
 {
     const char* dir = gameDir();
-    // A player drove into a wall and the car spun round about eight times.
-    // Head-on and at 40 degrees, at town and open-road speeds, a car
-    // glances off or stops against the wall; it does not turn round, and it
-    // has stopped turning a few seconds later.
     const openhorizon::CarSpec spec = Disc::get(dir).car("ALF_8C_08");
     constexpr float kDegree = std::numbers::pi_v<float> / 180.0F;
     for (const float angle : {0.0F, 40.0F * kDegree}) {
@@ -353,9 +330,8 @@ TEST_CASE("wallImpactDoesNotSpinTheCar", "[car]")
     }
 }
 
-/// How deep `car`'s contact spheres reach into `other`'s bounding box (its
-/// maxdata.xml BoundingBox), metres: the overlap a player sees, whatever
-/// shapes stand in for the bodies.
+/// How deep `car`'s contact spheres reach into `other`'s maxdata.xml
+/// BoundingBox, metres.
 float boxPenetration(const openhorizon::CarPhysics& car, const openhorizon::CarPhysics& other)
 {
     const glm::mat4 toOther = glm::inverse(other.transform()) * car.transform();
@@ -376,11 +352,6 @@ float boxPenetration(const openhorizon::CarPhysics& car, const openhorizon::CarP
 TEST_CASE("carDoesNotSinkIntoOrLaunchATruck", "[car]")
 {
     const char* dir = gameDir();
-    // Players drove into a traffic box truck (KEN_T440_12) and ended up
-    // inside it, or sent it flying upside down. The default car drives at a
-    // truck standing still, into its tail, its nose and its side, at 30 and
-    // 60 km/h, with the contacts, torque scales and restitution the game
-    // uses between the player and traffic.
     Disc& disc = Disc::get(dir);
     const openhorizon::CollisionSettings settings = openhorizon::loadCollisionSettings(disc.vfs);
     const openhorizon::CarSpec carSpec = disc.car("ALF_8C_08");
@@ -429,9 +400,7 @@ TEST_CASE("carDoesNotSinkIntoOrLaunchATruck", "[car]")
                 truckLowestUp = std::min(truckLowestUp, truck.up().y);
                 deepest = std::max(deepest, boxPenetration(car, truck));
             }
-            // Momentum: the truck cannot come away faster than the whole
-            // car's momentum, shared by both, would push it even with a
-            // fully elastic hit.
+            // The fastest a fully elastic hit could push the truck.
             const float pushLimit = 2.0F * car.mass() * speedAtImpact / (car.mass() + truck.mass());
             std::fprintf(stderr,
                 "%s at %.0f km/h: hit at %.1f m/s, truck up to %.2f m/s (limit %.2f), lowest up %.2f, %.2f m into "
@@ -441,8 +410,7 @@ TEST_CASE("carDoesNotSinkIntoOrLaunchATruck", "[car]")
             CHECK(speedAtImpact > 0.0F);
             CHECK(truckLowestUp > 0.7F);
             CHECK(truckSpeed <= pushLimit + 0.1F);
-            // The spheres standing in for the bodies leave shallow dips
-            // between neighbours; a bumper may reach that far, no further.
+            // A bumper may reach into the shallow dips between neighbouring spheres.
             CHECK(deepest < 0.1F);
             CHECK(boxPenetration(car, truck) < 0.1F);
         }

@@ -485,9 +485,8 @@ int runEngine(const openhorizon::Vfs& vfs, const std::string& car, const Options
     return 0;
 }
 
-/// One stage of the tyre script: every wheel in the same state. The values
-/// are test inputs in TyreInput's units, chosen to visit each part of the
-/// events' curves, not measurements of the game.
+/// One tyre script stage, every wheel alike. Test inputs in TyreInput's
+/// units, not game measurements.
 struct TyreStage {
     const char* name;
     bool onGround;

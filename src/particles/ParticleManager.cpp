@@ -19,8 +19,7 @@ bool sameName(std::string_view a, std::string_view b)
     });
 }
 
-/// 0x82007bf0: what 0x82dc5600 and 0x82dc2330 multiply a composite
-/// member's StartOffset and FinishOffset by for its emitter's start and end.
+/// 0x82007bf0: the factor 0x82dc5600 and 0x82dc2330 apply to a composite member's StartOffset and FinishOffset.
 constexpr float kCompositeOffsetScale = 60.0F;
 /// 0x82249254: the end 0x82dc5600 gives a composite member's emitter.
 constexpr float kCompositeEnd = 900000.0F;
@@ -270,9 +269,7 @@ void ParticleManager::start(SimpleEmitterState& emitter)
     if (composite.members.front()->hasEmitter(emitter.id)) {
         return;
     }
-    // Each member runs at the emitter's position plus its PosOffset turned
-    // by the emitter's angles (0x82490c30, then a row-vector product whose
-    // VMX128 code is not decoded: inferred).
+    // PosOffset turned by the emitter's angles (0x82490c30); the VMX128 row-vector product is inferred.
     const glm::mat3 turn = rollPitchYaw(emitter.angles.x, emitter.angles.y, emitter.angles.z);
     for (std::size_t i = 0; i < composite.members.size(); ++i) {
         ParticleSystem* system = composite.members[i];

@@ -33,8 +33,7 @@ pugi::xml_node required(const pugi::xml_node& parent, const char* name, const st
     return child;
 }
 
-/// A node holding <PhysicsCoeff/> and <ThreePointCurve/>; a missing node
-/// gives the flat default curve.
+/// A missing node gives the flat default curve.
 TuningCurve readCurve(const pugi::xml_node& node)
 {
     TuningCurve curve;
@@ -70,8 +69,7 @@ EmissionDsp::Peq readPeq(const pugi::xml_node& node)
     return peq;
 }
 
-/// A <DSP> block of a harmonic tuning or an <EmissionGroupN> of an engine
-/// tuning; both have the same children.
+/// A harmonic tuning's <DSP> or an engine tuning's <EmissionGroupN>; both have the same children.
 EmissionDsp readDsp(const pugi::xml_node& node)
 {
     EmissionDsp dsp;

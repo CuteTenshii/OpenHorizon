@@ -21,7 +21,7 @@ namespace {
 constexpr const char* kPauseScene = "media/ui/scenes/ui4/925_pause_menu";
 constexpr const char* kPopupScene = "media/ui/scenes/ui4/h_message_popup";
 
-/// The tables the builder passes to the text lookup with each id.
+/// The tables passed to the text lookup with each id.
 constexpr const char* kPauseMenu = "PauseMenu";
 constexpr const char* kHelpButtons = "HelpButtons";
 constexpr const char* kScreenTitles = "ScreenTitles";
@@ -64,9 +64,7 @@ std::vector<PauseMenuEntry> pauseMenuEntries(const PauseMenuContext& context, Ui
     if (context.mapAvailable) {
         add(PauseItem::Map, kPauseMenu, "IDS_Map");
     }
-    // CAR CHALLENGES and HORIZON RALLY come with downloadable content whose
-    // tables are not on the disc; `add` leaves them out when their text is
-    // missing, which it always is here.
+    // Downloadable content: their tables are not on the disc, so `add` drops them.
     add(PauseItem::CarChallenges, kCarChallenges, "IDS_PauseMenu_CarChallenges");
     if (context.freeRoam && context.alternateProfileMode) {
         add(PauseItem::HorizonRally, kMain, "IDS_HorizonRally");
@@ -77,8 +75,7 @@ std::vector<PauseMenuEntry> pauseMenuEntries(const PauseMenuContext& context, Ui
     if (context.photoModeAvailable) {
         add(PauseItem::PhotoMode, kPauseMenu, "IDS_Photo");
     }
-    // MESSAGE CENTER (0x82700f38) is an Xbox LIVE feature: offline, as
-    // this reimplementation always is, the game does not list it.
+    // MESSAGE CENTER (0x82700f38) is Xbox LIVE only; offline it is not listed.
     if (context.sponsorChallenges) {
         add(PauseItem::SponsorChallenges, kPauseMenu, "IDS_SponsorChallenge");
     }
@@ -113,10 +110,8 @@ struct PauseMenu::Impl {
     Presentation pause;
     Presentation popup;
     UiRenderer renderer;
-    /// The SUPER_STACKER contracts of the option list: each entry's text,
-    /// message indicator and brush-stroke bars (Crisp Tape, Smudge Tape,
-    /// Dirt Tile, Clipon), so the bars follow the text the menu sets.
-    /// The help buttons' stackers belong to the HelpBar.
+    /// The option list's SUPER_STACKERs, so the bars follow the entry texts; the
+    /// help buttons' belong to the HelpBar.
     SuperStackers entryStackers;
 
     int rootContract = -1;
@@ -142,8 +137,7 @@ struct PauseMenu::Impl {
     std::vector<PauseMenuEntry> entries;
     int focus = 0;
     bool open = false;
-    /// Whether the scene has been evaluated since it was shown, so its
-    /// world transforms are those of the layout drawn.
+    /// Evaluated since shown, so world transforms match the drawn layout.
     bool drawn = false;
     std::optional<Confirmation> confirmation;
 };
@@ -193,8 +187,6 @@ void PauseMenu::Impl::bindPopup()
     popupTitle = popup.contractParameter(boxContract, "TEXT_TITLE");
     popupMessage = popup.contractParameter(boxContract, "TEXT_MESSAGE");
     popupHelp.bind(popup, renderer, popup.contractParameter(root, "COMPONENT_HELP_BUTTON_BAR"));
-    // The message element has wordwrap set; its box spans the popup's
-    // panel.
     popupWrapWidth = textBoxWidth(popup, popupMessage);
     const TextStyle style = textStyle(popup, popupMessage);
     popupFont = style.font;
@@ -207,14 +199,12 @@ void PauseMenu::Impl::show()
     if (title >= 0) {
         pause.setText(title, strings.get(kScreenTitles, "IDS_Pause"));
     }
-    // 0x827dfb18: the target time line is hidden unless a timed event sets
-    // it; the multiplayer timer only runs in multiplayer.
+    // 0x827dfb18: target time only for timed events, timer only in multiplayer.
     pause.fireEvent(rootContract, "HIDETARGET");
     if (const int timer = pause.contractParameter(rootContract, "TEXT_MULTIPLAYER_TIMER"); timer >= 0) {
         pause.setHidden(timer, true);
     }
-    // The player bar shows the driver's level, car and credits, which this
-    // reimplementation does not keep; the scene's own HIDE hides it.
+    // No driver level, car or credits are kept for the player bar.
     const int playerBar = pause.find("Layer/PlayerBar");
     for (const int child : pause.children(playerBar)) {
         if (pause.kind(child) == ElementKind::Behavior) {
@@ -283,9 +273,7 @@ void PauseMenu::Impl::openConfirmation(const Confirmation& value)
         popup.setText(popupMessage, std::move(message));
     }
     popupHelp.set(popup, {{HelpIcon::A, value.confirm}, {HelpIcon::B, value.cancel}});
-    // The message box's bar takes the place of the menu's, which the menu
-    // hides with its bar's DISABLED while the box is up (the game's screen
-    // stack was not traced for this).
+    // Inferred: the screen stack was not traced.
     pauseHelp.enable(pause, false);
 }
 
@@ -298,8 +286,7 @@ PauseAction PauseMenu::Impl::select()
     case PauseItem::Map:
         return PauseAction::OpenMap;
     case PauseItem::Restart:
-        // 0x827ea1c0: the single-player race text; the mulligan choice it
-        // adds when a rewind is available is not offered here.
+        // 0x827ea1c0: the single-player text; the mulligan choice is not offered.
         openConfirmation({strings.get(kPauseMenu, "IDS_Restart"), strings.get(kPauseMenu, "IDS_RestartDesc"),
             strings.get(kHelpButtons, "IDS_Yes"), strings.get(kHelpButtons, "IDS_No"), PauseAction::Restart});
         return PauseAction::None;

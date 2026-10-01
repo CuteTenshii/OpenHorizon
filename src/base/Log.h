@@ -8,30 +8,23 @@ namespace openhorizon {
 
 enum class LogLevel { Debug, Info, Warning, Error };
 
-/// Messages below this level are dropped from standard error. Set from the
-/// command line (`--debug`).
+/// Messages below this level are dropped from standard error.
 void setLogLevel(LogLevel level);
 LogLevel logLevel();
 
 /// Also writes every message, debug ones included, to `path`, replacing the
-/// file. A problem report then carries the whole story even when the console
-/// showed only the summary. Returns false (and logs why) if the file cannot
-/// be opened; logging to standard error carries on either way.
+/// file. Returns false (and logs why) if it cannot be opened.
 bool openLogFile(const std::filesystem::path& path);
 
-/// `openhorizon.log` in the State user folder: `~/.local/state/openhorizon` on
-/// Linux, `%LOCALAPPDATA%\OpenHorizon\logs` on Windows (see UserFolder).
+/// `openhorizon.log` in the State user folder (see UserFolder).
 std::filesystem::path defaultLogPath();
 
-/// The open log file's descriptor (a C runtime descriptor on Windows), or
-/// -1 when none is open. For the crash handler, which writes its report
-/// through the descriptor because a signal handler may take no lock.
+/// The open log file's descriptor (C runtime's on Windows), or -1; lets the
+/// crash handler write without taking a lock.
 int logFileDescriptor() noexcept;
 
-/// Writes out whatever the log file still holds in memory, unless another
-/// thread is writing to it at that moment. For the crash handler outside a
-/// signal handler: Windows' C runtime fully buffers the file even when
-/// asked for line buffering, so its last lines would otherwise be lost.
+/// Flushes the log file unless another thread is writing to it. Windows'
+/// C runtime fully buffers it even when asked for line buffering.
 void tryFlushLogFile() noexcept;
 
 /// True if a message at `level` goes anywhere.

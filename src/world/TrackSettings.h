@@ -12,86 +12,48 @@ class Vfs;
 
 namespace openhorizon::world {
 
-/// The values of a track's `TrackSettings.xml` that its effects read as
-/// scene constants.
-///
-/// Verified in the executable: CTrackPresentation's settings loader
-/// (0x82E128B8, slot 134 of its vtable at 0x822569C4) reads each element
-/// into the presentation at the offsets below, and the presentation's
-/// settings block that the renderer asks for (vtable slot 16, 0x82553180)
-/// starts at +192, so a field at loader offset N is read by the scene
-/// constant writer's callers at N - 192. The writer (0x82443D50) uploads
-/// them from the scene block its caller (0x82469B18) fills.
+/// The `TrackSettings.xml` values the track effects read as scene constants. Verified: loader 0x82E128B8 (vtable
+/// 0x822569C4 slot 134) at the offsets below; the settings block (slot 16, 0x82553180) starts at +192; uploaded by
+/// 0x82443D50 from the scene block 0x82469B18 fills.
 struct TrackSettings {
-    /// SkyScale (c222): `skyScale`, `cubeSkySaturation`, `cubeSkyScale`,
-    /// `cubeReflGroundScale` (loader offsets 892, 896, 900, 904; settings
-    /// 700-712), copied to the render thread's block at 0x82418B10 and from
-    /// there into the scene block at 0x82469F7C-0x82469FB0.
+    /// SkyScale (c222): skyScale, cubeSkySaturation, cubeSkyScale, cubeReflGroundScale (loader 892-904, settings
+    /// 700-712; copied at 0x82418B10, 0x82469F7C-0x82469FB0).
     glm::vec4 skyScale{0.0F};
-    /// RoadSpecularParams2 (c224): RoadGlossiness, RoadGlossiness2,
-    /// RoadLightmapDarkPoint, RoadLightmapLightPoint (1024-1036; settings
-    /// 832-844, 0x8246A0CC-0x8246A138).
+    /// RoadSpecularParams2 (c224): RoadGlossiness, RoadGlossiness2, RoadLightmapDarkPoint, RoadLightmapLightPoint
+    /// (1024-1036; settings 832-844, 0x8246A0CC-0x8246A138).
     glm::vec4 roadSpecular2{0.0F};
-    /// V2LightmapColor1 and 2 (c247, c248): DarkColor and LightColor (800,
-    /// 816; settings 608 and 624, copied at 0x82418AF8 and 0x82418B04).
+    /// V2LightmapColor1 and 2 (c247, c248): DarkColor, LightColor (800, 816; settings 608, 624; 0x82418AF8,
+    /// 0x82418B04).
     glm::vec4 darkColor{0.0F};
     glm::vec4 lightColor{0.0F};
-    /// TrackLightMapParams DarkPoint and LightPoint (1200, 1204). The scene
-    /// block takes the vector at 1200 (settings 1008, 0x82418BC4) and
-    /// uploads it as the pixel constant c212, which no track effect
-    /// declares; its third lane (1208) scales the night lightmap ramp of
-    /// EmissiveSwitchOnThreshold.y (see TrackFrameConstants). No code was
-    /// found that writes 1208 or 1212 (neither the loader, which reads only
-    /// the two points, nor the presentation's constructor), so they are
-    /// taken as the zero the object starts with.
+    /// TrackLightMapParams DarkPoint, LightPoint (1200, 1204; settings 1008, 0x82418BC4), uploaded as pixel c212.
+    /// Lane z scales EmissiveSwitchOnThreshold.y's night ramp; z and w are taken as 0 (no writer found).
     glm::vec4 trackLightMap{0.0F};
-    /// LightHemiTop and LightHemiBottom (loader offsets 336 and 352,
-    /// settings 144 and 160), and imageBasedLighting's iblDirectScale (984)
-    /// and iblSunColorR, G, B (992): the render thread blends the first two
-    /// 0.7 to 0.3 (0x82418A84-0x82418AC0) and adds the sun's share for the
-    /// clear colour of the environment cube's faces (see
-    /// cubeClearColour()).
+    /// LightHemiTop, LightHemiBottom (336, 352; settings 144, 160), iblDirectScale (984), iblSunColorR, G, B (992):
+    /// inputs of cubeClearColour() (0x82418A84-0x82418AC0).
     glm::vec3 lightHemiTop{0.0F};
     glm::vec3 lightHemiBottom{0.0F};
     float iblDirectScale = 0.0F;
     glm::vec3 iblSunColour{0.0F};
-    /// Cubemap FarDistance (loader offset 632, parsed at 0x82E15968): the
-    /// render thread hands its square to the environment cube's list job
-    /// (0x82E91F40), or that of min(3 FarDistance, 5000) while the
-    /// renderer's flags +9519 or +9520 are set (their meaning was not
-    /// traced; they are taken as clear).
+    /// Cubemap FarDistance (632, 0x82E15968), squared for the environment cube's list job (0x82E91F40).
+    /// min(3 FarDistance, 5000) under renderer flags +9519/+9520, untraced and taken as clear.
     float cubemapFarDistance = 0.0F;
-    /// Performance/DynamicCubemap (byte 1378; settings 1186): with it set,
-    /// the presentation renders the environment cube around the car each
-    /// frame (0x82424244) instead of using staticCarCubemap.xpr.
+    /// Performance/DynamicCubemap (byte 1378; settings 1186): render the car's environment cube each frame
+    /// (0x82424244) instead of using staticCarCubemap.xpr.
     bool dynamicCubemap = false;
-    /// ShadowLightDirection (loader offset 400, parsed at 0x82E15ACC) when
-    /// OverrideShadowLightDirection (368, 0x82E15A68) is set: the scene
-    /// then hands it, as written, to the object the shadow manager takes its
-    /// light direction from (0x82420940 sets it through vtable slot 0x13C,
-    /// 0x8247EBAC reads it back through slot 0x140 into the manager's +0x230
-    /// at 0x82412E50), so the sun shadows keep one direction all day.
-    /// Nothing when the track does not override it; where the direction
-    /// comes from then was not traced. Optional in the file. The scene reads
-    /// both at those same offsets of the presentation (0x82420940).
+    /// ShadowLightDirection (400, 0x82E15ACC) when OverrideShadowLightDirection (368, 0x82E15A68) is set: a fixed
+    /// sun shadow direction (0x82420940 slot 0x13C; 0x8247EBAC slot 0x140, manager +0x230 at 0x82412E50).
     std::optional<glm::vec3> shadowLightDirection;
 
-    /// The colour the environment cube's faces are cleared to, as stored
-    /// (the square root encoding of the cube), for the sun travelling along
-    /// `sunDirection`: 0.2 min(iblSunColour iblDirectScale clamp(-y, 0, 1)
-    /// + 0.7 LightHemiTop + 0.3 LightHemiBottom, 1), alpha 0 (0x82E792C0,
-    /// used for the first clear at 0x82431998 and after each face's resolve
-    /// at 0x8243A120; the 0.2 is the vector at 0x833A1410, set from
-    /// 0x82253E90; the clamp to 1 is 0x824A7D60). Inferred: that the y it
-    /// takes (+8516 of the renderer, normalised by its setter 0x824A8620) is
-    /// the sun's direction.
+    /// Environment cube clear colour, square-root encoded: 0.2 min(iblSunColour iblDirectScale clamp(-y, 0, 1)
+    /// + 0.7 LightHemiTop + 0.3 LightHemiBottom, 1), alpha 0 (0x82E792C0; 0.2 at 0x833A1410, set from 0x82253E90;
+    /// clamp 0x824A7D60). Cleared first at 0x82431998, then after each face's resolve at 0x8243A120.
+    /// Inferred: y (renderer +8516, set by 0x824A8620) is the sun direction's.
     glm::vec4 cubeClearColour(const glm::vec3& sunDirection) const;
 
-    /// Parses the XML text of a TrackSettings.xml. Throws DataError when it
-    /// is not a TrackSettings document or lacks one of the elements above.
+    /// Throws DataError when it is not a TrackSettings document or lacks one of the elements above.
     static TrackSettings parse(std::string_view xml);
-    /// Reads `media/tracks/<track>/TrackSettings.xml`. Throws DataError if it
-    /// is missing or malformed.
+    /// Reads `media/tracks/<track>/TrackSettings.xml`. Throws DataError if missing or malformed.
     static TrackSettings load(const Vfs& vfs, std::string_view track);
 };
 

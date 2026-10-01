@@ -1,8 +1,5 @@
-// The crash handler, run for real: the test starts itself again as a child
-// that crashes on purpose (a null write, abort, an uncaught exception, an
-// uncaught DataError) and checks what the child left in its log and how it
-// ended. The child's reporter is this executable too, which writes down
-// its arguments instead of opening a message box.
+// The crash handler, run for real in a child copy of this executable that crashes on
+// purpose. The child's reporter is this executable too, writing down its arguments.
 
 #include "support/TestSupport.h"
 
@@ -133,8 +130,7 @@ ChildEnd runChild(const std::vector<std::string>& arguments)
     return end;
 }
 
-/// Runs a child that crashes as `kind` and returns how it ended and its
-/// log.
+/// Runs a child that crashes as `kind`; returns how it ended and its log.
 std::pair<ChildEnd, std::string> crash(std::string_view kind, bool withReporter = false)
 {
     const std::filesystem::path folder = scratchFolder() / kind;
@@ -155,8 +151,7 @@ void checkEndedWithSignal(const ChildEnd& end, [[maybe_unused]] int signal, [[ma
 #endif
 }
 
-/// A report has one crash line, however often the handlers were installed,
-/// and a stack of at least one frame after it.
+/// One crash line however often the handlers were installed, then at least one frame.
 void checkReport(const std::string& log, std::string_view headline)
 {
     INFO("the child's log:\n" << log);
@@ -206,8 +201,7 @@ TEST_CASE("uncaught_exception_logs_its_type_and_message", "[crash]")
     const auto [end, log] = crash("exception");
     checkEndedWithSignal(end, SIGABRT, 3);
     checkReport(log, "uncaught exception std::runtime_error: boom from tst_crash");
-    // The terminate handler ends the process itself: no second report from
-    // the abort signal.
+    // The terminate handler ends the process: no second report from SIGABRT.
     CHECK(countOf(log, "[    crash] fatal   uncaught exception") == std::size_t{1});
     CHECK(countOf(log, "SIGABRT") == std::size_t{0});
 }
@@ -228,8 +222,7 @@ TEST_CASE("crash_starts_the_reporter_with_the_log_and_the_message", "[crash]")
     const auto [end, log] = crash("exception", true);
     openhorizon::unsetEnvironmentVariable(kReportOutVariable);
     checkEndedWithSignal(end, SIGABRT, 3);
-    // The reporter is not waited for by the crashed process, so it may
-    // still be starting.
+    // The crashed process does not wait for the reporter.
     std::string arguments;
     for (int tries = 0; tries < 100 && arguments.empty(); ++tries) {
         if (std::filesystem::exists(out)) {
@@ -387,8 +380,7 @@ TEST_CASE("executable_path_is_this_test", "[crash]")
 
 namespace {
 
-/// The child: logs a line, installs the handlers (twice, as a second
-/// install must change nothing) and crashes as asked.
+/// Installs the handlers twice (the second must change nothing) and crashes as asked.
 int crashChild(const std::vector<std::string>& arguments)
 {
 #ifndef _WIN32
@@ -420,9 +412,8 @@ int crashChild(const std::vector<std::string>& arguments)
     return 0;
 }
 
-/// The reporter a crashed child starts: writes its arguments, one per
-/// line, where the test looks for them. Written aside and renamed so the
-/// test never reads half of it.
+/// Writes its arguments one per line, aside then renamed so the test never
+/// reads half of them.
 int recordReport(const std::vector<std::string>& arguments)
 {
     const std::optional<std::string> out = openhorizon::environmentVariable(kReportOutVariable);
@@ -445,8 +436,7 @@ int recordReport(const std::vector<std::string>& arguments)
 
 } // namespace
 
-// The crash kinds throw out of main on purpose: that is the uncaught
-// exception under test.
+// The uncaught exception under test escapes main on purpose.
 // NOLINTNEXTLINE(bugprone-exception-escape)
 int main(int argc, char** argv)
 {

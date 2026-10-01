@@ -18,8 +18,7 @@ namespace openhorizon::world {
 
 namespace {
 
-/// Texture slot values at or above this are engine textures (0xFFFFFFFE in
-/// the files); RenderMesh keeps them as -1.
+/// RenderMesh keeps engine texture slots (0xFFFFFFFE in the files) as -1.
 constexpr int kEngineSlot = -1;
 
 struct BatchKey {
@@ -28,8 +27,7 @@ struct BatchKey {
     std::vector<float> constants;
     bool backdrop = false;
     std::uint32_t chunk = ShadedMesh::kMergedChunks;
-    /// The chunk of a batch kept in its model's space, which merges with
-    /// no other chunk's.
+    /// A chunk kept in model space, which merges with no other.
     std::uint32_t modelChunk = ShadedMesh::kMergedChunks;
 
     bool operator<(const BatchKey& other) const
@@ -88,9 +86,7 @@ glm::vec3 decodeDec3N(std::uint32_t word)
     return {component(0), component(10), component(20)};
 }
 
-/// Maps model-file coordinates (Z as stored) of a chunk to world
-/// coordinates, for points and for directions; or with `modelSpace`, for a
-/// placed chunk, leaves them as they are.
+/// Model-file coordinates (Z as stored) to world, for points and directions; identity with `modelSpace`.
 class ChunkTransform {
 public:
     ChunkTransform(const WorldChunk& chunk, bool modelSpace)
@@ -123,8 +119,7 @@ private:
     bool m_modelSpace = false;
 };
 
-/// The matrix taking a placed chunk's model-file coordinates (Z as stored)
-/// to world coordinates, as Placement::apply() does.
+/// Placement::apply() as a matrix on model-file coordinates (Z as stored).
 glm::mat4 placementMatrix(const Placement& placement)
 {
     const std::array<float, 9>& r = placement.rows;
@@ -248,8 +243,7 @@ ShadedMesh buildShadedMesh(const lzx::ZipArchive& archive, const WorldIndex& ind
                 objectTextures = textures->objectTextures(*object);
             }
         }
-        // See buildTileMesh: with the parser's Z flip, a positive determinant
-        // is the placement that mirrors, which turns triangles inside out.
+        // With the parser's Z flip, a positive determinant is a mirroring placement (see buildTileMesh).
         const bool mirrored = chunk.placed && determinant(chunk.placement.rows) > 0.0F;
         const ChunkTransform worldTransform(chunk, false);
         const ChunkTransform modelTransform(chunk, true);

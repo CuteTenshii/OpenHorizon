@@ -12,8 +12,7 @@ namespace openhorizon {
 
 namespace {
 
-/// Metres per second to miles per hour as the speed trap scales the
-/// velocity (0x82005ae8).
+/// The game's factor (0x82005ae8).
 constexpr float kMsToMph = 2.2369F;
 
 float cross(glm::vec2 a, glm::vec2 b)
@@ -21,7 +20,6 @@ float cross(glm::vec2 a, glm::vec2 b)
     return a.x * b.y - a.y * b.x;
 }
 
-/// Whether segment p0-p1 crosses segment q0-q1 on the ground plane.
 bool crosses(glm::vec2 p0, glm::vec2 p1, glm::vec2 q0, glm::vec2 q1)
 {
     const glm::vec2 r = p1 - p0;

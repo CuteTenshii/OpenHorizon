@@ -35,11 +35,8 @@ glm::vec2 xz(const glm::vec3& v)
     return {v.x, v.z};
 }
 
-/// Walks the cells of a grid (origin, cell size, columns, rows) crossed by
-/// the XZ segment from `a` to `b`, in order, calling
-/// `visit(column, row, tEnter, tExit)` with the parameters (0 at `a`, 1 at
-/// `b`) where the segment enters and leaves the cell, until it returns
-/// false. A segment of zero length visits the cell holding its point.
+/// Calls `visit(column, row, tEnter, tExit)` for each grid cell the XZ segment a to b
+/// crosses, in order (t is 0 at `a`, 1 at `b`), until it returns false.
 template <typename Visit>
 void walkGrid(glm::vec2 origin, glm::vec2 cellSize, std::uint32_t columns, std::uint32_t rows, glm::vec2 a,
     glm::vec2 b, Visit&& visit)
@@ -263,8 +260,7 @@ std::unique_ptr<TrackCollision> TrackCollision::open(const Vfs& vfs, std::string
     if (!archive) {
         throw DataError("{}: no archive mounted there", mountPoint);
     }
-    // bin.zip stores each tile several times with identical contents; the
-    // first copy will do.
+    // bin.zip stores identical copies of each tile; the first will do.
     auto entryOf = std::make_shared<std::unordered_map<std::uint32_t, std::size_t>>();
     const auto& entries = archive->entries();
     for (std::size_t i = 0; i < entries.size(); ++i) {
@@ -405,8 +401,7 @@ bool TrackCollision::owns(std::size_t tileIndex, glm::vec2 point, const std::vec
     if (const std::optional<std::size_t> owner = m_index.tileAt(point.x, point.y)) {
         return *owner == tileIndex;
     }
-    // No tile has this cell, so only neighbours' margins reach it; which of
-    // them reports the geometry is settled by the caller's deduplication.
+    // Only neighbours' margins reach a tileless cell; the caller deduplicates.
     for (const Candidate& candidate : candidates) {
         if (candidate.index == tileIndex) {
             return true;
@@ -637,8 +632,7 @@ void TrackCollision::forEachTriangle(glm::vec2 lo, glm::vec2 hi, const QueryFilt
             if (min.x > hi.x || max.x < lo.x || min.z > hi.y || max.z < lo.y) {
                 continue;
             }
-            // The centroid lies in the triangle, so the tile of the centroid's
-            // cell holds it; that tile alone reports it.
+            // Only the tile of the centroid's cell reports a triangle.
             const glm::vec2 centroid = xz(sum / 3.0F);
             if (!owns(candidate.index, centroid, candidates)) {
                 continue;

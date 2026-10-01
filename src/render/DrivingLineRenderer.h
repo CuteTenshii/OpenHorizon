@@ -15,31 +15,15 @@ class Vfs;
 
 namespace openhorizon::render {
 
-/// Draws DrivingLine chevrons the way the game's draw (0x82430e20) does:
-/// media/ui/textures/raceline.xds (a white chevron in alpha only) clamped,
-/// with anisotropic filtering, its alpha times the vertex alpha over the
-/// vertex colour, blended by source alpha into the scene with depth testing
-/// and no depth writes, no culling, and the depth bias of 2e-5
-/// (0x82000c68) towards the camera. The shaders are written from the game's
-/// own, embedded in the executable: the vertex shader transforms by View
-/// and Projection and passes the colour and texture coordinate through, the
-/// pixel shader outputs (colour.rgb, colour.a * texture.a).
+/// Draws DrivingLine chevrons as the game's draw (0x82430e20) does, with
+/// media/ui/textures/raceline.xds and a depth bias of 2e-5 (0x82000c68)
+/// towards the camera, before tone mapping (a scene view stage, 0x824744d0;
+/// tone map 0x82432628 is a separate step). Verified: shaders ported from
+/// the executable's (pixel 0x8215C848). Inferred: the game's depth is
+/// reversed as here, so a positive bias pulls towards the eye.
 ///
-/// It is drawn into the scene before tone mapping. Verified: the draw is a
-/// stage of the scene view's render (CPresentationRaceLine, called from
-/// 0x824744d0) that needs the scene's depth and stencil, and the final
-/// combine with bloom and tone map (0x82432628) is a separate render-thread
-/// step. Inferred: that step runs after the views.
-///
-/// Verified: the line's pixel shader (0x8215C848) writes its colour as it
-/// is into the square-root scene target (see FrameRenderer). The bias
-/// direction: the
-/// game's depth is taken to run the same reversed way as here, so a
-/// positive bias pulls the line towards the eye.
-///
-/// Left out: the game also tests stencil equal to 0, so that the line is
-/// not drawn where the rear-view mirror mask (0x824a2fe0, ref 255) and
-/// other passes marked the stencil first; nothing here writes stencil.
+/// Left out: the game's stencil-equal-0 test (rear-view mirror mask,
+/// 0x824a2fe0); nothing here writes stencil.
 class DrivingLineRenderer {
 public:
     /// Throws openhorizon::DataError if the texture is missing or cannot be decoded
@@ -49,9 +33,8 @@ public:
     DrivingLineRenderer(const DrivingLineRenderer&) = delete;
     DrivingLineRenderer& operator=(const DrivingLineRenderer&) = delete;
 
-    /// Draws `chevrons` (four vertices each, in quad order) into the bound
-    /// scene target, whose depth state it expects as FrameRenderer::begin
-    /// leaves it and restores afterwards.
+    /// `chevrons` holds four vertices each, in quad order. Expects and
+    /// restores FrameRenderer::begin's depth state.
     void draw(const std::vector<DrivingLine::Vertex>& chevrons, const glm::mat4& viewProjection);
 
 private:

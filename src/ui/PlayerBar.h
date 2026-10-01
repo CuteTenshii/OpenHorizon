@@ -20,29 +20,23 @@ class UiRenderer;
 class UiStrings;
 struct DrawItem;
 
-/// Writes an integer as the game's number formatter does (0x82d6d008, the
-/// digits of the unit formatters 0x82d6faf8 and 0x82d6fc50): the value
-/// clamped to +-999,999,999, a minus sign when negative, and `separator`
-/// before every group of three digits but the first.
+/// The game's number formatter (0x82d6d008; units 0x82d6faf8, 0x82d6fc50):
+/// clamped to +-999,999,999, `separator` between groups of three.
 std::string formatGroupedInteger(std::int64_t value, std::string_view separator);
 
-/// One row of gamedb's CareerWristbandLevels, the career's wristbands in
-/// order of Id.
+/// A row of gamedb's CareerWristbandLevels, in Id order.
 struct WristbandLevel {
     int id = 0;
     /// The Main/XP a player needs for this band.
     std::int64_t xp = 0;
     /// The band's name, resolved through the CareerWristbandLevels table.
     std::string name;
-    /// The image under media\UI\Textures\Horizon\Wristbands, without its
-    /// extension.
+    /// Under media\UI\Textures\Horizon\Wristbands, without extension.
     std::string thumbnail;
 };
 
-/// Reads CareerWristbandLevels as the career's progression object loads it
-/// (0x8259eae8: "SELECT Id,XP FROM %s ORDER BY Id"; the name and thumbnail
-/// through 0x8299b990 and 0x8299cc90 for one Id at a time). Throws
-/// DataError when the table cannot be read.
+/// As 0x8259eae8 loads it ("SELECT Id,XP FROM %s ORDER BY Id"; name and
+/// thumbnail via 0x8299b990, 0x8299cc90). Throws DataError when unreadable.
 std::vector<WristbandLevel> loadWristbandLevels(const Database& db, Localisation& strings);
 
 /// What the single-player bar shows: profile values and the player's car.
@@ -69,58 +63,31 @@ struct PlayerBarTexts {
     std::string wristbandTexture;
 };
 
-/// The PLAYER_BAR contract that front-end scenes such as h_map carry: the
-/// player's wristband, the points to the next one, the car and the credits.
+/// A front-end scene's PLAYER_BAR contract (h_map and others).
 ///
-/// Verified from the executable, for a single-player session:
-/// - The contract's parameters are bound at 0x828bd100: TEXT_SP_WRISTBAND
-///   (+108), MATERIAL_SP_WRISTBAND (+120), TEXT_PLAYER_CAR (+148),
-///   TEXT_PLAYER_CREDITS (+164), TEXT_NEXT_LEVEL (+176).
-/// - 0x828c6738 fires SET_FOR_SINGLEPLAYER outside multiplayer and the
-///   first-time flow. The career progression object (0x824b9718 picks the
-///   career one outside rally and online modes, created at 0x824bef10 over
-///   CareerWristbandLevels, Main/WristbandLevel and Main/XP) gives the band
-///   L (0x82996948) and, while L is below the last band, the points to the
-///   next, XP(L + 1) - Main/XP (0x82995118). Points above zero show as
-///   UnitStrings IDS_Units_PTS (unit 58, 0x82d6fc50) in TEXT_SP_WRISTBAND
-///   with InGame IDS_WristbandNextLevel in TEXT_NEXT_LEVEL; none left shows
-///   InGame IDS_CollectWristband with the next band's name and an empty
-///   TEXT_SP_WRISTBAND. MATERIAL_SP_WRISTBAND takes
-///   media\UI\Textures\Horizon\Wristbands\<Thumbnail of L>.tga (0x8299cc90).
-/// - 0x828c70f8 sets TEXT_PLAYER_CAR to "{0} {1}" (a literal of the
-///   executable, 0x82007f84) with the make's and the car's DisplayName
-///   (the query at 0x8207e500) and TEXT_PLAYER_CREDITS to Main/Credits
-///   (0x82597a08) as UnitStrings IDS_Units_Credits (unit type 22,
-///   0x82d6faf8). Both units convert with a factor of 1 (0x82d69a50) and
-///   group their digits (their unit types are not 6, 0x82d6fec0).
+/// Verified, single player: parameters bound at 0x828bd100; 0x828c6738 fires
+/// SET_FOR_SINGLEPLAYER; career progression (0x824b9718, built 0x824bef10)
+/// gives band L (0x82996948) and points XP(L + 1) - Main/XP (0x82995118)
+/// with units 58 (0x82d6fc50); thumbnail 0x8299cc90; 0x828c70f8 sets the car
+/// line "{0} {1}" (0x82007f84, query 0x8207e500) and credits unit 22
+/// (0x82d6faf8, 0x82597a08), factor 1 (0x82d69a50), grouped (0x82d6fec0).
 ///
-/// Missing: at the last band the game asks gamedb for the Horizon Final's
-/// unlock (0x828c6dec: UnlockPointsReq and the event's place) to choose
-/// between IDS_WristbandToFinal and IDS_WristbandGetToHorizonFinal; that
-/// query's table argument was not traced, so both texts stay empty there.
-/// The colour 0x82996188 gives the "collect" text (from the bands' Color
-/// column, whose conversion was not traced) is not applied. The class badge
-/// (COMPONENT_CLASS_BADGE: the car's class and PI, 0x825e6518 and
-/// 0x825e6620, given to the badge at 0x828c7178) is not traced, so it is
-/// hidden rather than left showing its authored placeholder; the online
-/// level bar is not set.
+/// Missing: the last band's Horizon Final texts (0x828c6dec, table argument
+/// not traced), the "collect" colour (0x82996188), the class badge
+/// (0x825e6518, 0x825e6620, 0x828c7178; hidden) and the online level bar.
 class PlayerBar {
 public:
-    /// Binds the PLAYER_BAR contract on `bar` and the stackers below it.
-    /// Does nothing when `bar` has no such contract.
+    /// Does nothing when `bar` has no PLAYER_BAR contract.
     void bind(const Presentation& scene, UiRenderer& renderer, int bar);
     bool bound() const { return m_contract >= 0; }
 
-    /// The texts for `values`; `metric` picks the thousands separator of the
-    /// locale the setting stands for (see thousandsSeparatorId).
+    /// `metric` picks the separator (see thousandsSeparatorId).
     static PlayerBarTexts texts(const PlayerBarValues& values, const std::vector<WristbandLevel>& levels,
         const Database* db, Localisation& names, UiStrings& strings, bool metric);
 
-    /// Shows `texts` in the single-player layout.
     void set(Presentation& scene, const PlayerBarTexts& texts);
-    /// Lays the rows out for their texts; call before evaluating the scene.
+    /// Call before evaluating the scene.
     void layout(Presentation& scene, UiRenderer& renderer) const;
-    /// Points the wristband material at the band's image.
     void apply(std::vector<DrawItem>& items) const;
 
     int contract() const { return m_contract; }
@@ -141,12 +108,9 @@ private:
     SuperStackers m_stackers;
 };
 
-/// The UnitStrings id of the thousands separator. The locale records the
-/// executable builds (0x82d74a48) give English two: "en" with unit system 0
-/// (miles) and IDS_NLSFormat_ThousandsSeparator_NA, and "en-eu" with unit
-/// system 2 (kilometres) and IDS_NLSFormat_ThousandsSeparator. That the
-/// metric setting stands for the second is inferred; the records of other
-/// languages were not read.
+/// The locale records (0x82d74a48) give English "en" (miles,
+/// IDS_NLSFormat_ThousandsSeparator_NA) and "en-eu" (kilometres,
+/// IDS_NLSFormat_ThousandsSeparator). Inferred: metric means the second.
 std::string_view thousandsSeparatorId(bool metric);
 
 } // namespace openhorizon::ui

@@ -132,9 +132,8 @@ VectorFont VectorFont::parse(ByteView data, const std::string& source)
     const std::uint32_t vertexCount = in.u32();
     const std::uint32_t indexCount = in.u32();
     font.m_spaceAdvance = in.f32();
-    // The build size (0x24) cancels out of the layout (the size scale
-    // divides by it, 0x824309b8); the f32 at 0x28 and the first five
-    // metrics are not read by the text layout.
+    // The build size (0x24) cancels out (0x824309b8); the f32 at 0x28 and the first
+    // five metrics are not read by the layout.
     in.skip(12 + 5 * 4);
     const std::int32_t unitsAscent = in.s32();
     const std::int32_t unitsDescent = in.s32();
@@ -164,9 +163,8 @@ VectorFont VectorFont::parse(ByteView data, const std::string& source)
         const std::uint32_t count = in.u32();
         const std::uint32_t firstIndex = in.u32();
         const std::uint32_t triangles = in.u32();
-        // The meshes start at the pen; the glyph draw (0x82442cb4) hands
-        // this offset to the vertex shader with the geometry, and without it
-        // wide glyphs such as 'm' and 'w' sit a tenth of an em too far right.
+        // Passed to the vertex shader by 0x82442cb4; without it 'm' and 'w' sit a
+        // tenth of an em too far right.
         const float xOffset = in.f32();
         if (vertexOffset % 8 != 0 || vertexOffset + count * 8 > vertexBytes
             || (firstIndex + triangles * 3) > indexCount) {

@@ -18,9 +18,7 @@ namespace openhorizon::audio {
 
 namespace {
 
-/// The executable's per-wheel clamps (0x82514F00 to 0x82515600) and unit
-/// conversions: rad/s to rpm by 60 / 2 pi (the constant at 0x8200C910),
-/// standard gravity 9.80665 (0x822499DC) and the 4 wheels of 0x82000D70.
+/// Clamps at 0x82514F00 to 0x82515600; rpm constant 0x8200C910, gravity 0x822499DC, 4 wheels 0x82000D70.
 constexpr float kRadPerSecToRpm = 60.0F / (2.0F * std::numbers::pi_v<float>);
 constexpr float kMaxTireRpm = 20000.0F;
 constexpr float kMaxNormLoad = 3.0F;
@@ -28,12 +26,10 @@ constexpr float kMaxSlip = 5.0F;
 constexpr float kGravity = 9.80665F;
 constexpr float kWheelsPerCar = 4.0F;
 
-/// Event name suffixes in CarPhysics wheel order (front left, front right,
-/// rear left, rear right); the game names its per-wheel events by corner.
+/// In CarPhysics wheel order.
 constexpr std::array<std::string_view, TyreSound::kWheels> kCorners{"LF", "RF", "LR", "RR"};
 
-/// Moves `current` towards `target` by at most `step`, as the game's helper
-/// at 0x82D797D8 does.
+/// The game's helper at 0x82D797D8.
 float approach(float current, float target, float step)
 {
     const float difference = target - current;
@@ -134,8 +130,7 @@ TyreSound::TyreSound(Mixer& mixer, std::shared_ptr<AudioLibrary> library, TyreSo
     }
     m_lod2Events.resize(m_surfaces.surfaces.size());
 
-    // Decode everything the mapped groups can play now rather than on the
-    // game thread when a wheel first reaches a new surface.
+    // Decode now rather than on the game thread when a wheel reaches a new surface.
     for (const TyreSurface& surface : m_surfaces.surfaces) {
         const std::string& group = m_options.perWheel ? surface.lod1EventGroup : surface.lod2EventGroup;
         for (const FevEvent& event : m_project->events()) {
@@ -242,9 +237,7 @@ void TyreSound::smooth(Wheel& wheel, const TyreInput& input, const TyreCarInput&
 
 void TyreSound::feed(EventInstance& event, const Parameters& parameters, bool combined) const
 {
-    // The game starts an event before setting its parameters, but FMOD
-    // only acts on the start at its next update, by which time the new
-    // values are in; setting them first does the same here.
+    // FMOD acts on the game's start only at its next update, after the parameters are set.
     event.setParameter("TireRPM", parameters.tireRpm);
     if (combined) {
         event.setParameter("CombinedSlip", parameters.combinedSlip);
@@ -273,8 +266,7 @@ void TyreSound::updatePerWheel(std::span<const TyreInput, kWheels> wheels)
             if (!wheel.smoothed.grounded) {
                 continue;
             }
-            // On ground Tires.xml does not list: the game finds no events
-            // for it and moves on, so returning later counts as a change.
+            // Ground Tires.xml does not list: returning later counts as a change.
             wheel.previousSurface = -1;
             continue;
         }
@@ -296,8 +288,7 @@ void TyreSound::updatePerWheel(std::span<const TyreInput, kWheels> wheels)
 
 void TyreSound::updateSingle(const TyreCarInput& car)
 {
-    // The game picks the grounded wheel with the most combined slip, starting
-    // from zero, so wheels that do not slip at all never qualify.
+    // Wheels that do not slip at all never qualify.
     std::optional<std::size_t> loudest;
     float most = 0.0F;
     for (std::size_t i = 0; i < kWheels; ++i) {

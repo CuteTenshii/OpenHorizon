@@ -23,20 +23,16 @@ namespace openhorizon {
 namespace {
 
 constexpr float kGravity = 9.80665F;
-/// Placements and model placements agree to the millimetre; this snaps both
-/// to the same key.
+/// Placements and models agree to the millimetre.
 constexpr float kMatchCell = 0.05F;
 constexpr float kBodyCell = 16.0F;
-/// Mass per cubic metre of bounding box: props are mostly air (a sign is a
-/// thin board on a post), so far below any solid material.
+/// kg per cubic metre of bounding box, guessed: props are mostly air.
 constexpr float kDensity = 60.0F;
 constexpr float kMinMass = 3.0F;
 constexpr float kMaxMass = 250.0F;
 constexpr float kRestitution = 0.25F;
 constexpr float kFriction = 0.6F;
-/// GameplayIDs of the discount signs: flyer_001 to flyer_100 in Colorado's
-/// GameObjs.xml, the names the game's own check compares (the string
-/// "flyer_" is compared over six characters at 0x8259115c).
+/// The game compares these six characters (0x8259115c).
 constexpr std::string_view kFlyerPrefix = "flyer_";
 
 std::uint64_t positionKey(const glm::vec3& p)
@@ -63,7 +59,6 @@ std::string baseType(std::string_view physicsType)
     return name;
 }
 
-/// Mass, inertia and collision spheres from the body's half extents.
 void shapeBody(Smashables::Body& body)
 {
     const glm::vec3 size = body.halfExtents * 2.0F;
@@ -72,8 +67,7 @@ void shapeBody(Smashables::Body& body)
         12.0F / (body.mass * (size.x * size.x + size.z * size.z)),
         12.0F / (body.mass * (size.x * size.x + size.y * size.y)));
 
-    // A row of spheres along the longest side, as thick as the middle
-    // extent: a pole becomes a stack, a fence a line.
+    // As thick as the middle extent: a pole becomes a stack, a fence a line.
     const glm::vec3 h = body.halfExtents;
     int longAxis = 0;
     if (h.y > h[longAxis]) {
@@ -162,7 +156,7 @@ Smashables Smashables::load(const Vfs& vfs, std::string_view track, const world:
         throw DataError("{}: {}", path, parsed.description());
     }
 
-    // Placements grouped by position: the pieces of one object share it.
+    // The pieces of one object share a position.
     struct Group {
         std::string type;
         std::vector<std::uint32_t> chunks;
@@ -256,8 +250,7 @@ void Smashables::addFlyers(const world::TrackWorld& world)
     std::size_t added = 0;
     for (auto& [id, members] : byId) {
         const world::Placement& placement = chunks[members.front()].placement;
-        // The model's own bounds, in the parser's coordinates, which the
-        // placement maps to the world.
+        // In the parser's coordinates.
         glm::vec3 lo(std::numeric_limits<float>::max());
         glm::vec3 hi(std::numeric_limits<float>::lowest());
         float finestBand = std::numeric_limits<float>::max();
@@ -270,8 +263,7 @@ void Smashables::addFlyers(const world::TrackWorld& world)
             }
             finestBand = std::min(finestBand, chunks[c].bandStart);
         }
-        // Placement::apply maps a parsed point p to x·row0 + y·row1 − z·row2,
-        // so these are the model's axes in the world.
+        // Placement::apply maps p to x·row0 + y·row1 − z·row2.
         const auto& r = placement.rows;
         const glm::mat3 axes(glm::vec3(r[0], r[1], r[2]), glm::vec3(r[3], r[4], r[5]), -glm::vec3(r[6], r[7], r[8]));
         const glm::vec3 scale(glm::length(axes[0]), glm::length(axes[1]), glm::length(axes[2]));

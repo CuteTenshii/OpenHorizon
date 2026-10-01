@@ -28,24 +28,12 @@ namespace collision {
 class SurfaceTable;
 }
 
-/// The sounds of what the cars do to the world and each other: contacts
-/// (audio::CollisionSounds, on the Collision bus), props breaking, and the
-/// speed trap camera's shutter.
-///
-/// Verified in the executable:
-/// - a car's own surface is its PhysicsMaterialID: the car loader reads the
-///   car's MaterialTypeID, falls back to 1 outside 1..2 (with a warning),
-///   and takes `SELECT PhysicsMaterialID FROM List_MaterialType WHERE
-///   MaterialTypeID=` (0x82CB54DC to 0x82CB558C, stored at car +0x2CF0).
-///   The disc's two materials give CarAluminum (7) and CarCarbonFiber (8),
-///   the surfaces collisiondata.xml pairs with the world's.
-/// - a speed trap pass that counts (0x8296CF94) plays the UI sound
-///   "SpeedTrapFlash" through the same call as the screens' sounds (the
-///   sound manager's slot 284 behind 0x824A3770), which ui4audio.xml maps
-///   to the General project's SpeedCamera/ShutterSound; the project is
-///   Game:\Media\Audio\GameModes\General.fev in the executable's list
-///   (0x8200D5B4). ui::UiSounds plays UIInGame groups only, so the flash is
-///   played here, on the bus the UI sounds use.
+/// The sounds of cars against the world and each other: contacts, props
+/// breaking, and the speed trap camera's shutter.
+/// Verified: a car's surface is List_MaterialType's PhysicsMaterialID for
+/// its MaterialTypeID, 1 outside 1..2 (0x82CB54DC-0x82CB558C, car +0x2CF0).
+/// A counted speed trap pass plays UI sound "SpeedTrapFlash" (0x8296CF94,
+/// 0x824A3770), from General.fev (0x8200D5B4).
 class GameplaySounds {
 public:
     struct Buses {
@@ -60,8 +48,7 @@ public:
     GameplaySounds(const GameplaySounds&) = delete;
     GameplaySounds& operator=(const GameplaySounds&) = delete;
 
-    /// The surface id of a car's body (see above), by its media name; the
-    /// fallback material's when the car is not in the database.
+    /// The fallback material's surface when the car is not in the database.
     std::size_t carSurface(std::string_view mediaName);
 
     /// Moves the contact clock on by one physics step.
@@ -93,8 +80,7 @@ private:
     std::size_t m_fallbackSurface = 0;
     /// Milliseconds of physics time, the clock contacts are timed on.
     double m_clockMs = 0.0;
-    /// The event ui4audio.xml names for SpeedTrapFlash in the General
-    /// project, or empty when it could not be found.
+    /// Empty when ui4audio.xml names none.
     std::string m_flashEvent;
     std::shared_ptr<const audio::FevProject> m_general;
     std::vector<std::unique_ptr<audio::EventInstance>> m_flashPlaying;

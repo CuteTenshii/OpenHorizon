@@ -22,8 +22,7 @@ struct TypeName {
     PropertyType type;
 };
 
-/// The game's table at 0x82154ee8, in its order; the first name of each
-/// type is the one propertyTypeName() gives.
+/// The game's table at 0x82154ee8, in its order.
 constexpr std::array<TypeName, 19> kTypeNames{{
     {"Bool", PropertyType::Bool},
     {"Byte", PropertyType::UInt8},
@@ -273,8 +272,7 @@ std::string formatValue(const PropertyValue& value)
     if (std::holds_alternative<std::monostate>(value)) {
         return {};
     }
-    // std::format gives the shortest text that reads back to the same
-    // number, for floats as for integers.
+    // std::format gives the shortest text that round-trips.
     return std::visit([](const auto& number) -> std::string {
         if constexpr (std::is_arithmetic_v<std::decay_t<decltype(number)>>) {
             return std::format("{}", number);

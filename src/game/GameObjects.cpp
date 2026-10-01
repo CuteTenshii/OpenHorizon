@@ -40,8 +40,7 @@ GameObjects GameObjects::load(const Vfs& vfs, std::string_view track)
         throw DataError("{}: {}", path, parsed.description());
     }
     GameObjects objects;
-    // Each object is its own element (Obj0, Obj1, ...), so walk the children
-    // rather than select by name.
+    // Element names differ per object (Obj0, Obj1, ...).
     for (const pugi::xml_node node : doc.child("GameObjs").children()) {
         GameObject object;
         object.id = node.attribute("GameplayID").as_string();

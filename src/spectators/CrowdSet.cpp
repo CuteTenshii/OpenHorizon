@@ -29,13 +29,11 @@ constexpr float kCellSize = 32.0F;
 constexpr std::uint64_t kDensitySalt = 0x27D4EB2F165667C5ULL;
 /// The class whose sprites take six views: stored class 0 (0x82EDDF08).
 constexpr int kSixViewClassId = 1;
-/// Stored class bytes the init treats apart (0x82EDDB64, 0x82EDDCE4,
-/// 0x82EDE0D0): the shoulder carriers ("SatShoulders_stand") and those
-/// riding on them ("SatShoulders_sit").
+/// "SatShoulders_stand" carriers and "SatShoulders_sit" riders, special to the init (0x82EDDB64, 0x82EDDCE4,
+/// 0x82EDE0D0).
 constexpr std::uint8_t kCarrierClass = 9;
 constexpr std::uint8_t kRiderClass = 10;
-/// The lower end of the size factor's draw (0x82EDDD78, 0.1 at
-/// 0x82000C88).
+/// 0x82EDDD78, 0.1 at 0x82000C88.
 constexpr float kSizeFactorMin = 0.1F;
 constexpr std::size_t kDdsHeaderBytes = 128;
 constexpr std::size_t kDdsHeightOffset = 0x0C;
@@ -715,8 +713,7 @@ void CrowdSet::placeSpectators(const std::vector<CrowdPlacementSet>& sets, const
                         + (person.sixSpriteViews ? static_cast<int>(SpriteView::SeatedBack) : 0);
                 }
                 if (placed.crowdClass == kRiderClass) {
-                    // The first carrier of the set standing on the same
-                    // quantised x and z, wherever it comes in the set.
+                    // Wherever the carrier comes in the set.
                     for (const std::uint32_t j : carriers) {
                         const PlacedSpectator& carrier = placement.spectators[j];
                         if (carrier.position.x == placed.position.x && carrier.position.z == placed.position.z) {
@@ -864,8 +861,6 @@ SpriteBillboard CrowdSet::spriteFor(std::uint32_t spectator, const glm::vec3& ca
     SpriteBillboard billboard;
     billboard.frame = chooseSprite(m_spriteLayout, std::max(person.spriteCell, 0), person.sixSpriteViews,
         person.facing(), person.position, camera);
-    // The billboard vertex shader's quad: 2 x 0.5 m wide and 2 m tall, of
-    // which 0.9 and 0.95 are used, scaled by the person's size.
     const float size
         = draw::kSpriteSizeMin + (draw::kSpriteSizeMax - draw::kSpriteSizeMin) * std::abs(person.sizeFactor);
     billboard.width = 2.0F * draw::kSpriteHalfWidth * draw::kSpriteUvScale.x * size;

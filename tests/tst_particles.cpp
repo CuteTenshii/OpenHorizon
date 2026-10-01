@@ -1,6 +1,4 @@
-// Particle effects: the effect file reader, the tyre effect table, the
-// particle simulation and the tyre effect rules on synthetic data, and with
-// OPENHORIZON_GAME_DIR set, every effect of the disc.
+// Particle effects: reader, tyre effect table, simulation and tyre rules.
 
 #include "support/TestSupport.h"
 
@@ -150,9 +148,8 @@ TEST_CASE("effectFileIsReadLikeTheGame", "[particles]")
 
 TEST_CASE("olderVersionsFollowTheLoadersRules", "[particles]")
 {
-    // Version 6: no fades (the RGBMid
-    // element is not read; mid is the mean of start and end before
-    // squaring), and a non-soft shader clears the density.
+    // Version 6: no fades, RGBMid unread (mid is the mean of start and end
+    // before squaring); a non-soft shader clears the density.
     const std::string xml = R"(<Effect Version="6" budget="11">
       <EmitterProperties type="Plane">
         <Size length="2.0" width="3.0" valueX="1" valueY="1" maxValueX="1" maxValueY="1"/>
@@ -273,8 +270,7 @@ TEST_CASE("sprayDirectionAndSpawnedState", "[particles]")
     particles::ParticleManager manager = smokeManager();
     particles::ParticleSystem& system = *manager.find("Smoke");
     manager.update(1.0F / 30.0F);
-    // Headings are kept for horizontal directions, as the game's emitter
-    // angles work out.
+    // Horizontal directions keep their heading through the emitter angles.
     const glm::vec3 directions[]
         = {glm::vec3(0, 0, 1), glm::vec3(1, 0, 0), glm::vec3(0, 0, -1), glm::vec3(-0.6F, 0, 0.8F)};
     for (const glm::vec3& d : directions) {
@@ -284,9 +280,7 @@ TEST_CASE("sprayDirectionAndSpawnedState", "[particles]")
         manager.emit(system, request);
         CHECK(system.size() == std::size_t{1});
         const particles::Particle& p = system.at(0);
-        // Velocity 2 m/s along the direction; motion inheritance adds
-        // nothing without an inherited velocity. The asin polynomial is
-        // approximate.
+        // 2 m/s along the direction, within the asin polynomial's error.
         CHECK(glm::length(p.velocity / 2.0F - d) < 2e-3F);
         CHECK(p.alive);
         CHECK_THAT(p.age, WithinAbs(0.0, 1e-6));
@@ -448,8 +442,7 @@ TEST_CASE("discEffects", "[particles]")
     }
 }
 
-/// A ParticleEmitters.xml in the disc's layout: an activation flare, a
-/// plane emitter with no Type and a zone that triggers it.
+/// An activation flare, a plane emitter with no Type and a zone that triggers it.
 constexpr const char* kEmittersXml = R"(<?xml version="1.0" encoding="utf-8"?>
 <ParticleEmitters>
   <SimpleEmitter>
@@ -486,8 +479,7 @@ constexpr const char* kEmittersXml = R"(<?xml version="1.0" encoding="utf-8"?>
   </TriggerZone>
 </ParticleEmitters>)";
 
-// ParticleEmitters.xml as 0x82dcc748 and 0x82dc4eb8 read it: z of the
-// position negated, the axes kept as angles whose rotation gives them back.
+// As 0x82dcc748 and 0x82dc4eb8 read it: position z negated, axes kept as angles.
 TEST_CASE("placedEmittersAreReadLikeTheGame", "[particles]")
 {
     const particles::ParticleEmitterSet set = particles::ParticleEmitterSet::parse(kEmittersXml, "test");
@@ -515,8 +507,7 @@ TEST_CASE("placedEmittersAreReadLikeTheGame", "[particles]")
     CHECK(counts.at("_Composite_Flare_2") == std::size_t{1});
 }
 
-// A Z axis pointing straight up has its z set to 1e-5 first (0x82dc5114),
-// which gives the speed cameras' flashes a heading.
+// A straight-up Z axis gets z = 1e-5 (0x82dc5114), giving the speed cameras' flashes a heading.
 TEST_CASE("upwardAxisKeepsAHeading", "[particles]")
 {
     const glm::mat3 axes{
@@ -528,8 +519,7 @@ TEST_CASE("upwardAxisKeepsAHeading", "[particles]")
     CHECK_THAT(glm::distance(m[0], axes[0]), WithinAbs(0.0, 1e-3));
 }
 
-// Kept emitters (0x82414440): an infinite one emits at its rate until it is
-// stopped; a timed one waits for its start and goes at its end.
+// Kept emitters (0x82414440): infinite ones run until stopped, timed ones from start to end.
 TEST_CASE("keptEmittersRunAndStop", "[particles]")
 {
     particles::ParticleManager manager = smokeManager();
@@ -542,10 +532,8 @@ TEST_CASE("keptEmittersRunAndStop", "[particles]")
         smoke.update(0.1F, 1.0F);
         smoke.updateEmitters(0.1F, crt);
     }
-    // 30 per second: 3 in the first 0.1 s; then more than the 10-particle
-    // budget sustains (0.9 per 0.1 s) was spawned, so the budget scale
-    // falls by 0.95 each update: 2.85 (2, 0.85 carried), then 2.71 + 0.85
-    // (3).
+    // 3, then over budget the scale falls by 0.95 per update: 2.85 (2, 0.85
+    // carried), then 2.71 + 0.85 (3).
     CHECK(smoke.size() == std::size_t{8});
     CHECK_THAT(smoke.at(0).position.x, WithinAbs(1.0 + 2.0 * 0.2, 0.05));
     smoke.stopEmitters(7, std::nullopt);
@@ -607,8 +595,7 @@ TEST_CASE("discParticleEmitters", "[particles]")
     CHECK(std::ranges::all_of(
         set.triggerableEmitters(), [&](const particles::PlacedEmitter& e) { return named.contains(e.name); }));
 
-    // The flares' member effects, which DefaultTrack.xml does not list,
-    // load by name; switching one on runs its four members.
+    // The flares' member effects, missing from DefaultTrack.xml, load by name.
     particles::ParticleManager manager = particles::ParticleManager::load(vfs);
     manager.placeSimpleEmitters(vfs, set);
     CHECK(manager.simpleEmitters().size() == std::size_t{132});

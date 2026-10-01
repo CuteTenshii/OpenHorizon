@@ -1,5 +1,4 @@
-// Loads a track's crowd and reports on it: what was read, who stands near a
-// point, a geometry export for inspection, and a check of the placements
+// Reports a track's crowd, exports it near a point, and checks placements
 // against the world's ground, roads and crowd areas.
 
 #include "base/Log.h"
@@ -41,9 +40,8 @@ namespace world = openhorizon::world;
 constexpr float kFestivalRadius = 250.0F;
 constexpr float kStartRadius = 150.0F;
 constexpr float kGridCell = 8.0F;
-/// How far above a person a surface may lie and still be the one they
-/// stand on (the placements round positions to a few centimetres, and seat
-/// heights sit above the stand's walking surface).
+/// How far above a person their standing surface may lie: positions are
+/// rounded and seats sit above the walking surface.
 constexpr float kSurfaceSlack = 0.5F;
 /// A racing line counts as the road beside a person within this distance
 /// and height difference.
@@ -248,8 +246,7 @@ int exportObj(const spectators::CrowdSet& crowd, const std::filesystem::path& ob
         std::fprintf(stderr, "cannot write %s\n", objPath.string().c_str());
         return 1;
     }
-    // OBJ files are right-handed; the world is left-handed, so Z is negated
-    // on the way out, which also turns the clockwise fronts anticlockwise.
+    // OBJ is right-handed: negating Z also makes clockwise fronts anticlockwise.
     obj << "# " << near.size() << " spectators around " << x << ", " << z << "; OBJ Z = -world Z\n";
     obj << "mtllib " << mtlPath.filename().string() << "\n";
     std::set<std::uint32_t> usedTextures;
@@ -465,9 +462,8 @@ private:
     int m_crowdAreaChunks = 0;
 };
 
-/// The AI racing lines of the track's routes (`route_NNN.owt`, layout in
-/// src/game/RaceData.h), as the reference for where the roads are: each
-/// point carries the half-width of the drivable corridor.
+/// The routes' AI racing lines (`route_NNN.owt`, see src/game/RaceData.h),
+/// each point with its corridor half-width; they stand for the roads.
 class RacingLines {
 public:
     void load(const openhorizon::Vfs& vfs, std::string_view track)

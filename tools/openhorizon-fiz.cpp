@@ -1,7 +1,6 @@
-// Reads a track's collision tiles (.fiz, indexed by the ribbon's .col file):
-// statistics over every tile, the surfaces at one point, an OBJ export of the
-// triangles around a point, and a comparison of collision heights with the
-// render geometry at road nodes, gameplay objects and off-road points.
+// Inspects a track's collision tiles (.fiz, indexed by the ribbon's .col):
+// statistics, surfaces at a point, OBJ export, and heights against render
+// geometry.
 
 #include "base/Log.h"
 #include "collision/TrackCollision.h"
@@ -512,8 +511,7 @@ int validate(const openhorizon::Vfs& vfs, std::string_view track, const TrackCol
     const auto& tiles = collision.index().tiles();
     std::uniform_int_distribution<std::size_t> pickTile(0, tiles.empty() ? 0 : tiles.size() - 1);
     std::uniform_real_distribution<float> within(0.1F, 0.9F);
-    // The tiles only hold the drivable area, so most points of a cell have
-    // no collision; off-road samples are drawn from the ones that do.
+    // Tiles hold only the drivable area; off-road samples come from covered points.
     std::size_t randomPoints = 0;
     std::size_t randomPointsWithGround = 0;
     const std::size_t wanted = samples.size() + kOffRoadSamples;

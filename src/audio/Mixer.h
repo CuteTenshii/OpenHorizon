@@ -15,13 +15,9 @@
 
 namespace openhorizon::audio {
 
-/// Distance attenuation in the shape of the game's GlobalRolloffs.xml
-/// entries (minDist, maxDist, beginFadeToZeroDist, fadeToZeroDist):
-/// full volume up to `minDistance`, inverse-distance fall-off to
-/// `maxDistance`, flat from there to `fadeStart`, then a linear fade to
-/// silence at `fadeEnd`. The file only names the four distances; the curve
-/// between them follows FMOD's inverse rolloff, which AudioEngineConfig
-/// selects, and is otherwise inferred from the names.
+/// GlobalRolloffs.xml's minDist, maxDist, beginFadeToZeroDist and fadeToZeroDist: full volume to `minDistance`,
+/// inverse fall-off to `maxDistance`, flat to `fadeStart`, linear to silence at `fadeEnd`. Inferred from the
+/// names and the inverse rolloff AudioEngineConfig selects.
 struct Rolloff {
     float minDistance = 1.0F;
     float maxDistance = 10000.0F;
@@ -31,22 +27,16 @@ struct Rolloff {
     float gain(float distance) const;
 };
 
-/// Audio produced while it plays rather than held in a PcmBuffer, such as a
-/// decoder feeding from a worker thread. The mixer plays a stream at its own
-/// rate: the stream must deliver the mixer's sample rate, since nothing is
-/// resampled.
+/// Audio produced while it plays. Must deliver the mixer's sample rate: streams are not resampled.
 class PcmStream {
 public:
     virtual ~PcmStream() = default;
     /// 1 or 2; fixed for the stream's life.
     virtual int channels() const = 0;
-    /// Writes up to `frames` interleaved frames to `out` and returns how many
-    /// it wrote; fewer means the rest of the block is silence. Called on the
-    /// audio thread with the mixer's lock held, so it must not block and
-    /// must not call back into the mixer.
+    /// Returns the frames written; fewer leaves silence. Runs under the mixer's lock on the audio thread:
+    /// must not block or call back into the mixer.
     virtual std::size_t read(float* out, std::size_t frames) = 0;
-    /// True once the stream will never produce audio again; the mixer then
-    /// frees the voice.
+    /// True once the stream will never produce audio again.
     virtual bool finished() const = 0;
 };
 
@@ -54,19 +44,15 @@ public:
 using VoiceId = std::uint64_t;
 inline constexpr VoiceId kNoVoice = 0;
 
-/// A submix that voices can play into; its filters and volume apply to the
-/// sum. Bus 0 is the master, which has no filters.
+/// A submix; bus 0 is the master, which has no filters.
 using BusId = std::uint32_t;
 inline constexpr BusId kMasterBus = 0;
 
 struct VoiceSettings {
     float volume = 1.0F;
-    /// -1 left .. 1 right, added to the pan a spatial voice gets from its
-    /// position.
+    /// -1 left .. 1 right, added to a spatial voice's pan.
     float pan = 0.0F;
-    /// Playback rate multiplier on top of the buffer's own sample rate.
     float pitch = 1.0F;
-    /// Loop over the buffer's loop region instead of stopping at the end.
     bool loop = false;
     BusId bus = kMasterBus;
     /// Attenuate and pan by `position` relative to the listener.
@@ -76,16 +62,9 @@ struct VoiceSettings {
     std::size_t startFrame = 0;
 };
 
-/// A software mixer to interleaved stereo float at a fixed rate.
-///
-/// Voices resample their buffer with four-point Hermite interpolation at
-/// `buffer rate / output rate * pitch`. Volume, pan and pitch changes ramp
-/// over each rendered block so that game-rate updates do not click. A
-/// voice at zero gain costs only its position update.
-///
-/// Every method may be called from any thread; render() runs on the audio
-/// thread and holds the mixer's lock for one block, so control calls wait
-/// at most that long.
+/// A software mixer to interleaved stereo float. Voices resample with four-point Hermite at buffer rate /
+/// output rate * pitch; changes ramp over each block so game-rate updates do not click. Thread-safe; render()
+/// holds the lock for one block.
 class Mixer {
 public:
     static constexpr std::size_t kMaxVoices = 256;
@@ -96,13 +75,10 @@ public:
 
     int sampleRate() const { return m_sampleRate; }
 
-    /// Starts a voice; returns kNoVoice (and logs) when all voices are busy
-    /// or the buffer is empty.
+    /// kNoVoice (logged) when all voices are busy or the buffer is empty.
     VoiceId play(std::shared_ptr<const PcmBuffer> buffer, const VoiceSettings& settings);
-    /// Starts a voice that pulls from `stream`. Pitch, looping and
-    /// startFrame do not apply to streams; volume, pan, bus and spatial
-    /// settings do. Returns kNoVoice (and logs) when all voices are busy or
-    /// the stream's channel count is not 1 or 2.
+    /// Pitch, looping and startFrame do not apply. kNoVoice (logged) when all voices are busy or the
+    /// stream does not have 1 or 2 channels.
     VoiceId playStream(std::shared_ptr<PcmStream> stream, const VoiceSettings& settings);
     /// Fades the voice out over `fadeSeconds` and frees it.
     void stop(VoiceId voice, float fadeSeconds = 0.01F);
@@ -115,34 +91,24 @@ public:
     bool isPlaying(VoiceId voice) const;
     std::size_t activeVoiceCount() const;
 
-    /// A new bus feeding `output` (the master unless given), after its own
-    /// filters and volume; buses live until destroyBus(). An output that is
-    /// not a live bus means the master.
+    /// Lives until destroyBus(); an `output` that is not a live bus means the master.
     BusId createBus(BusId output = kMasterBus);
-    /// Stops the bus's voices and releases it. Buses that fed it feed the
-    /// master from then on.
+    /// Stops its voices; buses that fed it feed the master from then on.
     void destroyBus(BusId bus);
     void setBusVolume(BusId bus, float volume);
-    /// The volume last set on the bus (1 for a bus never set, 0 for one that
-    /// does not exist).
+    /// 1 for a bus never set, 0 for one that does not exist.
     float busVolume(BusId bus) const;
-    /// What a sample played into `bus` is multiplied by on its way to the
-    /// master: the volumes of the bus and of every bus it feeds through,
-    /// as last set. Filters and the master volume are not included.
+    /// The product of the volumes on the way to the master, without filters or the master volume.
     float busGain(BusId bus) const;
-    /// Replaces the bus's filter chain; filter state carries over while the
-    /// chain keeps its shape, so parameters can change every game frame.
+    /// Filter state carries over while the chain keeps its shape.
     void setBusFilters(BusId bus, std::span<const FilterSpec> filters);
 
-    /// The listener's position and the direction of its right ear, which
-    /// makes the pan independent of the coordinate system's handedness.
+    /// `right` is the right ear's direction, which keeps the pan independent of handedness.
     void setListener(const glm::vec3& position, const glm::vec3& right);
     glm::vec3 listenerPosition() const;
     void setMasterVolume(float volume);
 
-    /// Mixes `out.size() / 2` stereo frames into `out`, overwriting it. The
-    /// master output passes a peak limiter at 0.98 full scale, so a sum of
-    /// loud voices dips instead of clipping.
+    /// Overwrites `out`; the master passes a peak limiter at 0.98 full scale.
     void render(std::span<float> out);
 
 private:
@@ -169,8 +135,7 @@ private:
         float appliedVolume = 1.0F;
         bool volumeSet = false;
         std::vector<FilterSpec> filters;
-        /// Coefficients in use at the end of the last block and wanted by the
-        /// end of the next; the block glides between them.
+        /// The block glides from `current` to `target`.
         std::vector<BiquadCoefficients> current;
         std::vector<BiquadCoefficients> target;
         std::vector<Biquad> left;
@@ -194,9 +159,7 @@ private:
     std::vector<Voice> m_voices;
     std::vector<float> m_streamScratch;
     std::vector<Bus> m_buses;
-    /// The live buses other than the master, those furthest from it first,
-    /// so every bus is mixed into its output before the output is mixed on;
-    /// rebuilt when buses are created or destroyed.
+    /// Furthest from the master first, so every bus is mixed before its output.
     std::vector<BusId> m_busOrder;
     glm::vec3 m_listenerPosition{0.0F};
     glm::vec3 m_listenerRight{1.0F, 0.0F, 0.0F};

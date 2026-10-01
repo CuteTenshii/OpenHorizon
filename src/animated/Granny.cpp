@@ -630,11 +630,9 @@ Curve readCurve(const File& file, const Object& curve2)
         break;
     }
 
-    // The scaled-integer formats: knots, then controls mapped through a
-    // scale and an offset per component. Verified for D3K16uC16u
-    // (0x82A7A308) and the diagonal of D9I1 (0x82A7B900); the 8-bit
-    // variants, D3I1 (one value spread over three components) and D9I3 (a
-    // diagonal of three) are taken to work alike.
+    // Knots, then controls through a per-component scale and offset. Verified
+    // for D3K16uC16u (0x82A7A308) and the D9I1 diagonal (0x82A7B900); the
+    // 8-bit, D3I1 and D9I3 variants are assumed alike.
     curve.kind = Curve::Kind::Spline;
     const std::vector<float> values = file.numbers(*data, "KnotsControls");
     float knotScale = 1.0F;

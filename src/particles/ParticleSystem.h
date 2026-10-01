@@ -13,20 +13,17 @@
 
 namespace openhorizon::particles {
 
-/// One live particle, with the fields of the game's 64-byte particle record
-/// (the offsets in the comments). The game stores everything after the
-/// position as 16-bit floats; these are full floats.
+/// The game's 64-byte particle record (offsets in the comments), which stores everything after the position as
+/// halves; these are floats.
 struct Particle {
     glm::vec3 position{0.0F}; // +0
     glm::vec3 velocity{0.0F}; // +16
-    /// +24: for Quad particles, the roll/pitch/yaw angles their orientation
-    /// is built from (see ParticleSystem::orientation()).
+    /// +24: a Quad particle's roll/pitch/yaw (see ParticleSystem::orientation()).
     glm::vec3 axis{0.0F};
     glm::vec2 size{0.0F}; // +32
     /// +36: age as a fraction of `life`.
     float age = 0.0F;
-    /// +38: a random byte, 0-255, that picks the gradient row and the
-    /// animation row.
+    /// +38: a random byte, 0-255, picking the gradient and animation rows.
     float random = 0.0F;
     float life = 0.0F; // +40
     glm::vec2 maxSize{0.0F}; // +42
@@ -34,11 +31,9 @@ struct Particle {
     glm::vec2 endSize{0.0F}; // +50
     float spinAngle = 0.0F; // +54
     float spinRate = 0.0F; // +56
-    /// +58: seconds until the slot is freed: the longest life the particle
-    /// could have drawn, counted down whether or not it died sooner.
+    /// +58: seconds until the slot is freed, from the longest drawable life even if it dies sooner.
     float remaining = 0.0F;
-    /// +60 bit 0. Bit 1 (visible) is always set with it by the code paths
-    /// implemented here.
+    /// +60 bit 0; bit 1 (visible) is always set with it here.
     bool alive = false;
 };
 
@@ -51,17 +46,14 @@ struct BubbleState {
     glm::vec3 offset{0.0F};
 };
 
-/// What one emission call of the game (0x82DC7090) passes: scales for the
-/// particle count, life, size and speed, where to emit from and the
-/// velocity particles may inherit.
+/// The arguments of one emission call (0x82DC7090).
 struct EmitRequest {
     float countScale = 1.0F;
     float lifeScale = 1.0F;
     float sizeScale = 1.0F;
     float speedScale = 1.0F;
     glm::vec3 position{0.0F};
-    /// Emission direction: its horizontal heading and its y become the
-    /// emitter's yaw and roll (see ParticleSystem::emit()).
+    /// Its horizontal heading and y become the emitter's yaw and roll (see ParticleSystem::emit()).
     glm::vec3 direction{1.0F, 0.0F, 0.0F};
     /// Multiplies the effect's Box/Plane size.
     glm::vec3 shapeScale{1.0F, 1.0F, 1.0F};
@@ -70,23 +62,18 @@ struct EmitRequest {
     glm::vec3 segment{0.0F};
 };
 
-/// An emitter the system keeps and runs by itself on every update: the
-/// 192-byte emitter objects the placed emitters of a track start
-/// (0x82dc3a60 builds them with 0x82dc31f0 and keeps them in the system's
-/// list at +76), where an EmitRequest is one frame's emission of an
-/// emitter that game code drives.
+/// A 192-byte emitter the system runs itself each update, started by a placed emitter (0x82dc3a60 builds it with
+/// 0x82dc31f0 into the system's list at +76). An EmitRequest is instead one frame of a code-driven emitter.
 struct SystemEmitter {
-    /// The placed emitter's id (+148), which stopping finds it by.
+    /// +148: the placed emitter's id, used to stop it.
     int id = -1;
     /// +64.
     glm::vec3 position{0.0F};
     /// Pitch, yaw and roll of the emission (see rollPitchYaw()).
     glm::vec3 angles{0.0F};
-    /// Particles per second (+128): the effect's quantity times the
-    /// system's budget scale when the emitter is made.
+    /// +128: particles per second, the effect's quantity times the budget scale at creation.
     float rate = 0.0F;
-    /// Seconds until the emitter starts (+132) and until it ends (+136),
-    /// both counted down; neither matters to an infinite one.
+    /// Seconds until it starts (+132) and ends (+136), counted down; unused when infinite.
     float start = 0.0F;
     float end = 0.0F;
     /// +144, the effect's EmitTime infinite (the system's +532).
@@ -99,11 +86,8 @@ struct SystemEmitter {
     float age = 0.0F;
 };
 
-/// Rotation matrices as the game's math library builds them (XNA math,
-/// row vectors: a point p maps to p * M). rollPitchYaw applies roll about Z,
-/// then pitch about X, then yaw about Y (XMMatrixRotationRollPitchYaw; the
-/// executable's 0x82490C30 builds it from half-angle sines and cosines the
-/// way XNA's quaternion form does).
+/// XNA math rotations, row vectors (p * M). rollPitchYaw is roll about Z, then pitch about X, then yaw about Y
+/// (XMMatrixRotationRollPitchYaw, 0x82490C30).
 glm::mat3 rotationX(float angle);
 glm::mat3 rotationY(float angle);
 glm::mat3 rollPitchYaw(float pitch, float yaw, float roll);
@@ -113,41 +97,30 @@ glm::mat3 rotationNormal(const glm::vec3& axis, float angle);
 /// Row-vector product: p * M.
 glm::vec3 transformRow(const glm::vec3& p, const glm::mat3& m);
 
-/// The running instance of one effect (CParticleSystemNew): a ring of at
-/// most `budget` particles, the emission rate accumulator and the adaptive
-/// budget scale, updated as the game's particle manager does every frame.
+/// CParticleSystemNew: a ring of at most `budget` particles with the rate accumulator and adaptive budget scale.
 class ParticleSystem {
 public:
     ParticleSystem(const EffectDefinition& definition, std::uint32_t seed);
 
     const EffectDefinition& definition() const { return *m_definition; }
 
-    /// Emits the particles due for this frame (0x82DC7090). `frameDt` is the
-    /// time step of the manager's last update, which the rate is multiplied
-    /// by. `crt` stands in for the C runtime's rand(), which the emitter
-    /// shapes draw from while particle attributes use the system's own
-    /// generator.
+    /// Emits this frame's particles (0x82DC7090) at the rate times `frameDt`, the manager's last step. `crt` stands
+    /// in for the C runtime's rand(), which emitter shapes use; attributes use the system's own generator.
     void emit(const EmitRequest& request, float frameDt, GameRandom& crt);
     /// Advances particles by `dt` seconds (0x82416F58).
     void update(float dt, float rateScale);
-    /// Runs the kept emitters for `dt` seconds, after update() (the emitter
-    /// loop of 0x82416F58, each emitter through 0x82414440), drawing their
-    /// shapes from `crt` as emit() does.
+    /// Runs the kept emitters after update() (0x82416F58, each through 0x82414440), shapes drawn from `crt`.
     void updateEmitters(float dt, GameRandom& crt);
     /// Clears the particles; the kept emitters stay.
     void clear();
 
-    /// A kept emitter at `position` with `angles` for placed emitter `id`,
-    /// with the effect's rate and emit times (0x82dc31f0 as 0x82dc3a60
-    /// calls it).
+    /// A kept emitter with the effect's rate and emit times (0x82dc31f0 as 0x82dc3a60 calls it).
     SystemEmitter makeEmitter(int id, const glm::vec3& position, const glm::vec3& angles) const;
     void addEmitter(const SystemEmitter& emitter);
     /// Whether an emitter of placed emitter `id` runs (0x82dc2298).
     bool hasEmitter(int id) const;
-    /// Stops the emitters of placed emitter `id` (0x82dc2330): an infinite
-    /// one goes at its next update; a timed one keeps running when
-    /// `finishTime` is empty (a single effect's), and otherwise starts again
-    /// and runs for `finishTime` seconds (a composite member's).
+    /// 0x82dc2330: an infinite emitter goes at its next update; a timed one keeps running without `finishTime`
+    /// (single effects), else restarts for `finishTime` seconds (composite members).
     void stopEmitters(int id, std::optional<float> finishTime);
     const std::vector<SystemEmitter>& emitters() const { return m_emitters; }
 
@@ -155,22 +128,18 @@ public:
     std::size_t size() const { return m_count; }
     /// The i-th particle of the ring, oldest first.
     const Particle& at(std::size_t i) const { return m_particles[(m_head + i) % m_capacity]; }
-    /// The orientation the renderer builds for a Quad particle whose spin
-    /// axis is not PerpToDirOfTravel: rotation about X by the spin angle,
-    /// then roll/pitch/yaw by `axis` (0x82DC9274; order inferred from the
-    /// matrix product there).
+    /// A Quad particle's orientation unless PerpToDirOfTravel: X by the spin angle, then roll/pitch/yaw by `axis`
+    /// (0x82DC9274; order inferred).
     static glm::mat3 orientation(const Particle& p);
 
-    /// The emission scale the game lowers when a frame spawns more than the
-    /// budget sustains (+376).
+    /// +376: lowered when a frame spawns more than the budget sustains.
     float budgetScale() const { return m_budgetScale; }
 
 private:
     Particle& slot(std::size_t i) { return m_particles[(m_head + i) % m_capacity]; }
     BubbleState& bubbleSlot(std::size_t i) { return m_bubble[(m_head + i) % m_capacity]; }
     void spawn(std::size_t first, std::size_t count, const EmitRequest& request, GameRandom& crt);
-    /// Places `count` new particles from the effect's shape at `position`
-    /// turned by `angles` and adds them; false for shapes not decoded.
+    /// False for shapes not decoded.
     bool generate(std::size_t count, const glm::vec3& position, const glm::vec3& angles, const EmitRequest& request,
         GameRandom& crt);
     glm::vec3 randomUnit();

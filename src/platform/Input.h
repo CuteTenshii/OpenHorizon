@@ -5,9 +5,8 @@
 
 namespace openhorizon {
 
-/// Logical controls, named after the Xbox 360 pad the game was designed for.
-/// Keyboard and mouse map onto the same controls so game code reads one
-/// state whatever the player holds.
+/// Logical controls named after the Xbox 360 pad; keyboard and mouse map
+/// onto the same controls.
 enum class Button : std::uint8_t {
     A,
     B,

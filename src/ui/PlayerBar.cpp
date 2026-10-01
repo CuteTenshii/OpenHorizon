@@ -19,8 +19,7 @@ namespace {
 constexpr const char* kUnitStrings = "UnitStrings";
 constexpr const char* kInGame = "InGame";
 constexpr const char* kWristbandTable = "CareerWristbandLevels";
-/// 0x8299cc90 prefixes the band's Thumbnail with this folder and appends
-/// ".tga".
+/// 0x8299cc90 prefixes the Thumbnail with this and appends ".tga".
 constexpr const char* kWristbandFolder = "game:\\media\\UI\\Textures\\Horizon\\Wristbands\\";
 
 /// The clamp of 0x82d6d008 (0x3b9ac9ff and its negation).
@@ -101,8 +100,7 @@ PlayerBarTexts PlayerBar::texts(const PlayerBarValues& values, const std::vector
     PlayerBarTexts texts;
     const std::string separator = strings.get(kUnitStrings, thousandsSeparatorId(metric));
 
-    // 0x82995118: the points to the next band while the band's position is
-    // below the last; the XP list is indexed by position in Id order.
+    // 0x82995118: the XP list is indexed by position in Id order.
     const std::int64_t next = values.wristbandLevel + 1;
     const auto count = static_cast<std::int64_t>(levels.size());
     if (next >= 1 && next < count) {
@@ -142,8 +140,7 @@ void PlayerBar::set(Presentation& scene, const PlayerBarTexts& texts)
         return;
     }
     scene.fireEvent(m_contract, "SET_FOR_SINGLEPLAYER");
-    // The badge's class and PI are not traced; its authored "A 596" would
-    // read as the car's.
+    // Class and PI not traced; the authored "A 596" would read as the car's.
     if (m_classBadge >= 0) {
         scene.setHidden(m_classBadge, true);
     }

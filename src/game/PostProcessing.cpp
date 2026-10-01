@@ -33,9 +33,7 @@ pugi::xml_document parseXml(std::string_view text, std::string_view what)
     return doc;
 }
 
-/// A template attribute the game's loader reads with no default: the
-/// bloom, colour settings and vignette loaders parse into a reused stack
-/// buffer, so a missing attribute would leave whatever was there.
+/// No default: those loaders parse into a reused stack buffer, so a missing attribute keeps stale data.
 float required(const pugi::xml_node& node, const char* attribute, std::string_view what)
 {
     const pugi::xml_attribute a = node.attribute(attribute);
@@ -117,8 +115,7 @@ TimeOfDayCurves::FogTemplate lerp(const TimeOfDayCurves::FogTemplate& a, const T
     return f;
 }
 
-/// The fog record the blend uses outside every zone (0x82556A30): every
-/// multiplier 1 and the sun scatter over 2000 m from 2000 m.
+/// The fog outside every zone (0x82556A30).
 TimeOfDayCurves::FogTemplate defaultFog()
 {
     TimeOfDayCurves::FogTemplate f;
@@ -135,9 +132,7 @@ TimeOfDayCurves::FogTemplate defaultFog()
     return f;
 }
 
-/// A time-of-day multiplier: 1, or the curve where it has keys (0x8265BC6C
-/// resets each field before sampling); the lower gradient's reset value is
-/// 0 instead.
+/// 1, or the curve where it has keys (0x8265BC6C resets each field before sampling).
 float multiplier(const TimeOfDayCurves& curves, std::string_view curve, float minutes, float reset = 1.0F)
 {
     return curves.has(curve) ? curves.sampleScalar(curve, minutes) : reset;
@@ -201,8 +196,7 @@ PostTemplates parsePostTemplates(std::string_view bloomXml, std::string_view col
         c.luminosity = {required(node, "DesatLuminosityR", "colour settings"),
             required(node, "DesatLuminosityG", "colour settings"),
             required(node, "DesatLuminosityB", "colour settings")};
-        // The loader (0x8257A070) reads the blue post modulation from the
-        // DesatPostModR attribute: it passes the red name's string twice.
+        // The game's loader (0x8257A070) reads blue from DesatPostModR too.
         c.postMod = {required(node, "DesatPostModR", "colour settings"),
             required(node, "DesatPostModG", "colour settings"), required(node, "DesatPostModR", "colour settings")};
         c.exposureBias = required(node, "ExposureBias", "colour settings");
@@ -226,8 +220,7 @@ PostTemplates parsePostTemplates(std::string_view bloomXml, std::string_view col
         out.vignette.push_back(std::move(v));
     }
 
-    // The fog loader (0x8257A368) starts every template from its own
-    // defaults.
+    // The fog loader (0x8257A368) starts every template from its defaults.
     const pugi::xml_document fogDoc = parseXml(fogXml, "fog_templates.xml");
     for (const pugi::xml_node node : templatesRoot(fogDoc, "fog_templates.xml").children("Template")) {
         PostTemplates::Fog f;
@@ -322,8 +315,7 @@ void PostZoneTracker::update(const std::vector<PostZone>& zones, std::optional<g
         m_elapsed += dt;
     } else {
         if (current == m_source) {
-            // Turning back into the zone being left: the blend runs back
-            // from where it had got to.
+            // Turning back into the zone being left reverses the blend.
             const float previousLerp = lerpTime(m_previous, current);
             const float done = previousLerp > 0.0F ? std::clamp(m_elapsed / previousLerp, 0.0F, 1.0F) : 1.0F;
             m_elapsed = (1.0F - done) * lerpTime(current, m_previous);
@@ -382,8 +374,7 @@ TrackPostSettings parseTrackPostSettings(std::string_view trackSettingsXml)
     s.cameraExposureRange
         = {attributeOf(root, "CameraExposureRange", "minval"), attributeOf(root, "CameraExposureRange", "maxval")};
 
-    // The cockpit set (ToneMapCockpitExposure) is chosen instead when the
-    // view is the cockpit's, which this game does not have.
+    // ToneMapCockpitExposure is for the cockpit view, which this game lacks.
     const char* const adaptive = "ToneMapAdaptiveExposure";
     s.adaptiveKeys = {attributeOf(root, adaptive, "Key_ExtraDark"), attributeOf(root, adaptive, "Key_Dark"),
         attributeOf(root, adaptive, "Key_Light"), attributeOf(root, adaptive, "Key_ExtraLight")};
@@ -471,8 +462,7 @@ GradingLut blendGradingLuts(const GradingLut& fromDay, const GradingLut& fromNig
                     const float from = day * value(fromDay) + night * value(fromNight);
                     const float to = day * value(toDay) + night * value(toNight);
                     const float v = std::clamp(identity[c] + from + (to - from) * t, 0.0F, 1.0F);
-                    // Packed back to D3DCOLOR; the rounding of that pack is
-                    // inferred to be to nearest.
+                    // Rounding to nearest is inferred.
                     out[texel + c] = static_cast<std::uint8_t>(std::lround(v * 255.0F));
                 }
                 out[texel + 3] = 255;
@@ -503,8 +493,7 @@ PostProcessing PostProcessing::load(const Vfs& vfs, std::string_view track)
     p.m_default = trackSettings.settings;
     p.m_filmicNight = trackSettings.filmicNight;
 
-    // The day default is colorgradinglookup%02d.dds when the track has one
-    // (0x82E21770); Colorado has only the unnumbered file.
+    // colorgradinglookup%02d.dds when there is one (0x82E21770); Colorado has only the unnumbered file.
     p.m_defaultLuts.day = loadLut(vfs, std::format("media/tracks/{}/colorgradinglookup.dds", track));
     p.m_defaultLuts.night = loadLut(vfs, std::format("media/tracks/{}/colorgradinglookup_night.dds", track));
     for (const PostZone& zone : p.m_zones) {
@@ -535,12 +524,8 @@ void PostProcessing::update(std::optional<glm::vec2> position, float dt, const T
     const PostZone* b = zone(to);
 
     PostSettings s = m_default;
-    // The day and night filmic curves are blended by the
-    // DayNightPostProcess curve: the time of day samples it into the
-    // lighting block (+0x70, 0x8265AA88) that 0x82E114D8 stores at the
-    // track settings' +0x268, which 0x825E6D08 uses to lerp the two.
-    // A track without the curve keeps the day curve; the value the lighting
-    // block starts from was not traced.
+    // DayNightPostProcess, sampled into the lighting block's +0x70 (0x8265AA88) and stored at track settings +0x268
+    // (0x82E114D8), lerps the two (0x825E6D08); without it the day curve stays (the start value is untraced).
     const float night = multiplier(curves, "DayNightPostProcess", minutes, 0.0F);
     const FilmicCurve& day = m_default.filmic;
     s.filmic.white = lerp(day.white, m_filmicNight.white, night);
@@ -593,10 +578,8 @@ void PostProcessing::update(std::optional<glm::vec2> position, float dt, const T
         }
         return m_templates.vignette[top ? z->vignetteTop : z->vignetteBottom].settings;
     };
-    // The template's alpha is replaced by its minimum intensity times the
-    // VignetteAmount curve (0x8255E2FC), times a camera factor that is 0
-    // only in the driver's view (0x82905050 tests camera index 2, DriverCam
-    // in the camera table at 0x83336B78), which this game does not have.
+    // Alpha is minIntensity times VignetteAmount (0x8255E2FC) times a camera factor that is 0 only in the
+    // driver's view (0x82905050, DriverCam in the table at 0x83336B78), which this game lacks.
     const float amount = multiplier(curves, "VignetteAmount", minutes);
     s.vignetteTop = lerp(vignetteOf(a, true), vignetteOf(b, true), t);
     s.vignetteTop.colour.a = s.vignetteTop.minIntensity * amount;
@@ -624,26 +607,19 @@ render::PostFrame PostProcessing::frame(float aspect, bool reset) const
     f.bloomLowerGradient = s.bloomLowerGradient;
     f.bloomUpperGradient = s.bloomUpperGradient;
     f.bloomWeights = s.bloomWeights;
-    // The caller of the combine divides the keys by 255 (0x82487C9C). The
-    // exposures are multiplied by the render scenario's ExposureShiftScale
-    // (0x825E5DD0), 1 by default (0x82E48438) and set only by
+    // Keys over 255 (0x82487C9C). ExposureShiftScale (0x825E5DD0) is 1 (0x82E48438) except in
     // renderscenarios/splitscreen_race.xml.
     f.luminanceKeys = s.adaptiveKeys / 255.0F;
     f.exposures = s.adaptiveExposures;
-    // filmicParams2.w: the filmic exposure plus the blended exposure bias
-    // (0x82487C9C adds renderer +0x1390 to +0x13FC).
+    // Filmic exposure plus the blended exposure bias (0x82487C9C adds renderer +0x1390 to +0x13FC).
     f.exposureBias = s.filmic.exposure + s.exposureBias;
     f.filmic = render::post::Filmic{s.filmic.white, s.filmic.shoulderStrength, s.filmic.linearStrength,
         s.filmic.linearAngle, s.filmic.toeStrength, s.filmic.toeNumerator, s.filmic.toeDenominator};
-    // previousFrameAmount is the tonemapDelay field (+0x80, renderer
-    // +0x13A0), applied once per frame whatever its length.
+    // tonemapDelay (+0x80, renderer +0x13A0), applied once per frame whatever its length.
     f.adaptation = s.tonemapDelay;
     f.resetAdaptation = reset;
-    // Grading is on (colorGradingEnable = manager +0x24, 1 from its
-    // constructor, times a renderer flag at +0xC63 that was not traced and
-    // is taken as clear). The colour matrix's fade to a colour (renderer
-    // +0x16D0..+0x16DC) and the photo mode filters (+0x16EC..+0x1724) were
-    // not traced to anything in play and are left out.
+    // Grading is on (manager +0x24); the renderer flag at +0xC63 is untraced and taken as clear. The fade to a
+    // colour (+0x16D0..+0x16DC) and photo mode filters (+0x16EC..+0x1724) are left out.
     f.colourTransform
         = render::post::colourTransform(s.contrast, s.brightness, s.desaturation, s.desatLuminosity, s.desatPostMod);
     f.gradingLut = m_lut;

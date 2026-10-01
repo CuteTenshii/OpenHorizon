@@ -76,8 +76,7 @@ bool EventInstance::isActive(const FevLayer& layer, const FevSoundInstance& soun
     if (m_event.simple || layer.controlParameter >= m_event.parameters.size()) {
         return true;
     }
-    // Instances laid end to end share their boundary; a small tolerance keeps
-    // the parameter's extremes inside the first and last instance.
+    // Keeps the parameter's extremes inside the first and last instance.
     constexpr float kTolerance = 1e-4F;
     const float at = position(layer.controlParameter);
     return at >= sound.start - kTolerance && at <= sound.start + sound.length + kTolerance;

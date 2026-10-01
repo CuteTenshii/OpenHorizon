@@ -10,9 +10,8 @@
 #include <string_view>
 #include <vector>
 
-/// What the renderer needs to draw with one pass of a game effect: GLSL for
-/// both stages and where every named constant, texture and vertex input
-/// goes. See GlslTranslator.h for the binding points of the generated code.
+/// GLSL for both stages of one effect pass and where every named constant, texture and vertex input
+/// goes. Binding points are in GlslTranslator.h.
 namespace openhorizon::xenos {
 
 /// Where a named constant of the effect lives.
@@ -20,12 +19,9 @@ struct ConstantBinding {
     std::string name;
     ShaderStage stage = ShaderStage::Vertex;
     RegisterSet set = RegisterSet::Float4;
-    /// Float4: vec4 index in the stage's constant block (binding 0 for
-    /// vertex, 1 for pixel). Bool: bit index in XeControlConstants.bools
-    /// (vertex b# at #, pixel b# at 128 + #). Int4: loop constant index
-    /// (vertex i# at #, pixel i# at 16 + #; inferred, the game declares no
-    /// integer constants). Sampler: texture unit (pixel s# at #, vertex s#
-    /// at 16 + #).
+    /// Float4: vec4 index in the stage's block. Bool: bit in XeControlConstants.bools (pixel at 128 +
+    /// #). Int4: loop constant (pixel at 16 + #; inferred, the game declares none). Sampler: texture
+    /// unit (vertex at 16 + #).
     std::uint32_t index = 0;
     std::uint32_t count = 0;
     std::uint16_t parameterClass = 0;
@@ -87,14 +83,9 @@ struct ShaderProgramSource {
     const SamplerBinding* findSampler(std::string_view name) const;
 };
 
-/// Builds the program of pass `pass` of `effect`. The vertex shader's
-/// fetches are bound through `override` when given (the layout of the
-/// buffers the renderer will bind), else through the effect's own
-/// declaration (Effect::inputDeclaration), and the stages are linked by interpolator semantic: every pixel
-/// shader input register r gets varying location r, and the vertex shader
-/// export with the same usage and index writes it. A pass without a pixel
-/// shader (depth only) gets an empty fragment shader. Throws DataError when
-/// the pass has no vertex shader or the microcode does not decode.
+/// Builds `pass` of `effect`, binding vertex fetches through `override` or else the effect's own
+/// declaration, and linking stages by interpolator semantic. A pass without a pixel shader gets an
+/// empty fragment shader. Throws DataError without a vertex shader or on undecodable microcode.
 ShaderProgramSource buildProgram(
     const Effect& effect, const Pass& pass, const VertexDeclaration* override = nullptr);
 
@@ -105,23 +96,18 @@ ShaderProgramSource buildProgram(
 
 /// Contents of the XeSystemConstants block (binding 3, std140).
 struct SystemConstants {
-    /// gl_Position = (pos.xyz * clipScale.xyz + pos.w * clipOffset.xyz,
-    /// pos.w). The game's clip space is Direct3D's (z from 0 to w); for the
-    /// engine's reversed depth use z scale -1 and z offset 1. The x and y
-    /// offsets are the hook for Direct3D 9's half-pixel convention
-    /// (-1/width, +1/height moves geometry by half a pixel). Depth exports
-    /// go through the same z mapping.
+    /// gl_Position = (pos.xyz * clipScale.xyz + pos.w * clipOffset.xyz, pos.w), also applied to depth
+    /// exports. Game clip z runs 0 to w; reversed depth uses z scale -1, offset 1. x/y offsets take
+    /// Direct3D 9's half pixel (-1/width, +1/height).
     std::array<float, 4> clipScale{1.0F, 1.0F, 1.0F, 1.0F};
     std::array<float, 4> clipOffset{0.0F, 0.0F, 0.0F, 0.0F};
-    /// x: nonzero to count pixel y from the top (as Direct3D and the
-    /// game's VPOS do); y: framebuffer height.
+    /// x: nonzero to count pixel y from the top (as the game's VPOS does); y: framebuffer height.
     std::array<float, 4> screen{0.0F, 0.0F, 0.0F, 0.0F};
     /// x: Direct3D comparison (0 or 8 always, 1 never, 2 less, 3 equal,
     /// 4 less-equal, 5 greater, 6 not-equal, 7 greater-equal) of colour 0's
     /// alpha against y.
     std::array<float, 4> alphaTest{0.0F, 0.0F, 0.0F, 0.0F};
-    /// x bit 0: encode colour outputs with the Xenos piecewise-linear gamma
-    /// curve, as the console's gamma render targets do.
+    /// x bit 0: encode colour outputs with the Xenos piecewise-linear gamma, as its gamma targets do.
     std::array<std::uint32_t, 4> flags{0, 0, 0, 0};
     /// 32-bit word offset of each vertex stream in its bound buffer.
     std::array<std::uint32_t, 16> streamBase{};

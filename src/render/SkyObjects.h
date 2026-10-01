@@ -14,55 +14,29 @@ namespace openhorizon::render {
 
 struct FrameParams;
 
-/// The sun, the moon and the stars, drawn over the sky dome as the game's
-/// realtime sky draws them (CRealtimeSky, whose draw at 0x82E37A18 draws
-/// the stars, then the sun or moon, then the clouds). The shaders follow
-/// the executable's Sun_VS, Sun_PS, Star_VS and Star_PS (at 0x82195848,
-/// 0x8216A0F8, 0x82195B68 and 0x8216A288) step by step; the assets come
-/// from media/realtimesky.
+/// The sun, moon and stars of CRealtimeSky (draw at 0x82E37A18), ported from
+/// Sun_VS/PS and Star_VS/PS (0x82195848, 0x8216A0F8, 0x82195B68, 0x8216A288).
 ///
-/// The sun or moon (draw at 0x82476DE0, object made at 0x82E34C60):
-/// a quad list of one quad with corners (-1, -1), (-1, 1), (1, 1), (1, -1)
-/// is placed 300 m from the camera, centred on `-SunDirection * 300`
-/// (SunSize.x, 0x8224D2B8) and spanned by two axes the vertex shader
-/// builds from the direction, scaled by the SunObjectSize curve. Sun.xds
-/// is drawn when SunObjectMoon is at most one half, added to the sky
-/// (source alpha, one) with colour `clamp(SunObjectColour, 0, 1) *
-/// SunObjectAlpha` and alpha 1; otherwise Moon0.xds, the only moon texture
-/// the object loads (0x82E342F0), blended over the sky (source alpha,
-/// inverse source alpha) with colour `clamp(SunObjectColour, 0, 1)` and
-/// alpha SunObjectAlpha. The pixel shader multiplies the texture by that
-/// colour and writes the square root of the product (Sun_PS's `sqrt oC0`),
-/// as the scene target holds. Textures clamp at their edges and filter linearly. The values
-/// reach the object through the sky's parameter block, copied whole into
-/// it (0x82E35624: 48 bytes from offset 512, where the time-of-day sampler
-/// at 0x8265A7CC puts SunObjectAlpha, SunObjectSize, CubeSunObjectSize,
-/// SunObjectMoon and SunObjectColour in that order).
+/// Sun or moon (0x82476DE0, made at 0x82E34C60): a quad 300 m away
+/// (0x8224D2B8). Sun.xds added when SunObjectMoon <= 0.5, else
+/// Moon0.xds (the only moon loaded, 0x82E342F0) alpha-blended. Parameters
+/// come from offset 512 of the sky block (0x82E35624, 0x8265A7CC).
 ///
-/// The stars (draw at 0x8242A618, made at 0x82E375F0): stars.bin holds one
-/// big-endian float4 per star, a unit direction and a brightness, drawn as
-/// a point list. The vertex shader rotates the direction by a matrix the
-/// object keeps as the identity (set at 0x82E34200 and never written
-/// again). The pixel shader writes white with alpha
-/// `StarFade * saturate((brightness - 0.25) / (0.97 - 0.25)) ^ 7`, blended
-/// over the sky; 0.25, 0.97 and 7 are the parameter block's defaults
-/// (0x82656C08), which no curve overrides.
+/// Stars (0x8242A618, made at 0x82E375F0): stars.bin holds a big-endian
+/// float4 per star (unit direction, brightness); the rotation stays identity
+/// (0x82E34200). Alpha StarFade * saturate((brightness - 0.25) / (0.97 -
+/// 0.25)) ^ 7, the block's defaults (0x82656C08).
 ///
-/// Both are drawn only where the depth buffer still holds the far plane,
-/// as the dome is: the game's vertex shaders put them there too (z = w -
-/// 1e-6). Inferred, not read: that the game's MatWVP is the camera's view
-/// without its translation, which the stars' unit distance implies.
+/// Both draw at the far plane. Inferred: MatWVP is the view without translation.
 class SkyObjects {
 public:
-    /// Loads the textures and stars; throws DataError if they are missing
-    /// or malformed.
+    /// Throws DataError if the textures or stars are missing or malformed.
     explicit SkyObjects(const Vfs& vfs);
     ~SkyObjects();
     SkyObjects(const SkyObjects&) = delete;
     SkyObjects& operator=(const SkyObjects&) = delete;
 
-    /// Draws the stars, then the sun or the moon, where the depth buffer
-    /// holds the far plane; leaves blending off and depth writes on.
+    /// Leaves blending off and depth writes on.
     void draw(const FrameParams& frame);
 
 private:

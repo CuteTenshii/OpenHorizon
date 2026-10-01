@@ -10,9 +10,8 @@
 
 namespace openhorizon {
 
-/// Worker threads that run queued jobs, lowest priority value first; for
-/// streaming work (decoding world tiles and textures) whose order should
-/// follow the camera. Jobs must not throw.
+/// Worker threads running queued jobs, lowest priority value first. Jobs
+/// must not throw.
 class JobPool {
 public:
     /// `threads` of 0 uses the hardware concurrency minus one, at least one.
@@ -24,9 +23,8 @@ public:
     void submit(float priority, std::function<void()> job);
     /// Drops every job not yet started.
     void clear();
-    /// Drops every job not yet started and returns once none is running, so
-    /// an object whose jobs capture it can be destroyed safely. Must not be
-    /// called from a job.
+    /// Drops every job not yet started and waits for running ones, so their
+    /// captures can be destroyed. Must not be called from a job.
     void clearAndWait();
     /// Jobs queued and not started yet.
     std::size_t pending() const;

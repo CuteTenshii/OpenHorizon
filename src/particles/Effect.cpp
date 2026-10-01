@@ -161,8 +161,7 @@ void parseRender(const pugi::xml_node& renderNode, int version, EffectDefinition
         if (version >= 8) {
             r.lightInfluence = vec4Node(type.child("light_influence"), r.lightInfluence);
         } else {
-            // Older files have one number, which lands in the w component
-            // (0x82DC7CAC).
+            // Older files have one number, the w component (0x82DC7CAC).
             r.lightInfluence.w = floatAttr(type, "light_influence", r.lightInfluence.w);
         }
         if (version >= 9) {
@@ -292,9 +291,7 @@ EffectDefinition parseEffect(std::string_view xml, std::string fileName)
         if (type.find("soft") != std::string::npos) {
             e.shaderFlags |= shader::kSoft;
         } else {
-            // Density only matters to soft particles; the loader clears it
-            // for the others (0x82DCAB6C), which also switches the vertex
-            // shader's depth output off.
+            // The loader clears it for non-soft particles, turning off the vertex shader's depth output (0x82DCAB6C).
             e.density = 0.0F;
         }
     }

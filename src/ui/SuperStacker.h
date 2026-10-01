@@ -7,37 +7,23 @@ namespace openhorizon::ui {
 class Presentation;
 class UiRenderer;
 
-/// Width of a text element as it draws now, in design units: its current
-/// text, size and tracking (animated values first) at kTextPointsToUnits,
-/// before the element's own x scale.
+/// Design units at kTextPointsToUnits, animated values first, before the
+/// element's own x scale.
 float textElementWidth(const Presentation& scene, UiRenderer& renderer, int element);
 
-/// Every SUPER_STACKER contract of a scene: the Anark component that lines
-/// elements up one after another and stretches models (the brush-stroke
-/// bars) under them, so a text's bar grows with the text. The HUD and the
-/// pause menu's entries (925_pause_menu: Text then MessageIndicator, with
-/// Crisp Tape, Smudge Tape, Dirt Tile and Clipon under them) use it.
+/// Every SUPER_STACKER contract of a scene: lines elements up and stretches
+/// the brush-stroke bars under them so they grow with the text.
 ///
-/// Verified from the executable: what the attach (0x828cf6a8) captures and
-/// its defaults, and the layout (widths 0x828ca920, placement 0x828cfab8,
-/// both called from the contract's slot 5, 0x828d1e08), and that only text
-/// elements have a width: the attach keeps an element in the width slot
-/// only when it casts from CUI4Element to CUI4TextElement (0x828cf7bc, the
-/// RTTI at 0x83324d40 and 0x83324d9c), so a stacked component, such as the
-/// activation prompt's Title, moves by the texts before it but pushes
-/// nothing along. Inferred: that the layout runs whenever a stacked text
-/// changes; what makes the game run it was not traced, and running it every
-/// frame from the captured values gives the same result.
+/// Verified: attach 0x828cf6a8 and its defaults, layout (widths 0x828ca920,
+/// placement 0x828cfab8, from slot 5, 0x828d1e08); only CUI4TextElement has a
+/// width (0x828cf7bc, RTTI 0x83324d40, 0x83324d9c). Inferred: the layout runs
+/// when a stacked text changes; running it every frame gives the same result.
 class SuperStackers {
 public:
-    /// Captures every SUPER_STACKER in `scene` (only those below `root`
-    /// when it is not -1) with the values its elements have now, which
-    /// every layout starts from again. Call on the scene as loaded (or
-    /// reset), before any layout.
+    /// Captures the stackers (below `root` unless -1) with their current values,
+    /// which every layout starts from. Call on the scene as loaded or reset.
     void bind(const Presentation& scene, UiRenderer& renderer, int root = -1);
-    /// Places the stacked elements and stretches the scalers for the texts
-    /// the scene shows now. Writes only x positions, x scales and texture
-    /// offsets.
+    /// Writes only x positions, x scales and texture offsets.
     void layout(Presentation& scene, UiRenderer& renderer) const;
 
     bool empty() const { return m_stackers.empty(); }
@@ -52,7 +38,7 @@ private:
     };
     struct Scaler {
         int element = -1;
-        /// The model's first image, whose texture the scaler slides.
+        /// The image whose texture the scaler slides.
         int image = -1;
         float size = 0.0F;
         int first = 0;

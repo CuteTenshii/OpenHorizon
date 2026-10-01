@@ -127,9 +127,8 @@ ShaderProgramSource buildProgram(const Effect& effect, const Pass& pass, const V
                 }
             }
         }
-        // Pixel inputs the vertex shader does not produce still need a
-        // writer for the stages to link; give them an export register the
-        // vertex shader never writes, which stays zero.
+        // Unproduced pixel inputs still need a writer to link: an export register the vertex shader
+        // never writes, so it stays zero.
         for (const Interpolator& in : pixel->interpolators) {
             if (in.reg >= kInterpolatorRegisters || fed[in.reg]) {
                 continue;

@@ -65,16 +65,10 @@ struct SphereContact {
     std::uint8_t flags = 0;
 };
 
-/// A track's collision: the `.col` index, the `.fiz` tiles it lists (loaded
-/// on demand and cached) and the surface table, with ray and sphere queries
-/// in world coordinates. Independent of any car model.
-///
-/// Queries load the tiles they touch that are not yet resident, on the
-/// calling thread (a tile decodes in about a millisecond); loadAround() or
-/// loadAroundAsync() ahead of time keeps that off a frame. Tiles that fail
-/// to decode are logged once and then ignored by queries.
-///
-/// Every method is safe to call from several threads at once.
+/// A track's collision: the `.col` index, its `.fiz` tiles (cached on demand) and
+/// the surface table, with ray and sphere queries in world coordinates.
+/// Queries load missing tiles on the calling thread; loadAround() keeps that off a
+/// frame. Tiles that fail to decode are logged once, then ignored. Thread-safe.
 class TrackCollision {
 public:
     /// Returns the bytes of the tile with the given id.
@@ -85,10 +79,8 @@ public:
     TrackCollision(const TrackCollision&) = delete;
     TrackCollision& operator=(const TrackCollision&) = delete;
 
-    /// Opens track `track` (a folder of media/tracks): its index for ribbon
-    /// `ribbon`, the tiles in its bin.zip and physics/surfaceTypes.xml.
-    /// Throws DataError if any of them is missing or unreadable. Tiles are
-    /// read later, when first needed.
+    /// Opens a track (a folder of media/tracks) for `ribbon`; tiles are read when
+    /// first needed. Throws DataError if a file is missing or unreadable.
     static std::unique_ptr<TrackCollision> open(const Vfs& vfs, std::string_view track, int ribbon = 0);
 
     const CollisionIndex& index() const { return m_index; }
@@ -120,9 +112,7 @@ public:
     std::optional<RayHit> raycast(
         const glm::vec3& origin, const glm::vec3& direction, float maxDistance, const QueryFilter& filter = {}) const;
     /// The triangles within `radius` of `centre`, each once, deepest first.
-    /// Triangles are one-sided: a centre more than `radius` behind a
-    /// triangle's plane, or behind it and beside it, gives no contact, while
-    /// a centre behind it over its face is pushed back out in front.
+    /// One-sided: a centre behind a face is pushed out in front, behind and beside it gives none.
     std::vector<SphereContact> sphereContacts(
         const glm::vec3& centre, float radius, const QueryFilter& filter = {}) const;
     /// Every surface the vertical line through (x, z) crosses, highest
@@ -146,10 +136,8 @@ private:
 
     /// Loaded tiles among `indices`, in the same order.
     std::vector<Candidate> resident(const std::vector<std::size_t>& indices) const;
-    /// Whether tile `tileIndex` reports geometry at world XZ `point`: only
-    /// the tile whose cell holds the point does; where no tile has that
-    /// cell, every one of `candidates` may, and the caller removes the
-    /// duplicates.
+    /// Whether tile `tileIndex` reports geometry at world XZ `point`: the tile of the
+    /// point's cell, or any of `candidates` where no tile has it (caller deduplicates).
     bool owns(std::size_t tileIndex, glm::vec2 point, const std::vector<Candidate>& candidates) const;
     void rayTile(const Candidate& candidate, const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
         float fromDistance, float toDistance, const QueryFilter& filter, std::optional<RayHit>& best) const;

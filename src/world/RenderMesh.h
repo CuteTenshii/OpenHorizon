@@ -43,16 +43,10 @@ namespace openhorizon::world {
 ///               supplied by the engine); then u32 1, u32 shaderCount, shader
 ///               paths (u32 length, text), then compiled shader code
 ///
-/// After the position, a vertex holds 4-byte inputs in the order of its
-/// shader's input table (see ShaderLayout). Texture coordinates are pairs of
-/// unsigned 16-bit fractions that the vertex shader maps through the
-/// material's offset and scale.
-///
-/// Positions are stored with Z negated relative to the world (and to the
-/// placements in CollObjs.xml), so this parser flips Z. Index buffers are
-/// triangle strips with all-ones restarts; a buffer without restarts whose
-/// length is a multiple of three is a triangle list. That last rule is
-/// inferred from the data, not from a format definition.
+/// After the position, a vertex holds 4-byte inputs in its shader's input order (see ShaderLayout); texture
+/// coordinates are u16 fractions mapped through the material's offset and scale. Positions store Z negated.
+/// Index buffers are strips with all-ones restarts; one without restarts and a multiple of three long is a
+/// triangle list (inferred).
 struct RenderMesh {
     struct Material {
         std::string name;
@@ -62,10 +56,8 @@ struct RenderMesh {
         std::uint32_t tableIndex = 0;
         /// Texture coordinate offset (x, y) and scale (z, w).
         glm::vec4 uvOffsetScale{0.0F, 0.0F, 1.0F, 1.0F};
-        /// What the track shaders apply to a stored position before the
-        /// world matrix (their positionOffset and positionScale constants):
-        /// position * scale + offset, in the file's coordinates (Z not yet
-        /// negated).
+        /// The track shaders' positionOffset and positionScale: position * scale + offset before the world matrix,
+        /// in file coordinates (Z not negated).
         glm::vec3 positionOffset{0.0F};
         glm::vec3 positionScale{1.0F};
     };
@@ -82,27 +74,14 @@ struct RenderMesh {
     struct MaterialInfo {
         /// Index into RenderMesh::shaders.
         std::uint32_t shader = 0;
-        /// Per texture slot, an index into the model's texture list or -1
-        /// for textures the engine supplies (lightmaps, shadows). Slot k
-        /// feeds the shader's sampler register k.
+        /// Per sampler register, an index into the model's texture list, or -1 for engine textures (lightmaps,
+        /// shadows).
         std::vector<int> textureSlots;
-        /// The second group of shader constants: the pixel shader's, from
-        /// c0 (the effects' c360_0 on). For the blended ground shaders the
-        /// first two hold the texture scales of their layers: Blend_A and
-        /// Blend_B in the first (x, y and z, w), Blend_C and the splat map
-        /// in the second. Inferred from the data.
+        /// The pixel shader's constants from c0 (the effects' c360_0). Blended ground shaders hold their layer
+        /// texture scales in the first two: Blend_A, Blend_B, then Blend_C and the splat map. Inferred.
         std::vector<glm::vec4> constants;
-        /// The first group of shader constants: the vertex shader's, from
-        /// c3 (the effects' vc360_3 on, c360_3 in the bunting effects; c0
-        /// to c2 are the material's texture coordinate and position
-        /// transforms). Verified over the 322940 table entries of
-        /// Colorado's models: the group holds exactly as many constants as
-        /// the effect's highest vertex-stage material register less 2, and
-        /// none for effects without one; the second group covers the pixel
-        /// stage's registers from c0. Such as the waves of the lakes
-        /// (vc360_3: amplitude in metres, phase speed; (0.05, 1, 0, 0) on
-        /// Colorado's rivers), the sway of flags and trees. Where the
-        /// executable uploads them was not traced.
+        /// The vertex shader's constants from c3 (vc360_3, c360_3 in bunting; c0-c2 are the material transforms),
+        /// e.g. lake waves (amplitude in metres, phase speed) and flag sway. Verified on Colorado's models.
         std::vector<glm::vec4> vertexConstants;
     };
 
@@ -110,28 +89,22 @@ struct RenderMesh {
     glm::vec3 boundsMin{0.0F};
     glm::vec3 boundsMax{0.0F};
     std::vector<Part> parts;
-    /// Empty when the file's tail does not have the expected layout; the
-    /// geometry is still usable then.
+    /// Empty when the file's tail has an unknown layout; the geometry is still usable.
     std::vector<MaterialInfo> materialTable;
     /// Shader paths, e.g. "shaders\track\h_diff_1.fx".
     std::vector<std::string> shaders;
 
     std::size_t triangleCount() const;
 
-    /// Texture coordinates of vertex `vertex` of `part`, read from the pair
-    /// at byte `offset` and mapped through `material`'s offset and scale.
-    /// Returns (0, 0) when the pair lies outside the vertex.
+    /// The pair at byte `offset` mapped through `material`'s offset and scale; (0, 0) outside the vertex.
     static glm::vec2 texcoord(const Part& part, const Material& material, std::uint32_t vertex, int offset);
-    /// The texture coordinate pair at byte `offset` of vertex `vertex` as
-    /// stored, as 16-bit fractions of 1; (0, 0) outside the vertex.
+    /// The pair at byte `offset` as stored, in fractions of 1; (0, 0) outside the vertex.
     static glm::vec2 rawTexcoord(const Part& part, std::uint32_t vertex, int offset);
-    /// The four bytes at byte `offset` of vertex `vertex` (a vertex colour)
-    /// read as a big-endian number, or 0 outside the vertex.
+    /// The vertex colour at byte `offset`, big-endian, or 0 outside the vertex.
     static std::uint32_t colour(const Part& part, std::uint32_t vertex, int offset);
 };
 
-/// What the first bytes of a render model say about it, enough to index a
-/// world without decoding whole files.
+/// Enough of a render model to index a world without decoding whole files.
 struct RenderMeshHeader {
     glm::vec3 boundsMin{0.0F};
     glm::vec3 boundsMax{0.0F};
@@ -145,30 +118,22 @@ namespace rendermesh {
 /// Bytes from the start of a file that readHeader() needs.
 inline constexpr std::size_t kHeaderBytes = 0x200;
 
-/// Parses a whole file; throws DataError, naming `source`, on any structural
-/// mismatch.
+/// Throws DataError, naming `source`, on any structural mismatch.
 RenderMesh parse(ByteView data, const std::string& source);
 
-/// Parses the header and first part name from the start of a file; returns
-/// nothing if the data is not a render model.
+/// Nothing if the data is not a render model.
 std::optional<RenderMeshHeader> readHeader(ByteView prefix);
 
-/// Appends the triangles of one index buffer to `out` as a triangle list,
-/// dropping degenerate ones. `restart` is the all-ones value of the index
-/// width. A buffer without restarts whose length is a multiple of three is
-/// read as a list; anything else as strips, in which every other triangle
-/// has its winding flipped back.
+/// Appends one index buffer to `out` as a triangle list, dropping degenerates. `restart` is the all-ones value of
+/// the index width; strips get every other triangle's winding flipped back.
 void appendTriangles(std::span<const std::uint32_t> indices, std::uint32_t restart, std::vector<std::uint32_t>& out);
 
-/// Level of detail from a part name ("..._LOD01_..." gives 1), or -1 when the
-/// name carries none (e.g. "NOLOD" meshes). The token must start the name or
-/// follow an underscore; letters match ignoring case.
+/// "..._LOD01_..." gives 1; -1 without a token (e.g. "NOLOD"). The token starts the name or follows an underscore,
+/// any case.
 int lodLevel(std::string_view partName);
 
-/// The part name without its LOD token and trailing chunk numbers, in lower
-/// case: "Redstone_Area02_Road_LOD01_02" and "Redstone_Area02_Road_LOD02_11"
-/// both give "redstone_area02_road". Each LOD level of such a group covers the
-/// same area, though its chunks are cut differently.
+/// Lower-case name without LOD token and chunk numbers: "Redstone_Area02_Road_LOD01_02" gives
+/// "redstone_area02_road". Each LOD of a group covers the same area, cut into different chunks.
 std::string lodGroupKey(std::string_view partName);
 
 } // namespace rendermesh

@@ -14,14 +14,11 @@
 #include <string_view>
 #include <vector>
 
-/// The RAD Granny 3D files (`.gr2`) the animated objects carry their
-/// skeletons and animations in: the executable links Granny (its sources
-/// named d:/dev/rad/granny/rt/*, entry points thunked at
-/// 0x82A70DC0-0x82A71088), and every kind-4 procedural set holds one file
-/// (see AnimatedObjectSet).
+/// RAD Granny 3D files (`.gr2`), one per kind-4 set, holding skeletons and
+/// animations. The executable links Granny (thunks at 0x82A70DC0-0x82A71088).
 ///
-/// File layout, big-endian with 32-bit pointers, verified on the 33 kind-4
-/// sets of Colorado and the 290 files of media/animatedobjects:
+/// File layout, big-endian with 32-bit pointers, verified on every kind-4 set
+/// of Colorado and media/animatedobjects:
 ///
 ///     0x00  16-byte magic b595110e 4bb5a56a 502828eb 04b37825
 ///     0x10  u32 header size (456), u32 0 (no compression), 8 bytes
@@ -37,24 +34,19 @@
 ///     pointer fixup, 12 bytes: u32 offset in its section of a pointer
 ///           field, u32 section and u32 offset of what it points to
 ///
-/// Offsets are from the start of the file. A pointer field holds nothing
-/// usable itself: a fixup says where it points, and a field without one is
-/// null. The data is self-describing: every object's type is a list of
-/// 32-byte member definitions (u32 member type, name pointer, pointer to the
-/// member's own type, u32 array width, 16 more bytes), ended by member type
-/// 0, and the readers below find members by name. The root object is
-/// Granny's file info, whose Models and Animations are what the game uses;
-/// the files hold no Granny meshes (the geometry is the set's own).
+/// Offsets are from the start of the file. A pointer field is null unless a
+/// fixup says where it points. A type is a list of 32-byte member definitions
+/// (u32 member type, name pointer, member type pointer, u32 array width, 16
+/// more bytes) ended by member type 0; members are found by name. The root is
+/// Granny's file info (Models, Animations); the files hold no Granny meshes.
 namespace openhorizon::animated::granny {
 
 /// A Granny transform: position, orientation and a 3x3 scale and shear,
 /// each present when its flag is set.
 ///
-/// Verified in BuildCompositeTransform4x4 (0x82A7FF80): the matrix is
-/// p' = R (SS p) + position, R the orientation's rotation (0x82A8D420) and
-/// SS the scale and shear with its stored rows acting on column vectors
-/// (0x82A8D2B0), written out for row vectors with the translation in the
-/// last row.
+/// Verified in BuildCompositeTransform4x4 (0x82A7FF80): p' = R (SS p) +
+/// position, R from the orientation (0x82A8D420), SS's stored rows acting on
+/// column vectors (0x82A8D2B0); written for row vectors.
 struct Transform {
     static constexpr std::uint32_t kHasPosition = 1;
     static constexpr std::uint32_t kHasOrientation = 2;
@@ -77,10 +69,8 @@ struct Bone {
     /// Index of the parent bone, -1 for a root.
     int parent = -1;
     Transform local;
-    /// The inverse of the bone's world matrix in the rest pose, as a glm
-    /// matrix acting on column vectors (the file stores it for row vectors,
-    /// translation in its last row). It includes the model's initial
-    /// placement, so InverseWorld x World is the identity at rest.
+    /// Inverse rest-pose world matrix for column vectors (stored for row
+    /// vectors), including the initial placement: InverseWorld x World = I at rest.
     glm::mat4 inverseWorld{1.0F};
 };
 
@@ -94,9 +84,8 @@ struct Model {
     int findBone(std::string_view boneName) const;
 };
 
-/// One of Granny's curve formats, numbered as the format table at
-/// 0x83376EE0 (52-byte entries) numbers them and as a curve's Format byte
-/// names them.
+/// Granny's curve formats, numbered as the format table at 0x83376EE0
+/// (52-byte entries) and a curve's Format byte.
 enum class CurveFormat : std::uint8_t {
     DaKeyframes32f = 0,
     DaK32fC32f = 1,
@@ -142,36 +131,26 @@ struct Curve {
     std::vector<float> knots;
     std::vector<float> controls;
 
-    /// The curve's value at `time` seconds into an animation of
-    /// `duration` seconds, into `out` (`dimension` floats). With `loop`
-    /// the spline wraps around the ends as a looping Granny control
-    /// samples it; without, it repeats its first and last knots and
-    /// controls. Returns false for Identity and Keyframes curves, leaving
-    /// `out` alone (see TransformTrack for what they give).
+    /// The value at `time` seconds into a `duration`-second animation, into
+    /// `out`. With `loop` the spline wraps around the ends; without, it repeats
+    /// its end knots. False for Identity and Keyframes, leaving `out` alone.
     ///
-    /// Verified in the executable: FindKnot (0x82A8C2F0, 0x82A8C360) takes
-    /// the first knot after the time, clamped to the last; the padding at
-    /// the ends (0x82A85CF0) repeats the first and last knot and control, or
-    /// with a looping control takes them from the other end, shifted by
-    /// the duration; the samplers (tables 0x833778D0 and, for
-    /// orientations, 0x83377970, indexed by 10 x degree + dimension)
-    /// interpolate linearly at degree 1, with the quadratic weights of
-    /// 0x82A84018 at degree 2 and with de Boor's recursion (0x82A85B28) at
-    /// degree 3; orientation curves are normalised after (0x82A94AE8,
-    /// 0x82A858B0).
-    /// Missing: how DaKeyframes32f curves are sampled (their FindKnot
-    /// returns 0 and they store no knots), used by 217 curves in 8 files of
-    /// the disc (bungee, fly-under-string, stage strobes, a timed-event
-    /// biplane); they are left at the rest pose.
+    /// Verified: FindKnot (0x82A8C2F0, 0x82A8C360) takes the first knot after
+    /// the time, clamped to the last; end padding (0x82A85CF0) repeats the end
+    /// knot and control, or when looping takes them from the other end shifted
+    /// by the duration; samplers (0x833778D0, orientations 0x83377970, indexed
+    /// by 10 x degree + dimension) are linear at degree 1, use the weights of
+    /// 0x82A84018 at 2 and de Boor (0x82A85B28) at 3; orientations are then
+    /// normalised (0x82A94AE8, 0x82A858B0).
+    /// Missing: DaKeyframes32f sampling (no knots, FindKnot returns 0); those
+    /// curves stay at the rest pose.
     bool sample(float time, float duration, bool loop, float* out) const;
 };
 
-/// The curves that move one bone. A bone with a track takes all three
-/// parts of its local transform from it, an identity curve giving the
-/// identity (zero position, no rotation, unit scale) with the part's flag
-/// clear, not the rest pose's value (SampleTrackUUULocal 0x82A95050:
-/// 0x82A950BC, 0x82A9516C, 0x82A9522C). A bone without one keeps the
-/// skeleton's rest transform (EndLocalPoseAccumulation 0x82A74F08).
+/// The curves that move one bone. A tracked bone takes its whole local
+/// transform from them, an identity curve giving the identity, not the rest
+/// value (SampleTrackUUULocal 0x82A95050: 0x82A950BC, 0x82A9516C, 0x82A9522C);
+/// an untracked one keeps its rest transform (EndLocalPoseAccumulation 0x82A74F08).
 struct TransformTrack {
     /// The bone the track moves, by name.
     std::string name;
@@ -204,13 +183,10 @@ struct FileInfo {
 /// section, or lacks a member the readers need.
 FileInfo readFileInfo(ByteView data, const std::string& source);
 
-/// The world matrices of `model`'s bones (as glm matrices acting on column
-/// vectors) for local transforms `locals` (one per bone), each bone's local
-/// matrix times its parent's world (for row vectors; verified on the
-/// position-only path 0x82A9B748), the roots' parent being the model's
-/// initial placement: the game builds that placement's matrix
-/// (0x82ED895C) and passes it as the offset when it samples the model's
-/// animations (0x82EC49E4).
+/// The world matrices (column vectors) of `model`'s bones for `locals`: local
+/// times parent world for row vectors (verified on 0x82A9B748), the roots'
+/// parent being the initial placement, which the game passes as the sampling
+/// offset (0x82ED895C, 0x82EC49E4).
 void worldPose(const Model& model, const std::vector<Transform>& locals, std::vector<glm::mat4>& world);
 
 } // namespace openhorizon::animated::granny

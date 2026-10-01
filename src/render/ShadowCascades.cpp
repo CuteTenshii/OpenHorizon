@@ -42,9 +42,8 @@ constexpr float kFirstLevelFilter = 1.3F;
 /// Levels 1 and 2 split their box at 1 - 0.6 of it (0x82255EF8).
 constexpr float kInnerSplit = 0.6F;
 
-/// The cascades' far ends and their depth half ranges (100 × (i + 1),
-/// 0x82E9F500 and 0x82EA04CC), and the first's kernel scale and its
-/// per-cascade factor (+0x2094 = 2, +0x2098 = 0.35).
+/// Far ends and depth half ranges (0x82E9F500, 0x82EA04CC); kernel scale
+/// and per-cascade factor (+0x2094, +0x2098).
 constexpr std::array<float, ShadowCascades::kCascades> kCascadeFar{4.0F, 15.0F, 40.0F};
 constexpr float kCascadeDepthStep = 100.0F;
 constexpr std::array<int, ShadowCascades::kCascades> kCascadeResolution{1024, 512, 512};
@@ -234,9 +233,7 @@ void ShadowCascades::update(const ShadowCamera& camera, const glm::vec3& lightDi
         waiting += level.dirty && level.placed ? 1 : 0;
     }
     float moveScale = std::pow(kStagger, static_cast<float>(waiting));
-    // 0x824896A0 is the runtime's arc cosine (inferred from its use: the
-    // difference from pi/2 is the sun's elevation, whose tangent gives a
-    // shadow length).
+    // 0x824896A0 is the runtime's arc cosine (inferred from its use).
     const float elevation = std::numbers::pi_v<float> * 0.5F - std::acos(std::min(std::abs(lightDirection.y), 1.0F));
     const float shadowLength = kAngleTestHeight / std::tan(elevation);
     for (std::size_t i = 0; i < kLevels; ++i) {

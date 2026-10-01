@@ -13,10 +13,7 @@
 namespace openhorizon::collision {
 
 /// A track's collision grid: `Ribbon_NN/<Track>_track_NN.col`, the index of
-/// the `<id>.fiz` tiles in the track's bin.zip. It is the header of a pack
-/// that stores the tiles back to back after it (the pack offsets start at
-/// the index's own size, 0x13000), though the disc ships the tiles as
-/// separate archive entries.
+/// the `<id>.fiz` tiles in the track's bin.zip, which ships them as separate entries.
 ///
 /// Layout (big-endian unless noted):
 ///
@@ -43,10 +40,8 @@ namespace openhorizon::collision {
 ///             u32 0
 ///             u32 pack offset after section A (0 for the last tile)
 ///
-/// Tile t covers cell (column c, row r): its bounds are
-/// [minX + 100 c - 8, minX + 100 (c + 1) + 8] along X, and likewise along Z
-/// from minZ. Each cell has at most one tile; cells without one have no
-/// collision (the game lets cars fall through beyond the map's edge).
+/// A tile's bounds are its cell plus the margin on every side. Each cell has
+/// at most one tile; cells without one have no collision.
 class CollisionIndex {
 public:
     struct Tile {

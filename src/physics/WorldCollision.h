@@ -33,20 +33,10 @@ struct SphereContact {
 
 /// The world's solid surfaces around a moving point, for the cars.
 ///
-/// The track's own collision meshes (`.fiz` tiles, see collision::
-/// TrackCollision) come first: they carry a surface type per triangle, so
-/// grass, dirt and tarmac grip differently, and they hold the walls and
-/// invisible barriers that fence the drivable area. They cover only that
-/// area, and not the props standing in it, so the render geometry fills in:
-/// the finest level of detail of the terrain, roads and placed props in the
-/// 500 m tiles near the focus, built on worker threads into a grid of small
-/// cells. Inside the drivable area only its steep faces (walls, signs,
-/// buildings) count; outside it, all of it does.
-///
-/// Procedural copies (trees, bushes, rocks) are left out of the render
-/// geometry, since their models include foliage a car would otherwise hit in
-/// mid-air; instead each tall copy (a tree) gets a vertical cylinder for its
-/// trunk, and low ones (bushes, scrub) stay drive-through.
+/// The `.fiz` collision meshes (surface types, walls, barriers) cover only the
+/// drivable area, so the finest render LOD fills in: its steep faces inside
+/// that area, all of it outside. Procedural copies are left out (their foliage
+/// would block in mid-air); tall ones get a trunk cylinder instead.
 class WorldCollision final : public GroundQuery {
 public:
     /// Opens the track's collision meshes too; without them (a track that
@@ -85,7 +75,6 @@ private:
         glm::vec3 edge2;
         glm::vec3 normal;
     };
-    /// One tile's triangles in a grid of square cells.
     /// A tree trunk: a vertical cylinder from `bottom` up to `top`.
     struct Trunk {
         glm::vec2 centre{0.0F};
@@ -93,6 +82,7 @@ private:
         float bottom = 0.0F;
         float top = 0.0F;
     };
+    /// One tile's triangles in a grid of square cells.
     struct Tile {
         glm::vec2 origin{0.0F};
         int cellsX = 0;

@@ -44,9 +44,8 @@ inline std::uint16_t loadLe16(const std::uint8_t* p)
 /// IEEE half float to float, as the Xenos GPU and D3DX store them.
 float halfToFloat(std::uint16_t half);
 
-/// Bounds-checked reader of big-endian data, the byte order of every Xbox 360
-/// file. Reading past the end throws DataError naming the source and offset,
-/// so parsers can read whole structures and catch once.
+/// Bounds-checked big-endian reader; reading past the end throws DataError
+/// naming the source and offset.
 class BeReader {
 public:
     BeReader(ByteView data, std::string source)

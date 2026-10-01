@@ -166,8 +166,7 @@ void EngineSound::addEmitter(EmissionGroup group, const std::string& name)
         emitter.rolloff = rolloff->second;
     }
     const std::shared_ptr<const FsbBank> bank = m_library->bank(bankPath);
-    // Each side of a split exhaust plays one channel; anything else plays
-    // whole samples, in stereo where the recording is.
+    // Each side of a split exhaust plays one channel.
     const bool splitExhaust = harmonic->loops.contains("ExhaustL") && harmonic->loops.contains("ExhaustR");
     emitter.bus = m_mixer.createBus(m_options.buses.engine);
     m_emitters.push_back(emitter);
@@ -192,8 +191,7 @@ void EngineSound::addEmitter(EmissionGroup group, const std::string& name)
         voice.spatial = m_options.spatial;
         voice.position = m_position + m_basis * added.localPosition;
         voice.rolloff = added.rolloff;
-        // Random start points keep two sides that play the same mono
-        // recording from phasing against each other.
+        // Random start points keep two sides of one mono recording from phasing.
         std::uniform_int_distribution<std::size_t> start(0, pcm->frames() - 1);
         voice.startFrame = start(m_random);
         added.loops.push_back(LoopVoice{loop, pcm, voice, kNoVoice});
@@ -268,8 +266,7 @@ void EngineSound::startEvents()
                 logWarning("audio: {} has no event {}", projectPath, eventPath);
                 return nullptr;
             }
-            // Decode everything the event can play now rather than on the
-            // game thread when it first sounds.
+            // Decode now rather than on the game thread when it first sounds.
             for (const FevLayer& layer : event->layers) {
                 for (const FevSoundInstance& sound : layer.sounds) {
                     for (const FevWaveform& waveform : project->soundDefinition(sound.soundDefinition).waveforms) {
@@ -293,8 +290,7 @@ void EngineSound::startEvents()
     };
     if (m_options.tyres) {
         TyreSoundOptions tyres;
-        // The game gives the car in focus a roll and a skid per wheel and
-        // other cars one pair; the player's car is the one heard unplaced.
+        // The game gives the car in focus a roll and a skid per wheel, other cars one pair.
         tyres.perWheel = !m_options.spatial;
         tyres.spatial = m_options.spatial;
         tyres.volume = otherVolume("TireVolume") * m_volume;
@@ -321,9 +317,7 @@ EngineInputs EngineSound::inputs(float rpm, float throttle) const
     const float idle = m_tuning.engine.idleRpm;
     in.rpm = std::clamp((rpm - idle) / (m_tuning.engine.redlineRpm - idle), 0.0F, 1.0F);
     in.throttle = throttle;
-    // No torque reaches the audio from physics, so load is estimated: the
-    // throttle opening drives, and a closed throttle brakes in proportion to
-    // engine speed.
+    // Physics gives the audio no torque: load is estimated from throttle and, closed, engine speed.
     in.posTorque = throttle;
     in.negTorque = (1.0F - throttle) * in.rpm;
     return in;
@@ -366,8 +360,6 @@ void EngineSound::update(float rpm, float throttle, float dt)
                 continue;
             }
             if (loop.voice == kNoVoice) {
-                // A fresh random start point, so a loop that comes back does
-                // not always restart at the same place.
                 std::uniform_int_distribution<std::size_t> start(0, loop.pcm->frames() - 1);
                 loop.settings.startFrame = start(m_random);
                 loop.settings.volume = volume;

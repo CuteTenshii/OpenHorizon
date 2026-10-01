@@ -1,6 +1,4 @@
-// The pad's thumbstick shaping against the game's (PadInput.h): the radial
-// dead zone, the profile's steering dead zones and full deflection at the
-// raw values real pads reach. No disc needed.
+// The pad's thumbstick shaping (PadInput.h) against the game's.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -21,9 +19,8 @@ using openhorizon::StickDeadZone;
 constexpr float kDefaultInside = 0.24F;
 constexpr float kDefaultOutside = 0.95F;
 
-/// CCarDynamics' pad steering (0x82DF9620) counts the stick as held at
-/// full lock from this input on (0.976 at 0x8224ACA0); below it the car
-/// never adds the lock the find-peak step gives.
+/// From this input CCarDynamics' pad steering (0x82DF9620) adds the find-peak
+/// lock (0.976 at 0x8224ACA0).
 constexpr float kCarFullInput = 0.976F;
 
 StickDeadZone profileDefault()
@@ -49,8 +46,7 @@ TEST_CASE("controllerSteeringDeadZoneIsAtLeastXInputs", "[input]")
 TEST_CASE("fullDeflectionReachesFullInput", "[input]")
 {
     const StickDeadZone zone = profileDefault();
-    // What pads report at full travel along one axis varies; many stop
-    // short of the raw range's ends.
+    // Many pads stop short of the raw range's ends at full travel.
     for (const std::int16_t raw : {std::int16_t{31129}, std::int16_t{32000}, std::int16_t{32767}}) {
         CHECK_THAT(shapeThumbstick(raw, 0, zone).x, WithinAbs(1.0F, 1e-6));
         CHECK_THAT(shapeThumbstick(static_cast<std::int16_t>(-raw), 0, zone).x, WithinAbs(-1.0F, 1e-6));
@@ -77,8 +73,7 @@ TEST_CASE("deadZoneIsRadial", "[input]")
     const StickDeadZone zone = profileDefault();
     CHECK(shapeThumbstick(7864, 0, zone).x == 0.0F);
     CHECK(shapeThumbstick(7865, 0, zone).x > 0.0F);
-    // Each axis alone is past the old per-axis 12 %, but the stick is
-    // inside the circle.
+    // Each axis alone is past 12 %, but the stick is inside the circle.
     const openhorizon::StickPosition inside = shapeThumbstick(7000, -3000, zone);
     CHECK(inside.x == 0.0F);
     CHECK(inside.y == 0.0F);

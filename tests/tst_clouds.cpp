@@ -1,7 +1,4 @@
-// The realtime sky's cloud data: clouddefs.xml, the cloud curves with the
-// parameter block's defaults, the texture scrolling and turning, the lowest
-// sky height and the two domes, on synthetic data and, when OPENHORIZON_GAME_DIR
-// names an extracted disc, on the disc's files and Colorado's curves.
+// The realtime sky's clouds: clouddefs.xml, the cloud curves, the scrolling and the two domes.
 
 #include "support/GlContext.h"
 #include "support/TestSupport.h"
@@ -294,9 +291,8 @@ TEST_CASE("disc_colorado_cloud_curves", "[clouds]")
     CHECK_THAT(p.close.topColour.b, WithinAbs(curves.sample("CloseCloudTopColour", noon).z, 1e-6F));
 }
 
-/// Draws Colorado's noon clouds into a 1920x1080 target cleared to the far
-/// plane, looking up over the horizon: the shaders must link, the layers
-/// must cover part of the view, and the GPU time is reported.
+/// Colorado's noon clouds, looking up over the horizon, must cover part of
+/// a 1920x1080 view; reports the GPU time.
 TEST_CASE("disc_clouds_draw", "[clouds]")
 {
     const char* dir = gameDir();

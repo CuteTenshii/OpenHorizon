@@ -38,9 +38,7 @@ SurfaceEffectTable SurfaceEffectTable::parse(std::string_view xml)
         SurfaceEffects s;
         s.surfaceName = entry.attribute("value").as_string();
         const pugi::xml_node element = types.child(s.surfaceName.c_str());
-        // The smashable entries keep SmokeType directly under the element,
-        // without SkidData; the loader only reads SkidData (0x82F16830), so
-        // those weights are not the tyre table's and stay zero.
+        // The loader reads only SkidData (0x82F16830); smashables' bare SmokeType weights stay zero.
         const pugi::xml_node skid = element.child("SkidData");
         if (skid) {
             s.hasSkidData = true;

@@ -21,8 +21,8 @@ class Vfs;
 ///     start of the strings
 ///
 /// Database text such as `_&202713995` refers to key `value & 0xFFFF` of the
-/// table named after the database table (Events.str for Events), as the
-/// map manager established; the high bits identify the table.
+/// table named after the database table (Events.str for Events); the high
+/// bits identify the table.
 class StringTable {
 public:
     /// Parses one `.str` file. Throws DataError if it is malformed.

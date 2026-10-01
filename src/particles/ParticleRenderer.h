@@ -20,45 +20,28 @@ namespace openhorizon::particles {
 class ParticleManager;
 class ParticleSystem;
 
-/// Per-frame values the particle shaders take from the game's lighting and
-/// camera.
+/// Per-frame values the particle shaders take from the game's lighting and camera.
 struct ParticleFrame {
     glm::mat4 viewProjection{1.0F};
     glm::vec3 cameraPosition{0.0F};
     /// Unit vector the camera looks along; particle depth is measured on it.
     glm::vec3 viewForward{0.0F, 0.0F, 1.0F};
-    /// Near plane of the renderer's projection (infinite far plane, reversed
-    /// depth, depth = near / view depth), for soft particles.
+    /// For soft particles: depth = near / view depth (reversed, infinite far plane).
     float nearPlane = 0.1F;
-    /// Direction towards the sun (the shaders' LightDir takes the negated
-    /// direction the manager stores at +8160; which way that one points is
-    /// inferred from the lighting maths, not read).
+    /// LightDir is the negated manager +8160; that it points away from the sun is inferred.
     glm::vec3 towardsSun{0.0F, 1.0F, 0.0F};
     glm::vec3 sunColour{1.0F};
     glm::vec3 ambientColour{0.0F};
-    /// The car whose headlights light particles (CarPosition, CarUpVector,
-    /// CarRightVector). The default is far away, which switches that light
-    /// off: the shader fades it out over 35 m.
+    /// The car whose headlights light particles (CarPosition, CarUpVector, CarRightVector). The far default turns
+    /// them off: the shader fades them over 35 m.
     glm::vec3 headLightCarPosition{1.0e9F};
     glm::vec3 headLightCarUp{0.0F, 1.0F, 0.0F};
     glm::vec3 headLightCarRight{1.0F, 0.0F, 0.0F};
 };
 
-/// Draws the particle systems of a ParticleManager with shaders written from
-/// the game's particles_* shaders (ParticleShaders.h), their textures from
-/// media/effects and the game's blending: premultiplied alpha (ONE,
-/// INV_SRC_ALPHA) for "alpha" and ONE, ONE for "additive" effects (the
-/// render states 0x82DBF5F0 sets, read as D3D9 blend values).
-///
-/// Differences from the game, all for lack of engine features or data:
-/// the particles are not shadowed (no shadow map; the shader's shadow term
-/// is 1); textures whose fetch constant marks them gamma are sampled as
-/// sRGB; the
-/// RelativeTransform the renderer can pass is identity (world systems);
-/// particles are stored as floats where the game uses halves; Modeled
-/// particles (car debris meshes) are not drawn.
-///
-/// Needs a current GL 4.5 context.
+/// Draws a ParticleManager's systems with ports of the game's particles_* shaders. Blending as 0x82DBF5F0 sets it:
+/// ONE, INV_SRC_ALPHA for "alpha", ONE, ONE for "additive". Unlike the game: no shadows, gamma textures as sRGB,
+/// identity RelativeTransform, float storage, no Modeled particles. Needs a current GL 4.5 context.
 class ParticleRenderer {
 public:
     explicit ParticleRenderer(const Vfs& vfs);
@@ -66,9 +49,7 @@ public:
     ParticleRenderer(const ParticleRenderer&) = delete;
     ParticleRenderer& operator=(const ParticleRenderer&) = delete;
 
-    /// Draws every system into the bound draw framebuffer. Soft particles
-    /// read that framebuffer's depth, which is first copied to a texture of
-    /// the renderer's own (GL_DEPTH_COMPONENT32F, as the scene target uses).
+    /// Draws into the bound framebuffer, whose depth is copied first for soft particles (GL_DEPTH_COMPONENT32F).
     /// Leaves blending off, depth writes on and the viewport unchanged.
     void draw(const ParticleManager& manager, const ParticleFrame& frame);
 

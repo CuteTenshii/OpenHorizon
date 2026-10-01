@@ -194,10 +194,8 @@ void readBodyFromArchive(const Vfs& vfs, CarSpec& spec)
         wheelbaseCentre = {centre.attribute("x").as_float(), centre.attribute("y").as_float(),
             centre.attribute("z").as_float()};
     }
-    // The spheres share the model's coordinates; the car model moves its
-    // origin by BottomCenterWheelbasePos, so the spheres move with it. The
-    // file's roof spheres sit behind the middle and its tallest bumper sphere
-    // at the -Z end, so +Z is the front here as in car space.
+    // The spheres move with the model's BottomCenterWheelbasePos origin; +Z
+    // is the front, as in car space.
     const pugi::xml_node spheres = doc.child("MAXData").child("Collision").child("CollSpheres");
     if (spheres) {
         const float offset[3] = {spheres.attribute("PosOffsetX").as_float(), spheres.attribute("PosOffsetY").as_float(),
@@ -396,9 +394,8 @@ float CollisionSettings::frictionBlendAt(float speed) const
 namespace {
 
 /// Stand-in spheres from the model's bounds: a row down each side at bumper
-/// height, neighbours `spacing` radii apart at most (and at least four a
-/// side), and two near the roof; with `ends`, rows across the front and the
-/// back as well, as dense.
+/// height, at most `spacing` radii apart (four a side at least), two near the
+/// roof, and with `ends` as dense rows across the front and the back.
 std::vector<CarSpec::CollisionSphere> standInSpheres(const CarSpec& spec, float spacing, bool ends)
 {
     std::vector<CarSpec::CollisionSphere> spheres;
@@ -448,10 +445,8 @@ std::vector<CarSpec::CollisionSphere> carContactSpheres(const CarSpec& spec)
     std::vector<CarSpec::CollisionSphere> spheres;
     std::copy_if(spec.collisionSpheres.begin(), spec.collisionSpheres.end(), std::back_inserter(spheres),
         [](const CarSpec::CollisionSphere& sphere) { return sphere.flags == 2; });
-    // Against another car's spheres the rows overlap by half and close the
-    // front and the back, so the dips between neighbours stay shallower
-    // than the other car's spheres and a bumper cannot sink between them,
-    // as it did into a truck.
+    // Rows overlapping by half with closed ends, so another car's bumper
+    // cannot sink between them.
     return spheres.empty() ? standInSpheres(spec, 1.0F, true) : spheres;
 }
 
@@ -652,9 +647,8 @@ CarSpec loadCarSpec(const Database& db, int carId, const Vfs* vfs)
     }
     spec.torqueCurve = readCurve(*torque, torque->i("NumTorqueValues"), 0.0F, spec.torqueCurveMaxRpm,
         torque->f("TorqueScale", 100.0F));
-    // Samples past the end of the curve hold the closed-throttle torque at
-    // the top of the range as a negative fraction; keep only the powered
-    // part, and take engine braking from ZeroThrottleTorqueScale.
+    // Samples past the curve's end hold closed-throttle torque as negative
+    // fractions; engine braking comes from ZeroThrottleTorqueScale instead.
     while (spec.torqueCurve.values.size() > 2 && spec.torqueCurve.values.back() <= 0.0F) {
         spec.torqueCurve.values.pop_back();
         spec.torqueCurve.maxInput -= spec.torqueCurveMaxRpm / static_cast<float>(torque->i("NumTorqueValues") - 1);

@@ -20,20 +20,15 @@ namespace {
 
 /// Models whose centre lies this close to the origin are in local space.
 constexpr float kLocalSpaceRadius = 5.0F;
-/// How far a transform may be from the world-space one (no move, Z mirrored)
-/// and still count as it.
+/// Tolerance against the world-space transform (no move, Z mirrored).
 constexpr float kWorldTransformTolerance = 0.01F;
-/// Meshes without LOD levels are drawn up to this distance, or further for
-/// big ones (terrain cubes), so small detail such as cables fades out.
+/// Draw range of meshes without LOD levels, further for big ones, so small detail such as cables fades out.
 constexpr float kNoLodMinRange = 1000.0F;
 constexpr float kNoLodRangePerMetre = 15.0F;
-/// How many draw records away a prop level without a zone placement looks
-/// for a sibling level to borrow the transform of.
+/// Draw records searched either way for a sibling level's transform to borrow.
 constexpr int kNeighbourReach = 3;
 
-/// Whether a draw's placement leaves its model where the model file puts it:
-/// at the origin, not turned, with the file's Z mirrored as every
-/// world-space model is.
+/// At the origin, not turned, Z mirrored as every world-space model is.
 bool isWorldSpaceTransform(const Placement& placement)
 {
     constexpr std::array<float, 9> kWorldRows{1, 0, 0, 0, 1, 0, 0, 0, -1};
@@ -53,8 +48,7 @@ bool contains(std::string_view text, std::string_view part)
     return text.find(part) != std::string_view::npos;
 }
 
-/// A "_CAGE" token, optionally numbered, that ends the name or is followed
-/// by an underscore. `lower` is in lower case.
+/// A "_CAGE" token, optionally numbered, ending the name or followed by an underscore. `lower` is lower case.
 bool hasCageToken(std::string_view lower)
 {
     for (std::size_t at = lower.find("_cage"); at != std::string_view::npos; at = lower.find("_cage", at + 1)) {
@@ -69,15 +63,8 @@ bool hasCageToken(std::string_view lower)
     return false;
 }
 
-/// Meshes that are not visible world surface: boundary walls
-/// ("UberLOD23_CAGE_LOD00", "TERR_UberLOD_Patch10_CAGE003_LOD00"), a shell
-/// around the whole map ("Underground_NOLOD"), shadow-casting stand-ins
-/// ("FT02_ShadowCaster_LOD01", "SHADOWBOX_MOUNTAINS_AREA04_LOD01",
-/// "Shadow_Terrain_Area04_LOD02"), and a crude copy of the scene
-/// ("TERR_CUBE_MainTown_Area3_12", "TERR_CUBE_Plains_Area04_4"): ground,
-/// roads and buildings as plain blocks, most likely what the game renders
-/// into its reflection cube maps. Every surface of that copy exists in full
-/// detail elsewhere; drawn, its buildings stick out as grey blocks.
+/// Not visible surface: boundary walls ("*_CAGE*"), the map shell ("Underground_NOLOD"), shadow stand-ins and the
+/// crude scene copy ("TERR_CUBE_*"), inferred to be what the reflection cube maps render.
 bool isHelperGeometry(std::string_view partName)
 {
     const std::string lower = toLower(partName);
@@ -92,9 +79,7 @@ bool isBackdrop(std::string_view partName)
     return contains(toLower(partName), "uberlod");
 }
 
-/// The distance band a placement's ranges give level `lod`, if they give
-/// one: a level ends where the next begins, and the last where the prop
-/// stops being drawn. Meshes without levels are drawn up to the furthest.
+/// A level ends where the next begins, the last where the prop stops; meshes without levels draw to the furthest.
 std::optional<std::pair<float, float>> placementBand(const Placement& placement, int lod)
 {
     const auto& ranges = placement.ranges;
@@ -140,9 +125,7 @@ std::optional<WorldIndex> WorldIndex::build(const lzx::ZipArchive& archive, cons
         }
         return it->second;
     };
-    // Some props are modelled around a pivot far from their centre and look
-    // like world-space models; their draw records move them, which
-    // world-space models' never do.
+    // Props modelled around a distant pivot look world-space; only their draw records move them.
     std::unordered_set<std::uint32_t> movedObjects;
     if (placements != nullptr) {
         for (std::size_t d = 0; d < placements->drawCount(); ++d) {
@@ -152,8 +135,7 @@ std::optional<WorldIndex> WorldIndex::build(const lzx::ZipArchive& archive, cons
             }
         }
     }
-    // bin.zip stores most models several times under the same name, with
-    // identical contents at different offsets; one copy is enough.
+    // bin.zip stores most models several times, identical, under the same name.
     const std::vector<std::size_t> models = distinctEntries(archive, ".rmb.bin");
     const auto& entries = archive.entries();
     std::vector<std::optional<RenderMeshHeader>> headers(models.size());
@@ -244,15 +226,11 @@ void WorldIndex::placeProps(const std::unordered_map<std::uint32_t, LocalModel>&
         }
         m_chunks.push_back(std::move(chunk));
     };
-    // Each level of detail of a prop is a draw record of its own, next to the
-    // prop's other levels and with the same transform. Some levels (mostly
-    // LOD00) are in no zone file; they take a neighbouring level's
-    // transform, so the prop does not vanish up close.
+    // Levels in no zone file (mostly LOD00) borrow a neighbouring level's draw transform.
     const std::size_t draws = placements.drawCount();
     for (std::size_t d = 0; d < draws; ++d) {
         const LocalModel* model = modelOf(d);
-        // Templates of the procedural sets sit at the world origin; the sets
-        // place their copies below.
+        // Procedural templates sit at the origin; their copies are placed below.
         if (model == nullptr || placements.isScatterTemplate(d)) {
             continue;
         }
@@ -285,9 +263,7 @@ void WorldIndex::placeProps(const std::unordered_map<std::uint32_t, LocalModel>&
         }
         placedObjects.insert(placements.drawObject(d));
     }
-    // Copies placed by procedural sets. A mesh's levels are its template
-    // draws, finest first; the set's distances are given per level, so the
-    // level is the slot rather than the level named in the model file.
+    // A procedural mesh's level is its template slot (finest first), not the model file's level.
     for (const ScatterSet& set : placements.scatterSets()) {
         for (const ScatterSet::Instance& instance : set.instances) {
             const std::vector<std::uint32_t>& levels = set.meshDraws[instance.mesh];
@@ -319,8 +295,7 @@ void WorldIndex::assignZones(const lzx::ZipArchive& archive, const TrackPlacemen
     for (std::size_t d = 0; d < placements.drawCount(); ++d) {
         drawsOfObject[placements.drawObject(d)].push_back(d);
     }
-    // Only the finest level of the backdrop is in any zone's list; the
-    // coarser ones are never drawn, and the finest serves every distance.
+    // Only the backdrop's finest level is in a zone list; it serves every distance.
     std::vector<bool> unlisted(m_chunks.size(), false);
     for (std::size_t i = 0; i < m_chunks.size(); ++i) {
         WorldChunk& chunk = m_chunks[i];

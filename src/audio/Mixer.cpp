@@ -26,9 +26,7 @@ std::uint32_t generationOf(VoiceId voice)
     return static_cast<std::uint32_t>(voice >> 32);
 }
 
-/// The buffer's sample at frame `index` of channel `channel`, following the
-/// loop region when looping and reading silence outside the buffer
-/// otherwise.
+/// Silence outside the buffer unless looping.
 float sampleAt(const PcmBuffer& pcm, std::ptrdiff_t index, int channel, bool loop)
 {
     const auto frames = static_cast<std::ptrdiff_t>(pcm.frames());
@@ -266,9 +264,7 @@ void Mixer::destroyBus(BusId bus)
 
 void Mixer::orderBuses()
 {
-    // A bus can only be given an output that exists when it is created, and
-    // destroying a bus sends its inputs to the master, so the outputs never
-    // form a cycle.
+    // Outputs never form a cycle: they must exist at creation and orphans go to the master.
     const auto depth = [this](BusId bus) {
         int d = 0;
         while (bus != kMasterBus) {

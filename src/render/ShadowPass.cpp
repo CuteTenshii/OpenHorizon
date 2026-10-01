@@ -10,14 +10,10 @@ namespace openhorizon::render {
 
 namespace {
 
-/// Shadows are drawn while 1 - ShadowIntensity is below this (0x82000CB0,
-/// compared at 0x82482F28).
+/// 0x82000CB0, compared at 0x82482F28.
 constexpr float kActiveBelow = 0.99F;
-/// The maps' depth bias (+0xF84 = 5e-5 for the levels, +0x209C = 2e-4 for
-/// the cascades; set as D3DRS_DEPTHBIAS at 0x82433D58 and 0x824344B0) in
-/// Direct3D's depth units, and the slope-scaled bias (+0xF88, +0x20A0: 2).
-/// The maps are 24-bit, as the game's D24S8 ones (0x82EA15D8), so a unit of
-/// OpenGL's polygon offset is 2^-24 of the depth range.
+/// D3DRS_DEPTHBIAS in Direct3D depth units (+0xF84, +0x209C; 0x82433D58,
+/// 0x824344B0) and slope bias (+0xF88, +0x20A0). Maps are D24S8 (0x82EA15D8).
 constexpr float kLevelDepthBias = 5e-5F;
 constexpr float kCascadeDepthBias = 2e-4F;
 constexpr float kSlopeBias = 2.0F;
@@ -26,9 +22,8 @@ constexpr float kDepthUnitsPerRange = 16777216.0F;
 constexpr float kBlurDistance = 250.0F;
 /// RotVariation (+0x240, the constructor's 0x82256100).
 constexpr glm::vec2 kRotVariation(8.4811F, 5.49169F);
-/// The inner box of levels 1 and 2 is faded into by the next level over
-/// this share of its tile (+0x254 = ratio × 0.25, 0x82483C64, with the
-/// 0.25 at 0x82000D04).
+/// The next level's fade over levels 1 and 2's inner box (+0x254 = ratio ×
+/// 0.25, 0x82483C64, 0x82000D04).
 constexpr float kTileHalf = 0.25F;
 
 /// The quads of the light box (the index list at 0x833901BC), over the
@@ -143,8 +138,7 @@ void main()
 }
 )";
 
-// BlurShadowMask (post effect PS at 0x821D97E0): four fetches half a texel
-// to either side, averaged.
+// BlurShadowMask (post effect PS at 0x821D97E0).
 const char* const kBlurFragment = R"(#version 450 core
 layout(binding = 0) uniform sampler2D uMask;
 uniform vec2 uTexel;
@@ -168,8 +162,7 @@ GLuint depthMap(int size)
     GLuint id = 0;
     glCreateTextures(GL_TEXTURE_2D, 1, &id);
     glTextureStorage2D(id, 1, GL_DEPTH_COMPONENT24, size, size);
-    // The shadow samplers are point sampled, clamped to a white border
-    // (0x82482CD0..0x82482E00: filters 0, clamp 6, border colour 1).
+    // Point sampled, white border (0x82482CD0..0x82482E00).
     glTextureParameteri(id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTextureParameteri(id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTextureParameteri(id, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -205,8 +198,7 @@ glm::mat4 textureMatrix(const ShadowFrustum& frustum, const glm::vec3& camera, c
     return bias * frustum.viewProjection * glm::translate(glm::mat4(1.0F), camera);
 }
 
-/// The level's box as the orchestrator draws it: the level's basis and
-/// projection around the camera (0x82483720..0x82483768).
+/// The level's box around the camera (0x82483720..0x82483768).
 ShadowFrustum levelBox(const ShadowCascades::Level& level, const glm::vec3& camera)
 {
     ShadowFrustum box = level.frustum;
@@ -312,8 +304,7 @@ void ShadowPass::resizeScreen(int width, int height)
     };
     m_depth = make(GL_DEPTH32F_STENCIL8, GL_NEAREST);
     m_depthCopy = make(GL_DEPTH32F_STENCIL8, GL_NEAREST);
-    // The mask's sampler for the blur is bilinear and clamped to its edge
-    // (0x824840EC..0x82484134); the scene's effects read it the same way.
+    // Bilinear, clamped to edge (0x824840EC..0x82484134).
     m_mask = make(GL_RGBA8, GL_LINEAR);
     m_maskCopy = make(GL_RGBA8, GL_LINEAR);
     glNamedFramebufferTexture(m_depthOnlyFramebuffer, GL_DEPTH_STENCIL_ATTACHMENT, m_depth, 0);
@@ -388,7 +379,7 @@ void ShadowPass::beginLevel(std::size_t index)
     glEnable(GL_SCISSOR_TEST);
     glScissor(x, y, size, size);
     glDepthMask(GL_TRUE);
-    // The clear depth is the level's +0x144 (1.0, 0x82E9F5F8).
+    // The level's +0x144 (0x82E9F5F8).
     glClearDepth(1.0);
     glClear(GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
@@ -443,8 +434,7 @@ void ShadowPass::beginDepth(int width, int height)
     glClearNamedFramebufferfi(m_depthOnlyFramebuffer, GL_DEPTH_STENCIL, 0, 0.0F, 0);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_GREATER);
-    // The flip in y turns the scene's counter-clockwise front faces
-    // clockwise.
+    // The y flip makes front faces clockwise.
     glFrontFace(GL_CW);
 }
 
@@ -471,8 +461,7 @@ void ShadowPass::drawApply(const Apply& apply, const ShadowFrustum& box, float s
     for (const glm::vec3& c : corners) {
         centre += c * 0.125F;
     }
-    // The back of the box: the game draws its far side and keeps what lies
-    // in front of it (depth "further or equal" with its reversed depth).
+    // The game draws the box's far side with depth "further or equal".
     std::array<glm::vec3, 36> vertices{};
     GLsizei count = 0;
     for (const auto& face : kBoxFaces) {

@@ -24,23 +24,17 @@ class AudioLibrary;
 class EventInstance;
 
 struct EngineSoundOptions {
-    /// Upgrade levels 0 (stock) to 3, which pick the intake and exhaust
-    /// recordings and the backfire behaviour.
+    /// 0 (stock) to 3; picks the recordings and the backfire behaviour.
     int intakeUpgrade = 0;
     int exhaustUpgrade = 0;
-    /// The car model tuning view whose mix applies: "Follow" (chase camera),
-    /// "Front" (bumper), "Cockpit" or "Default".
+    /// "Follow" (chase camera), "Front" (bumper), "Cockpit" or "Default".
     std::string view = "Follow";
-    /// Place the emitters in the world with setTransform() and attenuate them
-    /// by GlobalRolloffs.xml; otherwise they play in stereo, panned by the
+    /// Placed with setTransform() and attenuated by GlobalRolloffs.xml; otherwise stereo, panned by the
     /// view's surround levels.
     bool spatial = false;
-    /// Tyre sounds (TyreSound) and the gear-shift sound from Tires.fev and
-    /// Transmissions.fev.
+    /// From Tires.fev and Transmissions.fev.
     bool tyres = true;
     bool transmission = true;
-    /// The mixer buses the sounds feed: the engine's emitter buses and its
-    /// burbles, its backfires, the gear-shift event and the tyre events.
     struct Buses {
         BusId engine = kMasterBus;
         BusId backfire = kMasterBus;
@@ -51,25 +45,12 @@ struct EngineSoundOptions {
     std::uint32_t seed = 1;
 };
 
-/// The engine, exhaust, burble, gear-shift and tyre sounds of one car. The
-/// tyres are a TyreSound, per wheel for the unplaced (player's) car and a
-/// single pair for spatial ones.
-///
-/// The car's engine tuning names three harmonic tunings (intake, engine
-/// ambient, exhaust); each is a bank of loops recorded at steady rpm. Every
-/// loop plays continuously at pitch rpm / rpm_sample, and its volume
-/// crossfades with equal power across the overlap of its rpm range with its
-/// neighbours'. There are no separate on-load and off-load recordings: load
-/// shapes the sound through the tunings' volume curves and EQ (see
-/// EmissionDsp), evaluated from rpm, throttle and an estimate of positive
-/// and negative load, and applied per emitter on a mixer bus. At the
-/// redline with the throttle open, a rev limiter cuts the load in 35 ms
-/// pulses. On the overrun, burbles (and, with an upgraded exhaust,
-/// backfires) fire at random intervals inside the tuning's rpm window.
+/// The engine, exhaust, burble, gear-shift and tyre sounds of one car. Each loop plays at pitch
+/// rpm / rpm_sample; there are no on-load and off-load recordings, so load acts only through the
+/// tunings' volume curves and EQ (EmissionDsp). The rev limiter cuts in 35 ms pulses.
 class EngineSound {
 public:
-    /// Loads and decodes the car's sounds, which takes a moment. Throws
-    /// DataError if the car has no engine tuning.
+    /// Slow: decodes the car's sounds. Throws DataError if the car has no engine tuning.
     EngineSound(AudioDevice& device, const Vfs& vfs, const std::string& carMedia, EngineSoundOptions options = {});
     /// As above, sharing decoded samples with other sounds.
     EngineSound(AudioDevice& device, std::shared_ptr<AudioLibrary> library, const std::string& carMedia,
@@ -80,39 +61,29 @@ public:
 
     const CarAudioTuning& tuning() const { return m_tuning; }
 
-    /// Advances the sound by `dt` seconds for engine speed `rpm` and
-    /// throttle 0..1.
+    /// `throttle` 0..1.
     void update(float rpm, float throttle, float dt);
-    /// Plays the gear-change clunk and applies the tuning's shift volume
-    /// boost; an upshift also gives the exhaust a chance to backfire.
+    /// An upshift also gives the exhaust a chance to backfire.
     void shiftGear(int fromGear, int toGear);
-    /// Advances the tyre sounds by `dt` seconds; wheels in CarPhysics order.
+    /// Wheels in CarPhysics order.
     void updateTyres(std::span<const TyreInput, 4> wheels, const TyreCarInput& car, float dt);
     /// Null when the options leave tyres out or Tires.fev failed to load.
     const TyreSound* tyres() const { return m_tyres.get(); }
-    /// The car's world position and orientation (columns: right, up,
-    /// forward), for spatial engines.
+    /// `basis` columns: right, up, forward.
     void setTransform(const glm::vec3& position, const glm::mat3& basis);
     void setVolume(float volume);
-    /// The mixer gain from the engine's loudest emitter bus to the master,
-    /// through the bus it feeds (see Mixer::busGain); 0 without emitters.
+    /// From the loudest emitter bus to the master (Mixer::busGain); 0 without emitters.
     float engineGain() const;
 
-    /// Equal-power crossfade weights of `loops` (sorted by rpm_sample) at
-    /// `rpm`: a loop fades in across the overlap of its range with the
-    /// previous loop's and out across the overlap with the next one's; the
-    /// weights' squares sum to 1. Outside every range the nearest loop plays
-    /// alone.
+    /// Equal-power crossfade across neighbouring loops' rpm overlaps; `loops` sorted by rpm_sample.
+    /// Outside every range the nearest loop plays alone.
     static std::vector<float> loopWeights(std::span<const EngineLoop> loops, float rpm);
 
     /// Whether the rev limiter is cutting at the moment, for tools.
     bool limiterActive() const { return m_limiter; }
 
 private:
-    /// One recorded loop. It holds a mixer voice only while its crossfade
-    /// weight is above zero: a car has dozens of loops but hears two or
-    /// three per emitter at any rpm, and a field of cars would otherwise
-    /// exhaust the mixer's voices.
+    /// Holds a mixer voice only while its weight is above zero, or a field of cars runs out of voices.
     struct LoopVoice {
         EngineLoop loop;
         std::shared_ptr<const PcmBuffer> pcm;
@@ -138,8 +109,7 @@ private:
     };
 
     void build();
-    /// Starts the loops of the harmonic tuning's `name` list (EngineIntake,
-    /// EngineAmbient, ExhaustL or ExhaustR), the emitter of the same name.
+    /// `name`: EngineIntake, EngineAmbient, ExhaustL or ExhaustR.
     void addEmitter(EmissionGroup group, const std::string& name);
     void startEvents();
     EngineInputs inputs(float rpm, float throttle) const;

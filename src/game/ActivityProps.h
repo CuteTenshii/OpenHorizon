@@ -18,26 +18,14 @@ namespace world {
 class WorldIndex;
 }
 
-/// The set dressing an activation zone shows while it is enabled: the
-/// world's event props named after the zone's objects.
+/// The world's event props an activation zone shows while it is enabled,
+/// which the free-roam world leaves out.
 ///
-/// Verified in the executable: a zone's parser (0x8298af28) looks up, by
-/// name, its object, `<object>_L`, `<object>_NODE` and `<object>_00`,
-/// `<object>_01`, ... until a number is missing (0x8298b414); it hides the
-/// NODE object for good (0x8258b720 with 1). Enabling a zone whose
-/// is_activation flag is set (0x8298dbe8) shows the object, the `_L` object
-/// and the numbered ones, and disabling it hides them again. The world's
-/// event props carry those names (world::Placement::eventTag, and
-/// Placement::gameplayId for some numbered ones): the career event FR04 has
-/// its FR04 prop, FR04_01 to FR04_14 and gameplay objects FR04_00 and
-/// FR04_16. The free-roam world leaves event props out, so these are drawn
-/// here, as movable objects that do not move.
-///
-/// Inferred: the names are looked up among the GameObjs.xml objects (every
-/// numbered name of a zone is there, some at the world origin with no prop).
-/// Each prop is drawn at the level of detail whose distance band
-/// (world::WorldChunk::bandStart/bandEnd) holds the camera's distance to the
-/// prop's bounds on the ground plane, as the world's tiles choose theirs.
+/// Verified: an is_activation zone shows `<object>`, `<object>_L` and
+/// `<object>_00`, `_01`, ... up to the first missing number (0x8298af28,
+/// 0x8298b414, 0x8298dbe8); `_NODE` stays hidden (0x8258b720).
+/// Inferred: names are looked up among GameObjs.xml objects; a prop's level
+/// of detail is picked by ground-plane distance, as the world tiles do.
 class ActivityProps {
 public:
     explicit ActivityProps(const world::WorldIndex& index);

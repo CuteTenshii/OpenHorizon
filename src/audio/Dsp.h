@@ -34,17 +34,14 @@ struct BiquadCoefficients {
     float a1 = 0.0F;
     float a2 = 0.0F;
 
-    /// The coefficients for `spec` at `sampleRate`, from the RBJ audio EQ
-    /// cookbook formulas. Frequencies are clamped below Nyquist. FMOD's
-    /// resonance maps to Q = resonance / sqrt(2) so that 1 gives the
-    /// maximally flat Butterworth response (the mapping is an assumption).
+    /// RBJ cookbook formulas, frequencies clamped below Nyquist. Assumed: FMOD's resonance maps to
+    /// Q = resonance / sqrt(2), so 1 is Butterworth.
     static BiquadCoefficients design(const FilterSpec& spec, float sampleRate);
 
     /// Magnitude response at `frequency`, for tests and tools.
     float magnitudeAt(float frequency, float sampleRate) const;
 
-    /// Coefficient-wise blend from `a` (t = 0) to `b` (t = 1), used to glide
-    /// between designs within a block instead of jumping, which clicks.
+    /// Glides between designs within a block; jumping clicks.
     static BiquadCoefficients interpolate(const BiquadCoefficients& a, const BiquadCoefficients& b, float t)
     {
         const auto mix = [t](float x, float y) { return x + (y - x) * t; };
