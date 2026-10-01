@@ -1202,6 +1202,12 @@ void Game::updateAudio(float dt)
     if (m_gameplaySounds) {
         m_gameplaySounds->update();
     }
+    // Sounds unplayed for a while go; whatever needs them again decodes them again.
+    const auto now = audio::AudioLibrary::Clock::now();
+    if (now - m_audioReleasedAt >= kAudioReleaseInterval) {
+        m_audioReleasedAt = now;
+        m_audioLibrary->releaseUnused(now, kAudioIdleBeforeRelease);
+    }
 }
 
 std::uint32_t Game::soundBodyId(const Vehicle& vehicle) const

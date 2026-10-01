@@ -155,6 +155,8 @@ public:
     ByteView sampleData(std::size_t index) const;
     /// False for a bank made by parseHeaders().
     bool hasData() const { return m_hasData; }
+    /// Bytes of the file the bank holds (headers only after parseHeaders()).
+    std::size_t fileBytes() const { return m_data.size(); }
 
     /// The index of the sample with this name, compared without case. Names
     /// are matched the way FEV waveform file names relate to FSB names: with

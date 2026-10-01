@@ -4,6 +4,7 @@
 #include "Fev.h"
 #include "Fsb.h"
 
+#include <chrono>
 #include <cstddef>
 #include <map>
 #include <memory>
@@ -54,13 +55,28 @@ public:
     /// Drops every decoded sample (banks and projects stay).
     void clearSamples();
 
+    using Clock = std::chrono::steady_clock;
+    /// Drops what only the library holds and nobody asked for within `idle`,
+    /// except samples under kKeptSampleBytes; returns the bytes released.
+    /// Call it off the audio thread. An engine choice: the game's FMOD
+    /// unload rules were not traced.
+    std::size_t releaseUnused(Clock::time_point now, Clock::duration idle);
+    static constexpr std::size_t kKeptSampleBytes = 256 * 1024;
+    /// Bytes of decoded audio held, whether in use or not.
+    std::size_t decodedBytes() const;
+
 private:
+    template <typename T> struct Cached {
+        std::shared_ptr<const T> value;
+        Clock::time_point lastUsed;
+    };
+
     const Vfs& m_vfs;
-    std::mutex m_mutex;
-    std::map<std::string, std::shared_ptr<const FsbBank>, std::less<>> m_banks;
-    std::map<std::string, std::shared_ptr<const FevProject>, std::less<>> m_projects;
+    mutable std::mutex m_mutex;
+    std::map<std::string, Cached<FsbBank>, std::less<>> m_banks;
+    std::map<std::string, Cached<FevProject>, std::less<>> m_projects;
     /// Decoded samples by bank path, index and channel (-1 for all).
-    std::map<std::tuple<std::string, std::size_t, int>, std::shared_ptr<const PcmBuffer>> m_samples;
+    std::map<std::tuple<std::string, std::size_t, int>, Cached<PcmBuffer>> m_samples;
 };
 
 } // namespace openhorizon::audio

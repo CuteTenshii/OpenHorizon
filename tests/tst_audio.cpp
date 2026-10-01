@@ -1620,6 +1620,40 @@ TEST_CASE("discTyreSoundFollowsTheGame", "[audio]")
     CHECK(pair.isPlaying());
 }
 
+TEST_CASE("discLibraryReleasesWhatNothingPlays", "[audio]")
+{
+    const char* dir = gameDir();
+    openhorizon::Vfs vfs;
+    vfs.mountDisc(dir);
+    AudioLibrary library(vfs);
+    const char* path = "media/audio/cars/engines/soundbanks/lod1/2rt2_rx7_exh.fsb";
+    std::shared_ptr<const PcmBuffer> held;
+    std::size_t heldIndex = 0;
+    for (std::size_t i = 0; i < library.bank(path)->size() && !held; ++i) {
+        std::shared_ptr<const PcmBuffer> pcm = library.sample(path, i);
+        if (pcm->samples.size() * sizeof(float) >= AudioLibrary::kKeptSampleBytes) {
+            held = std::move(pcm);
+            heldIndex = i;
+        }
+    }
+    REQUIRE(held != nullptr);
+    const std::vector<float> original = held->samples;
+    const auto now = AudioLibrary::Clock::now();
+    // Just asked for: nothing goes, even what nothing holds.
+    const std::size_t decoded = library.decodedBytes();
+    CHECK(library.releaseUnused(now, std::chrono::seconds(30)) == std::size_t{0});
+    CHECK(library.decodedBytes() == decoded);
+    // Idle, the bank and the samples nobody holds go; the held one stays.
+    CHECK(library.releaseUnused(now + std::chrono::hours(1), std::chrono::seconds(30)) > 0);
+    const std::size_t heldBytes = held->samples.size() * sizeof(float);
+    CHECK(library.decodedBytes() >= heldBytes);
+    held.reset();
+    CHECK(library.releaseUnused(now + std::chrono::hours(1), std::chrono::seconds(30)) >= heldBytes);
+    CHECK(library.decodedBytes() + heldBytes <= decoded);
+    // Asked for again, it decodes to the same sound.
+    CHECK(library.sample(path, heldIndex)->samples == original);
+}
+
 TEST_CASE("discEngineSoundPlays", "[audio]")
 {
     const char* dir = gameDir();

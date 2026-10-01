@@ -524,6 +524,10 @@ private:
     // destructors release mixer buses.
     std::unique_ptr<audio::AudioDevice> m_audio;
     std::shared_ptr<audio::AudioLibrary> m_audioLibrary;
+    /// How often updateAudio() releases unused sounds, and their idle time (engine choices).
+    static constexpr std::chrono::seconds kAudioReleaseInterval{1};
+    static constexpr std::chrono::seconds kAudioIdleBeforeRelease{30};
+    audio::AudioLibrary::Clock::time_point m_audioReleasedAt{};
     /// The mixer snapshots and a bus per category they set, which the
     /// sounds of that category play into.
     std::optional<audio::SnapshotMixer> m_snapshots;

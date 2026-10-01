@@ -3,6 +3,10 @@
 #include "base/Log.h"
 #include "vfs/Vfs.h"
 
+#include <memory>
+#include <utility>
+#include <vector>
+
 namespace openhorizon::audio {
 
 AudioLibrary::AudioLibrary(const Vfs& vfs)
@@ -16,12 +20,13 @@ std::shared_ptr<const FsbBank> AudioLibrary::bank(std::string_view path)
     {
         std::lock_guard lock(m_mutex);
         if (const auto it = m_banks.find(key); it != m_banks.end()) {
-            return it->second;
+            it->second.lastUsed = Clock::now();
+            return it->second.value;
         }
     }
     auto parsed = std::make_shared<const FsbBank>(FsbBank::parse(m_vfs.readOrThrow(key), key));
     std::lock_guard lock(m_mutex);
-    return m_banks.try_emplace(key, std::move(parsed)).first->second;
+    return m_banks.try_emplace(key, Cached<FsbBank>{std::move(parsed), Clock::now()}).first->second.value;
 }
 
 std::shared_ptr<const FevProject> AudioLibrary::project(std::string_view path)
@@ -30,13 +35,14 @@ std::shared_ptr<const FevProject> AudioLibrary::project(std::string_view path)
     {
         std::lock_guard lock(m_mutex);
         if (const auto it = m_projects.find(key); it != m_projects.end()) {
-            return it->second;
+            it->second.lastUsed = Clock::now();
+            return it->second.value;
         }
     }
     const Bytes data = m_vfs.readOrThrow(key);
     auto parsed = std::make_shared<const FevProject>(FevProject::parse(data, key));
     std::lock_guard lock(m_mutex);
-    return m_projects.try_emplace(key, std::move(parsed)).first->second;
+    return m_projects.try_emplace(key, Cached<FevProject>{std::move(parsed), Clock::now()}).first->second.value;
 }
 
 std::shared_ptr<const PcmBuffer> AudioLibrary::sample(std::string_view bankPath, std::size_t index)
@@ -50,7 +56,8 @@ std::shared_ptr<const PcmBuffer> AudioLibrary::sampleChannel(std::string_view ba
     {
         std::lock_guard lock(m_mutex);
         if (const auto it = m_samples.find(key); it != m_samples.end()) {
-            return it->second;
+            it->second.lastUsed = Clock::now();
+            return it->second.value;
         }
     }
     std::shared_ptr<const PcmBuffer> result;
@@ -77,7 +84,8 @@ std::shared_ptr<const PcmBuffer> AudioLibrary::sampleChannel(std::string_view ba
         result = std::move(mono);
     }
     std::lock_guard lock(m_mutex);
-    return m_samples.try_emplace(std::move(key), std::move(result)).first->second;
+    return m_samples.try_emplace(std::move(key), Cached<PcmBuffer>{std::move(result), Clock::now()})
+        .first->second.value;
 }
 
 std::string AudioLibrary::bankPathFor(std::string_view projectPath, std::string_view bankName)
@@ -123,6 +131,60 @@ void AudioLibrary::clearSamples()
 {
     std::lock_guard lock(m_mutex);
     m_samples.clear();
+}
+
+namespace {
+
+std::size_t pcmBytes(const PcmBuffer& buffer)
+{
+    return buffer.samples.size() * sizeof(float);
+}
+
+/// Moves the idle entries only `cache` holds and `releasable` allows into `dropped`.
+template <typename Map, typename Releasable, typename Size> void takeUnused(Map& cache,
+    AudioLibrary::Clock::time_point before, Releasable releasable, Size size,
+    std::vector<std::shared_ptr<const void>>& dropped, std::size_t& released)
+{
+    for (auto it = cache.begin(); it != cache.end();) {
+        auto& entry = it->second;
+        if (entry.value.use_count() == 1 && entry.lastUsed < before && releasable(*entry.value)) {
+            released += size(*entry.value);
+            dropped.push_back(std::move(entry.value));
+            it = cache.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+} // namespace
+
+std::size_t AudioLibrary::releaseUnused(Clock::time_point now, Clock::duration idle)
+{
+    const Clock::time_point before = now - idle;
+    std::size_t released = 0;
+    // Destroyed after the lock, so a waiting decode does not wait on the free.
+    std::vector<std::shared_ptr<const void>> dropped;
+    {
+        std::lock_guard lock(m_mutex);
+        takeUnused(m_samples, before, [](const PcmBuffer& pcm) { return pcmBytes(pcm) >= kKeptSampleBytes; }, pcmBytes,
+            dropped, released);
+        takeUnused(m_banks, before, [](const FsbBank&) { return true; },
+            [](const FsbBank& bank) { return bank.fileBytes(); }, dropped, released);
+        takeUnused(m_projects, before, [](const FevProject&) { return true; },
+            [](const FevProject&) { return std::size_t{0}; }, dropped, released);
+    }
+    return released;
+}
+
+std::size_t AudioLibrary::decodedBytes() const
+{
+    std::lock_guard lock(m_mutex);
+    std::size_t bytes = 0;
+    for (const auto& [key, entry] : m_samples) {
+        bytes += pcmBytes(*entry.value);
+    }
+    return bytes;
 }
 
 } // namespace openhorizon::audio
