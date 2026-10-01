@@ -1259,9 +1259,8 @@ void Game::reportWorldContacts(const Vehicle& vehicle)
         report.surfaceA = carSurface;
         report.surfaceB = static_cast<std::size_t>(surface);
         report.position = contact.point;
-        // Inferred: the velocity at which the body meets the static world
-        // at the point, as the parameter's name says.
         report.relativeVelocity = car.worldPointVelocity(contact.point);
+        report.normal = contact.normal;
         report.carSpeed = car.speed();
         report.aiOnly = vehicle.role != Vehicle::Role::Player;
         m_gameplaySounds->report(report);
@@ -1291,9 +1290,8 @@ void Game::reportCarContacts(const Vehicle& vehicleA, const Vehicle& vehicleB, s
     report.surfaceB = m_gameplaySounds->carSurface(vehicleB.spec->mediaName);
     report.position = contact.point;
     report.relativeVelocity = carA.worldPointVelocity(contact.point) - carB.worldPointVelocity(contact.point);
-    // Inferred: the first car's speed; no car-against-car event follows
-    // CarSpeedMph.
-    report.carSpeed = carA.speed();
+    report.normal = contact.normal;
+    report.carSpeed = std::max(carA.speed(), carB.speed());
     report.aiOnly = vehicleA.role != Vehicle::Role::Player && vehicleB.role != Vehicle::Role::Player;
     m_gameplaySounds->report(report);
 }

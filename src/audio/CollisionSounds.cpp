@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <optional>
 #include <utility>
 
@@ -266,8 +267,9 @@ void CollisionSounds::makeRoom(const void* event, std::uint32_t maxPlaybacks)
 void CollisionSounds::report(const CollisionReport& report, std::uint32_t nowMs)
 {
     const float momentumDiff = std::clamp(glm::length(report.momentum), 0.0F, kMaxMomentumDiff);
-    const float relativeVelocityMph = glm::length(report.relativeVelocity) * kMphPerMetrePerSecond;
-    const float carSpeedMph = report.carSpeed * kMphPerMetrePerSecond;
+    const float relativeVelocityMph
+        = std::abs(glm::dot(report.normal, report.relativeVelocity)) * kMphPerMetrePerSecond;
+    const float carSpeedMph = report.carSpeed;
     const auto same = [&](const Contact& c) {
         return (c.bodyA == report.bodyA && c.bodyB == report.bodyB && c.surfaceA == report.surfaceA
                    && c.surfaceB == report.surfaceB)

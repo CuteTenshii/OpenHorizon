@@ -80,13 +80,15 @@ struct CollisionReport {
     std::size_t surfaceA = 0;
     std::size_t surfaceB = 0;
     glm::vec3 position{0.0F};
-    /// Metres per second.
+    /// Metres per second; only its part along `normal` is heard.
     glm::vec3 relativeVelocity{0.0F};
+    /// The contact's unit normal.
+    glm::vec3 normal{0.0F};
     /// Its length becomes MomentumDiff. What the game puts there was not traced.
     glm::vec3 momentum{0.0F};
     /// The contact broke a smashable (BreakState 1).
     bool broke = false;
-    /// Metres per second (CarSpeedMph).
+    /// The faster car's speed in metres per second, which the game hands to CarSpeedMph unconverted.
     float carSpeed = 0.0F;
     /// Neither body is the player's car (AIOnlyCollision 1).
     bool aiOnly = false;
@@ -96,11 +98,14 @@ struct CollisionReport {
 /// Verified:
 /// - report() (0x82C93C90): a new contact plays Impact3D and ImpactLFE once and starts Scrape3D, with
 ///   MomentumDiff (momentum length clamped 0..299), RelativeVelocity (m/s times 2.2369, mph), BreakState,
-///   CarSpeedMph and AIOnlyCollision; a contact in progress updates its events except BreakState;
+///   CarSpeedMph (as given) and AIOnlyCollision; a contact in progress updates its events except BreakState;
+/// - the contact handler (0x824B8B30) gives a contact with a car |normal . relative velocity| (0x824B8D14) and
+///   the larger of the cars' speeds (0x824B8ECC);
 /// - update() (0x82C93098) ends contacts older than MSBetweenDiffCollisions, stopping scrapes;
 /// - playBreak() (0x82C94498): RelativeVelocity is the vector's first component times 2.2369; MomentumDiff,
 ///   source not traced, stays 0.
-/// Inferred: the volume is the snapshots' Collision category (stays 1 here); max playbacks steal the oldest.
+/// Inferred: the volume is the snapshots' Collision category (stays 1 here); max playbacks steal the oldest;
+/// the cars' speeds are in m/s, as 0x825E98D8 converts the same getter's result to mph.
 /// Missing: the scrapes' Time parameter (FMOD runs it at 0.2/s over 0..5; stays 0 here) and the
 /// BreakEvents' Whoosh3D (slot 10, 0x82C946F0, only hands its names out).
 class CollisionSounds {

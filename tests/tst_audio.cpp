@@ -2126,6 +2126,7 @@ TEST_CASE("discCollisionSounds", "[audio]")
     report.surfaceA = id("CarAluminum");
     report.surfaceB = id("Asphalt");
     report.relativeVelocity = glm::vec3(0.0F, 0.0F, 60.0F / 2.2369F);
+    report.normal = glm::vec3(0.0F, 0.0F, -1.0F);
     report.carSpeed = 60.0F / 2.2369F;
     std::uint32_t now = 0;
     double energy = 0.0;
@@ -2142,7 +2143,7 @@ TEST_CASE("discCollisionSounds", "[audio]")
         CHECK_THAT(sounds.started()[0].relativeVelocityMph, WithinAbs(60.0, 1e-3));
         CHECK(sounds.started()[1].slot == Slot::ImpactLFE);
         CHECK(sounds.started()[2].slot == Slot::Scrape3D);
-        CHECK_THAT(sounds.started()[2].carSpeedMph, WithinAbs(60.0, 1e-3));
+        CHECK_THAT(sounds.started()[2].carSpeedMph, WithinAbs(60.0 / 2.2369, 1e-3));
     }
     CHECK(sounds.scrapesPlaying() == std::size_t{1});
     CHECK(energy > 0.0);
@@ -2156,6 +2157,92 @@ TEST_CASE("discCollisionSounds", "[audio]")
     const CrashMix crash = CrashMix::load(vfs);
     CHECK_THAT(crash.threshold, WithinAbs(50.0, 1e-6));
     CHECK_THAT(crash.drop, WithinAbs(10.0, 1e-6));
+}
+
+// A graze along a barrier mixes as loud as its events played with the game's parameters:
+// RelativeVelocity from the closing speed along the normal, CarSpeedMph from m/s.
+TEST_CASE("grazingContactMixesAtTheGamesLevel", "[audio]")
+{
+    const char* dir = gameDir();
+    using Slot = CollisionSoundTable::Slot;
+    openhorizon::Vfs vfs;
+    vfs.mountDisc(dir);
+    const std::vector<std::string> surfaces = discSurfaceNames(vfs);
+    const auto id = [&](std::string_view name) {
+        return static_cast<std::size_t>(std::find(surfaces.begin(), surfaces.end(), name) - surfaces.begin());
+    };
+    const CollisionSoundTable table = CollisionSoundTable::load(vfs, surfaces);
+    AudioLibrary library(vfs);
+    const glm::vec3 listener(0.0F, 0.0F, -3.0F);
+    const glm::vec3 right(1.0F, 0.0F, 0.0F);
+    constexpr float kClosing = 1.0F;
+    constexpr float kSpeed = 60.0F / 2.2369F;
+    constexpr int kFrames = 90;
+    constexpr std::size_t kFramesPerUpdate = 768;
+
+    CollisionReport report;
+    report.bodyA = 1;
+    report.surfaceA = id("CarAluminum");
+    report.surfaceB = id("ConcreteBarrier");
+    report.normal = glm::vec3(1.0F, 0.0F, 0.0F);
+    report.relativeVelocity = glm::vec3(-kClosing, 0.0F, kSpeed);
+    report.carSpeed = kSpeed;
+
+    AudioDevice ours{AudioDevice::Offline{}};
+    ours.mixer().setListener(listener, right);
+    CollisionSounds sounds(ours.mixer(), library, table, kMasterBus);
+    sounds.report(report, 0);
+    double oursEnergy = 0.0;
+    for (int frame = 0; frame < kFrames; ++frame) {
+        sounds.update(static_cast<std::uint32_t>(frame) * 16U);
+        for (const float s : ours.render(kFramesPerUpdate)) {
+            oursEnergy += static_cast<double>(s) * s;
+        }
+    }
+
+    AudioDevice reference{AudioDevice::Offline{}};
+    reference.mixer().setListener(listener, right);
+    const std::string path = "Game:\\Media\\Audio\\Collisions\\Collisions.fev";
+    const auto project = library.project(path);
+    std::vector<std::unique_ptr<EventInstance>> played;
+    std::uint32_t seed = 1;
+    for (const Slot slot : {Slot::Impact3D, Slot::ImpactLFE, Slot::Scrape3D}) {
+        const CollisionEventRef* ref = table.event(report.surfaceA, report.surfaceB, slot);
+        REQUIRE(ref != nullptr);
+        const FevEvent* event = project->findEvent(ref->event);
+        REQUIRE(event != nullptr);
+        EventSettings settings;
+        settings.spatial = true;
+        settings.position = report.position;
+        settings.seed = seed++;
+        auto& instance = played.emplace_back(
+            std::make_unique<EventInstance>(reference.mixer(), library, path, project, *event, settings));
+        instance->setParameter("MomentumDiff", 0.0F);
+        instance->setParameter("RelativeVelocity", kClosing * 2.2369F);
+        instance->setParameter("BreakState", 0.0F);
+        instance->setParameter("CarSpeedMph", kSpeed);
+        instance->setParameter("AIOnlyCollision", 0.0F);
+        instance->start();
+    }
+    double referenceEnergy = 0.0;
+    bool scraping = true;
+    for (int frame = 0; frame < kFrames; ++frame) {
+        if (scraping && static_cast<std::uint32_t>(frame) * 16U > table.msBetweenDiffCollisions()) {
+            played.back()->stop();
+            scraping = false;
+        }
+        for (const float s : reference.render(kFramesPerUpdate)) {
+            referenceEnergy += static_cast<double>(s) * s;
+        }
+    }
+
+    REQUIRE(referenceEnergy > 0.0);
+    const double differenceDb = 10.0 * std::log10(std::max(oursEnergy, 1e-12) / referenceEnergy);
+    UNSCOPED_INFO("ours " << oursEnergy << ", the game's " << referenceEnergy << ", " << differenceDb << " dB");
+    CHECK(std::abs(differenceDb) < 0.1);
+    REQUIRE(sounds.started().size() == std::size_t{3});
+    CHECK_THAT(sounds.started()[0].relativeVelocityMph, WithinAbs(kClosing * 2.2369, 1e-3));
+    CHECK_THAT(sounds.started()[2].carSpeedMph, WithinAbs(kSpeed, 1e-3));
 }
 
 } // namespace
